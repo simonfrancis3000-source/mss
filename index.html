@@ -1,634 +1,173 @@
-
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MySecondSelf | Persona Lab</title>
-<style>
-:root {
-  --navy: #101d32;
-  --blue: #2877e8;
-  --blue-light: #edf5ff;
-  --text: #263449;
-  --muted: #758197;
-  --border: #e1e7ef;
-  --bg: #f6f8fb;
-  --white: #ffffff;
-}
-* { box-sizing: border-box; }
-body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--text);
-  font-family: Inter, -apple-system, BlinkMacSystemFont,
-    "Segoe UI", sans-serif;
-  line-height: 1.55;
-}
-button, select { font: inherit; }
-button { cursor: pointer; }
-header {
-  background: var(--white);
-  border-bottom: 1px solid var(--border);
-}
-.nav {
-  max-width: 1120px;
-  margin: auto;
-  padding: 20px 24px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 20px;
-}
-.brand {
-  color: var(--navy);
-  font-size: 21px;
-  font-weight: 800;
-  letter-spacing: -0.8px;
-}
-.brand span { color: var(--blue); }
-.nav-label {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--muted);
-  letter-spacing: 1.4px;
-}
-main {
-  max-width: 1120px;
-  margin: auto;
-  padding: 46px 24px 64px;
-}
-.hero { max-width: 790px; margin-bottom: 30px; }
-.eyebrow {
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 1.8px;
-  color: var(--blue);
-  text-transform: uppercase;
-}
-h1 {
-  font-size: clamp(35px, 5vw, 54px);
-  line-height: 1.08;
-  letter-spacing: -2px;
-  color: var(--navy);
-  margin: 12px 0 16px;
-}
-.hero p {
-  font-size: 17px;
-  color: #657187;
-  max-width: 720px;
-  margin: 0;
-}
-.notice {
-  margin-top: 22px;
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  background: #e9f7ef;
-  color: #17683c;
-  border-radius: 30px;
-  padding: 8px 13px;
-  font-size: 12px;
-  font-weight: 700;
-}
-.dot {
-  width: 7px;
-  height: 7px;
-  background: #27a663;
-  border-radius: 50%;
-}
-.layout {
-  display: grid;
-  grid-template-columns: 0.9fr 1.1fr;
-  gap: 22px;
-  align-items: start;
-}
-.card {
-  background: var(--white);
-  border: 1px solid var(--border);
-  border-radius: 19px;
-  padding: 25px;
-  box-shadow: 0 5px 24px rgba(20,40,70,.035);
-}
-.card h2 {
-  color: var(--navy);
-  font-size: 19px;
-  letter-spacing: -.4px;
-  margin: 0 0 5px;
-}
-.sub {
-  color: var(--muted);
-  font-size: 13px;
-  margin: 0 0 20px;
-}
-.personas {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  margin-bottom: 23px;
-}
-.persona {
-  text-align: left;
-  border: 1px solid var(--border);
-  background: #fff;
-  border-radius: 13px;
-  padding: 15px 13px;
-  color: var(--text);
-  transition: .15s ease;
-}
-.persona:hover { border-color: #91baff; }
-.persona.active {
-  border: 2px solid var(--blue);
-  background: var(--blue-light);
-  padding: 14px 12px;
-}
-.avatar {
-  width: 43px;
-  height: 43px;
-  display: grid;
-  place-items: center;
-  background: #e6efff;
-  border-radius: 12px;
-  color: var(--blue);
-  font-size: 20px;
-  margin-bottom: 12px;
-}
-.persona strong { display: block; font-size: 14px; }
-.persona small {
-  display: block;
-  color: var(--muted);
-  font-size: 11px;
-  margin-top: 4px;
-  line-height: 1.4;
-}
-.section-label {
-  display: block;
-  font-size: 11px;
-  color: var(--muted);
-  text-transform: uppercase;
-  font-weight: 800;
-  letter-spacing: 1.2px;
-  margin-bottom: 10px;
-}
-.preferences {
-  list-style: none;
-  padding: 0;
-  margin: 0 0 23px;
-}
-.preferences li {
-  display: flex;
-  gap: 10px;
-  padding: 8px 0;
-  font-size: 13px;
-  border-bottom: 1px solid #f0f2f6;
-}
-.tick { color: #23955b; font-weight: 800; }
-select {
-  width: 100%;
-  background: #fff;
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 12px;
-  outline-offset: 3px;
-  margin-bottom: 17px;
-}
-.primary, .secondary {
-  width: 100%;
-  padding: 13px 16px;
-  border-radius: 10px;
-  font-weight: 750;
-  font-size: 14px;
-  transition: .15s ease;
-}
-.primary {
-  background: var(--blue);
-  color: #fff;
-  border: 1px solid var(--blue);
-}
-.primary:hover { background: #1765d3; }
-.secondary {
-  background: #fff;
-  color: var(--navy);
-  border: 1px solid var(--border);
-  margin-top: 10px;
-}
-.secondary:hover { background: var(--bg); }
-.robot-stage {
-  background: linear-gradient(145deg, #edf4ff, #f7f9fd 70%);
-  border: 1px solid #e2eafb;
-  border-radius: 15px;
-  padding: 20px;
-  text-align: center;
-  margin-bottom: 20px;
-}
-.robot-icon {
-  width: 85px;
-  height: 85px;
-  margin: 0 auto 12px;
-  border-radius: 25px;
-  display: grid;
-  place-items: center;
-  background: var(--white);
-  box-shadow: 0 8px 24px rgba(36,82,150,.10);
-  font-size: 43px;
-}
-.robot-stage strong { color: var(--navy); display: block; }
-.robot-stage p {
-  color: var(--muted);
-  font-size: 12px;
-  margin: 5px 0 0;
-}
-.task-label { margin-top: 5px; }
-.results {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-.result {
-  padding: 16px;
-  border: 1px solid var(--border);
-  border-radius: 13px;
-  min-width: 0;
-}
-.result.personalised {
-  border-color: #a7c9ff;
-  background: #f5f9ff;
-}
-.result-heading {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 12px;
-  font-weight: 800;
-  color: var(--navy);
-  margin-bottom: 11px;
-}
-.result p {
-  font-size: 12px;
-  color: #59677b;
-  margin: 0;
-  line-height: 1.65;
-  overflow-wrap: anywhere;
-}
-.result ul {
-  padding-left: 16px;
-  margin: 10px 0 0;
-  font-size: 12px;
-  line-height: 1.65;
-  color: #46566c;
-}
-.result li { margin-bottom: 5px; }
-.result-state {
-  display: inline-block;
-  margin-top: 13px;
-  padding: 5px 8px;
-  border-radius: 6px;
-  font-size: 10px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: .6px;
-  background: #edf0f5;
-  color: #68758a;
-}
-.personalised .result-state {
-  background: #e0edff;
-  color: #1c60bc;
-}
-.insight {
-  display: flex;
-  gap: 12px;
-  padding: 16px;
-  background: #f6f8fb;
-  border-radius: 12px;
-  margin-top: 15px;
-}
-.insight-icon { font-size: 20px; }
-.insight strong {
-  display: block;
-  color: var(--navy);
-  font-size: 13px;
-}
-.insight p {
-  color: var(--muted);
-  font-size: 12px;
-  margin: 4px 0 0;
-}
-.hidden { display: none; }
-.how {
-  margin-top: 25px;
-  background: var(--navy);
-  color: #fff;
-  padding: 27px;
-  border-radius: 18px;
-}
-.how h2 { margin: 0 0 7px; font-size: 20px; }
-.how > p {
-  color: #bdc8d9;
-  font-size: 13px;
-  margin: 0 0 20px;
-}
-.flow {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 13px;
-}
-.flow-item {
-  border: 1px solid #35465f;
-  background: #1a2a43;
-  border-radius: 12px;
-  padding: 15px;
-}
-.flow-num {
-  font-size: 11px;
-  font-weight: 800;
-  color: #86b6ff;
-  letter-spacing: 1px;
-}
-.flow-item strong {
-  display: block;
-  margin: 7px 0 5px;
-  font-size: 14px;
-}
-.flow-item p {
-  color: #c0cbdb;
-  font-size: 12px;
-  margin: 0;
-}
-.footer {
-  color: var(--muted);
-  text-align: center;
-  font-size: 11px;
-  padding-top: 24px;
-}
-@media (max-width: 780px) {
-  main { padding: 32px 16px 45px; }
-  .nav { padding: 17px 16px; }
-  .layout { grid-template-columns: 1fr; }
-  .card { padding: 20px; }
-  .flow { grid-template-columns: 1fr; }
-}
-@media (max-width: 430px) {
-  .results { grid-template-columns: 1fr; }
-  h1 { letter-spacing: -1.2px; }
-  .nav-label { font-size: 10px; }
-}
-</style>
-</head>
-<body>
-
-<header>
-  <div class="nav">
-    <div class="brand">MySecond<span>Self</span></div>
-    <div class="nav-label">PERSONA LAB · DEMONSTRATION</div>
-  </div>
-</header>
-
-<main>
-  <section class="hero">
-    <div class="eyebrow">The personalisation layer for robotics</div>
-    <h1>One robot.<br>Different people.</h1>
-    <p>
-      What if a robot understood how you like things done before
-      you even brought it home? Explore how a SecondSelf persona
-      could change the way a domestic robot responds.
-    </p>
-    <div class="notice">
-      <span class="dot"></span>
-      Interactive prototype · Simulated behaviour
-    </div>
-  </section>
-
-  <div class="layout">
-    <section class="card">
-      <h2>01. Choose a persona</h2>
-      <p class="sub">See how different preferences change the experience.</p>
-
-      <div class="personas">
-        <button class="persona active" id="simonBtn" type="button">
-          <div class="avatar">S</div>
-          <strong>Simon</strong>
-          <small>Quiet mornings · Independent routines</small>
-        </button>
-        <button class="persona" id="alexBtn" type="button">
-          <div class="avatar">A</div>
-          <strong>Alex</strong>
-          <small>Clear explanations · Ask before new tasks</small>
-        </button>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#08090c" />
+    <meta name="description" content="A MySecondSelf Persona Lab visual demonstration using a full articulated Unitree G1 humanoid in MuJoCo and Three.js." />
+    <title>MySecondSelf | Persona Lab</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="nav-wrap">
+        <a class="brand" href="https://mysecondself.app/" aria-label="MySecondSelf home">
+          <img src="https://mysecondself.app/wp-content/uploads/2026/10/MySecondSelf-Dual-Head-Logo.png" alt="MySecondSelf" />
+        </a>
+        <nav class="nav-links" aria-label="Main navigation">
+          <a href="https://mysecondself.app/owners/">OWNERS</a>
+          <a href="https://mysecondself.app/partners/">PARTNERS</a>
+          <a href="https://mysecondself.app/pexi/">PEXI</a>
+          <a href="https://mysecondself.app/contact/">CONTACT</a>
+        </nav>
       </div>
+    </header>
 
-      <span class="section-label">Example SecondSelf profile</span>
-      <ul class="preferences" id="preferences">
-        <li><span class="tick">✓</span><span>Breakfast around 7:30 am</span></li>
-        <li><span class="tick">✓</span><span>Prefers a quiet morning</span></li>
-        <li><span class="tick">✓</span><span>Familiar tasks can proceed independently</span></li>
-      </ul>
-
-      <span class="section-label">Give the robot a task</span>
-      <select id="task">
-        <option value="breakfast">Prepare breakfast</option>
-        <option value="kitchen">Tidy the kitchen</option>
-        <option value="visitor">Respond to a visitor</option>
-      </select>
-
-      <button class="primary" id="runBtn" type="button">
-        Run the demonstration →
-      </button>
-      <button class="secondary" id="resetBtn" type="button">
-        Reset demonstration
-      </button>
-    </section>
-
-    <section class="card">
-      <h2>02. Compare the response</h2>
-      <p class="sub">
-        The same robot receives the same task, with and without persona context.
-      </p>
-
-      <div class="robot-stage">
-        <div class="robot-icon">🤖</div>
-        <strong>Domestic robot</strong>
-        <p id="robotTask">Ready for a household task</p>
-      </div>
-
-      <div class="results">
-        <article class="result">
-          <div class="result-heading">○ General behaviour</div>
-          <p id="generalText">
-            Run the demonstration to see the robot's general response.
-          </p>
-          <span class="result-state">Without SecondSelf</span>
-        </article>
-
-        <article class="result personalised">
-          <div class="result-heading">✦ Persona-informed</div>
-          <p id="personalText">
-            Run the demonstration to see how the selected persona may influence the plan.
-          </p>
-          <span class="result-state">With SecondSelf</span>
-        </article>
-      </div>
-
-      <div class="insight">
-        <div class="insight-icon">✦</div>
+    <main>
+      <section class="hero">
         <div>
-          <strong id="insightTitle">Personal understanding changes the context</strong>
-          <p id="insightText">
-            Choose a persona and task, then run the demo to compare the two proposed responses.
-          </p>
+          <div class="eyebrow">A personalisation layer for robotics</div>
+          <h1>One robot.<br />Different ways of helping.</h1>
+          <p>Explore how a SecondSelf persona can shape a household task. This browser demonstration uses the complete articulated Unitree G1 model, MuJoCo physics and Three.js rendering.</p>
         </div>
-      </div>
-    </section>
-  </div>
+        <div class="demo-stamp"><span class="stamp-dot"></span> Browser simulation</div>
+      </section>
 
-  <section class="how">
-    <h2>How MySecondSelf works</h2>
-    <p>
-      A personal understanding that can be built today and made available
-      to compatible robots in the future.
-    </p>
+      <section class="sim-layout" aria-label="Interactive Persona Lab simulation">
+        <section class="panel stage-panel" aria-labelledby="stageTitle">
+          <div class="panel-heading">
+            <h2 id="stageTitle">Humanoid task simulation</h2>
+            <div class="stage-tags">
+              <span class="mini-tag">UNITREE G1 · FULL BODY</span>
+              <span class="mini-tag active" id="stageMode">SECONDSELF · SARAH</span>
+            </div>
+          </div>
+          <div class="viewport" id="viewport">
+            <canvas id="sceneCanvas" role="img" aria-label="MuJoCo simulation loading the full articulated Unitree G1 humanoid in a kitchen scene."></canvas>
+            <div class="scene-corner"><span>PERSONA LAB / 01</span><span>Drag to orbit · scroll to zoom</span></div>
+            <button class="camera-reset" id="cameraReset" type="button">Reset view</button>
+            <div class="load-note" id="loadNote" role="status" aria-live="polite">Loading single-threaded MuJoCo WebAssembly…</div>
+            <div class="render-toggle">
+              <span>WIREFRAME</span>
+              <label class="switch compact">
+                <input id="solidToggle" type="checkbox" checked aria-label="Show solid robot surfaces" />
+                <span class="switch-ui" aria-hidden="true"></span>
+              </label>
+              <span>SOLID</span>
+            </div>
+          </div>
+          <div class="status-strip">
+            <span class="status-mark" id="statusMark" aria-hidden="true"></span>
+            <div class="status-copy">
+              <div class="status-line"><span id="statusText" role="status" aria-live="polite">Preparing the scene</span><span class="live-dot" id="liveDot"></span></div>
+              <div class="status-explainer" id="statusDetail">Loading the complete G1 humanoid and its model assets.</div>
+            </div>
+          </div>
+          <div class="timeline-wrap" aria-label="Simulation progress">
+            <div class="timeline-top"><span>Action sequence</span><span id="stepCount">Loading model</span></div>
+            <div class="progress-track" id="progressTrack" role="progressbar" aria-label="Task progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="progress-fill" id="progressFill"></div></div>
+            <div class="timeline-steps" id="timelineSteps" aria-hidden="true"></div>
+          </div>
+        </section>
 
-    <div class="flow">
-      <div class="flow-item">
-        <div class="flow-num">01 · BUILD</div>
-        <strong>SYNQ.ME</strong>
-        <p>People build their SecondSelf through natural conversations, feedback and preferences.</p>
-      </div>
-      <div class="flow-item">
-        <div class="flow-num">02 · UNDERSTAND</div>
-        <strong>AMYA</strong>
-        <p>The decision-intelligence engine helps develop and refine the persona.</p>
-      </div>
-      <div class="flow-item">
-        <div class="flow-num">03 · CONNECT</div>
-        <strong>PEXI</strong>
-        <p>The planned interface makes authorised persona information available to compatible robot software.</p>
-      </div>
-    </div>
-  </section>
+        <aside class="panel control-panel" aria-labelledby="controlTitle">
+          <div class="control-head">
+            <div class="section-kicker">Personal response</div>
+            <h2 id="controlTitle">Set up the simulation</h2>
+            <p>The selected persona changes the task pacing, pauses and confirmation steps.</p>
+          </div>
 
-  <div class="footer">
-    MySecondSelf · Concept demonstration only. No live AI or robot is connected.
-    Robot behaviour depends on the capabilities and safety controls of each platform.
-  </div>
-</main>
+          <span class="form-label">Select a SecondSelf persona</span>
+          <div class="personas" role="group" aria-label="SecondSelf persona">
+            <button class="persona" id="sarahBtn" type="button" aria-pressed="true">
+              <span class="persona-name">Sarah</span>
+              <span class="persona-caption">Quiet mornings · Familiar routines</span>
+            </button>
+            <button class="persona" id="alexBtn" type="button" aria-pressed="false">
+              <span class="persona-name">Alex</span>
+              <span class="persona-caption">Explanations · Confirm new actions</span>
+            </button>
+          </div>
 
-<script>
-const profiles = {
-  simon: {
-    name: "Simon",
-    preferences: [
-      "Breakfast around 7:30 am",
-      "Prefers a quiet morning",
-      "Familiar tasks can proceed independently"
-    ],
-    breakfast: [
-      "Prepare breakfast using the robot's standard routine.",
-      "Plan around 7:30 am, keep noise low, and complete familiar authorised preparation steps. Ask before unfamiliar or restricted actions."
-    ],
-    kitchen: [
-      "Tidy the kitchen using the standard task sequence.",
-      "Prioritise familiar kitchen routines. Complete authorised tidying independently, but ask before moving personal belongings."
-    ],
-    visitor: [
-      "Follow the robot's standard visitor procedure.",
-      "Use a quiet, concise approach. Ask the owner before granting access if their visitor preferences or authorisation are unclear."
-    ]
-  },
-  alex: {
-    name: "Alex",
-    preferences: [
-      "Breakfast around 8:30 am",
-      "Prefers explanations",
-      "Ask before unfamiliar tasks"
-    ],
-    breakfast: [
-      "Prepare breakfast using the robot's standard routine.",
-      "Plan around 8:30 am, explain the intended steps, and ask before unfamiliar choices or substitutions."
-    ],
-    kitchen: [
-      "Tidy the kitchen using the standard task sequence.",
-      "Explain the proposed tidying plan and ask before moving items whose handling preferences are unknown."
-    ],
-    visitor: [
-      "Follow the robot's standard visitor procedure.",
-      "Explain that someone is at the door and request direction before unfamiliar actions or granting access."
-    ]
-  }
-};
+          <div class="preference-box">
+            <div class="preference-title" id="preferenceTitle">Sarah’s preferences</div>
+            <ul class="preference-list" id="preferences">
+              <li>Prefers a quiet morning</li>
+              <li>Familiar, authorised steps may proceed independently</li>
+              <li>A measured pace with a settling pause</li>
+            </ul>
+          </div>
 
-const taskLabels = {
-  breakfast: "Prepare breakfast",
-  kitchen: "Tidy the kitchen",
-  visitor: "Respond to a visitor"
-};
+          <label class="form-label" for="taskSelect">Choose a household task</label>
+          <select id="taskSelect" aria-describedby="taskHelp">
+            <option value="cup">Prepare breakfast · place a cup</option>
+            <option value="kitchen" disabled>Tidy the kitchen · after cup task validation</option>
+            <option value="visitor" disabled>Respond to a visitor · after cup task validation</option>
+          </select>
+          <p class="task-help" id="taskHelp">The first prototype focuses on one physics-based cup placement task.</p>
 
-let selected = "simon";
+          <div class="mode-row">
+            <div class="mode-label">
+              <strong>Use SecondSelf personalisation</strong>
+              <small id="modeHelp">The selected profile changes movement and pauses.</small>
+            </div>
+            <label class="switch">
+              <input id="personalization" type="checkbox" checked aria-label="Use SecondSelf personalisation" />
+              <span class="switch-ui" aria-hidden="true"></span>
+            </label>
+          </div>
 
-const simonBtn = document.getElementById("simonBtn");
-const alexBtn = document.getElementById("alexBtn");
-const taskSelect = document.getElementById("task");
+          <div class="explain-card">
+            <strong id="explainTitle">A measured, familiar routine</strong>
+            <p id="explainText">Sarah’s profile uses a slower reach and an additional settling pause before the cup is moved.</p>
+          </div>
 
-function choosePersona(name) {
-  selected = name;
-  simonBtn.classList.toggle("active", name === "simon");
-  alexBtn.classList.toggle("active", name === "alex");
+          <div class="actions">
+            <button class="action-button primary" id="runBtn" type="button" disabled>Start cup placement</button>
+            <button class="action-button" id="pauseBtn" type="button" disabled>Pause</button>
+            <button class="action-button" id="resetBtn" type="button" disabled>Reset</button>
+            <button class="action-button confirm" id="confirmBtn" type="button" hidden>Confirm and continue</button>
+          </div>
+          <div class="behavior-badge" id="behaviorBadge">Behaviour mode · <strong>Sarah’s SecondSelf</strong></div>
+        </aside>
+      </section>
 
-  const list = document.getElementById("preferences");
-  list.replaceChildren();
+      <section class="model-notes" aria-labelledby="modelNotesTitle">
+        <div class="notes-heading">
+          <div class="section-kicker">Simulation boundary</div>
+          <h2 id="modelNotesTitle">A full humanoid model, with clear limits</h2>
+        </div>
+        <div class="notes-grid">
+          <article><span class="note-index">01</span><strong>Articulated G1 with hands</strong><p>The scene uses the Menagerie G1 hand model, including its head, torso, arms, hands, legs and feet.</p></article>
+          <article><span class="note-index">02</span><strong>Stable demonstration pose</strong><p>The pelvis is constrained for this tabletop task. This prototype does not demonstrate balance, walking or real robot capability.</p></article>
+          <article><span class="note-index">03</span><strong>Physics-driven grasp limits</strong><p>The cup remains a free MuJoCo body; finger contact and friction must hold it. The three-finger hand has low-torque position actuators and no fingertip force sensors, so this does not establish general grasping ability.</p></article>
+        </div>
+      </section>
 
-  profiles[name].preferences.forEach(item => {
-    const li = document.createElement("li");
-    const tick = document.createElement("span");
-    const text = document.createElement("span");
-    tick.className = "tick";
-    tick.textContent = "✓";
-    text.textContent = item;
-    li.append(tick, text);
-    list.appendChild(li);
-  });
+      <section class="how" aria-labelledby="howTitle">
+        <div class="how-head">
+          <h2 id="howTitle">How MySecondSelf works</h2>
+          <p>Personal understanding can be built today and made available to compatible robots in the future.</p>
+        </div>
+        <div class="flow">
+          <article class="flow-item"><div class="flow-num">01 · BUILD</div><strong>SYNQ.ME</strong><p>People build their SecondSelf through natural conversations, feedback and shared preferences.</p></article>
+          <article class="flow-item"><div class="flow-num">02 · UNDERSTAND</div><strong>AMYA</strong><p>Decision intelligence helps develop and refine the personal context that can guide a response.</p></article>
+          <article class="flow-item"><div class="flow-num">03 · CONNECT</div><strong>PEXI</strong><p>The planned interface makes authorised persona information available to compatible robot software.</p></article>
+        </div>
+      </section>
 
-  resetResults();
-}
-
-function resetResults() {
-  document.getElementById("robotTask").textContent =
-    "Ready for a household task";
-  document.getElementById("generalText").textContent =
-    "Run the demonstration to see the robot's general response.";
-  document.getElementById("personalText").textContent =
-    "Run the demonstration to see how the selected persona may influence the plan.";
-  document.getElementById("insightTitle").textContent =
-    "Personal understanding changes the context";
-  document.getElementById("insightText").textContent =
-    "Select a persona and task, then run the demo to compare the proposed responses.";
-}
-
-function runDemo() {
-  const task = taskSelect.value;
-  const profile = profiles[selected];
-
-  document.getElementById("robotTask").textContent =
-    "Task: " + taskLabels[task];
-
-  document.getElementById("generalText").textContent =
-    profile[task][0];
-
-  document.getElementById("personalText").textContent =
-    profile[task][1];
-
-  document.getElementById("insightTitle").textContent =
-    "The plan reflects " + profile.name + "'s preferences";
-
-  document.getElementById("insightText").textContent =
-    "The robot receives additional personal context. In a real integration, its existing software would need to interpret that information and remain within its physical capabilities and safety controls.";
-}
-
-simonBtn.addEventListener("click", () => choosePersona("simon"));
-alexBtn.addEventListener("click", () => choosePersona("alex"));
-document.getElementById("runBtn").addEventListener("click", runDemo);
-document.getElementById("resetBtn").addEventListener("click", resetResults);
-taskSelect.addEventListener("change", resetResults);
-</script>
-</body>
+      <footer class="footer">
+        <span>MySecondSelf · Browser simulation only. No live robot, AI reasoning or manufacturer integration is connected.</span>
+        <nav class="footer-nav" aria-label="Footer navigation">
+          <a href="https://mysecondself.app/owners/">OWNERS</a>
+          <a href="https://mysecondself.app/partners/">PARTNERS</a>
+          <a href="https://mysecondself.app/pexi/">PEXI</a>
+          <a href="https://mysecondself.app/contact/">CONTACT</a>
+        </nav>
+      </footer>
+    </main>
+    <script type="module" src="/src/main.js"></script>
+  </body>
 </html>
