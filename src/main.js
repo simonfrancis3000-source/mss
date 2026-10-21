@@ -54,6 +54,43 @@ function resizeRenderer() {
   camera.updateProjectionMatrix();
 }
 
+function probeWebGL(type) {
+  const probeCanvas = document.createElement("canvas");
+  try {
+    const context = probeCanvas.getContext(type);
+    if (!context) return false;
+    context.getExtension("WEBGL_lose_context")?.loseContext();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function createWebGLRenderer() {
+  const attempts = [
+    { canvas, antialias: false, alpha: false, powerPreference: "low-power" },
+    { canvas, antialias: false, alpha: false, powerPreference: "default" }
+  ];
+  let lastError;
+  for (const options of attempts) {
+    try {
+      return new THREE.WebGLRenderer(options);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  const webgl2Available = probeWebGL("webgl2");
+  const webgl1Available = webgl2Available || probeWebGL("webgl");
+  if (!webgl2Available && webgl1Available) {
+    throw new Error("This browser only provides WebGL 1, but the simulation requires WebGL 2. Update your browser and reload.");
+  }
+  if (!webgl2Available) {
+    throw new Error("This browser or device is not providing WebGL 2. Enable hardware acceleration in browser settings, then reload. If it still fails, use a browser and device with WebGL 2 support.");
+  }
+  throw new Error(`The browser supports WebGL 2 but could not allocate a rendering context. Close other GPU-heavy tabs and reload. ${lastError?.message || ""}`.trim());
+}
+
 function createRenderer() {
   threeScene = new THREE.Scene();
   threeScene.background = new THREE.Color(0x090b0f);
@@ -61,7 +98,7 @@ function createRenderer() {
   camera = new THREE.PerspectiveCamera(39, 1, 0.03, 30);
   camera.up.set(0, 0, 1);
   camera.position.set(2.8, 0, 1.52);
-  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+  renderer = createWebGLRenderer();
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
