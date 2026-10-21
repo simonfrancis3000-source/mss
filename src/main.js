@@ -11,8 +11,11 @@ const canvas = $("sceneCanvas");
 const loadNote = $("loadNote");
 const statusText = $("statusText");
 const statusDetail = $("statusDetail");
-const CAMERA_START = [-2.65, 2.4, 1.55];
-const CAMERA_TARGET = [0.28, 0.18, 0.72];
+// View the front of the G1 from the open side of the counter. The previous
+// camera sat behind the tabletop, which hid the torso and made the reach look
+// detached from the rest of the robot.
+const CAMERA_START = [1.7, -1.85, 1.48];
+const CAMERA_TARGET = [0.22, 0.16, 0.78];
 
 let mujoco;
 let model;
@@ -398,6 +401,12 @@ function onTaskUpdate(event) {
 function updatePersonaDisplay() {
   const personalized = $("personalization").checked;
   const sarah = activePersona === "sarah";
+  if (cupTask && !cupTask.isRunning && !cupTask.isPaused) {
+    cupTask.persona = activePersona;
+    cupTask.personalized = personalized;
+    cupTask.phases = cupTask.phaseSpecs();
+    renderTimeline(-1, false, 0);
+  }
   $("stageMode").textContent = personalized ? `SECONDSELF · ${activePersona.toUpperCase()}` : "STANDARD ROUTINE";
   $("preferenceTitle").textContent = sarah ? "Sarah’s preferences" : "Alex’s preferences";
   $("preferences").replaceChildren(...(sarah
@@ -407,13 +416,13 @@ function updatePersonaDisplay() {
   $("behaviorBadge").innerHTML = `Behaviour mode · <strong>${personalized ? `${sarah ? "Sarah" : "Alex"}’s SecondSelf` : "Standard routine"}</strong>`;
   $("explainTitle").textContent = !personalized ? "A consistent cup routine" : sarah ? "A measured, familiar routine" : "Explain, confirm, then act";
   $("explainText").textContent = !personalized
-    ? "Persona-specific pauses and confirmation are turned off; the standard motion sequence remains physics-driven."
+    ? "The standard routine moves at a brisker pace without Sarah’s extra pause or Alex’s confirmation step."
     : sarah
-      ? "Sarah’s profile uses a slower reach and an additional settling pause before the cup is moved."
+      ? "Sarah’s profile slows each movement and pauses before lowering, then waits longer to check the grasp."
       : "Alex’s profile requires confirmation before the task starts, then uses a quicker movement.";
   $("modeHelp").textContent = personalized
-    ? `${sarah ? "Sarah’s" : "Alex’s"} profile changes movement pace and pause steps${!sarah ? "; Alex also confirms before the task starts" : ""}.`
-    : "The standard cup task runs without persona-specific pauses or confirmation.";
+    ? `${sarah ? "Sarah’s measured pace includes an extra pause" : "Alex’s brisk pace follows confirmation"}; the active profile changes the simulated sequence.`
+    : "Standard routine is brisk, with no persona-specific pause or confirmation.";
 }
 
 function beginCupTask() {

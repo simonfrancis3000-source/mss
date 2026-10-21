@@ -11,7 +11,11 @@
   <worldbody>
     <geom name="kitchen_floor" type="plane" size="3 3 0.1" rgba="0.12 0.13 0.16 1" friction="0.9 0.01 0.001"/>
     <geom name="counter_top" type="box" pos="0.5 0.32 0.70" size="0.38 0.23 0.04" rgba="0.26 0.28 0.31 1" friction="0.9 0.01 0.001"/>
-    <geom name="counter_front" type="box" pos="0.75 0.32 0.45" size="0.20 0.21 0.21" rgba="0.16 0.17 0.2 1"/>
+    <!-- Open underside leaves the complete humanoid visible while preserving a supported counter surface. -->
+    <geom name="counter_leg_robot_left" type="box" pos="0.18 0.13 0.33" size="0.035 0.035 0.33" rgba="0.18 0.20 0.23 1"/>
+    <geom name="counter_leg_robot_right" type="box" pos="0.18 0.51 0.33" size="0.035 0.035 0.33" rgba="0.18 0.20 0.23 1"/>
+    <geom name="counter_leg_far_left" type="box" pos="0.82 0.13 0.33" size="0.035 0.035 0.33" rgba="0.18 0.20 0.23 1"/>
+    <geom name="counter_leg_far_right" type="box" pos="0.82 0.51 0.33" size="0.035 0.035 0.33" rgba="0.18 0.20 0.23 1"/>
     <body name="cup" pos="0.18 0.32 0.795">
       <freejoint name="cup_free"/>
       <geom name="cup_body" type="cylinder" size="0.045 0.055" density="420" rgba="0.78 0.83 0.88 1" friction="1.2 0.01 0.001" condim="4"/>

@@ -1,4 +1,7 @@
 const ARM_JOINT_NAMES = [
+  "waist_yaw_joint",
+  "waist_roll_joint",
+  "waist_pitch_joint",
   "left_shoulder_pitch_joint",
   "left_shoulder_roll_joint",
   "left_shoulder_yaw_joint",
@@ -20,9 +23,13 @@ const FINGER_JOINT_NAMES = [
 
 const OPEN_FINGERS = [0.95, 0, 0, 0, 0, 0, 0];
 const CLOSED_FINGERS = [-0.25, 0.7, 1.05, -0.85, -1.1, -0.85, -1.1];
-const GRIP_HEIGHT = 0.08;
+const GRIP_HEIGHT = 0.015;
+const GRIP_LATERAL_OFFSET = 0;
 const LIFT_HEIGHT = 0.155;
-const READY_POSE = [0.12, 0.24, 0.82];
+// This pre-reach pose keeps the open hand outside the counter footprint while
+// it rises. Moving straight up at the counter edge made the index finger drag
+// the cup before the grasp phase began.
+const READY_POSE = [0.04, 0.12, 0.82];
 
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 const smooth = value => {
@@ -126,7 +133,9 @@ export class CupPlacementTask {
         qpos: Number(this.model.jnt_qposadr[id]),
         dof: Number(this.model.jnt_dofadr[id]),
         low: Number(this.model.jnt_range[id * 2]),
-        high: Number(this.model.jnt_range[id * 2 + 1])
+        high: Number(this.model.jnt_range[id * 2 + 1]),
+        ikScale: name.startsWith("waist_") ? 0.56 : 1,
+        maxStep: name.startsWith("waist_") ? 0.045 : 0.1
       };
     });
   }
@@ -148,32 +157,39 @@ export class CupPlacementTask {
 
   phaseSpecs() {
     const sarah = this.personalized && this.persona === "sarah";
-    const quick = this.personalized && this.persona === "alex";
-    const duration = (measured, quickened) => quick ? quickened : measured;
+    const alex = this.personalized && this.persona === "alex";
+    // Sarah's routine has a deliberately measured reach. Turning personalisation
+    // off selects a brisk standard pace; Alex keeps that pace after confirming.
+    const duration = seconds => seconds * (sarah ? 1.35 : 0.72);
     const initialAbove = [...this.cupStart];
-    initialAbove[2] += 0.16;
-    const raisedSide = [READY_POSE[0], READY_POSE[1], this.cupStart[2] + 0.16];
+    initialAbove[2] += 0.23;
+    initialAbove[1] += GRIP_LATERAL_OFFSET;
+    const raisedSide = [READY_POSE[0], READY_POSE[1], this.cupStart[2] + 0.205];
     const initialGrip = [...this.cupStart];
     initialGrip[2] += this.gripOffset;
+    initialGrip[1] += GRIP_LATERAL_OFFSET;
     const initialLift = [...this.cupStart];
     initialLift[2] += LIFT_HEIGHT;
     const placeAbove = [...this.cupPlace];
     placeAbove[2] += LIFT_HEIGHT;
     const placeGrip = [...this.cupPlace];
     placeGrip[2] += this.gripOffset;
+    placeGrip[1] += GRIP_LATERAL_OFFSET;
     return [
-      { key: "clear", label: "Clear the cup", detail: "Move to a verified neutral waypoint before approaching the counter.", target: READY_POSE, duration: duration(1.2, 0.8) },
-      { key: "raise", label: "Raise beside the cup", detail: "Lift the hand on a clear side path before moving over the cup.", target: raisedSide, duration: duration(3.8, 2.8) },
-      { key: "approach", label: "Reach above the cup", detail: "Move over the cup while the down-facing hand stays clear of the counter.", target: initialAbove, duration: duration(1.8, 1.2) },
-      { key: "align", label: "Lower into grasp position", detail: "Align the down-facing hand around the cup body.", target: initialGrip, duration: duration(1.4, 1.0) },
-      { key: "close", label: "Close the three-finger hand", detail: "The thumb, index and middle fingers close under position control.", fingers: CLOSED_FINGERS, duration: duration(0.8, 0.5) },
-      { key: "settle", label: "Check the physical grasp", detail: "MuJoCo contact and friction determine whether the cup is held.", duration: sarah ? 1.2 : (quick ? 0.45 : 0.75) },
-      { key: "lift", label: "Lift the cup", detail: "Raise the hand and cup together through contact forces.", target: initialLift, duration: duration(1.2, 0.9) },
-      { key: "carry", label: "Move to the counter position", detail: "Carry the cup 5 cm while the fingers maintain contact.", target: placeAbove, duration: duration(1.2, 0.9) },
-      { key: "lower", label: "Lower onto the counter", detail: "Place the cup above the counter surface before releasing.", target: placeGrip, duration: duration(1.4, 1.0) },
-      { key: "open", label: "Release the cup", detail: "Open the hand and let the cup settle under gravity.", fingers: OPEN_FINGERS, duration: 0.45 },
-      { key: "place-settle", label: "Check the placement", detail: "Wait for the free cup body to settle on the counter.", duration: sarah ? 1.0 : 0.55 },
-      { key: "return", label: "Return to a clear ready pose", detail: "Move the articulated arm back to a verified ready waypoint.", target: READY_POSE, duration: duration(1.5, 1.1) }
+      { key: "open", label: "Open the three-finger hand", detail: "Extend the thumb, index and middle fingers before the arm approaches the cup.", fingers: OPEN_FINGERS, duration: duration(0.65) },
+      { key: "clear", label: "Move clear of the counter", detail: "The torso and arm move to the robot-side edge of the counter before the hand rises.", target: READY_POSE, duration: duration(1.2) },
+      { key: "raise", label: "Raise beside the cup", detail: "The open fingers rise outside the counter footprint, clear of the cup rim.", target: raisedSide, duration: duration(2.3) },
+      { key: "approach", label: "Reach above the cup", detail: "Move across to the cup only after the hand has cleared its rim.", target: initialAbove, duration: duration(1.35) },
+      ...(sarah ? [{ key: "sarah-pause", label: "Pause before lowering", detail: "Sarah’s familiar routine holds briefly before moving closer to the cup.", duration: 0.8 }] : []),
+      { key: "align", label: "Lower into grasp position", detail: "Lower the palm to the cup body so the fingers can close around its sides.", target: initialGrip, duration: duration(1.25) },
+      { key: "close", label: "Close the three-finger hand", detail: "The thumb, index and middle fingers close under position control.", fingers: CLOSED_FINGERS, duration: duration(0.65) },
+      { key: "settle", label: "Check the physical grasp", detail: "MuJoCo contact and friction determine whether the cup is held.", duration: sarah ? 1.4 : (alex ? 0.35 : 0.45) },
+      { key: "lift", label: "Lift the cup", detail: "Raise the hand and cup together through contact forces.", target: initialLift, duration: duration(1.0) },
+      { key: "carry", label: "Move to the counter position", detail: "Carry the cup 5 cm while the fingers maintain contact.", target: placeAbove, duration: duration(1.0) },
+      { key: "lower", label: "Lower onto the counter", detail: "Place the cup above the counter surface before releasing.", target: placeGrip, duration: duration(1.2) },
+      { key: "open", label: "Release the cup", detail: "Open the hand and let the cup settle under gravity.", fingers: OPEN_FINGERS, duration: duration(0.45) },
+      { key: "place-settle", label: "Check the placement", detail: "Wait for the free cup body to settle on the counter.", duration: sarah ? 1.0 : (alex ? 0.4 : 0.45) },
+      { key: "return", label: "Return to a clear ready pose", detail: "Move the articulated arm back to a verified ready waypoint.", target: READY_POSE, duration: duration(1.2) }
     ];
   }
 
@@ -267,7 +283,7 @@ export class CupPlacementTask {
     if (this.phaseTime < phase.duration) return;
     if (phase.target) {
       const miss = Math.hypot(...this.readSite().map((value, axis) => phase.target[axis] - value));
-      if (miss > 0.025 && this.phaseTime < phase.duration + 5) return;
+      if (miss > 0.025 && this.phaseTime < phase.duration + 2.2) return;
       if (miss > 0.065) {
         this.fail(`The G1 arm could not reach the ${phase.label.toLowerCase()} pose within the workspace. The cup remains under MuJoCo physics.`);
         return;
@@ -312,8 +328,8 @@ export class CupPlacementTask {
     const current = this.readSite();
     const positionError = target.map((value, axis) => value - current[axis]);
     const positionMagnitude = Math.hypot(...positionError);
-    if (positionMagnitude > 0.05) {
-      for (let axis = 0; axis < 3; axis += 1) positionError[axis] *= 0.05 / positionMagnitude;
+    if (positionMagnitude > 0.06) {
+      for (let axis = 0; axis < 3; axis += 1) positionError[axis] *= 0.06 / positionMagnitude;
     }
 
     const currentRotation = this.readSiteOrientation();
@@ -341,14 +357,14 @@ export class CupPlacementTask {
             factor * (rotationError[3] - rotationError[1])
           ];
         })();
-    const weight = 0.22;
+    const weight = 0.15;
     const error = [...positionError, ...rotationVector.map(value => clamp(value, -0.22, 0.22) * weight)];
     const jacobian = Array(6 * this.arm.length).fill(0);
     for (let row = 0; row < 3; row += 1) {
       for (let jointIndex = 0; jointIndex < this.arm.length; jointIndex += 1) {
         const joint = this.arm[jointIndex];
-        jacobian[row * this.arm.length + jointIndex] = jacp[row * this.model.nv + joint.dof];
-        jacobian[(row + 3) * this.arm.length + jointIndex] = jacr[row * this.model.nv + joint.dof] * weight;
+        jacobian[row * this.arm.length + jointIndex] = jacp[row * this.model.nv + joint.dof] * joint.ikScale;
+        jacobian[(row + 3) * this.arm.length + jointIndex] = jacr[row * this.model.nv + joint.dof] * weight * joint.ikScale;
       }
     }
 
@@ -357,7 +373,7 @@ export class CupPlacementTask {
       for (let column = 0; column < 6; column += 1) {
         let sum = 0;
         for (let joint = 0; joint < this.arm.length; joint += 1) sum += jacobian[row * this.arm.length + joint] * jacobian[column * this.arm.length + joint];
-        gram[row * 6 + column] = sum + (row === column ? 0.0144 : 0);
+        gram[row * 6 + column] = sum + (row === column ? 0.01 : 0);
       }
     }
     const dual = solveLinear(gram, error, 6);
@@ -366,7 +382,7 @@ export class CupPlacementTask {
       let delta = 0;
       for (let axis = 0; axis < 6; axis += 1) delta += jacobian[axis * this.arm.length + jointIndex] * dual[axis];
       const currentAngle = Number(this.data.qpos[joint.qpos]);
-      const requested = clamp(currentAngle + clamp(delta * 0.75, -0.07, 0.07), joint.low, joint.high);
+      const requested = clamp(currentAngle + clamp(delta * joint.ikScale, -joint.maxStep, joint.maxStep), joint.low, joint.high);
       this.data.ctrl[joint.actuator] = requested;
     }
   }
