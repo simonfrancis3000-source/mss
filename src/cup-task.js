@@ -70,6 +70,7 @@ export class CupPlacementTask {
     this.personalized = true;
     this.contactCount = 0;
     this.bestContactCount = 0;
+    this.opposingContactTime = 0;
 
     this.siteId = this.find(mujoco.mjtObj.mjOBJ_SITE, "left_palm_center");
     this.cupBodyId = this.find(mujoco.mjtObj.mjOBJ_BODY, "cup");
@@ -209,6 +210,7 @@ export class CupPlacementTask {
     this.controlClock = 0;
     this.contactCount = 0;
     this.bestContactCount = 0;
+    this.opposingContactTime = 0;
     this.home = this.readSite();
     this.homeOrientation = this.readSiteOrientation();
     this.cupStart = this.readCup();
@@ -260,6 +262,7 @@ export class CupPlacementTask {
     if (phase.key === "settle") {
       this.contactCount = this.countHandContacts();
       this.bestContactCount = Math.max(this.bestContactCount, this.contactCount);
+      this.opposingContactTime = this.contactCount > 0 ? this.opposingContactTime + dt : 0;
     }
     if (this.phaseTime < phase.duration) return;
     if (phase.target) {
@@ -271,8 +274,8 @@ export class CupPlacementTask {
       }
     }
 
-    if (phase.key === "settle" && this.bestContactCount < 2) {
-      this.fail("The G1 fingers did not establish a stable two-finger contact with the cup. The cup stayed under physics control.");
+    if (phase.key === "settle" && this.opposingContactTime < 0.2) {
+      this.fail("The G1 thumb and an opposing finger did not maintain cup contact for 0.2 seconds. The cup stayed under physics control.");
       return;
     }
     if (phase.key === "lift" && this.readCup()[2] < this.cupStart[2] + 0.035) {
@@ -369,7 +372,8 @@ export class CupPlacementTask {
   }
 
   countHandContacts() {
-    const bodies = new Set();
+    let thumbContact = false;
+    let opposingFingerContact = false;
     for (let index = 0; index < this.data.ncon; index += 1) {
       const contact = this.data.contact.get(index);
       if (!contact) continue;
@@ -383,10 +387,14 @@ export class CupPlacementTask {
       }
       const other = firstIsCup ? second : first;
       const bodyId = Number(this.model.geom_bodyid[other]);
-      if (this.leftHandBodies.has(bodyId)) bodies.add(bodyId);
+      if (this.leftHandBodies.has(bodyId) && Number(contact.dist) <= 0) {
+        const bodyName = this.mujoco.mj_id2name(this.model, this.mujoco.mjtObj.mjOBJ_BODY.value, bodyId) ?? "";
+        if (bodyName.startsWith("left_hand_thumb_")) thumbContact = true;
+        if (bodyName.startsWith("left_hand_index_") || bodyName.startsWith("left_hand_middle_")) opposingFingerContact = true;
+      }
       contact.delete();
     }
-    return bodies.size;
+    return thumbContact && opposingFingerContact ? 2 : 0;
   }
 
   isCupAtPlace() {

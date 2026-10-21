@@ -493,6 +493,7 @@ function dispose() {
 
 async function init() {
   try {
+    createRenderer();
     setStatus("Preparing the full humanoid", "Checking the browser WebAssembly build, G1 meshes and standing pose.");
     const details = await loadG1Scene();
     cupTask = new CupPlacementTask(mujoco, model, data, onTaskUpdate);
@@ -509,12 +510,14 @@ async function init() {
     canvas.setAttribute("aria-label", "Full articulated Unitree G1 humanoid with head, torso, both arms and hands, both legs and feet, standing beside a MuJoCo kitchen counter and cup.");
   } catch (error) {
     console.error(error);
-    setLoadNote(`Simulation could not load: ${error?.message || String(error)}`, "error");
-    setStatus("Simulation unavailable", "The browser did not load the MuJoCo model or its WebAssembly assets. See the browser console for details.");
+    setLoadNote(`Simulation failed to start: ${error?.message || String(error)}`, "error");
+    setStatus("Simulation unavailable", "The browser could not create the 3D renderer or load MuJoCo and its assets. The error above identifies the failed step.");
+    $("runBtn").disabled = true;
+    $("pauseBtn").disabled = true;
+    $("resetBtn").disabled = true;
   }
 }
 
-createRenderer();
 wireControls();
 requestAnimationFrame(renderLoop);
 window.addEventListener("beforeunload", dispose, { once: true });
