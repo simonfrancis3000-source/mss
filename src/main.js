@@ -1,582 +1,309 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import loadMujoco from "@mujoco/mujoco";
-import mujocoWasmUrl from "@mujoco/mujoco/mujoco.wasm?url";
-import { CupPlacementTask } from "./cup-task.js";
+import { SVGRenderer } from "three/examples/jsm/renderers/SVGRenderer.js";
 import "./style.css";
 
 const $ = id => document.getElementById(id);
 const viewport = $("viewport");
-const canvas = $("sceneCanvas");
+const host = $("sceneCanvas");
 const loadNote = $("loadNote");
 const statusText = $("statusText");
 const statusDetail = $("statusDetail");
-// View the front of the G1 from the open side of the counter. The previous
-// camera sat behind the tabletop, which hid the torso and made the reach look
-// detached from the rest of the robot.
-const CAMERA_START = [1.7, -1.85, 1.48];
-const CAMERA_TARGET = [0.22, 0.16, 0.78];
 
-let mujoco;
-let model;
-let data;
-let standKeyframe = -1;
-let mjvScene;
-let mjvOption;
-let mjvPerturb;
-let mjvCamera;
-let threeScene;
+const LINKS = Object.freeze({ shoulder: 0.225, elbow: 0.225 });
+const STARTING_AXES = Object.freeze({ j1: 24, j2: -46, z: 85, j4: 30 });
+const CAMERA_START = new THREE.Vector3(0.78, -1.08, 0.82);
+const CAMERA_TARGET = new THREE.Vector3(0.02, 0.0, 0.39);
+
+let scene;
 let camera;
 let renderer;
 let controls;
-let cupTask;
-let frameItems = [];
-let geometryCache = new Map();
-let solidSurfaces = true;
-let simulationPlaying = false;
-let activePersona = "sarah";
-let previousFrameTime = performance.now();
+let robot;
+let j1Pivot;
+let j2Pivot;
+let zCarriage;
+let j4Tool;
+let resizeObserver;
 let animationFrame = 0;
 
-function setStatus(title, detail, running = false) {
-  statusText.textContent = title;
-  statusDetail.textContent = detail;
-  $("statusMark").classList.toggle("live", running);
-  $("liveDot").classList.toggle("visible", running);
+function lineMaterial(color, opacity = 1, linewidth = 1) {
+  return new THREE.LineBasicMaterial({ color, transparent: opacity < 1, opacity, linewidth });
 }
 
-function setLoadNote(text, state = "") {
-  loadNote.textContent = text;
-  loadNote.className = "load-note" + (state ? " " + state : "");
+function addLine(parent, points, material) {
+  const geometry = new THREE.BufferGeometry().setFromPoints(points.map(point => new THREE.Vector3(...point)));
+  const line = new THREE.Line(geometry, material);
+  parent.add(line);
+  return line;
+}
+
+function addLineSegments(parent, points, material) {
+  const geometry = new THREE.BufferGeometry().setFromPoints(points.map(point => new THREE.Vector3(...point)));
+  const lines = new THREE.LineSegments(geometry, material);
+  parent.add(lines);
+  return lines;
+}
+
+function addCircle(parent, radius, z, material, segments = 72) {
+  const points = [];
+  for (let index = 0; index < segments; index += 1) {
+    const angle = (index / segments) * Math.PI * 2;
+    points.push(new THREE.Vector3(Math.cos(angle) * radius, Math.sin(angle) * radius, z));
+  }
+  const circle = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(points), material);
+  parent.add(circle);
+  return circle;
+}
+
+function addWireBox(parent, size, position, material) {
+  const geometry = new THREE.EdgesGeometry(new THREE.BoxGeometry(...size));
+  const box = new THREE.LineSegments(geometry, material);
+  box.position.set(...position);
+  parent.add(box);
+  return box;
+}
+
+function addWireCylinder(parent, radiusTop, radiusBottom, height, position, material, segments = 24) {
+  const geometry = new THREE.EdgesGeometry(
+    new THREE.CylinderGeometry(radiusTop, radiusBottom, height, segments, 1, false),
+    1
+  );
+  const cylinder = new THREE.LineSegments(geometry, material);
+  cylinder.rotation.x = Math.PI / 2;
+  cylinder.position.set(...position);
+  parent.add(cylinder);
+  return cylinder;
+}
+
+function addLinkFrame(parent, length, material, accent) {
+  const width = 0.094;
+  const height = 0.046;
+  addWireBox(parent, [length, width, height], [length / 2, 0, 0], material);
+  const inset = 0.025;
+  addLineSegments(parent, [
+    [inset, -width * 0.5, height * 0.5], [length - inset, -width * 0.5, height * 0.5],
+    [inset, width * 0.5, height * 0.5], [length - inset, width * 0.5, height * 0.5],
+    [inset, -width * 0.5, -height * 0.5], [length - inset, -width * 0.5, -height * 0.5],
+    [inset, width * 0.5, -height * 0.5], [length - inset, width * 0.5, -height * 0.5],
+    [inset, -width * 0.5, height * 0.5], [length - inset, -width * 0.5, -height * 0.5],
+    [inset, width * 0.5, height * 0.5], [length - inset, width * 0.5, -height * 0.5]
+  ], accent);
+  addWireCylinder(parent, 0.057, 0.057, 0.034, [0, 0, 0], material, 32);
+  addCircle(parent, 0.067, 0.024, accent, 40);
+  addCircle(parent, 0.067, -0.024, material, 40);
+}
+
+function createBase() {
+  const group = new THREE.Group();
+  const shell = lineMaterial(0xb8c5d5, 0.92);
+  const accent = lineMaterial(0x75aef7, 0.92);
+  addWireBox(group, [0.25, 0.25, 0.055], [0, 0, 0.035], shell);
+  addWireBox(group, [0.20, 0.20, 0.26], [0, 0, 0.19], shell);
+  addWireBox(group, [0.15, 0.15, 0.04], [0, 0, 0.34], accent);
+  addWireCylinder(group, 0.093, 0.093, 0.036, [0, 0, 0.372], shell, 32);
+  addCircle(group, 0.113, 0.393, accent, 48);
+  addCircle(group, 0.07, 0.398, shell, 48);
+  for (const x of [-0.091, 0.091]) {
+    for (const y of [-0.091, 0.091]) {
+      addWireCylinder(group, 0.009, 0.009, 0.058, [x, y, 0.018], accent, 8);
+    }
+  }
+  group.position.z = 0;
+  robot.add(group);
+}
+
+function createZAxis(material, accent) {
+  const housing = new THREE.Group();
+  // The vertical rails span the full published 200 mm travel with visual clearance.
+  addWireBox(housing, [0.075, 0.075, 0.24], [0, 0, -0.105], material);
+  for (const x of [-0.027, 0.027]) {
+    for (const y of [-0.027, 0.027]) {
+      addLine(housing, [[x, y, 0.018], [x, y, -0.218]], accent);
+    }
+  }
+  addCircle(housing, 0.052, 0.012, accent, 40);
+  zCarriage = new THREE.Group();
+  addWireBox(zCarriage, [0.088, 0.088, 0.055], [0, 0, -0.025], accent);
+  addWireCylinder(zCarriage, 0.024, 0.024, 0.072, [0, 0, -0.085], material, 20);
+  j4Tool = new THREE.Group();
+  addCircle(j4Tool, 0.047, -0.126, accent, 40);
+  addCircle(j4Tool, 0.033, -0.127, material, 40);
+  addWireBox(j4Tool, [0.055, 0.055, 0.022], [0, 0, -0.139], material);
+  addLineSegments(j4Tool, [
+    [-0.055, 0, -0.139], [0.055, 0, -0.139],
+    [0, -0.055, -0.139], [0, 0.055, -0.139]
+  ], accent);
+  zCarriage.add(j4Tool);
+  housing.add(zCarriage);
+  return housing;
+}
+
+function createRobot() {
+  robot = new THREE.Group();
+  const frame = lineMaterial(0xc4cedb, 0.88);
+  const accent = lineMaterial(0x83b6ff, 0.95);
+  const detail = lineMaterial(0x72839a, 0.72);
+
+  createBase();
+
+  j1Pivot = new THREE.Group();
+  j1Pivot.position.set(0, 0, 0.413);
+  addCircle(j1Pivot, 0.079, 0, accent, 48);
+  addWireCylinder(j1Pivot, 0.054, 0.054, 0.046, [0, 0, 0], frame, 32);
+  addWireBox(j1Pivot, [0.16, 0.13, 0.053], [0.04, 0, 0.055], frame);
+  addCircle(j1Pivot, 0.061, 0.084, detail, 40);
+  addLinkFrame(j1Pivot, LINKS.shoulder, frame, accent);
+  robot.add(j1Pivot);
+
+  j2Pivot = new THREE.Group();
+  j2Pivot.position.set(LINKS.shoulder, 0, 0);
+  addCircle(j2Pivot, 0.064, 0, accent, 48);
+  addWireCylinder(j2Pivot, 0.05, 0.05, 0.04, [0, 0, 0], frame, 32);
+  addCircle(j2Pivot, 0.048, 0.025, detail, 40);
+  addLinkFrame(j2Pivot, LINKS.elbow, frame, accent);
+  const zAxis = createZAxis(frame, accent);
+  zAxis.position.set(LINKS.elbow, 0, 0.018);
+  j2Pivot.add(zAxis);
+  j1Pivot.add(j2Pivot);
+
+  // Fine engraved rails and joint ticks give the schematic a technical-drawing character.
+  for (let index = 0; index <= 8; index += 1) {
+    const x = (index / 8) * LINKS.shoulder;
+    addLineSegments(j1Pivot, [[x, -0.061, -0.03], [x, -0.055, -0.03]], detail);
+    const x2 = LINKS.shoulder + (index / 8) * LINKS.elbow;
+    addLineSegments(j2Pivot, [[x2 - LINKS.shoulder, -0.061, -0.03], [x2 - LINKS.shoulder, -0.055, -0.03]], detail);
+  }
+  robot.scale.setScalar(1);
+  scene.add(robot);
+}
+
+function createScene() {
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x090b0f);
+  camera = new THREE.PerspectiveCamera(39, 1, 0.025, 12);
+  camera.up.set(0, 0, 1);
+  camera.position.copy(CAMERA_START);
+
+  renderer = new SVGRenderer();
+  renderer.setPrecision(2);
+  renderer.setClearColor(0x090b0f, 1);
+  renderer.domElement.setAttribute("aria-hidden", "true");
+  host.replaceChildren(renderer.domElement);
+
+  const grid = new THREE.GridHelper(1.55, 31, 0x36465d, 0x202b3a);
+  grid.rotation.x = Math.PI / 2;
+  grid.position.z = 0.002;
+  grid.material.transparent = true;
+  grid.material.opacity = 0.48;
+  scene.add(grid);
+
+  const floorMark = lineMaterial(0x668ab7, 0.44);
+  addCircle(scene, 0.45, 0.009, floorMark, 96);
+  addCircle(scene, 0.225, 0.008, lineMaterial(0x4b596b, 0.28), 72);
+  addLine(scene, [[-0.56, 0, 0.01], [0.56, 0, 0.01]], lineMaterial(0x42536a, 0.36));
+  addLine(scene, [[0, -0.56, 0.01], [0, 0.56, 0.01]], lineMaterial(0x42536a, 0.36));
+
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.target.copy(CAMERA_TARGET);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.minDistance = 0.72;
+  controls.maxDistance = 2.7;
+  controls.maxPolarAngle = Math.PI * 0.49;
+  controls.update();
+
+  createRobot();
+  resizeRenderer();
+  if ("ResizeObserver" in window) {
+    resizeObserver = new ResizeObserver(resizeRenderer);
+    resizeObserver.observe(viewport);
+  }
+  window.addEventListener("resize", resizeRenderer, { passive: true });
+  renderer.render(scene, camera);
 }
 
 function resizeRenderer() {
   if (!renderer || !camera) return;
   const width = Math.max(1, viewport.clientWidth);
   const height = Math.max(1, viewport.clientHeight);
-  renderer.setSize(width, height, false);
+  renderer.setSize(width, height);
   camera.aspect = width / height;
   camera.updateProjectionMatrix();
+  renderer.render(scene, camera);
 }
 
-function probeWebGL(type) {
-  const probeCanvas = document.createElement("canvas");
-  try {
-    const context = probeCanvas.getContext(type);
-    if (!context) return false;
-    context.getExtension("WEBGL_lose_context")?.loseContext();
-    return true;
-  } catch {
-    return false;
-  }
+function formatAngle(value) {
+  const number = Number(value);
+  const sign = number < 0 ? "−" : "";
+  return `${sign}${Math.abs(number)}°`;
 }
 
-function createWebGLRenderer() {
-  const attempts = [
-    { canvas, antialias: false, alpha: false, powerPreference: "low-power" },
-    { canvas, antialias: false, alpha: false, powerPreference: "default" }
-  ];
-  let lastError;
-  for (const options of attempts) {
-    try {
-      return new THREE.WebGLRenderer(options);
-    } catch (error) {
-      lastError = error;
-    }
-  }
-
-  const webgl2Available = probeWebGL("webgl2");
-  const webgl1Available = webgl2Available || probeWebGL("webgl");
-  if (!webgl2Available && webgl1Available) {
-    throw new Error("This browser only provides WebGL 1, but the simulation requires WebGL 2. Update your browser and reload.");
-  }
-  if (!webgl2Available) {
-    throw new Error("This browser or device is not providing WebGL 2. Enable hardware acceleration in browser settings, then reload. If it still fails, use a browser and device with WebGL 2 support.");
-  }
-  throw new Error(`The browser supports WebGL 2 but could not allocate a rendering context. Close other GPU-heavy tabs and reload. ${lastError?.message || ""}`.trim());
-}
-
-function createRenderer() {
-  threeScene = new THREE.Scene();
-  threeScene.background = new THREE.Color(0x090b0f);
-  threeScene.fog = new THREE.Fog(0x090b0f, 3.8, 9);
-  camera = new THREE.PerspectiveCamera(39, 1, 0.03, 30);
-  camera.up.set(0, 0, 1);
-  camera.position.set(...CAMERA_START);
-  renderer = createWebGLRenderer();
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-  renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.08;
-  const hemi = new THREE.HemisphereLight(0xe9eff8, 0x20252d, 1.9);
-  threeScene.add(hemi);
-  const key = new THREE.DirectionalLight(0xffffff, 2.4);
-  key.position.set(1.5, -1.6, 3.2);
-  threeScene.add(key);
-  const fill = new THREE.DirectionalLight(0x91baff, 1.15);
-  fill.position.set(-1.8, 1.8, 2.1);
-  threeScene.add(fill);
-  controls = new OrbitControls(camera, renderer.domElement);
-  controls.target.set(...CAMERA_TARGET);
-  controls.enableDamping = true;
-  controls.dampingFactor = 0.075;
-  controls.minDistance = 1.25;
-  controls.maxDistance = 4.8;
-  controls.maxPolarAngle = Math.PI * 0.49;
-  controls.update();
-  resizeRenderer();
-  window.addEventListener("resize", resizeRenderer);
-  if ("ResizeObserver" in window) new ResizeObserver(resizeRenderer).observe(viewport);
-
-  const grid = new THREE.GridHelper(6, 40, 0x3c516b, 0x202c3b);
-  grid.rotation.x = Math.PI / 2;
-  grid.position.z = 0.002;
-  grid.material.transparent = true;
-  grid.material.opacity = 0.25;
-  threeScene.add(grid);
-}
-
-function getGeometry(meshId) {
-  if (geometryCache.has(meshId)) return geometryCache.get(meshId);
-  const vertexStart = Number(model.mesh_vertadr[meshId]);
-  const vertexCount = Number(model.mesh_vertnum[meshId]);
-  const faceStart = Number(model.mesh_faceadr[meshId]);
-  const faceCount = Number(model.mesh_facenum[meshId]);
-  const sourceVertices = model.mesh_vert.subarray(vertexStart * 3, (vertexStart + vertexCount) * 3);
-  const sourceFaces = model.mesh_face.subarray(faceStart * 3, (faceStart + faceCount) * 3);
-  // MuJoCo stores each mesh's face indices relative to that mesh's vertex slice.
-  const localFaces = new Uint32Array(sourceFaces);
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(sourceVertices), 3));
-  geometry.setIndex(new THREE.BufferAttribute(localFaces, 1));
-  // Compiled mesh orientation and scale are already represented by MuJoCo's MjvGeom pose.
-  geometry.computeVertexNormals();
-  geometry.computeBoundingSphere();
-  geometryCache.set(meshId, geometry);
-  return geometry;
-}
-
-function geometryFor(mjGeom) {
-  const type = Number(mjGeom.type);
-  const size = Array.from(mjGeom.size, Number);
-  const meshId = Number(mjGeom.dataid);
-  if (type === mujoco.mjtGeom.mjGEOM_MESH.value && meshId >= 0) return getGeometry(meshId);
-  const key = `${type}:${size.join(",")}:${meshId}`;
-  if (geometryCache.has(key)) return geometryCache.get(key);
-  let geometry;
-  if (type === mujoco.mjtGeom.mjGEOM_PLANE.value) {
-    geometry = new THREE.PlaneGeometry(2 * (size[0] || 6), 2 * (size[1] || 6));
-  } else if (type === mujoco.mjtGeom.mjGEOM_SPHERE.value) {
-    geometry = new THREE.SphereGeometry(size[0], 24, 16);
-  } else if (type === mujoco.mjtGeom.mjGEOM_CAPSULE.value) {
-    geometry = new THREE.CapsuleGeometry(size[0], 2 * size[2], 6, 18);
-    geometry.rotateX(Math.PI / 2);
-  } else if (type === mujoco.mjtGeom.mjGEOM_BOX.value) {
-    geometry = new THREE.BoxGeometry(size[0] * 2, size[1] * 2, size[2] * 2);
-  } else if (type === mujoco.mjtGeom.mjGEOM_CYLINDER.value) {
-    geometry = new THREE.CylinderGeometry(size[0], size[0], size[1] * 2, 28, 1);
-    geometry.rotateX(Math.PI / 2);
-  } else if (type === mujoco.mjtGeom.mjGEOM_ELLIPSOID.value) {
-    geometry = new THREE.SphereGeometry(1, 24, 16);
-    geometry.scale(size[0], size[1], size[2]);
-  } else {
-    geometry = new THREE.BufferGeometry();
-  }
-  geometryCache.set(key, geometry);
-  return geometry;
-}
-
-function makeSceneItem(mjGeom, groupId) {
-  const geometry = geometryFor(mjGeom);
-  const isHumanoid = groupId === 2;
-  const item = new THREE.Group();
-  const surfaceMaterial = new THREE.MeshStandardMaterial({
-    color: isHumanoid ? 0xaabbd0 : new THREE.Color().setRGB(Number(mjGeom.rgba[0]), Number(mjGeom.rgba[1]), Number(mjGeom.rgba[2])),
-    roughness: isHumanoid ? 0.48 : 0.48,
-    metalness: isHumanoid ? 0.18 : 0.09,
-    transparent: isHumanoid || Number(mjGeom.rgba[3]) < 0.999,
-    opacity: isHumanoid ? (solidSurfaces ? 1 : 0.88) : Number(mjGeom.rgba[3]),
-    side: THREE.DoubleSide,
-    depthWrite: !isHumanoid || solidSurfaces
-  });
-  const surface = new THREE.Mesh(geometry, surfaceMaterial);
-  surface.castShadow = true;
-  surface.receiveShadow = true;
-  item.add(surface);
-  item.userData.humanoid = isHumanoid;
-  item.userData.surfaceMaterial = surfaceMaterial;
-  return item;
-}
-
-function syncScene() {
-  if (!mjvScene) return;
-  mujoco.mjv_updateScene(model, data, mjvOption, mjvPerturb, mjvCamera, mujoco.mjtCatBit.mjCAT_ALL.value, mjvScene);
-  const geoms = mjvScene.geoms;
-  const count = Number(geoms.size());
-  for (let index = 0; index < count; index += 1) {
-    const mjGeom = geoms.get(index);
-    const objectType = Number(mjGeom.objtype);
-    const objectId = Number(mjGeom.objid);
-    const sourceGroup = objectType === mujoco.mjtObj.mjOBJ_GEOM.value && objectId >= 0 ? Number(model.geom_group[objectId]) : 0;
-    let item = frameItems[index];
-    if (!item) {
-      item = makeSceneItem(mjGeom, sourceGroup);
-      frameItems[index] = item;
-      threeScene.add(item);
-    }
-    const rgba = Array.from(mjGeom.rgba, Number);
-    const matrix = Array.from(mjGeom.mat, Number);
-    const position = Array.from(mjGeom.pos, Number);
-    const hidden = sourceGroup === 3 || rgba[3] <= 0.001;
-    item.visible = !hidden;
-    item.matrixAutoUpdate = false;
-    item.matrix.set(
-      matrix[0], matrix[1], matrix[2], position[0],
-      matrix[3], matrix[4], matrix[5], position[1],
-      matrix[6], matrix[7], matrix[8], position[2],
-      0, 0, 0, 1
-    );
-    item.matrixWorldNeedsUpdate = true;
-    if (!item.userData.humanoid) {
-      item.userData.surfaceMaterial.color.setRGB(rgba[0], rgba[1], rgba[2]);
-      item.userData.surfaceMaterial.opacity = rgba[3];
-      item.userData.surfaceMaterial.transparent = rgba[3] < 0.999;
-    } else {
-      item.userData.surfaceMaterial.opacity = solidSurfaces ? 1 : 0.88;
-      item.userData.surfaceMaterial.depthWrite = solidSurfaces;
-      item.userData.surfaceMaterial.wireframe = !solidSurfaces;
-    }
-    mjGeom.delete();
-  }
-  for (let index = count; index < frameItems.length; index += 1) frameItems[index].visible = false;
-  geoms.delete();
-}
-
-function baseUrl(relativePath) {
-  return new URL(relativePath, new URL(import.meta.env.BASE_URL, window.location.href));
-}
-
-async function fetchText(relativePath) {
-  const response = await fetch(baseUrl(relativePath));
-  if (!response.ok) throw new Error(`${relativePath} returned HTTP ${response.status}.`);
-  return response.text();
-}
-
-async function fetchBytes(relativePath) {
-  const response = await fetch(baseUrl(relativePath));
-  if (!response.ok) throw new Error(`${relativePath} returned HTTP ${response.status}.`);
-  return new Uint8Array(await response.arrayBuffer());
-}
-
-async function loadG1Scene() {
-  const modelPath = "models/unitree_g1/";
-  setLoadNote("Checking the single-threaded MuJoCo WebAssembly asset…");
-  const wasmResponse = await fetch(new URL(mujocoWasmUrl, window.location.href));
-  if (!wasmResponse.ok) throw new Error(`MuJoCo WebAssembly returned HTTP ${wasmResponse.status}.`);
-  if (!wasmResponse.headers.get("content-type")?.includes("wasm")) {
-    throw new Error(`MuJoCo WebAssembly has unexpected content type: ${wasmResponse.headers.get("content-type") || "missing"}.`);
-  }
-  mujoco = await loadMujoco({ locateFile: file => file.endsWith(".wasm") ? new URL(mujocoWasmUrl, window.location.href).href : file });
-
-  setLoadNote("Loading the G1 humanoid mesh assets…");
-  const [g1Xml, sceneXml] = await Promise.all([
-    fetchText(modelPath + "g1_with_hands.xml"),
-    fetchText(modelPath + "scene.xml")
-  ]);
-  const meshFiles = [...new Set(Array.from(g1Xml.matchAll(/<mesh\b[^>]*\bfile="([^"]+)"/g), match => match[1]))];
-  if (meshFiles.length < 40) throw new Error(`Expected the full G1 model mesh set; found ${meshFiles.length} mesh assets.`);
-  const vfs = new mujoco.MjVFS();
-  try {
-    vfs.addBuffer("g1_with_hands.xml", new TextEncoder().encode(g1Xml));
-    let loaded = 0;
-    await Promise.all(meshFiles.map(async file => {
-      const bytes = await fetchBytes(`${modelPath}assets/${file}`);
-      vfs.addBuffer(`assets/${file}`, bytes);
-      loaded += 1;
-      setLoadNote(`Loading G1 mesh assets · ${loaded} of ${meshFiles.length}`);
-    }));
-    model = mujoco.MjModel.from_xml_string(sceneXml, vfs);
-  } finally {
-    vfs.delete();
-  }
-
-  data = new mujoco.MjData(model);
-  standKeyframe = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_KEY.value, "stand");
-  if (standKeyframe < 0) throw new Error("The G1 model did not include its standing keyframe.");
-  mujoco.mj_resetDataKeyframe(model, data, standKeyframe);
-  mujoco.mj_forward(model, data);
-
-  const requiredGeoms = ["torso_link", "head_link", "left_hand_palm_link", "right_hand_palm_link", "left_ankle_roll_link", "right_ankle_roll_link"];
-  const absent = requiredGeoms.filter(name => mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_MESH.value, name) < 0);
-  if (absent.length) throw new Error(`The full G1 mesh set is incomplete: ${absent.join(", " )}.`);
-  const badKeyframeJoints = [];
-  for (let joint = 0; joint < model.njnt; joint += 1) {
-    if (Number(model.jnt_type[joint]) === mujoco.mjtJoint.mjJNT_FREE.value || !model.jnt_limited[joint]) continue;
-    const address = Number(model.jnt_qposadr[joint]);
-    const value = Number(data.qpos[address]);
-    const low = Number(model.jnt_range[joint * 2]);
-    const high = Number(model.jnt_range[joint * 2 + 1]);
-    if (value < low || value > high) badKeyframeJoints.push(joint);
-  }
-  if (badKeyframeJoints.length) throw new Error(`The standing keyframe contains ${badKeyframeJoints.length} joint value(s) outside their limits.`);
-
-  mjvScene = new mujoco.MjvScene(model, 2048);
-  mjvOption = new mujoco.MjvOption();
-  mjvPerturb = new mujoco.MjvPerturb();
-  mjvCamera = new mujoco.MjvCamera();
-  mujoco.mjv_defaultFreeCamera(model, mjvCamera);
-
-  mujoco.mj_forward(model, data);
-  syncScene();
-  return { meshCount: meshFiles.length, jointCount: model.njnt - 1, actuatorCount: model.nu };
-}
-
-function renderTimeline(index = -1, complete = false, progress = 0) {
-  const phases = cupTask?.phases || [];
-  const timeline = $("timelineSteps");
-  timeline.replaceChildren(...phases.map((phase, phaseIndex) => {
-    const item = document.createElement("span");
-    item.className = "timeline-step";
-    item.textContent = phase.label;
-    if (complete || phaseIndex < index) item.classList.add("done");
-    else if (phaseIndex === index) item.classList.add("active");
-    return item;
-  }));
-  $("progressFill").style.width = `${progress}%`;
-  $("progressTrack").setAttribute("aria-valuenow", String(progress));
-  $("stepCount").textContent = complete ? "Complete" : index >= 0 ? `${index + 1} / ${phases.length}` : "Ready";
-}
-
-function onTaskUpdate(event) {
-  if (event.type === "phase") {
-    renderTimeline(event.index, false, event.progress);
-    setStatus(event.label, event.detail, true);
-    setLoadNote(`Running · ${event.label}`, "ready");
-    $("runBtn").disabled = true;
-    $("runBtn").textContent = "Cup placement running";
-    return;
-  }
-  if (event.type === "complete") {
-    simulationPlaying = false;
-    renderTimeline(cupTask.phases.length, true, 100);
-    const placed = event.placed;
-    setStatus(
-      placed ? "Cup placed on the counter" : "Motion sequence complete",
-      placed ? "MuJoCo contacts and gravity settled the free cup at its target location." : "The cup completed the motion sequence but finished outside the target placement tolerance."
-    );
-    setLoadNote(placed ? "Cup placed · Run again or reset" : "Cup missed · Retry or reset", placed ? "ready" : "error");
-    $("runBtn").disabled = false;
-    $("runBtn").textContent = placed ? "Run again" : "Retry cup placement";
-    $("pauseBtn").disabled = true;
-    $("pauseBtn").textContent = "Pause";
-    $("resetBtn").disabled = false;
-    $("confirmBtn").hidden = true;
-    return;
-  }
-  if (event.type === "failed") {
-    simulationPlaying = false;
-    renderTimeline(cupTask.stepIndex, false, event.progress);
-    setStatus("Cup task stopped", event.detail);
-    setLoadNote("Task stopped · Retry or reset", "error");
-    $("runBtn").disabled = false;
-    $("runBtn").textContent = "Retry cup placement";
-    $("pauseBtn").disabled = true;
-    $("resetBtn").disabled = false;
-    $("confirmBtn").hidden = true;
-    return;
-  }
-  if (event.type === "reset") {
-    renderTimeline(-1, false, 0);
-    setStatus("Ready to place the cup", "Start the physics-based cup task. The G1 pelvis remains fixed for this tabletop demonstration.");
-    setLoadNote("MuJoCo ready · Start cup placement", "ready");
-    $("runBtn").disabled = false;
-    $("runBtn").textContent = "Start cup placement";
-    $("pauseBtn").disabled = true;
-    $("pauseBtn").textContent = "Pause";
-    $("resetBtn").disabled = false;
-    $("confirmBtn").hidden = true;
-  }
-}
-
-function updatePersonaDisplay() {
-  const personalized = $("personalization").checked;
-  const sarah = activePersona === "sarah";
-  if (cupTask && !cupTask.isRunning && !cupTask.isPaused) {
-    cupTask.persona = activePersona;
-    cupTask.personalized = personalized;
-    cupTask.phases = cupTask.phaseSpecs();
-    renderTimeline(-1, false, 0);
-  }
-  $("stageMode").textContent = personalized ? `SECONDSELF · ${activePersona.toUpperCase()}` : "STANDARD ROUTINE";
-  $("preferenceTitle").textContent = sarah ? "Sarah’s preferences" : "Alex’s preferences";
-  $("preferences").replaceChildren(...(sarah
-    ? ["Prefers a quiet morning", "Familiar, authorised steps may proceed independently", "A measured pace with a settling pause"]
-    : ["Prefers a short explanation first", "Confirm before the cup is handled", "A quicker pace after approval"]
-  ).map(text => { const li = document.createElement("li"); li.textContent = text; return li; }));
-  $("behaviorBadge").innerHTML = `Behaviour mode · <strong>${personalized ? `${sarah ? "Sarah" : "Alex"}’s SecondSelf` : "Standard routine"}</strong>`;
-  $("explainTitle").textContent = !personalized ? "A consistent cup routine" : sarah ? "A measured, familiar routine" : "Explain, confirm, then act";
-  $("explainText").textContent = !personalized
-    ? "The standard routine moves at a brisker pace without Sarah’s extra pause or Alex’s confirmation step."
-    : sarah
-      ? "Sarah’s profile slows each movement and pauses before lowering, then waits longer to check the grasp."
-      : "Alex’s profile requires confirmation before the task starts, then uses a quicker movement.";
-  $("modeHelp").textContent = personalized
-    ? `${sarah ? "Sarah’s measured pace includes an extra pause" : "Alex’s brisk pace follows confirmation"}; the active profile changes the simulated sequence.`
-    : "Standard routine is brisk, with no persona-specific pause or confirmation.";
-}
-
-function beginCupTask() {
-  if (cupTask.isFailed || cupTask.isFinished) resetCupTask();
-  if (cupTask.isPaused) cupTask.resume();
-  else cupTask.start({ persona: activePersona, personalized: $("personalization").checked });
-  simulationPlaying = cupTask.isRunning;
-  $("runBtn").disabled = true;
-  $("pauseBtn").disabled = !simulationPlaying;
-  $("pauseBtn").textContent = "Pause";
-  $("resetBtn").disabled = false;
-  $("confirmBtn").hidden = true;
-  $("sarahBtn").disabled = true;
-  $("alexBtn").disabled = true;
-  $("personalization").disabled = true;
-}
-
-function resetCupTask() {
-  simulationPlaying = false;
-  mujoco.mj_resetDataKeyframe(model, data, standKeyframe);
-  mujoco.mj_forward(model, data);
-  cupTask.reset();
-  syncScene();
-  $("sarahBtn").disabled = false;
-  $("alexBtn").disabled = false;
-  $("personalization").disabled = false;
-}
-
-function wireControls() {
-  $("cameraReset").addEventListener("click", () => {
-    camera.position.set(...CAMERA_START);
-    controls.target.set(...CAMERA_TARGET);
-    controls.update();
-  });
-  $("solidToggle").addEventListener("change", event => {
-    solidSurfaces = event.currentTarget.checked;
-    frameItems.forEach(item => {
-      if (!item.userData.humanoid) return;
-      item.userData.surfaceMaterial.opacity = solidSurfaces ? 1 : 0.88;
-      item.userData.surfaceMaterial.depthWrite = solidSurfaces;
-      item.userData.surfaceMaterial.wireframe = !solidSurfaces;
-    });
-  });
-  const selectPersona = name => {
-    if (simulationPlaying || cupTask?.isPaused || cupTask?.isFinished || cupTask?.isFailed) return;
-    activePersona = name;
-    $("sarahBtn").setAttribute("aria-pressed", String(name === "sarah"));
-    $("alexBtn").setAttribute("aria-pressed", String(name === "alex"));
-    updatePersonaDisplay();
+function readAxes() {
+  return {
+    j1: Number($("axisJ1").value),
+    j2: Number($("axisJ2").value),
+    z: Number($("axisZ").value),
+    j4: Number($("axisJ4").value)
   };
-  $("sarahBtn").addEventListener("click", () => selectPersona("sarah"));
-  $("alexBtn").addEventListener("click", () => selectPersona("alex"));
-  $("personalization").addEventListener("change", updatePersonaDisplay);
-  $("runBtn").addEventListener("click", () => {
-    if (activePersona === "alex" && $("personalization").checked) {
-      $("confirmBtn").hidden = false;
-      $("runBtn").disabled = true;
-      $("sarahBtn").disabled = true;
-      $("alexBtn").disabled = true;
-      $("personalization").disabled = true;
-      setStatus("Waiting for Alex’s confirmation", "The task will not begin until the new cup handling action is confirmed.");
-      return;
-    }
-    beginCupTask();
-  });
-  $("confirmBtn").addEventListener("click", beginCupTask);
-  $("pauseBtn").addEventListener("click", () => {
-    if (simulationPlaying) {
-      simulationPlaying = false;
-      cupTask.pause();
-      $("pauseBtn").textContent = "Resume";
-      setStatus("Simulation paused", "The MuJoCo state is held. Resume to continue the same action sequence.");
-    } else if (cupTask?.isPaused) {
-      simulationPlaying = true;
-      cupTask.resume();
-      $("pauseBtn").textContent = "Pause";
-      setStatus(cupTask.phases[cupTask.stepIndex].label, cupTask.phases[cupTask.stepIndex].detail, true);
-    }
-  });
-  $("resetBtn").addEventListener("click", resetCupTask);
 }
 
-function renderLoop(timestamp) {
-  animationFrame = requestAnimationFrame(renderLoop);
-  const elapsed = Math.min(0.05, Math.max(0, (timestamp - previousFrameTime) / 1000));
-  previousFrameTime = timestamp;
-  if (model && data && simulationPlaying && elapsed > 0) {
-    try {
-      const timestep = Number(model.opt.timestep);
-      const stepCount = Math.min(30, Math.ceil(elapsed / timestep));
-      for (let index = 0; index < stepCount && simulationPlaying; index += 1) {
-        cupTask.advance(timestep);
-        mujoco.mj_step(model, data);
-      }
-      syncScene();
-    } catch (error) {
-      console.error(error);
-      cupTask.fail(`The browser simulation stopped on an error: ${error?.message || String(error)}`);
-    }
-  }
-  controls?.update();
-  if (renderer && threeScene && camera) renderer.render(threeScene, camera);
+function updateAxes() {
+  const axes = readAxes();
+  j1Pivot.rotation.z = THREE.MathUtils.degToRad(axes.j1);
+  j2Pivot.rotation.z = THREE.MathUtils.degToRad(axes.j2);
+  zCarriage.position.z = -axes.z / 1000;
+  j4Tool.rotation.z = THREE.MathUtils.degToRad(axes.j4);
+  $("valueJ1").textContent = formatAngle(axes.j1);
+  $("valueJ2").textContent = formatAngle(axes.j2);
+  $("valueZ").textContent = `${axes.z} mm`;
+  $("valueJ4").textContent = formatAngle(axes.j4);
+  statusDetail.textContent = `J1 ${formatAngle(axes.j1)} · J2 ${formatAngle(axes.j2)} · Z ${axes.z} mm · J4 ${formatAngle(axes.j4)}`;
+  renderer.render(scene, camera);
 }
 
-function dispose() {
-  cancelAnimationFrame(animationFrame);
-  if (mjvScene) mjvScene.delete();
-  if (mjvCamera) mjvCamera.delete();
-  if (mjvPerturb) mjvPerturb.delete();
-  if (mjvOption) mjvOption.delete();
-  if (cupTask) cupTask.dispose();
-  if (data) data.delete();
-  if (model) model.delete();
-  frameItems.forEach(item => {
-    item.children.forEach(child => {
-      if (child.userData.ownedGeometry) child.geometry.dispose();
-      child.material.dispose();
-    });
-    threeScene?.remove(item);
-  });
-  geometryCache.forEach(geometry => geometry.dispose());
-  geometryCache.clear();
-  controls?.dispose();
-  renderer?.dispose();
+function resetAxes() {
+  $("axisJ1").value = STARTING_AXES.j1;
+  $("axisJ2").value = STARTING_AXES.j2;
+  $("axisZ").value = STARTING_AXES.z;
+  $("axisJ4").value = STARTING_AXES.j4;
+  updateAxes();
 }
 
-async function init() {
-  try {
-    createRenderer();
-    setStatus("Preparing the full humanoid", "Checking the browser WebAssembly build, G1 meshes and standing pose.");
-    const details = await loadG1Scene();
-    cupTask = new CupPlacementTask(mujoco, model, data, onTaskUpdate);
-    cupTask.phases = cupTask.phaseSpecs();
-    renderTimeline(-1, false, 0);
-    $("runBtn").disabled = false;
-    $("pauseBtn").disabled = true;
-    $("resetBtn").disabled = false;
-    updatePersonaDisplay();
-    if (import.meta.env.DEV) window.__mssDebug = { mujoco, model, data, cupTask };
-    setLoadNote(`MuJoCo ready · Unitree G1 · ${details.jointCount} articulated joints · ${details.actuatorCount} actuators`, "ready");
-    setStatus("Full humanoid loaded", `${details.meshCount} official G1 meshes loaded. Cup grasp and placement use articulated controls, contact and gravity.`);
-    $("stageMode").textContent = "SECONDSELF · SARAH";
-    canvas.setAttribute("aria-label", "Full articulated Unitree G1 humanoid with head, torso, both arms and hands, both legs and feet, standing beside a MuJoCo kitchen counter and cup.");
-  } catch (error) {
-    console.error(error);
-    setLoadNote(`Simulation failed to start: ${error?.message || String(error)}`, "error");
-    setStatus("Simulation unavailable", "The browser could not create the 3D renderer or load MuJoCo and its assets. The error above identifies the failed step.");
-    $("runBtn").disabled = true;
-    $("pauseBtn").disabled = true;
-    $("resetBtn").disabled = true;
-  }
+function resetCamera() {
+  camera.position.copy(CAMERA_START);
+  controls.target.copy(CAMERA_TARGET);
+  controls.update();
+  renderer.render(scene, camera);
 }
 
-wireControls();
-requestAnimationFrame(renderLoop);
-window.addEventListener("beforeunload", dispose, { once: true });
-init();
+function animate() {
+  animationFrame = window.requestAnimationFrame(animate);
+  if (controls.update()) renderer.render(scene, camera);
+}
+
+function showStartupError(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  loadNote.textContent = `Wire model could not start: ${message}`;
+  loadNote.classList.add("error");
+  statusText.textContent = "Wire model failed to load";
+  statusDetail.textContent = "Reload the page. If the problem continues, check the browser console for details.";
+  console.error("JS3 wire model failed to start", error);
+}
+
+try {
+  createScene();
+  updateAxes();
+  $("axisJ1").addEventListener("input", updateAxes);
+  $("axisJ2").addEventListener("input", updateAxes);
+  $("axisZ").addEventListener("input", updateAxes);
+  $("axisJ4").addEventListener("input", updateAxes);
+  $("resetAxes").addEventListener("click", resetAxes);
+  $("cameraReset").addEventListener("click", resetCamera);
+  loadNote.textContent = "Interactive JS3 wire model ready · no WebGL required";
+  animate();
+} catch (error) {
+  if (animationFrame) window.cancelAnimationFrame(animationFrame);
+  resizeObserver?.disconnect();
+  showStartupError(error);
+}

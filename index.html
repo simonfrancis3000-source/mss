@@ -4,8 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#08090c" />
-    <meta name="description" content="A MySecondSelf Persona Lab visual demonstration using a full articulated Unitree G1 humanoid in MuJoCo and Three.js." />
-    <title>MySecondSelf | Persona Lab</title>
+    <meta name="description" content="An interactive MySecondSelf wireframe viewer for a dimension-based Janome JS3-4520 SCARA model." />
+    <title>MySecondSelf | JS3 Wire Model</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -28,121 +28,90 @@
     <main>
       <section class="hero">
         <div>
-          <div class="eyebrow">A personalisation layer for robotics</div>
-          <h1>One robot.<br />Different ways of helping.</h1>
-          <p>Explore how a SecondSelf persona can shape a household task. This browser demonstration uses the complete articulated Unitree G1 model, MuJoCo physics and Three.js rendering.</p>
+          <div class="eyebrow">MySecondSelf · Persona Lab</div>
+          <h1>A clear view of the<br />JS3 mechanism.</h1>
+          <p>Explore a four-axis SCARA wire model by moving each joint directly. This lightweight visual reference keeps the mechanism in focus without a simulated task or robot connection.</p>
         </div>
-        <div class="demo-stamp"><span class="stamp-dot"></span> Browser simulation</div>
+        <div class="demo-stamp"><span class="stamp-dot"></span> Wire model · browser view</div>
       </section>
 
-      <section class="sim-layout" aria-label="Interactive Persona Lab simulation">
+      <section class="viewer-layout" aria-label="Interactive JS3 wire model">
         <section class="panel stage-panel" aria-labelledby="stageTitle">
           <div class="panel-heading">
-            <h2 id="stageTitle">Humanoid task simulation</h2>
-            <div class="stage-tags">
-              <span class="mini-tag">UNITREE G1 · FULL BODY</span>
-              <span class="mini-tag active" id="stageMode">SECONDSELF · SARAH</span>
+            <div>
+              <div class="section-kicker">Four-axis SCARA</div>
+              <h2 id="stageTitle">JS3-4520 · wire model</h2>
             </div>
+            <span class="mini-tag">DIMENSION-BASED SCHEMATIC</span>
           </div>
           <div class="viewport" id="viewport">
-            <canvas id="sceneCanvas" role="img" aria-label="MuJoCo simulation loading the full articulated Unitree G1 humanoid in a kitchen scene."></canvas>
-            <div class="scene-corner"><span>PERSONA LAB / 01</span><span>Drag to orbit · scroll to zoom</span></div>
-            <button class="camera-reset" id="cameraReset" type="button">Reset view</button>
-            <div class="load-note" id="loadNote" role="status" aria-live="polite">Loading single-threaded MuJoCo WebAssembly…</div>
-            <div class="render-toggle">
-              <span>WIREFRAME</span>
-              <label class="switch compact">
-                <input id="solidToggle" type="checkbox" checked aria-label="Show solid robot surfaces" />
-                <span class="switch-ui" aria-hidden="true"></span>
-              </label>
-              <span>SOLID</span>
+            <div id="sceneCanvas" role="img" aria-label="Interactive technical wireframe schematic of a four-axis Janome JS3-4520 SCARA robot arm."></div>
+            <div class="scene-corner"><span>MECHANISM VIEW / 01</span><span>Drag to orbit · scroll to zoom</span></div>
+            <div class="scene-legend" aria-label="Reference dimensions">
+              <span><i class="legend-line reach"></i>450 mm reach</span>
+              <span><i class="legend-line axis"></i>200 mm Z stroke</span>
             </div>
+            <button class="camera-reset" id="cameraReset" type="button">Reset view</button>
+            <div class="load-note" id="loadNote" role="status" aria-live="polite">Drawing the JS3 wire model…</div>
           </div>
           <div class="status-strip">
-            <span class="status-mark" id="statusMark" aria-hidden="true"></span>
+            <span class="status-mark" aria-hidden="true"></span>
             <div class="status-copy">
-              <div class="status-line"><span id="statusText" role="status" aria-live="polite">Preparing the scene</span><span class="live-dot" id="liveDot"></span></div>
-              <div class="status-explainer" id="statusDetail">Loading the complete G1 humanoid and its model assets.</div>
+              <div class="status-line" id="statusText" role="status" aria-live="polite">JS3-4520 wire model ready</div>
+              <div class="status-explainer" id="statusDetail">Axis sliders adjust the displayed joint transforms directly.</div>
             </div>
-          </div>
-          <div class="timeline-wrap" aria-label="Simulation progress">
-            <div class="timeline-top"><span>Action sequence</span><span id="stepCount">Loading model</span></div>
-            <div class="progress-track" id="progressTrack" role="progressbar" aria-label="Task progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="progress-fill" id="progressFill"></div></div>
-            <div class="timeline-steps" id="timelineSteps" aria-hidden="true"></div>
           </div>
         </section>
 
         <aside class="panel control-panel" aria-labelledby="controlTitle">
           <div class="control-head">
-            <div class="section-kicker">Personal response</div>
-            <h2 id="controlTitle">Set up the simulation</h2>
-            <p>The selected persona changes the task pacing, pauses and confirmation steps.</p>
+            <div class="section-kicker">Direct joint controls</div>
+            <h2 id="controlTitle">Move the axes</h2>
+            <p>Drag a control to inspect the arm's four-axis layout and published motion ranges.</p>
           </div>
 
-          <span class="form-label">Select a SecondSelf persona</span>
-          <div class="personas" role="group" aria-label="SecondSelf persona">
-            <button class="persona" id="sarahBtn" type="button" aria-pressed="true">
-              <span class="persona-name">Sarah</span>
-              <span class="persona-caption">Quiet mornings · Familiar routines</span>
-            </button>
-            <button class="persona" id="alexBtn" type="button" aria-pressed="false">
-              <span class="persona-name">Alex</span>
-              <span class="persona-caption">Explanations · Confirm new actions</span>
-            </button>
+          <div class="axis-control">
+            <label for="axisJ1"><span><b>J1</b> Base rotation</span><output id="valueJ1" for="axisJ1">24°</output></label>
+            <input id="axisJ1" type="range" min="-170" max="170" step="1" value="24" />
+            <div class="range-labels"><span>−170°</span><span>+170°</span></div>
+          </div>
+          <div class="axis-control">
+            <label for="axisJ2"><span><b>J2</b> Arm rotation</span><output id="valueJ2" for="axisJ2">−46°</output></label>
+            <input id="axisJ2" type="range" min="-145" max="145" step="1" value="-46" />
+            <div class="range-labels"><span>−145°</span><span>+145°</span></div>
+          </div>
+          <div class="axis-control">
+            <label for="axisZ"><span><b>Z</b> Vertical travel</span><output id="valueZ" for="axisZ">85 mm</output></label>
+            <input id="axisZ" type="range" min="0" max="200" step="1" value="85" />
+            <div class="range-labels"><span>0 mm</span><span>200 mm</span></div>
+          </div>
+          <div class="axis-control">
+            <label for="axisJ4"><span><b>J4</b> Tool rotation</span><output id="valueJ4" for="axisJ4">30°</output></label>
+            <input id="axisJ4" type="range" min="-360" max="360" step="1" value="30" />
+            <div class="range-labels"><span>−360°</span><span>+360°</span></div>
           </div>
 
-          <div class="preference-box">
-            <div class="preference-title" id="preferenceTitle">Sarah’s preferences</div>
-            <ul class="preference-list" id="preferences">
-              <li>Prefers a quiet morning</li>
-              <li>Familiar, authorised steps may proceed independently</li>
-              <li>A measured pace with a settling pause</li>
-            </ul>
+          <button class="action-button" id="resetAxes" type="button">Reset joint positions</button>
+          <div class="model-card">
+            <div class="model-card-title">JS3-4520 reference</div>
+            <dl>
+              <div><dt>Horizontal reach</dt><dd>450 mm</dd></div>
+              <div><dt>Vertical stroke</dt><dd>200 mm</dd></div>
+              <div><dt>Controlled axes</dt><dd>4</dd></div>
+            </dl>
           </div>
-
-          <label class="form-label" for="taskSelect">Choose a household task</label>
-          <select id="taskSelect" aria-describedby="taskHelp">
-            <option value="cup">Prepare breakfast · place a cup</option>
-            <option value="kitchen" disabled>Tidy the kitchen · after cup task validation</option>
-            <option value="visitor" disabled>Respond to a visitor · after cup task validation</option>
-          </select>
-          <p class="task-help" id="taskHelp">The first prototype focuses on one physics-based cup placement task.</p>
-
-          <div class="mode-row">
-            <div class="mode-label">
-              <strong>Use SecondSelf personalisation</strong>
-              <small id="modeHelp">The selected profile changes movement and pauses.</small>
-            </div>
-            <label class="switch">
-              <input id="personalization" type="checkbox" checked aria-label="Use SecondSelf personalisation" />
-              <span class="switch-ui" aria-hidden="true"></span>
-            </label>
-          </div>
-
-          <div class="explain-card">
-            <strong id="explainTitle">A measured, familiar routine</strong>
-            <p id="explainText">Sarah’s profile uses a slower reach and an additional settling pause before the cup is moved.</p>
-          </div>
-
-          <div class="actions">
-            <button class="action-button primary" id="runBtn" type="button" disabled>Start cup placement</button>
-            <button class="action-button" id="pauseBtn" type="button" disabled>Pause</button>
-            <button class="action-button" id="resetBtn" type="button" disabled>Reset</button>
-            <button class="action-button confirm" id="confirmBtn" type="button" hidden>Confirm and continue</button>
-          </div>
-          <div class="behavior-badge" id="behaviorBadge">Behaviour mode · <strong>Sarah’s SecondSelf</strong></div>
         </aside>
       </section>
 
       <section class="model-notes" aria-labelledby="modelNotesTitle">
         <div class="notes-heading">
-          <div class="section-kicker">Simulation boundary</div>
-          <h2 id="modelNotesTitle">A full humanoid model, with clear limits</h2>
+          <div class="section-kicker">Model scope</div>
+          <h2 id="modelNotesTitle">A wire reference, with its limits stated</h2>
         </div>
         <div class="notes-grid">
-          <article><span class="note-index">01</span><strong>Articulated G1 with hands</strong><p>The scene uses the Menagerie G1 hand model, including its head, torso, arms, hands, legs and feet.</p></article>
-          <article><span class="note-index">02</span><strong>Stable demonstration pose</strong><p>The pelvis is constrained for this tabletop task. This prototype does not demonstrate balance, walking or real robot capability.</p></article>
-          <article><span class="note-index">03</span><strong>Physics-driven grasp limits</strong><p>The cup remains a free MuJoCo body; finger contact and friction must hold it. The three-finger hand has low-torque position actuators and no fingertip force sensors, so this does not establish general grasping ability.</p></article>
+          <article><span class="note-index">01</span><strong>What is shown</strong><p>A dimension-based JS3-4520 SCARA schematic with independently adjustable J1, J2, Z and J4 axes.</p></article>
+          <article><span class="note-index">02</span><strong>How it moves</strong><p>The controls change Three.js display transforms. They are for visual inspection and do not run a robot controller or physics simulation.</p></article>
+          <article><span class="note-index">03</span><strong>Geometry source</strong><p>Reach, stroke and axis limits follow published JS3 series specifications. Housing and link outlines are illustrative; this is not Janome CAD.</p></article>
         </div>
       </section>
 
@@ -159,7 +128,7 @@
       </section>
 
       <footer class="footer">
-        <span>MySecondSelf · Browser simulation only. No live robot, AI reasoning or manufacturer integration is connected.</span>
+        <span>MySecondSelf · Visual wire model only. No live robot, controller or manufacturer CAD is connected.</span>
         <nav class="footer-nav" aria-label="Footer navigation">
           <a href="https://mysecondself.app/owners/">OWNERS</a>
           <a href="https://mysecondself.app/partners/">PARTNERS</a>
