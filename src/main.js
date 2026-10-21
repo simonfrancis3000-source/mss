@@ -11,6 +11,8 @@ const canvas = $("sceneCanvas");
 const loadNote = $("loadNote");
 const statusText = $("statusText");
 const statusDetail = $("statusDetail");
+const CAMERA_START = [-2.65, 2.4, 1.55];
+const CAMERA_TARGET = [0.28, 0.18, 0.72];
 
 let mujoco;
 let model;
@@ -97,7 +99,7 @@ function createRenderer() {
   threeScene.fog = new THREE.Fog(0x090b0f, 3.8, 9);
   camera = new THREE.PerspectiveCamera(39, 1, 0.03, 30);
   camera.up.set(0, 0, 1);
-  camera.position.set(2.8, 0, 1.52);
+  camera.position.set(...CAMERA_START);
   renderer = createWebGLRenderer();
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -112,7 +114,7 @@ function createRenderer() {
   fill.position.set(-1.8, 1.8, 2.1);
   threeScene.add(fill);
   controls = new OrbitControls(camera, renderer.domElement);
-  controls.target.set(0.12, 0.16, 0.72);
+  controls.target.set(...CAMERA_TARGET);
   controls.enableDamping = true;
   controls.dampingFactor = 0.075;
   controls.minDistance = 1.25;
@@ -346,6 +348,9 @@ function onTaskUpdate(event) {
   if (event.type === "phase") {
     renderTimeline(event.index, false, event.progress);
     setStatus(event.label, event.detail, true);
+    setLoadNote(`Running · ${event.label}`, "ready");
+    $("runBtn").disabled = true;
+    $("runBtn").textContent = "Cup placement running";
     return;
   }
   if (event.type === "complete") {
@@ -356,7 +361,9 @@ function onTaskUpdate(event) {
       placed ? "Cup placed on the counter" : "Motion sequence complete",
       placed ? "MuJoCo contacts and gravity settled the free cup at its target location." : "The cup completed the motion sequence but finished outside the target placement tolerance."
     );
-    $("runBtn").disabled = true;
+    setLoadNote(placed ? "Cup placed · Run again or reset" : "Cup missed · Retry or reset", placed ? "ready" : "error");
+    $("runBtn").disabled = false;
+    $("runBtn").textContent = placed ? "Run again" : "Retry cup placement";
     $("pauseBtn").disabled = true;
     $("pauseBtn").textContent = "Pause";
     $("resetBtn").disabled = false;
@@ -367,7 +374,9 @@ function onTaskUpdate(event) {
     simulationPlaying = false;
     renderTimeline(cupTask.stepIndex, false, event.progress);
     setStatus("Cup task stopped", event.detail);
-    $("runBtn").disabled = true;
+    setLoadNote("Task stopped · Retry or reset", "error");
+    $("runBtn").disabled = false;
+    $("runBtn").textContent = "Retry cup placement";
     $("pauseBtn").disabled = true;
     $("resetBtn").disabled = false;
     $("confirmBtn").hidden = true;
@@ -376,7 +385,9 @@ function onTaskUpdate(event) {
   if (event.type === "reset") {
     renderTimeline(-1, false, 0);
     setStatus("Ready to place the cup", "Start the physics-based cup task. The G1 pelvis remains fixed for this tabletop demonstration.");
+    setLoadNote("MuJoCo ready · Start cup placement", "ready");
     $("runBtn").disabled = false;
+    $("runBtn").textContent = "Start cup placement";
     $("pauseBtn").disabled = true;
     $("pauseBtn").textContent = "Pause";
     $("resetBtn").disabled = false;
@@ -406,6 +417,7 @@ function updatePersonaDisplay() {
 }
 
 function beginCupTask() {
+  if (cupTask.isFailed || cupTask.isFinished) resetCupTask();
   if (cupTask.isPaused) cupTask.resume();
   else cupTask.start({ persona: activePersona, personalized: $("personalization").checked });
   simulationPlaying = cupTask.isRunning;
@@ -432,8 +444,8 @@ function resetCupTask() {
 
 function wireControls() {
   $("cameraReset").addEventListener("click", () => {
-    camera.position.set(2.8, 0, 1.52);
-    controls.target.set(0.12, 0.16, 0.72);
+    camera.position.set(...CAMERA_START);
+    controls.target.set(...CAMERA_TARGET);
     controls.update();
   });
   $("solidToggle").addEventListener("change", event => {
