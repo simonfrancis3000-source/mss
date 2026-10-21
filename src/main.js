@@ -5,31 +5,39 @@ const $ = id => document.getElementById(id);
 const tasks = {
   breakfast: {
     title: "Prepare breakfast · cup routine",
-    description: "A visual storyboard of a breakfast cup routine. Cup contact, grasping and placement are not simulated.",
+    description: "A seven-part storyboard: orient, reach, close the hand, lift, carry to a coaster, set down and return to rest.",
     steps: [
-      { short: "Reach", title: "Reach toward the cup", motion: "reach", duration: 680, confirm: true, pauseAfter: true, detail: "The wireframe moves into an approach pose. No object contact is simulated." },
-      { short: "Lift", title: "Raise into a carry pose", motion: "carry", duration: 640, confirm: true, pauseAfter: true, detail: "The arm rises into a carry pose; no cup is attached to the hand." },
-      { short: "Carry", title: "Move toward the placement point", motion: "carry", duration: 760, confirm: true, pauseAfter: true, detail: "The arm sweeps toward a visual marker. No object is transported." },
-      { short: "Settle", title: "Return to a resting pose", motion: "settle", duration: 560, confirm: false, detail: "The wireframe returns to its resting pose." }
+      { short: "Orient", title: "Look toward the cup", motion: "orient-cup", duration: 430, confirm: false, detail: "The head and shoulders orient toward the breakfast place setting." },
+      { short: "Reach", title: "Reach for the cup", motion: "reach", duration: 580, confirm: true, pauseAfter: true, detail: "The right arm extends toward the outlined cup on the counter." },
+      { short: "Grip", title: "Close the hand around the cup", motion: "grasp", duration: 420, confirm: true, pauseAfter: true, detail: "The wire fingers close in a choreographed visual cue; contact is not simulated." },
+      { short: "Lift", title: "Lift the cup clear of the counter", motion: "lift", duration: 520, confirm: true, pauseAfter: true, detail: "The outlined cup rises with the hand as part of this visual storyboard." },
+      { short: "Carry", title: "Carry it to the coaster", motion: "carry", duration: 640, confirm: true, pauseAfter: true, detail: "The arm and outlined cup move together toward the marked coaster." },
+      { short: "Place", title: "Set down and release the cup", motion: "place", duration: 470, confirm: true, pauseAfter: true, detail: "The cup settles onto the coaster and the fingers open; this is not physics." },
+      { short: "Rest", title: "Return to a comfortable resting pose", motion: "settle", duration: 500, confirm: false, detail: "The head and arm return to a relaxed neutral pose." }
     ]
   },
   tidy: {
     title: "Tidy the kitchen · clear the counter",
-    description: "A visual storyboard of scanning and clearing motions. No household objects are manipulated.",
+    description: "The figure surveys the counter, moves a plate and jar to the rack, wipes the surface and returns to rest.",
     steps: [
-      { short: "Scan", title: "Look across the work area", motion: "turn", duration: 480, confirm: false, detail: "The wireframe turns its head toward the work area." },
-      { short: "Left", title: "Sweep toward the left", motion: "tidy-left", duration: 620, confirm: true, pauseAfter: true, detail: "The wireframe traces a broad left-side sweep." },
-      { short: "Right", title: "Sweep toward the right", motion: "tidy-right", duration: 620, confirm: true, pauseAfter: true, detail: "The wireframe traces a matching right-side sweep." },
-      { short: "Settle", title: "Return to a resting pose", motion: "settle", duration: 520, confirm: false, detail: "The wireframe returns to its resting pose." }
+      { short: "Survey", title: "Survey the kitchen counter", motion: "orient-cup", duration: 430, confirm: false, detail: "The head follows the counter from the dishes to the work area." },
+      { short: "Reach", title: "Reach for the plate", motion: "reach", duration: 560, confirm: true, pauseAfter: true, detail: "The right hand reaches toward the outlined plate." },
+      { short: "Stack", title: "Move the plate to the rack", motion: "tidy-plate", duration: 600, confirm: true, pauseAfter: true, detail: "The plate follows the hand in the visual storyboard and lands in the rack." },
+      { short: "Reach", title: "Reach for the jar", motion: "tidy-reach", duration: 520, confirm: true, pauseAfter: true, detail: "The arm shifts along the counter toward the jar." },
+      { short: "Store", title: "Place the jar beside the plate", motion: "tidy-jar", duration: 610, confirm: true, pauseAfter: true, detail: "The jar moves to the rack as a choreographed visual cue." },
+      { short: "Wipe", title: "Wipe the cleared work area", motion: "tidy-wipe", duration: 680, confirm: true, pauseAfter: true, detail: "The arm traces a short counter wipe, leaving the surface clear." },
+      { short: "Rest", title: "Return to a comfortable resting pose", motion: "settle", duration: 500, confirm: false, detail: "The figure returns to a relaxed neutral pose." }
     ]
   },
   visitor: {
     title: "Respond to a visitor · greet at the door",
-    description: "A visual storyboard of turning toward a visitor and offering a greeting gesture.",
+    description: "The figure notices someone at the door, turns, greets them, gestures them inside and settles back to rest.",
     steps: [
-      { short: "Notice", title: "Turn toward the visitor", motion: "turn", duration: 520, confirm: true, pauseAfter: true, detail: "The wireframe turns toward the imagined doorway." },
-      { short: "Greet", title: "Offer a greeting gesture", motion: "greet", duration: 620, confirm: true, pauseAfter: true, detail: "The wireframe makes one measured greeting gesture." },
-      { short: "Settle", title: "Return to a resting pose", motion: "settle", duration: 520, confirm: false, detail: "The wireframe returns to a neutral pose." }
+      { short: "Notice", title: "Notice the visitor at the door", motion: "visitor-notice", duration: 460, confirm: true, pauseAfter: true, detail: "The head turns toward the doorway and the figure shifts its attention." },
+      { short: "Turn", title: "Turn toward the visitor", motion: "visitor-turn", duration: 520, confirm: true, pauseAfter: true, detail: "The shoulders turn to face the person at the door." },
+      { short: "Greet", title: "Raise a hand in greeting", motion: "visitor-greet", duration: 630, confirm: true, pauseAfter: true, detail: "The right arm lifts and the wrist gives a small greeting motion." },
+      { short: "Welcome", title: "Invite the visitor inside", motion: "visitor-welcome", duration: 560, confirm: true, pauseAfter: true, detail: "Both arms open into a brief, welcoming gesture." },
+      { short: "Rest", title: "Settle after the greeting", motion: "settle", duration: 500, confirm: false, detail: "The figure lowers its arms and returns to a relaxed neutral pose." }
     ]
   }
 };
@@ -176,7 +184,6 @@ function completeStep(step) {
   const profile = profiles[state.persona];
   if (isPersonalized() && state.persona === "sarah" && step.pauseAfter) {
     const pause = profile.settlingPause;
-    setMotion("settle", Math.min(520, pause));
     setStatus("Sarah is taking a settling pause", "The familiar routine pauses briefly before its next step.");
     schedule(pause, () => {
       state.stepIndex += 1;
@@ -195,7 +202,7 @@ function performStep(step) {
   const profile = profiles[state.persona];
   const personalized = isPersonalized();
   const pace = personalized ? profile.pace : 1;
-  setMotion(step.motion, 480 * pace);
+  setMotion(step.motion, step.duration * pace);
   renderTimeline(state.stepIndex);
   updateProgress((state.stepIndex / selectedTask().steps.length) * 100, `Step ${state.stepIndex + 1} of ${selectedTask().steps.length}`);
 
