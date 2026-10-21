@@ -4,11 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#08090c" />
-    <meta name="description" content="An interactive MySecondSelf wireframe viewer for a dimension-based Janome JS3-4520 SCARA model." />
-    <title>MySecondSelf | JS3 Wire Model</title>
+    <meta name="description" content="A lightweight MySecondSelf wireframe motion study." />
+    <title>MySecondSelf | Wireframe Motion Study</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
     <header class="site-header">
@@ -29,90 +30,123 @@
       <section class="hero">
         <div>
           <div class="eyebrow">MySecondSelf · Persona Lab</div>
-          <h1>A clear view of the<br />JS3 mechanism.</h1>
-          <p>Explore a four-axis SCARA wire model by moving each joint directly. This lightweight visual reference keeps the mechanism in focus without a simulated task or robot connection.</p>
+          <h1>A wireframe<br />in motion.</h1>
+          <p>A lightweight motion study: one clean outline, a smooth reach, then a quick return. No robot model to load and no task simulation running in the background.</p>
         </div>
-        <div class="demo-stamp"><span class="stamp-dot"></span> Wire model · browser view</div>
+        <div class="demo-stamp"><span class="stamp-dot"></span> Lightweight motion study</div>
       </section>
 
-      <section class="viewer-layout" aria-label="Interactive JS3 wire model">
-        <section class="panel stage-panel" aria-labelledby="stageTitle">
-          <div class="panel-heading">
-            <div>
-              <div class="section-kicker">Four-axis SCARA</div>
-              <h2 id="stageTitle">JS3-4520 · wire model</h2>
-            </div>
-            <span class="mini-tag">DIMENSION-BASED SCHEMATIC</span>
+      <section class="stage-panel" aria-labelledby="stageTitle">
+        <div class="panel-heading">
+          <div>
+            <div class="section-kicker">Abstract articulated figure</div>
+            <h2 id="stageTitle">Reach · settle · return</h2>
           </div>
-          <div class="viewport" id="viewport">
-            <div id="sceneCanvas" role="img" aria-label="Interactive technical wireframe schematic of a four-axis Janome JS3-4520 SCARA robot arm."></div>
-            <div class="scene-corner"><span>MECHANISM VIEW / 01</span><span>Drag to orbit · scroll to zoom</span></div>
-            <div class="scene-legend" aria-label="Reference dimensions">
-              <span><i class="legend-line reach"></i>450 mm reach</span>
-              <span><i class="legend-line axis"></i>200 mm Z stroke</span>
-            </div>
-            <button class="camera-reset" id="cameraReset" type="button">Reset view</button>
-            <div class="load-note" id="loadNote" role="status" aria-live="polite">Drawing the JS3 wire model…</div>
-          </div>
-          <div class="status-strip">
-            <span class="status-mark" aria-hidden="true"></span>
-            <div class="status-copy">
-              <div class="status-line" id="statusText" role="status" aria-live="polite">JS3-4520 wire model ready</div>
-              <div class="status-explainer" id="statusDetail">Axis sliders adjust the displayed joint transforms directly.</div>
-            </div>
-          </div>
-        </section>
-
-        <aside class="panel control-panel" aria-labelledby="controlTitle">
-          <div class="control-head">
-            <div class="section-kicker">Direct joint controls</div>
-            <h2 id="controlTitle">Move the axes</h2>
-            <p>Drag a control to inspect the arm's four-axis layout and published motion ranges.</p>
-          </div>
-
-          <div class="axis-control">
-            <label for="axisJ1"><span><b>J1</b> Base rotation</span><output id="valueJ1" for="axisJ1">24°</output></label>
-            <input id="axisJ1" type="range" min="-170" max="170" step="1" value="24" />
-            <div class="range-labels"><span>−170°</span><span>+170°</span></div>
-          </div>
-          <div class="axis-control">
-            <label for="axisJ2"><span><b>J2</b> Arm rotation</span><output id="valueJ2" for="axisJ2">−46°</output></label>
-            <input id="axisJ2" type="range" min="-145" max="145" step="1" value="-46" />
-            <div class="range-labels"><span>−145°</span><span>+145°</span></div>
-          </div>
-          <div class="axis-control">
-            <label for="axisZ"><span><b>Z</b> Vertical travel</span><output id="valueZ" for="axisZ">85 mm</output></label>
-            <input id="axisZ" type="range" min="0" max="200" step="1" value="85" />
-            <div class="range-labels"><span>0 mm</span><span>200 mm</span></div>
-          </div>
-          <div class="axis-control">
-            <label for="axisJ4"><span><b>J4</b> Tool rotation</span><output id="valueJ4" for="axisJ4">30°</output></label>
-            <input id="axisJ4" type="range" min="-360" max="360" step="1" value="30" />
-            <div class="range-labels"><span>−360°</span><span>+360°</span></div>
-          </div>
-
-          <button class="action-button" id="resetAxes" type="button">Reset joint positions</button>
-          <div class="model-card">
-            <div class="model-card-title">JS3-4520 reference</div>
-            <dl>
-              <div><dt>Horizontal reach</dt><dd>450 mm</dd></div>
-              <div><dt>Vertical stroke</dt><dd>200 mm</dd></div>
-              <div><dt>Controlled axes</dt><dd>4</dd></div>
-            </dl>
-          </div>
-        </aside>
-      </section>
-
-      <section class="model-notes" aria-labelledby="modelNotesTitle">
-        <div class="notes-heading">
-          <div class="section-kicker">Model scope</div>
-          <h2 id="modelNotesTitle">A wire reference, with its limits stated</h2>
+          <span class="mini-tag">PURE SVG · NO WEBGL</span>
         </div>
-        <div class="notes-grid">
-          <article><span class="note-index">01</span><strong>What is shown</strong><p>A dimension-based JS3-4520 SCARA schematic with independently adjustable J1, J2, Z and J4 axes.</p></article>
-          <article><span class="note-index">02</span><strong>How it moves</strong><p>The controls change Three.js display transforms. They are for visual inspection and do not run a robot controller or physics simulation.</p></article>
-          <article><span class="note-index">03</span><strong>Geometry source</strong><p>Reach, stroke and axis limits follow published JS3 series specifications. Housing and link outlines are illustrative; this is not Janome CAD.</p></article>
-        </div>
+        <figure class="viewport">
+          <div class="scene-corner"><span>WIRE STUDY / 01</span><span>Humanoid outline · illustrative motion</span></div>
+          <div class="scene-legend"><span class="legend-dot"></span> Smooth 3.6 second cycle</div>
+          <svg class="wire-scene" viewBox="0 0 1000 620" role="img" aria-labelledby="wireTitle wireDesc" preserveAspectRatio="xMidYMid meet">
+            <title id="wireTitle">Animated humanoid wireframe motion study</title>
+            <desc id="wireDesc">A geometric wireframe humanoid smoothly extends one arm and returns to a resting pose.</desc>
+            <defs>
+              <radialGradient id="stageGlow" cx="50%" cy="53%" r="56%">
+                <stop offset="0" stop-color="#172337" stop-opacity=".7" />
+                <stop offset="1" stop-color="#090b0f" stop-opacity="0" />
+              </radialGradient>
+              <linearGradient id="wireTint" x1="0" x2="1" y1="0" y2="1">
+                <stop offset="0" stop-color="#dceaff" />
+                <stop offset=".52" stop-color="#91b8eb" />
+                <stop offset="1" stop-color="#6a86ad" />
+              </linearGradient>
+            </defs>
+
+            <rect width="1000" height="620" fill="url(#stageGlow)" />
+            <g class="floor-grid" aria-hidden="true">
+              <path d="M110 540H890 M160 510H840 M210 480H790 M260 450H740 M310 420H690" />
+              <path d="M500 404L82 575 M500 404L188 575 M500 404L294 575 M500 404L400 575 M500 404L600 575 M500 404L706 575 M500 404L812 575 M500 404L918 575" />
+              <path class="ground-line" d="M92 575H908" />
+            </g>
+            <ellipse class="motion-orbit" cx="500" cy="330" rx="282" ry="218" />
+            <path class="reach-trail" d="M652 365C714 347 760 300 786 242" />
+            <circle class="reach-point" cx="786" cy="242" r="5" />
+
+            <g class="robot-rig" fill="none" stroke="url(#wireTint)" stroke-linecap="round" stroke-linejoin="round">
+              <!-- Head cage -->
+              <g class="head-cage" stroke-width="1.6">
+                <path d="M462 98L483 75L515 72L540 94L547 124L532 153L504 169L475 158L455 133Z" />
+                <path d="M462 98L492 105L540 94 M455 133L486 133L532 153 M483 75L486 105L475 158 M515 72L512 106L504 169 M547 124L512 106L455 133" />
+                <path d="M470 115L502 112L534 117 M477 146L506 142L536 130" class="fine-wire" />
+                <path d="M489 169L489 190L514 190L514 168" />
+              </g>
+
+              <!-- Shoulder and torso cage -->
+              <g class="torso-cage" stroke-width="1.7">
+                <path d="M449 204L477 190L500 197L525 190L553 205L572 247L557 319L532 351L500 365L466 348L441 316L427 247Z" />
+                <path d="M449 204L500 226L553 205 M427 247L472 260L500 226L531 260L572 247 M441 316L478 299L500 334L532 299L557 319 M466 348L478 299L500 365L532 299" />
+                <path d="M500 197L500 226L500 334 M472 260L531 260 M478 299L532 299" class="fine-wire" />
+                <path d="M461 214L478 229L461 244L444 229ZM539 214L556 229L539 244L522 229Z" class="joint-frame" />
+                <circle cx="461" cy="229" r="9" class="joint" />
+                <circle cx="539" cy="229" r="9" class="joint" />
+              </g>
+
+              <!-- Left arm stays relaxed -->
+              <g class="left-arm" stroke-width="1.55">
+                <path d="M449 228L414 253L388 292L373 306L389 319L403 306L434 277L470 249Z" />
+                <path d="M449 228L434 277L388 292 M414 253L470 249L434 277 M388 292L373 306L389 319L403 306 M388 292L403 306" />
+                <circle cx="414" cy="261" r="12" class="joint" />
+                <circle cx="389" cy="306" r="9" class="joint" />
+                <path d="M373 306L366 321L373 328L379 319L386 326L392 318L389 309" />
+              </g>
+
+              <!-- Right arm pivots through a quick, smooth reach and return -->
+              <g class="right-arm" stroke-width="1.55">
+                <path d="M551 228L586 216L632 216L650 232L632 248L586 248L551 236Z" />
+                <path d="M551 228L586 232L632 216 M551 236L586 232L632 248 M586 216L586 248" />
+                <g class="right-forearm">
+                  <path d="M632 216L679 211L704 221L704 244L679 253L632 248L650 232Z" />
+                  <path d="M632 216L679 232L704 221 M632 248L679 232L704 244 M679 211L679 253" />
+                  <g class="right-hand">
+                    <path d="M704 221L726 217L742 222L750 229L741 236L723 237L704 244Z" />
+                    <path d="M726 217L727 229L723 237 M742 222L738 230L741 236 M750 229L738 230L727 229L704 232" />
+                    <circle cx="704" cy="232" r="8" class="joint" />
+                  </g>
+                </g>
+                <circle cx="632" cy="232" r="13" class="joint" />
+                <circle cx="551" cy="232" r="9" class="joint" />
+                <path d="M562 217L562 247" class="fine-wire" />
+              </g>
+
+              <!-- Pelvis and articulated legs -->
+              <g class="lower-body" stroke-width="1.65">
+                <path d="M465 342L481 354L500 360L521 354L536 342L548 379L522 403L500 410L478 403L452 379Z" />
+                <path d="M465 342L500 376L536 342 M452 379L478 381L500 410L522 381L548 379 M478 354L478 403 M522 354L522 403 M500 360L500 410" />
+                <circle cx="478" cy="385" r="11" class="joint" />
+                <circle cx="522" cy="385" r="11" class="joint" />
+                <path d="M468 392L453 433L458 473L478 478L491 468L489 431L489 395Z" />
+                <path d="M532 392L547 433L542 473L522 478L509 468L511 431L511 395Z" />
+                <path d="M468 392L478 428L489 431 M453 433L478 428L458 473 M489 395L478 428L478 478 M532 392L522 428L511 431 M547 433L522 428L542 473 M511 395L522 428L522 478" />
+                <circle cx="478" cy="432" r="10" class="joint" />
+                <circle cx="522" cy="432" r="10" class="joint" />
+                <path d="M458 473L456 526L444 543L451 550L485 550L491 542L478 526L478 478Z" />
+                <path d="M542 473L544 526L556 543L549 550L515 550L509 542L522 526L522 478Z" />
+                <path d="M458 473L478 500L456 526L478 526L491 542L451 550 M542 473L522 500L544 526L522 526L509 542L549 550" />
+                <circle cx="478" cy="480" r="8" class="joint" />
+                <circle cx="522" cy="480" r="8" class="joint" />
+              </g>
+            </g>
+
+            <g class="scene-labels" aria-hidden="true">
+              <text x="222" y="230">REACH PATH</text>
+              <path d="M222 240H340L374 273" />
+              <text x="720" y="430">RETURN</text>
+              <path d="M716 440H665L633 408" />
+              <text x="500" y="590" text-anchor="middle">ILLUSTRATIVE WIREFRAME · NO ROBOT MODEL OR CONTROL SYSTEM</text>
+            </g>
+          </svg>
+          <figcaption class="stage-caption"><span><i class="caption-pulse"></i> One arm reaches, settles briefly, then returns.</span><span>Reduced motion settings are respected.</span></figcaption>
+        </figure>
       </section>
 
       <section class="how" aria-labelledby="howTitle">
@@ -128,7 +162,7 @@
       </section>
 
       <footer class="footer">
-        <span>MySecondSelf · Visual wire model only. No live robot, controller or manufacturer CAD is connected.</span>
+        <span>MySecondSelf · Abstract wireframe only. No robot model, controller, physics or hardware connection is loaded.</span>
         <nav class="footer-nav" aria-label="Footer navigation">
           <a href="https://mysecondself.app/owners/">OWNERS</a>
           <a href="https://mysecondself.app/partners/">PARTNERS</a>
@@ -137,6 +171,5 @@
         </nav>
       </footer>
     </main>
-    <script type="module" src="/src/main.js"></script>
   </body>
 </html>
