@@ -719,6 +719,7 @@ async function requestAIReply() {
           ownerName: state.profile.ownerName,
           robotName: state.profile.robotName,
           robotType: state.profile.robotType,
+          robotVoice: state.profile.robotVoice || "female",
           askBeforeActions: state.profile.confirmActions
         },
         domesticFunctions: state.functions.map((id) => ACTIVITIES.find((activity) => activity.id === id)?.label).filter(Boolean)
