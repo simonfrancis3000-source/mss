@@ -106,7 +106,7 @@ function cleanFunctions(input) {
     "Tidying", "Surface cleaning", "Meal preparation", "Cooking",
     "Groceries & supplies", "Pet care", "Plant care", "Waste & recycling"
   ]);
-  return [...new Set(input.filter((item) => typeof item === "string" && allowed.has(item))].slice(0, 12);
+  return [...new Set(input.filter((item) => typeof item === "string" && allowed.has(item)))].slice(0, 12);
 }
 
 function guardRobotExecutionClaims(reply, preferences) {
