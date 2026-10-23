@@ -97,6 +97,7 @@ function initialState() {
     preferences: [],
     profile: defaultProfile(),
     functions: [],
+    pendingClarification: null,
     apiConnected: false
   };
 }
@@ -113,7 +114,8 @@ function cleanPreference(input, metadata = {}) {
     sourceMessage: metadata.sourceMessage || metadata.source_message || "",
     status: metadata.status || metadata.preference_status || "user_stated",
     explicitFacets: metadata.explicitFacets || metadata.explicit_facets || {},
-    unresolvedFields: metadata.unresolvedFields || metadata.unresolved_fields || []
+    unresolvedFields: metadata.unresolvedFields || metadata.unresolved_fields || [],
+    clarifications: Array.isArray(metadata.clarifications) ? metadata.clarifications : []
   };
 }
 
@@ -145,6 +147,7 @@ function loadState() {
         .filter(Boolean),
       profile: { ...defaultProfile(), ...(saved.profile && typeof saved.profile === "object" ? saved.profile : {}) },
       functions: Array.isArray(saved.functions) ? saved.functions.filter((id) => ACTIVITIES.some((a) => a.id === id)) : [],
+      pendingClarification: saved.pendingClarification && typeof saved.pendingClarification === "object" ? saved.pendingClarification : null,
       apiConnected: false
     };
     return state;
@@ -169,7 +172,8 @@ function persist() {
       messages: state.messages.slice(-50),
       preferences: state.preferences.slice(0, 24),
       profile: state.profile,
-      functions: state.functions
+      functions: state.functions,
+      pendingClarification: state.pendingClarification || null
     }));
     localSaved = true;
   } catch {
@@ -217,6 +221,7 @@ async function saveCloudState() {
         status: item.status || "user_stated",
         explicitFacets: extracted.explicitFields,
         unresolvedFields: extracted.unresolvedFields,
+        clarifications: Array.isArray(item.clarifications) ? item.clarifications : [],
         sourceMessage: item.sourceMessage || item.text,
         recordedAt: item.recordedAt || new Date().toISOString()
       };
@@ -244,6 +249,7 @@ async function saveCloudState() {
     explicit_facets: item.explicitFacets,
     unresolved_fields: item.unresolvedFields,
     source_message: item.sourceMessage,
+    clarifications: item.clarifications,
     schema_version: 1
   }));
 
@@ -294,7 +300,7 @@ async function initialiseCloudStorage() {
 
     const [profileResult, preferencesResult] = await Promise.all([
       supabase.from("synqme_profiles").select("*").eq("user_id", cloudUserId).maybeSingle(),
-      supabase.from("synqme_preferences").select("category,preference_text,normalised_text,preference_status,explicit_facets,unresolved_fields,source_message,created_at,schema_version").eq("user_id", cloudUserId).order("created_at", { ascending: false }).limit(24)
+      supabase.from("synqme_preferences").select("category,preference_text,normalised_text,preference_status,explicit_facets,unresolved_fields,source_message,created_at,schema_version,clarifications").eq("user_id", cloudUserId).order("created_at", { ascending: false }).limit(24)
     ]);
     if (profileResult.error) throw profileResult.error;
     if (preferencesResult.error) throw preferencesResult.error;
@@ -323,7 +329,8 @@ async function initialiseCloudStorage() {
         explicit_facets: item.explicit_facets,
         unresolved_fields: item.unresolved_fields,
         source_message: item.source_message,
-        created_at: item.created_at
+        created_at: item.created_at,
+        clarifications: item.clarifications
       })),
       ...state.preferences
     ];
@@ -332,7 +339,7 @@ async function initialiseCloudStorage() {
       const cleaned = cleanPreference(item.text);
       if (!cleaned) return;
       const normalised = (item.normalised || cleaned.normalised).slice(0, 240);
-      if (!unique.has(normalised)) unique.set(normalised, { ...cleaned, category: item.category || cleaned.category, normalised, status: item.status || item.preference_status || cleaned.status, explicitFacets: item.explicitFacets || item.explicit_facets || cleaned.explicitFacets, unresolvedFields: item.unresolvedFields || item.unresolved_fields || cleaned.unresolvedFields, sourceMessage: item.sourceMessage || item.source_message || cleaned.sourceMessage, recordedAt: item.recordedAt || item.created_at || cleaned.recordedAt });
+      if (!unique.has(normalised)) unique.set(normalised, { ...cleaned, category: item.category || cleaned.category, normalised, status: item.status || item.preference_status || cleaned.status, explicitFacets: item.explicitFacets || item.explicit_facets || cleaned.explicitFacets, unresolvedFields: item.unresolvedFields || item.unresolved_fields || cleaned.unresolvedFields, sourceMessage: item.sourceMessage || item.source_message || cleaned.sourceMessage, recordedAt: item.recordedAt || item.created_at || cleaned.recordedAt, clarifications: item.clarifications || cleaned.clarifications || [] });
     });
     state.preferences = [...unique.values()].slice(0, 24);
 
@@ -584,6 +591,7 @@ function extractExplicitPreferenceFacets(text) {
   if (/\b(?:don't|do not|must not|never)\b/.test(lower) && /\bmove|touch|use|throw away|discard|change\b/.test(lower)) {
     facets.preserveOrAvoid = "explicit_user_constraint";
   }
+  if (/(paper towels?|spray|cleaning product|surface cleaner)/i.test(lower) && !facets.room && !/(all surfaces|every surface|all rooms)/i.test(lower)) unresolvedFields.push("scope");
   if (/(show you|show me|tell you later|provide it later|when i arrive|when you arrive)/i.test(text) && unresolvedFields.length === 0) {
     unresolvedFields.push("detail_promised_for_later");
   }
@@ -599,6 +607,7 @@ function savePreference(message) {
     preference.explicitFacets = extracted.explicitFacets;
     preference.unresolvedFields = extracted.unresolvedFields;
     preference.sourceMessage = message;
+    preference.clarifications = [];
     const exists = state.preferences.some((item) => (item.normalised || item.text.toLowerCase()) === preference.normalised);
     if (exists) continue;
     state.preferences.unshift(preference);
@@ -934,6 +943,7 @@ function buildPexiPersonaPackage() {
       },
       explicit_fields: extracted.explicitFields,
       unresolved_fields: extracted.unresolvedFields,
+      clarifications: Array.isArray(item.clarifications) ? item.clarifications : [],
       execution_status: "not_executable",
       requires_robot_capability_mapping: true
     };
@@ -972,6 +982,7 @@ function buildPexiPersonaPackage() {
     }),
     preferences,
     boundaries,
+    pending_clarification: state.pendingClarification || null,
     completeness: {
       preference_count: preferences.length,
       selected_domestic_function_count: state.functions.length,
