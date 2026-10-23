@@ -937,8 +937,8 @@ body.auth-required { overflow: hidden; }
 }
 .conversation-panel > .panel-heading { order: 0; }
 .conversation-panel > .conversation-intro { order: 1; }
-.conversation-panel > .suggestions-wrap { order: 2; }
-.conversation-panel > .chat-composer { order: 3; position: static; flex: 0 0 auto; }
+.conversation-panel > .chat-composer { order: 2; position: static; flex: 0 0 auto; }
+.conversation-panel > .suggestions-wrap { order: 3; }
 .conversation-panel > .chat-messages { order: 4; }
 .conversation-panel > .composer-foot { order: 5; }
 
