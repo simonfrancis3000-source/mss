@@ -2073,10 +2073,18 @@ async function checkAIBackend() {
     state.apiModel = typeof data.model === "string" ? data.model : "";
     state.apiConfigured = Boolean(data.configured);
     state.apiError = "";
-    if (!state.apiConnected) renderAll();
+    if (!state.apiConnected) {
+      renderAll();
+      elements.conversationStatus.textContent = state.apiConfigured
+        ? state.apiProvider.toUpperCase() + " · " + (state.apiModel || "model") + " ready"
+        : state.apiProvider.toUpperCase() + " is not configured";
+    }
   } catch (error) {
     state.apiError = "health check unavailable";
-    if (!state.apiConnected) renderAll();
+    if (!state.apiConnected) {
+      renderAll();
+      elements.conversationStatus.textContent = "AI provider status could not be verified";
+    }
     console.info("SYNQ.ME could not verify backend provider settings.", error);
   }
 }
@@ -2119,6 +2127,7 @@ async function sendMessage(rawText) {
   persist();
   renderAll();
 
+  const sentToAIThisTurn = !clarificationRequest && !answeredPendingClarification && Boolean(API_BASE);
   // A clarification answer must be handled against the pending question, not
   // sent back to the general-purpose chat model where it can lose context.
   let reply = clarificationRequest
@@ -2155,8 +2164,13 @@ async function sendMessage(rawText) {
   renderAll();
   const conversationSaved = await flushCloudSave();
   renderAll();
+  const responseProviderLabel = (state.apiProvider ? state.apiProvider.toUpperCase() : "AI") + " · " + (state.apiModel || "model");
   elements.conversationStatus.textContent = conversationSaved
-    ? (state.apiConnected ? "AI response received · saved to account" : "Reply saved to account")
+    ? (sentToAIThisTurn && state.apiConnected
+        ? responseProviderLabel + " response · saved to account"
+        : state.apiError && sentToAIThisTurn
+          ? responseProviderLabel + " unavailable · no scripted reply"
+          : "Reply saved to account")
     : "Reply received · account sync needs attention";
   isSending = false;
   elements.sendButton.disabled = false;
