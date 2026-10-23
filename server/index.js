@@ -83,10 +83,25 @@ function cleanMessages(input) {
 
 function cleanPreferences(input) {
   if (!Array.isArray(input)) return [];
-  return input.slice(0, 24).map((item) => ({
-    category: typeof item?.category === "string" ? item.category.slice(0, 80) : "Personal preference",
-    text: typeof item?.text === "string" ? item.text.trim().slice(0, 240) : ""
-  })).filter((item) => item.text);
+  const allowedFacetKeys = ["room", "rooms", "frequency", "timeOfDay", "taskOrder", "cleaningSupplies", "approvalBoundary", "negativeConstraint", "preserveOrAvoid"];
+  return input.slice(0, 24).map((item) => {
+    const explicitFields = {};
+    if (item?.explicitFields && typeof item.explicitFields === "object" && !Array.isArray(item.explicitFields)) {
+      for (const key of allowedFacetKeys) {
+        if (Object.prototype.hasOwnProperty.call(item.explicitFields, key)) explicitFields[key] = item.explicitFields[key];
+      }
+    }
+    const unresolvedFields = Array.isArray(item?.unresolvedFields)
+      ? item.unresolvedFields.filter((value) => typeof value === "string").slice(0, 12)
+      : [];
+    return {
+      category: typeof item?.category === "string" ? item.category.slice(0, 80) : "Personal preference",
+      text: typeof item?.text === "string" ? item.text.trim().slice(0, 240) : "",
+      epistemicStatus: ["user_stated", "user_confirmed", "inferred_pending_confirmation"].includes(item?.epistemicStatus) ? item.epistemicStatus : "user_stated",
+      explicitFields,
+      unresolvedFields
+    };
+  }).filter((item) => item.text);
 }
 
 function cleanProfile(input) {
@@ -108,6 +123,42 @@ function cleanFunctions(input) {
     "Groceries & supplies", "Pet care", "Plant care", "Waste & recycling"
   ]);
   return [...new Set(input.filter((item) => typeof item === "string" && allowed.has(item)))].slice(0, 12);
+}
+
+function responseRepeatsUser(reply, userMessage) {
+  const normalise = (value) => String(value || "").toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
+  const userText = normalise(userMessage);
+  const replyText = normalise(reply);
+  if (!userText || userText.length < 24) return false;
+  if (replyText.includes(userText)) return true;
+  if (/^\s*(got it|gotcha|understood|right)[,.]?\s+so\b/i.test(reply) && replyText.includes(userText)) return true;
+
+  const stopWords = new Set(["that","this","with","your","you","have","will","would","when","then","they","them","and","the","for","from","into","onto","some","particular","specific","about","because","before","after","once","what","where","which","just","like","need","want","you","i","me","my","to","a","an","of","it","is"]);
+  const words = [...new Set(userText.split(" ").filter((word) => word.length >= 3 && !stopWords.has(word)))];
+  if (words.length < 8) return false;
+  const replyWords = new Set(replyText.split(" "));
+  const overlap = words.filter((word) => replyWords.has(word)).length / words.length;
+  return overlap >= 0.78;
+}
+
+function focusedPreferenceFollowup(message, profile = {}) {
+  const lower = String(message || "").toLowerCase();
+  const name = String(profile.ownerName || "").trim();
+  const prefix = name && lower.length > 75 ? name + ", " : "";
+
+  if (/(paper towels?|spray|cleaning product|surface cleaner|cleaner you|detergent)/i.test(message)) {
+    return prefix + "Gotcha. Should I treat those as your standard supplies for all surface cleaning, or just the kitchen?";
+  }
+  if (/(kitchen|counter|worktop|surface)/i.test(message) && /(twice|two times|2 times|two a day|2 a day|daily|each day|every day|a day)/i.test(message)) {
+    return prefix + "Got it. Would morning and evening suit you, or do you prefer two other times?";
+  }
+  if (/(ask me|ask before|check with me|permission|confirm before|before changing|before moving|without asking)/i.test(message)) {
+    return prefix + "Understood. Should asking first apply to every household task, or especially when something would be moved or handled?";
+  }
+  if (/(clean|surface|floor|tidy|vacuum)/i.test(message)) {
+    return prefix + "Gotcha. What matters most to get right here: timing, task order, or anything that must be left untouched?";
+  }
+  return prefix + "Got it. What is the next important detail I should understand?";
 }
 
 function guardRobotExecutionClaims(reply, preferences) {
@@ -221,7 +272,12 @@ const app = http.createServer(async (request, response) => {
       return json(response, 502, { error: "The AI service returned an empty reply." }, headers || {});
     }
     const safeReply = guardRobotExecutionClaims(reply.trim(), preferences);
-    return json(response, 200, { reply: safeReply, model: MODEL }, headers || {});
+    const latestUserMessage = messages[messages.length - 1].content;
+    const lowValueReply = /I've captured this preference for your browser-based SecondSelf|I've added it to your local digital persona|That's useful context for your SecondSelf/i.test(safeReply);
+    const finalReply = lowValueReply || responseRepeatsUser(safeReply, latestUserMessage)
+      ? focusedPreferenceFollowup(latestUserMessage, profile)
+      : safeReply;
+    return json(response, 200, { reply: finalReply, model: MODEL }, headers || {});
   } catch (error) {
     const status = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
     if (status === 400 || status === 413) {
