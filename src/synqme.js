@@ -1529,7 +1529,7 @@ function stopVoiceConversation(statusMessage = "Voice conversation stopped.") {
     window.speechSynthesis.cancel();
   }
   if (elements.voiceStatus) {
-    elements.voiceStatus.dataset.error = "";
+    elements.voiceStatus.dataset.error = statusMessage === "Voice conversation stopped." ? "" : "true";
     elements.voiceStatus.textContent = statusMessage;
   }
   updateVoiceModeButton();
