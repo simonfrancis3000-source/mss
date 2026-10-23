@@ -317,17 +317,66 @@ function dismissSplash() {
 }
 dismissSplash();
 
+function profileComplete() {
+  return Boolean(
+    state.profile.ownerName && state.profile.ownerName.trim() &&
+    state.profile.robotName && state.profile.robotName.trim()
+  );
+}
+
+function updateSettingsMode() {
+  const setupRequired = !profileComplete();
+  document.body.classList.toggle("profile-setup-required", setupRequired);
+  if (elements.settingsTitle) elements.settingsTitle.textContent = setupRequired ? "Set up your SecondSelf" : "Settings";
+  if (elements.settingsIntro) {
+    elements.settingsIntro.textContent = setupRequired
+      ? "First, add your name and choose a name for your future robot. Complete these essentials before starting your conversation."
+      : "Make SYNQ.ME feel like yours. Your settings are saved for this browser profile.";
+  }
+  if (elements.profileSetupNotice) elements.profileSetupNotice.hidden = !setupRequired;
+  if (elements.closeSettings) elements.closeSettings.hidden = setupRequired;
+  if (elements.cancelSettings) elements.cancelSettings.hidden = setupRequired;
+  if (elements.settingsBackdrop) {
+    elements.settingsBackdrop.setAttribute("aria-label", setupRequired ? "Complete profile setup to continue" : "Close settings");
+    elements.settingsBackdrop.style.cursor = setupRequired ? "default" : "pointer";
+  }
+  if (elements.settingsSaveButton) elements.settingsSaveButton.textContent = setupRequired ? "Save profile & continue" : "Save settings";
+  if (elements.ownerName) elements.ownerName.required = true;
+  if (elements.robotName) elements.robotName.required = true;
+}
+
 function openSettings() {
   lastFocusedElement = document.activeElement;
   elements.settingsDialog.hidden = false;
   document.body.classList.add("settings-open");
+  updateSettingsMode();
   populateSettingsForm();
   renderSettingsDetails();
-  window.setTimeout(() => elements.settingsSheet?.focus(), 0);
+  window.setTimeout(() => {
+    if (!profileComplete()) {
+      if (!state.profile.ownerName.trim()) elements.ownerName?.focus();
+      else elements.robotName?.focus();
+    } else {
+      elements.settingsSheet?.focus();
+    }
+  }, 0);
 }
+
 function closeSettings() {
+  if (!profileComplete()) {
+    updateSettingsMode();
+    elements.settingsDialog.hidden = false;
+    if (elements.profileSetupNotice) {
+      elements.profileSetupNotice.textContent = "Please enter both your name and your future robot’s name to begin. You can change the other settings later.";
+      elements.profileSetupNotice.hidden = false;
+    }
+    if (!state.profile.ownerName.trim()) elements.ownerName?.focus();
+    else elements.robotName?.focus();
+    return;
+  }
   elements.settingsDialog.hidden = true;
   document.body.classList.remove("settings-open");
+  updateSettingsMode();
   if (lastFocusedElement && typeof lastFocusedElement.focus === "function") lastFocusedElement.focus();
 }
 elements.openSettings?.addEventListener("click", openSettings);
@@ -352,16 +401,28 @@ function populateSettingsForm() {
 }
 elements.settingsForm?.addEventListener("submit", (event) => {
   event.preventDefault();
+  const ownerName = elements.ownerName.value.trim().slice(0, 60);
+  const robotName = elements.robotName.value.trim().slice(0, 60);
+  if (!ownerName || !robotName) {
+    if (elements.profileSetupNotice) {
+      elements.profileSetupNotice.textContent = "Both your name and your future robot’s name are required before you can start.";
+      elements.profileSetupNotice.hidden = false;
+    }
+    (!ownerName ? elements.ownerName : elements.robotName).focus();
+    return;
+  }
   state.profile = {
-    ownerName: elements.ownerName.value.trim().slice(0, 60),
-    robotName: elements.robotName.value.trim().slice(0, 60),
-    robotType: elements.robotType.value || "Home assistant",
+    ownerName,
+    robotName,
+    robotType: elements.robotType.value || "Humanoid robot",
+    robotVoice: document.querySelector("#robotVoice")?.value || "female",
     confirmActions: Boolean(elements.confirmActions.checked)
   };
   persist();
   renderAll();
+  updateSettingsMode();
   closeSettings();
-  elements.conversationStatus.textContent = "Your settings are saved";
+  elements.conversationStatus.textContent = "Your profile is ready";
 });
 
 elements.functionGrid?.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
@@ -614,32 +675,35 @@ function renderAll() {
 renderAll();
 
 function localReply(message) {
-  const name = state.profile.ownerName.trim();
-  const hello = name ? name + ", " : "";
   const lower = message.toLowerCase();
   const category = classifyPreference(message);
+  const assistantTurns = state.messages.filter((item) => item.role === "assistant").length;
+  const acknowledgements = ["Gotcha.", "Got it.", "Cool, thanks for telling me.", "Understood.", "Right, that makes sense."];
+  const acknowledgement = acknowledgements[assistantTurns % acknowledgements.length];
+  const ownerName = state.profile.ownerName.trim();
+  const namePrefix = ownerName && assistantTurns > 0 && assistantTurns % 3 === 1 ? ownerName + ", " : "";
+  const detail = message.trim().replace(/[.!?]+$/, "");
 
-  // Acknowledge the specific preference, then ask one useful next question.
   if (/(kitchen|counter|worktop|surface)/i.test(message) &&
       /(twice|two times|2 times|two a day|2 a day|daily|each day|every day|a day)/i.test(message)) {
-    return hello + "Understood: you want the kitchen surfaces cleaned twice a day. Should those cleans be in the morning and evening, or would you prefer two other times?";
+    return namePrefix + "Gotcha. You want the kitchen surfaces cleaned twice a day. Would morning and evening suit you, or do you prefer two other times?";
   }
   if (/(ask me|ask before|check with me|permission|confirm before|before changing|before moving|without asking)/i.test(message)) {
-    return hello + "Understood: you want to be asked before changes are made in your home. Is that especially important when something is moved or put away, or should it apply to every proposed household action?";
+    return namePrefix + "Got it. You want to be asked before changes are made in your home. Should that apply to every proposed action, or especially to moving and putting things away?";
   }
   if (/(what can|what does|how does|how do|what is synq)/i.test(message)) {
-    return hello + "SYNQ.ME helps you shape a digital persona through natural conversation. We capture what you prefer, what matters most, and what you want to avoid, then build a clearer picture one decision at a time. Your settings and preferences remain in this browser demo unless the app confirms cloud saving.";
+    return "SYNQ.ME helps you build a digital persona through natural conversation. We explore what you prefer, what matters most, and what you want to avoid, one useful question at a time.";
   }
   if (/(laundry|washing|clothes|fold)/i.test(lower)) {
-    return hello + "I've captured that you want to define laundry preferences. Which detail would make the biggest difference: how clothes are sorted, how they're washed or dried, or how they're folded and put away?";
+    return namePrefix + acknowledgement + " Which laundry detail matters most to you: how clothes are sorted, washed or dried, or folded and put away?";
   }
   if (/(vacuum|floor|carpet|tidy|cleaning|clean|surface|counter|worktop)/i.test(lower)) {
-    return hello + "I've captured this home-care preference: " + message.trim() + ". To make the routine fit your household, what should it prioritise next—timing, the order of tasks, or anything that must be left untouched?";
+    return namePrefix + acknowledgement + " So, " + detail + ". Would you like to define the timing, the order of tasks, or what should be left untouched?";
   }
   if (category === "Consent & boundaries" || state.profile.confirmActions) {
-    return hello + "That boundary matters. I've captured: " + message.trim() + ". What is the main thing you want to prevent—items being moved, the wrong choice being made, or an action happening at the wrong time?";
+    return namePrefix + acknowledgement + " You want this boundary respected: " + detail + ". Is your main concern things being moved, a wrong choice being made, or something happening at the wrong time?";
   }
-  return hello + "I've captured this preference for your browser-based SecondSelf: " + message.trim() + ". To make it more useful, what would you most want to get right—or avoid getting wrong?";
+  return namePrefix + acknowledgement + " So, " + detail + ". What would you most want to get right—or avoid getting wrong?";
 }
 
 async function requestAIReply() {
@@ -676,6 +740,11 @@ async function requestAIReply() {
 }
 
 async function sendMessage(rawText) {
+  if (!profileComplete()) {
+    openSettings();
+    elements.conversationStatus.textContent = "Set up your profile to begin";
+    return;
+  }
   const message = rawText.trim();
   if (!message || isSending) return;
   isSending = true;
@@ -776,7 +845,10 @@ elements.runTask.addEventListener("click", () => {
   }, 350);
 });
 
-initialiseCloudStorage();
+initialiseCloudStorage().finally(() => {
+  if (!profileComplete()) openSettings();
+  else updateSettingsMode();
+});
 
 if ("serviceWorker" in navigator && import.meta.env.PROD) {
   window.addEventListener("load", () => {
