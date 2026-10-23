@@ -397,6 +397,7 @@ const app = http.createServer(async (request, response) => {
 
   try {
     const body = await readJson(request);
+    const repairMode = body?.repairMode === true;
     const messages = cleanMessages(body?.messages);
     const preferences = cleanPreferences(body?.preferences);
     const profile = cleanProfile(body?.profile);
@@ -438,7 +439,8 @@ const app = http.createServer(async (request, response) => {
       "Their selected interests are: " + (domesticFunctions.length ? domesticFunctions.join(", ") : "none selected yet") + ". Existing preference records: " + JSON.stringify(preferences) + ". Use these as context, not as a script to recite. Never ask for information already provided.",
       "Be transparent about the demo boundary. No physical robot is connected or controlled. You may speak naturally in first person about how you would approach a future task ('I'd treat that as the normal rule'), but do not claim the physical task has happened, that you checked a device, or that a robot will definitely perform it. Actual execution would require a compatible robot, verified capabilities and user authorisation. Do not claim that preferences synced or saved unless the app confirms that state.",
       "Use AMÏA-style decision intelligence internally, but do not explain platform concepts in the conversation. Do not mention Veyra or make unsupported claims about simulation, deployment or production capability.",
-      "Keep the reply natural, warm and direct. Usually use two to five conversational sentences, with one well-chosen question only when a question helps move understanding forward. Plain text only: no Markdown, headings, lists or corporate language."
+      "Keep the reply natural, warm and direct. Usually use two to five conversational sentences, with one well-chosen question only when a question helps move understanding forward. Plain text only: no Markdown, headings, lists or corporate language.",
+      repairMode ? "RETRY: your previous draft was rejected as generic or repetitive. Do not use any canned fallback. Read the latest user message as part of the full conversation and respond to the detail they actually introduced. If they mention getting up at 7 and going to the kitchen for coffee after a question about tidying, recognise they have introduced their morning routine; do not ask them to walk through it generically or repeat the tidying question. Make one natural connection to their stated routine and ask only a useful next question." : ""
     ].join(" ");
 
     const upstream = PROVIDER === "gemini"
@@ -494,11 +496,25 @@ const app = http.createServer(async (request, response) => {
       ? reply.trim().replace(/\byour SecondSelf(?=\s+(?:to avoid|should avoid|avoid))/gi, "your " + robotName)
       : reply.trim();
     const safeReply = guardRobotExecutionClaims(namedReply, preferences);
-    const lowValueReply = /I've captured this preference for your browser-based SecondSelf|I've added it to your local digital persona|That's useful context for your SecondSelf|Let's make that preference more precise|What detail would matter most to get right/i.test(safeReply);
-    const finalReply = lowValueReply || responseRepeatsUser(safeReply, latestUserMessage)
+    const lowValueReply = /I've captured this preference for your browser-based SecondSelf|I've added it to your local digital persona|That's useful context for your SecondSelf|Let's make that preference more precise|What detail would matter most to get right|Can you walk me through how that usually happens at home|What is the next important detail I should understand/i.test(safeReply);
+    const requiresRepair = lowValueReply || responseRepeatsUser(safeReply, latestUserMessage);
+    if (requiresRepair && repairMode) {
+      return json(response, 200, {
+        reply: safeReply,
+        model: MODEL,
+        provider: PROVIDER,
+        responseNeedsReview: true
+      }, headers || {});
+    }
+    const finalReply = requiresRepair
       ? betterFallbackFollowup(latestUserMessage, profile, messages)
       : safeReply;
-    return json(response, 200, { reply: finalReply, model: MODEL, provider: PROVIDER }, headers || {});
+    return json(response, 200, {
+      reply: finalReply,
+      model: MODEL,
+      provider: PROVIDER,
+      usedFallback: requiresRepair
+    }, headers || {});
   } catch (error) {
     const status = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
     if (status === 400 || status === 413) {
