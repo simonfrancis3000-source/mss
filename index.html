@@ -5,6 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#08090c" />
     <meta name="description" content="Build a personal digital persona with SYNQ.ME, powered by MySecondSelf decision intelligence." />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="SYNQ.ME" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/synqme-icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="https://mysecondself.app/wp-content/uploads/2026/10/MySecondSelf-Dual-Head-Logo.png" />
     <title>SYNQ.ME | Build Your SecondSelf</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -41,7 +47,7 @@
         <div class="hero-copy">
           <div class="eyebrow">SYNQ.ME <span class="eyebrow-divider">/</span> YOUR PERSONALISATION LAYER</div>
           <h1>A SecondSelf that<br /><span>knows you.</span></h1>
-          <p>Build a digital persona through natural conversation. Your preferences become the context a compatible robot needs to understand how you like things done.</p>
+          <p>Build your digital persona through natural conversation. Choose the parts of home life you want your SecondSelf to understand, one preference at a time. No robot is needed to get started.</p>
         </div>
         <div class="demo-stamp"><span class="stamp-dot"></span><span id="providerLabel">Checking AI connection</span></div>
       </section>
@@ -76,17 +82,17 @@
               <div class="message-avatar">E</div>
               <div class="message-body">
                 <div class="message-meta">ELO <span>·</span> SYNQ.ME</div>
-                <p>Hi, I’m ELO. Let’s start with a household routine. If a robot were loading your dishwasher, what would you want it to know about how you like things done?</p>
+                <p>Hi, I’m ELO, your SYNQ.ME guide. Let’s start building your SecondSelf. Which parts of home life would you like it to understand first?</p>
               </div>
             </article>
           </div>
 
           <div class="suggestions-wrap">
-            <div class="suggestion-label">TRY A STARTING POINT</div>
+            <div class="suggestion-label">CHOOSE A STARTING POINT</div>
             <div class="suggestion-chips">
-              <button type="button" class="suggestion-chip" data-prompt="Put glasses on the top rack and keep delicate items separate.">Protect glassware</button>
-              <button type="button" class="suggestion-chip" data-prompt="Ask me before starting the dishwasher cycle.">Ask before starting</button>
-              <button type="button" class="suggestion-chip" data-prompt="Keep knives pointed down in the cutlery basket.">Handle knives safely</button>
+              <button type="button" class="suggestion-chip" data-prompt="I want my SecondSelf to understand how I like the kitchen to be kept.">Kitchen routines</button>
+              <button type="button" class="suggestion-chip" data-prompt="I want my SecondSelf to understand how I like laundry and clothing handled.">Laundry</button>
+              <button type="button" class="suggestion-chip" data-prompt="I want my SecondSelf to understand how I like floors and rooms cleaned.">Cleaning & tidying</button>
             </div>
           </div>
 
@@ -99,7 +105,7 @@
             </button>
           </form>
           <div class="composer-foot">
-            <span><span class="small-lock"></span> Demo memory is saved in this browser</span>
+            <span><span class="small-lock"></span> Your SecondSelf is saved in this browser</span>
             <button type="button" id="resetDemo" class="text-button">Reset demo</button>
           </div>
         </section>
@@ -211,9 +217,10 @@
         <form id="settingsForm" class="settings-form">
           <label for="ownerName">Your name</label>
           <input id="ownerName" name="ownerName" maxlength="60" autocomplete="given-name" placeholder="What should ELO call you?" />
-          <label for="robotName">Name your robot</label>
-          <input id="robotName" name="robotName" maxlength="60" placeholder="e.g. ELO, Nova or Alex" />
-          <label for="robotType">Robot type you have in mind</label>
+          <label for="robotName">Name your future robot (your choice)</label>
+          <input id="robotName" name="robotName" maxlength="60" placeholder="Choose any name, or leave blank" />
+          <p class="field-help">ELO is your SYNQ.ME conversation guide. Your future robot can have any name you choose.</p>
+          <label for="robotType">Robot you may want to personalise in the future</label>
           <select id="robotType" name="robotType">
             <option value="Home assistant">Home assistant</option>
             <option value="Humanoid robot">Humanoid robot</option>
@@ -221,10 +228,28 @@
             <option value="Other compatible robot">Other compatible robot</option>
           </select>
           <label class="settings-toggle" for="confirmActions">
-            <span><strong>Ask me before actions</strong><small>Include a confirmation checkpoint in task plans.</small></span>
+            <span><strong>Ask me before actions</strong><small>Record this as a personal preference for future task plans.</small></span>
             <input type="checkbox" id="confirmActions" name="confirmActions" />
             <span class="toggle-ui" aria-hidden="true"></span>
           </label>
+          <div class="settings-section">
+            <div class="settings-subhead"><span>DOMESTIC FUNCTIONS</span><span id="functionCount">0 SELECTED</span></div>
+            <p class="settings-section-copy">Choose the parts of everyday life you want your SecondSelf to learn about. You can change these at any time.</p>
+            <div class="function-grid" id="functionGrid">
+              <label class="function-option"><input type="checkbox" value="dishwashing"><span class="function-symbol">01</span><span class="function-label"><strong>Dishwashing</strong><small>Loading, unloading, preferences</small></span></label>
+              <label class="function-option"><input type="checkbox" value="vacuuming"><span class="function-symbol">02</span><span class="function-label"><strong>Vacuuming & floors</strong><small>Rooms, timing, floor types</small></span></label>
+              <label class="function-option"><input type="checkbox" value="laundry"><span class="function-symbol">03</span><span class="function-label"><strong>Laundry</strong><small>Sorting, washing, drying</small></span></label>
+              <label class="function-option"><input type="checkbox" value="folding"><span class="function-symbol">04</span><span class="function-label"><strong>Folding & putting away</strong><small>Clothes and linen routines</small></span></label>
+              <label class="function-option"><input type="checkbox" value="tidying"><span class="function-symbol">05</span><span class="function-label"><strong>Tidying</strong><small>Where things belong</small></span></label>
+              <label class="function-option"><input type="checkbox" value="surfaces"><span class="function-symbol">06</span><span class="function-label"><strong>Surface cleaning</strong><small>Kitchen and living spaces</small></span></label>
+              <label class="function-option"><input type="checkbox" value="meal-prep"><span class="function-symbol">07</span><span class="function-label"><strong>Meal preparation</strong><small>Ingredients and routines</small></span></label>
+              <label class="function-option"><input type="checkbox" value="cooking"><span class="function-symbol">08</span><span class="function-label"><strong>Cooking</strong><small>Taste, timing, methods</small></span></label>
+              <label class="function-option"><input type="checkbox" value="groceries"><span class="function-symbol">09</span><span class="function-label"><strong>Groceries & supplies</strong><small>Shopping lists and preferences</small></span></label>
+              <label class="function-option"><input type="checkbox" value="pet-care"><span class="function-symbol">10</span><span class="function-label"><strong>Pet care</strong><small>Household routines and boundaries</small></span></label>
+              <label class="function-option"><input type="checkbox" value="plants"><span class="function-symbol">11</span><span class="function-label"><strong>Plant care</strong><small>Watering and care routines</small></span></label>
+              <label class="function-option"><input type="checkbox" value="recycling"><span class="function-symbol">12</span><span class="function-label"><strong>Waste & recycling</strong><small>Sorting and collection routines</small></span></label>
+            </div>
+          </div>
           <div class="settings-actions">
             <button type="submit" class="settings-save">Save settings</button>
             <button type="button" class="settings-cancel" id="cancelSettings">Close</button>
@@ -233,6 +258,11 @@
         <div class="settings-preferences">
           <div class="settings-subhead"><span>YOUR LEARNED PREFERENCES</span><span id="settingsPreferenceCount">0</span></div>
           <div id="settingsPreferenceList"><p class="settings-empty">As you chat with ELO, your preferences will appear here.</p></div>
+        </div>
+        <div class="settings-milestones">
+          <div class="settings-subhead"><span>PERSONA MILESTONES</span><span id="milestoneCount">0 OF 4</span></div>
+          <p class="settings-section-copy">Small steps that show your SecondSelf taking shape. Rewards are profile achievements, not payments or robot capabilities.</p>
+          <div id="milestoneList" class="milestone-list"></div>
         </div>
         <button type="button" class="settings-task-link" id="openTaskFromSettings">Preview dishwasher task plan <span>↗</span></button>
         <p class="settings-note">This demo stores profile details and preferences in this browser only. It does not control a physical robot.</p>
