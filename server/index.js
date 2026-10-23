@@ -9,10 +9,19 @@ const API_KEY = PROVIDER === "gemini" ? GEMINI_API_KEY : GROQ_API_KEY;
 const MODEL = PROVIDER === "gemini"
   ? (process.env.GEMINI_MODEL || "gemini-3.8-flash")
   : (process.env.GROQ_MODEL || "openai/gpt-oss-20b");
-const ALLOWED_ORIGINS = (process.env.FRONTEND_ORIGIN || "")
-  .split(",")
-  .map((value) => value.trim().replace(/\/+$/, ""))
-  .filter(Boolean);
+// Render deployments need CORS to work even when FRONTEND_ORIGIN has not
+// been populated. Keep the known SYNQ.ME origins as safe defaults and allow
+// additional exact origins through FRONTEND_ORIGIN (comma-separated).
+const DEFAULT_ALLOWED_ORIGINS = [
+  "https://synqme-demo.onrender.com",
+  "https://demo.mysecondself.app",
+  "https://mysecondself.app",
+  "https://www.mysecondself.app"
+];
+const ALLOWED_ORIGINS = new Set([
+  ...DEFAULT_ALLOWED_ORIGINS,
+  ...(process.env.FRONTEND_ORIGIN || "").split(",")
+].map((value) => value.trim().replace(/\/+$/, "")).filter(Boolean));
 
 const requestHistory = new Map();
 const MAX_REQUESTS_PER_MINUTE = 12;
@@ -32,7 +41,7 @@ function json(response, status, body, headers = {}) {
 function corsHeaders(origin) {
   if (!origin) return {};
   const normalized = origin.replace(/\/+$/, "");
-  if (!ALLOWED_ORIGINS.includes(normalized)) return null;
+  if (!ALLOWED_ORIGINS.has(normalized)) return null;
   return {
     "Access-Control-Allow-Origin": origin,
     "Vary": "Origin",
