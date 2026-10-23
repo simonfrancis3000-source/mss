@@ -687,29 +687,31 @@ function localReply(message) {
   const acknowledgements = ["Gotcha.", "Got it.", "Cool, thanks for telling me.", "Understood.", "Right, that makes sense."];
   const acknowledgement = acknowledgements[assistantTurns % acknowledgements.length];
   const ownerName = state.profile.ownerName.trim();
-  const namePrefix = ownerName && assistantTurns > 0 && assistantTurns % 3 === 1 ? ownerName + ", " : "";
-  const detail = message.trim().replace(/[.!?]+$/, "");
+  const namePrefix = ownerName && assistantTurns > 0 && assistantTurns % 4 === 2 ? ownerName + ", " : "";
 
+  if (/(paper towels?|spray|cleaning product|surface cleaner|cleaner you|detergent)/i.test(message)) {
+    return namePrefix + "Gotcha. Should I treat those as your standard supplies for all surface cleaning, or just the kitchen?";
+  }
   if (/(kitchen|counter|worktop|surface)/i.test(message) &&
       /(twice|two times|2 times|two a day|2 a day|daily|each day|every day|a day)/i.test(message)) {
-    return namePrefix + "Gotcha. You want the kitchen surfaces cleaned twice a day. Would morning and evening suit you, or do you prefer two other times?";
+    return namePrefix + "Gotcha. Would morning and evening suit you, or do you prefer two other times?";
   }
   if (/(ask me|ask before|check with me|permission|confirm before|before changing|before moving|without asking)/i.test(message)) {
-    return namePrefix + "Got it. You want to be asked before changes are made in your home. Should that apply to every proposed action, or especially to moving and putting things away?";
+    return namePrefix + "Understood. Should asking first apply to every household task, or especially when something would be moved or handled?";
   }
   if (/(what can|what does|how does|how do|what is synq)/i.test(message)) {
     return "SYNQ.ME helps you build a digital persona through natural conversation. We explore what you prefer, what matters most, and what you want to avoid, one useful question at a time.";
   }
   if (/(laundry|washing|clothes|fold)/i.test(lower)) {
-    return namePrefix + acknowledgement + " Which laundry detail matters most to you: how clothes are sorted, washed or dried, or folded and put away?";
+    return namePrefix + acknowledgement + " Which laundry detail matters most to you: sorting, washing and drying, or how clothes are put away?";
   }
   if (/(vacuum|floor|carpet|tidy|cleaning|clean|surface|counter|worktop)/i.test(lower)) {
-    return namePrefix + acknowledgement + " So, " + detail + ". Would you like to define the timing, the order of tasks, or what should be left untouched?";
+    return namePrefix + acknowledgement + " What matters most to get right here: timing, task order, or anything that must be left untouched?";
   }
   if (category === "Consent & boundaries" || state.profile.confirmActions) {
-    return namePrefix + acknowledgement + " You want this boundary respected: " + detail + ". Is your main concern things being moved, a wrong choice being made, or something happening at the wrong time?";
+    return namePrefix + acknowledgement + " What would you most want to prevent: things being moved, a wrong choice, or something happening at the wrong time?";
   }
-  return namePrefix + acknowledgement + " So, " + detail + ". What would you most want to get right—or avoid getting wrong?";
+  return namePrefix + acknowledgement + " What matters most to you when getting that right?";
 }
 
 async function requestAIReply() {
