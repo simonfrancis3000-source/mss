@@ -1,5 +1,14 @@
+import { createClient } from "@supabase/supabase-js";
+
 const STORAGE_KEY = "synqme-demo-v1";
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
+const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL || "").replace(/\/+$/, "");
+const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
+const supabase = SUPABASE_URL && SUPABASE_KEY
+  ? createClient(SUPABASE_URL, SUPABASE_KEY, {
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
+    })
+  : null;
 const WELCOME = "Hi, I’m ELO, your SYNQ.ME guide. Let’s start building your SecondSelf. Which parts of home life would you like it to understand first?";
 
 const ACTIVITIES = [
@@ -131,8 +140,13 @@ let state = loadState();
 let isSending = false;
 let taskRunning = false;
 let lastFocusedElement = null;
+let cloudUserId = null;
+let cloudMode = "local";
+let cloudSaveTimer = null;
+let cloudSaveChain = Promise.resolve();
 
 function persist() {
+  let localSaved = false;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       messages: state.messages.slice(-50),
@@ -140,10 +154,153 @@ function persist() {
       profile: state.profile,
       functions: state.functions
     }));
-    return true;
+    localSaved = true;
   } catch {
     if (elements.memoryFootnote) elements.memoryFootnote.textContent = "Session memory only; browser storage is unavailable";
-    return false;
+  }
+  scheduleCloudSave();
+  return localSaved;
+}
+
+function scheduleCloudSave() {
+  if (!supabase || !cloudUserId) return;
+  if (cloudSaveTimer) window.clearTimeout(cloudSaveTimer);
+  cloudSaveTimer = window.setTimeout(() => {
+    cloudSaveTimer = null;
+    cloudSaveChain = cloudSaveChain
+      .then(() => saveCloudState())
+      .catch((error) => {
+        console.info("SYNQ.ME cloud sync unavailable; local browser saving remains active.", error);
+        cloudMode = "local";
+        renderPreferences();
+      });
+  }, 300);
+}
+
+async function saveCloudState() {
+  if (!supabase || !cloudUserId) return;
+  const snapshot = {
+    profile: { ...state.profile },
+    functions: [...state.functions],
+    preferences: state.preferences.map((item) => ({
+      text: item.text,
+      category: item.category || classifyPreference(item.text),
+      normalised: (item.normalised || item.text.toLowerCase()).slice(0, 240)
+    }))
+  };
+
+  const { error: profileError } = await supabase.from("synqme_profiles").upsert({
+    user_id: cloudUserId,
+    owner_name: snapshot.profile.ownerName,
+    future_robot_name: snapshot.profile.robotName,
+    future_robot_type: snapshot.profile.robotType,
+    confirm_actions: snapshot.profile.confirmActions,
+    domestic_functions: snapshot.functions,
+    updated_at: new Date().toISOString()
+  }, { onConflict: "user_id" });
+  if (profileError) throw profileError;
+
+  const desired = snapshot.preferences.map((item) => ({
+    user_id: cloudUserId,
+    category: item.category,
+    preference_text: item.text,
+    normalised_text: item.normalised
+  }));
+
+  if (desired.length) {
+    const { error: prefsError } = await supabase.from("synqme_preferences").upsert(
+      desired,
+      { onConflict: "user_id,normalised_text" }
+    );
+    if (prefsError) throw prefsError;
+  }
+
+  const { data: existing, error: selectError } = await supabase
+    .from("synqme_preferences")
+    .select("id,normalised_text")
+    .eq("user_id", cloudUserId);
+  if (selectError) throw selectError;
+  const keep = new Set(desired.map((item) => item.normalised_text));
+  const stale = (existing || []).filter((item) => !keep.has(item.normalised_text)).map((item) => item.id);
+  if (stale.length) {
+    const { error: deleteError } = await supabase
+      .from("synqme_preferences")
+      .delete()
+      .eq("user_id", cloudUserId)
+      .in("id", stale);
+    if (deleteError) throw deleteError;
+  }
+
+  cloudMode = "cloud";
+  renderPreferences();
+}
+
+async function initialiseCloudStorage() {
+  if (!supabase) {
+    cloudMode = "local";
+    renderPreferences();
+    return;
+  }
+  try {
+    let { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) throw sessionError;
+    if (!sessionData.session) {
+      const { data, error } = await supabase.auth.signInAnonymously();
+      if (error) throw error;
+      sessionData = { session: data.session };
+    }
+    if (!sessionData.session?.user?.id) throw new Error("Supabase did not return an authenticated user.");
+    cloudUserId = sessionData.session.user.id;
+
+    const [profileResult, preferencesResult] = await Promise.all([
+      supabase.from("synqme_profiles").select("*").eq("user_id", cloudUserId).maybeSingle(),
+      supabase.from("synqme_preferences").select("category,preference_text,normalised_text").eq("user_id", cloudUserId).order("created_at", { ascending: false }).limit(24)
+    ]);
+    if (profileResult.error) throw profileResult.error;
+    if (preferencesResult.error) throw preferencesResult.error;
+
+    const remoteProfile = profileResult.data;
+    if (remoteProfile) {
+      state.profile = {
+        ownerName: remoteProfile.owner_name || state.profile.ownerName || "",
+        robotName: remoteProfile.future_robot_name || state.profile.robotName || "",
+        robotType: remoteProfile.future_robot_type || state.profile.robotType || "Home assistant",
+        confirmActions: Boolean(remoteProfile.confirm_actions)
+      };
+      const remoteFunctions = Array.isArray(remoteProfile.domestic_functions)
+        ? remoteProfile.domestic_functions.filter((id) => ACTIVITIES.some((activity) => activity.id === id))
+        : [];
+      state.functions = [...new Set([...remoteFunctions, ...state.functions])];
+    }
+
+    const merged = [
+      ...(preferencesResult.data || []).map((item) => ({
+        text: item.preference_text,
+        category: item.category,
+        normalised: item.normalised_text
+      })),
+      ...state.preferences
+    ];
+    const unique = new Map();
+    merged.forEach((item) => {
+      const cleaned = cleanPreference(item.text);
+      if (!cleaned) return;
+      const normalised = (item.normalised || cleaned.normalised).slice(0, 240);
+      if (!unique.has(normalised)) unique.set(normalised, { ...cleaned, category: item.category || cleaned.category, normalised });
+    });
+    state.preferences = [...unique.values()].slice(0, 24);
+
+    cloudMode = "cloud";
+    populateSettingsForm();
+    renderAll();
+    persist();
+    if (!remoteProfile) scheduleCloudSave();
+  } catch (error) {
+    cloudUserId = null;
+    cloudMode = "local";
+    console.info("SYNQ.ME cloud storage is not ready; keeping persona data in this browser.", error);
+    renderAll();
+    elements.memoryFootnote.textContent = "Saved in this browser. Enable Supabase Anonymous Sign-Ins to add cloud saving.";
   }
 }
 
@@ -311,9 +468,11 @@ function renderPreferences() {
         ? "Your preferences are taking shape"
         : "A richer personal pattern is emerging";
   $(".memory-pulse")?.classList.toggle("active", count > 0);
-  elements.memoryFootnote.textContent = count === 0
-    ? "No preferences saved yet"
-    : "Saved in this browser · " + count + (count === 1 ? " preference" : " preferences");
+  elements.memoryFootnote.textContent = cloudMode === "cloud"
+    ? "Cloud-synced to this browser profile · " + count + (count === 1 ? " preference" : " preferences")
+    : count === 0
+      ? "Your persona starts in this browser"
+      : "Saved in this browser · " + count + (count === 1 ? " preference" : " preferences");
 
   elements.preferenceList.replaceChildren();
   if (!count) {
@@ -596,6 +755,8 @@ elements.runTask.addEventListener("click", () => {
     window.setTimeout(() => { elements.runTask.querySelector("span").textContent = "Preview future household routine"; }, 1800);
   }, 350);
 });
+
+initialiseCloudStorage();
 
 if ("serviceWorker" in navigator && import.meta.env.PROD) {
   window.addEventListener("load", () => {
