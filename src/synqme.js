@@ -1075,6 +1075,7 @@ function buildPexiPersonaPackage() {
     const extracted = preferenceExtraction(item);
     return {
       preference_id: item.id,
+      record_version: 1 + (Array.isArray(item.clarifications) ? item.clarifications.length : 0),
       statement: item.text,
       category: item.category || classifyPreference(item.text),
       epistemic_status: item.status === "user_confirmed" ? "user_confirmed" : "user_stated",
@@ -1082,6 +1083,7 @@ function buildPexiPersonaPackage() {
         source_application: "SYNQ.ME",
         source_type: "conversation",
         recorded_at: item.recordedAt || now,
+        last_updated_at: item.clarifications?.length ? item.clarifications[item.clarifications.length - 1].recordedAt : (item.recordedAt || now),
         source_message: item.sourceMessage || item.text
       },
       explicit_fields: extracted.explicitFields,
