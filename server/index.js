@@ -14,6 +14,7 @@ const MODEL = PROVIDER === "gemini"
 // additional exact origins through FRONTEND_ORIGIN (comma-separated).
 const DEFAULT_ALLOWED_ORIGINS = [
   "https://synqme-demo.onrender.com",
+  "https://synqme.mysecondself.app",
   "https://demo.mysecondself.app",
   "https://mysecondself.app",
   "https://www.mysecondself.app"
