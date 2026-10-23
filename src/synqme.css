@@ -314,3 +314,21 @@ h1 span { color: var(--blue); }
   .milestone-status { grid-column: 2; }
 }
 @media (prefers-reduced-motion: reduce) { .app-splash, .splash-track span { transition-duration: .01ms !important; animation-duration: .01ms !important; } }
+
+
+/* Mandatory first-run identity setup */
+.profile-setup-notice {
+  margin: 12px 0 0 !important;
+  padding: 12px 14px;
+  border: 1px solid #3a4657;
+  border-left: 2px solid #a9c9f5;
+  border-radius: 5px;
+  background: #151a22;
+  color: #dce6f5 !important;
+  font-size: 11px !important;
+  line-height: 1.7 !important;
+}
+.profile-setup-notice[hidden] { display: none !important; }
+body.profile-setup-required { overflow: hidden; }
+body.profile-setup-required .settings-overlay { z-index: 9000; }
+body.profile-setup-required .settings-backdrop { cursor: default !important; }
