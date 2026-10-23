@@ -179,7 +179,11 @@ function initialState() {
     profile: defaultProfile(),
     functions: [],
     pendingClarification: null,
-    apiConnected: false
+    apiConnected: false,
+    apiProvider: "",
+    apiModel: "",
+    apiConfigured: null,
+    apiError: ""
   };
 }
 
@@ -1384,7 +1388,17 @@ function renderAll() {
   const achieved = MILESTONES.filter(milestoneUnlocked).length;
   const progress = Math.round((achieved / MILESTONES.length) * 100);
   if (elements.mobileProgressValue) elements.mobileProgressValue.textContent = progress + "%";
-  elements.providerLabel.textContent = state.apiConnected ? "LIVE AI RESPONSE" : (API_BASE ? "AI ENDPOINT CONFIGURED" : "SCRIPTED DEMO MODE");
+  if (state.apiConnected && state.apiProvider) {
+    elements.providerLabel.textContent = state.apiProvider.toUpperCase() + " · " + (state.apiModel || "model") + " · LIVE";
+  } else if (state.apiError) {
+    elements.providerLabel.textContent = (state.apiProvider ? state.apiProvider.toUpperCase() : "AI SERVICE") + " · " + state.apiError.toUpperCase().replace(/_/g, " ");
+  } else if (state.apiConfigured === false) {
+    elements.providerLabel.textContent = (state.apiProvider ? state.apiProvider.toUpperCase() : "AI") + " NOT CONFIGURED";
+  } else if (state.apiConfigured === true && state.apiProvider) {
+    elements.providerLabel.textContent = state.apiProvider.toUpperCase() + " · " + (state.apiModel || "model") + " · READY";
+  } else {
+    elements.providerLabel.textContent = API_BASE ? "CHECKING AI SERVICE" : "SCRIPTED DEMO MODE";
+  }
   document.title = name ? "SYNQ.ME | " + name + "’s SecondSelf" : "SYNQ.ME | Build Your SecondSelf";
   const intro = $(".conversation-intro p");
   if (intro) intro.textContent = robotName
@@ -1392,6 +1406,7 @@ function renderAll() {
     : "Tell me what matters to you. I’ll help shape your digital persona, one preference at a time.";
 }
 renderAll();
+void checkAIBackend();
 
 function chooseFallbackQuestion(options) {
   const recentReplies = state.messages
@@ -1982,7 +1997,7 @@ function responseRepeatsUser(reply, userMessage) {
   return overlap >= 0.78;
 }
 
-async function requestAIReply() {
+async function requestAIReply(repairMode = false) {
   if (!API_BASE) return null;
   try {
     const response = await fetch(API_BASE + "/api/chat", {
@@ -2007,21 +2022,62 @@ async function requestAIReply() {
           robotVoice: state.profile.robotVoice || "female",
           askBeforeActions: state.profile.confirmActions
         },
-        domesticFunctions: state.functions.map((id) => ACTIVITIES.find((activity) => activity.id === id)?.label).filter(Boolean)
+        domesticFunctions: state.functions.map((id) => ACTIVITIES.find((activity) => activity.id === id)?.label).filter(Boolean),
+        repairMode
       })
     });
-    if (!response.ok) throw new Error("AI endpoint returned " + response.status);
-    const data = await response.json();
+    let data = {};
+    try { data = await response.json(); } catch {}
+    if (data.provider) state.apiProvider = String(data.provider).toLowerCase();
+    if (data.model) state.apiModel = String(data.model);
+    if (!response.ok) {
+      state.apiConfigured = true;
+      throw new Error(data.error || ("AI endpoint returned " + response.status));
+    }
     const reply = typeof data.reply === "string" ? data.reply : typeof data.message === "string" ? data.message : "";
     if (!reply.trim()) throw new Error("AI endpoint returned no reply text");
     state.apiConnected = true;
-    elements.providerLabel.textContent = "LIVE AI RESPONSE";
+    state.apiConfigured = true;
+    state.apiError = "";
+    elements.providerLabel.textContent = (state.apiProvider || "AI").toUpperCase() + " · " + (state.apiModel || "model") + " · LIVE";
+
+    // If the server had to use a canned fallback, ask the configured model once
+    // more with explicit repair instructions before showing anything to the user.
+    if (data.usedFallback && !repairMode) return await requestAIReply(true);
+    if (data.responseNeedsReview) return "__SYNQME_UNHELPFUL_AI_RESPONSE__";
     return reply.trim();
   } catch (error) {
-    console.info("SYNQ.ME is using scripted demo replies because the AI endpoint is not available.", error);
+    console.info("SYNQ.ME AI request failed; no scripted question will be substituted.", error);
     state.apiConnected = false;
-    elements.providerLabel.textContent = "SCRIPTED DEMO MODE";
+    state.apiError = responseErrorLabel(error);
+    elements.providerLabel.textContent = (state.apiProvider ? state.apiProvider.toUpperCase() : "AI SERVICE") + " · " + state.apiError.toUpperCase().replace(/_/g, " ");
     return null;
+  }
+}
+
+function responseErrorLabel(error) {
+  const message = String(error?.message || "").toLowerCase();
+  if (/429|quota|usage limit/.test(message)) return "quota limit";
+  if (/503|not configured|api key/.test(message)) return "not configured";
+  if (/failed to fetch|network|cors|timeout|aborted/.test(message)) return "connection failed";
+  return "request failed";
+}
+
+async function checkAIBackend() {
+  if (!API_BASE) return;
+  try {
+    const response = await fetch(API_BASE + "/health", { cache: "no-store" });
+    if (!response.ok) throw new Error("Health check returned " + response.status);
+    const data = await response.json();
+    state.apiProvider = typeof data.provider === "string" ? data.provider.toLowerCase() : "";
+    state.apiModel = typeof data.model === "string" ? data.model : "";
+    state.apiConfigured = Boolean(data.configured);
+    state.apiError = "";
+    if (!state.apiConnected) renderAll();
+  } catch (error) {
+    state.apiError = "health check unavailable";
+    if (!state.apiConnected) renderAll();
+    console.info("SYNQ.ME could not verify backend provider settings.", error);
   }
 }
 
@@ -2070,8 +2126,27 @@ async function sendMessage(rawText) {
     : answeredPendingClarification
       ? replyToResolvedClarification(message, pendingBeforeAnswer)
       : await requestAIReply();
-  if (!answeredPendingClarification && (!reply || responseRepeatsUser(reply, message) || responseRepeatsRecentAssistant(reply) || /I've captured this preference for your browser-based SecondSelf|I've added it to your local digital persona|That's useful context for your SecondSelf|Let's make that preference more precise|What detail would matter most to get right|What matters most to you when getting that right|Which laundry detail matters most to you: sorting, washing and drying, or how clothes are put away/i.test(reply))) {
-    reply = localReply(message);
+  if (!answeredPendingClarification && !clarificationRequest) {
+    const replyNeedsRepair = (value) => !value ||
+      responseRepeatsUser(value, message) ||
+      responseRepeatsRecentAssistant(value) ||
+      /I've captured this preference for your browser-based SecondSelf|I've added it to your local digital persona|That's useful context for your SecondSelf|Let's make that preference more precise|What detail would matter most to get right|What matters most to you when getting that right|Which laundry detail matters most to you: sorting, washing and drying, or how clothes are put away|Can you walk me through how that usually happens at home/i.test(value);
+    if (replyNeedsRepair(reply) && API_BASE && state.apiConnected) {
+      const retriedReply = await requestAIReply(true);
+      if (retriedReply && retriedReply !== "__SYNQME_UNHELPFUL_AI_RESPONSE__" && !replyNeedsRepair(retriedReply)) {
+        reply = retriedReply;
+      } else {
+        reply = "I’m having trouble making a useful connection from that answer, and I don’t want to give you another canned question. I’ve understood the detail you shared; please try once more, or tell me which part of your routine you’d like to explore.";
+      }
+    } else if (!reply && API_BASE) {
+      reply = "I can’t reach the AI conversation service right now, so I haven’t substituted a scripted answer. Please try again shortly.";
+    } else if (!reply) {
+      reply = localReply(message);
+    } else if (reply === "__SYNQME_UNHELPFUL_AI_RESPONSE__") {
+      reply = "I’m having trouble making a useful connection from that answer, and I don’t want to give you another canned question. I’ve understood the detail you shared; please try once more, or tell me which part of your routine you’d like to explore.";
+    } else if (replyNeedsRepair(reply) && !API_BASE) {
+      reply = localReply(message);
+    }
   }
   state.messages.push({ role: "assistant", content: reply });
   state.pendingClarification = detectPendingClarification(message, reply);
