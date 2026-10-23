@@ -485,13 +485,40 @@ const app = http.createServer(async (request, response) => {
 
     if (!upstream.ok) {
       const errorCode = PROVIDER + "-" + Date.now().toString(36);
-      console.error(PROVIDER + " API request failed", { errorCode, status: upstream.status });
-      const friendly = upstream.status === 429
-        ? "The AI service has reached its current usage limit. Wait a moment and try again."
-        : PROVIDER === "gemini"
-          ? "Gemini could not complete the reply. Check the Gemini API key, model access and quota in Google AI Studio."
-          : "The AI service could not complete the reply. Please try again.";
-      return json(response, upstream.status === 429 ? 429 : 502, { error: friendly, errorCode, provider: PROVIDER }, headers || {});
+      let upstreamDetail = "";
+      try {
+        const upstreamError = await upstream.json();
+        upstreamDetail = String(upstreamError?.error?.message || upstreamError?.message || "").slice(0, 500);
+      } catch {}
+      // Log the provider's error message for diagnosis, never the API key or request body.
+      console.error(PROVIDER + " API request failed", {
+        errorCode,
+        status: upstream.status,
+        detail: upstreamDetail || "No provider error detail returned"
+      });
+
+      let friendly;
+      if (upstream.status === 429) {
+        friendly = "Gemini has reached a usage limit or rate limit. Check your Gemini quota and billing, then try again.";
+      } else if (PROVIDER === "gemini" && [401, 403].includes(upstream.status)) {
+        friendly = "Gemini rejected the API key or project access. Check that the key is valid, unrestricted for this server, and has Gemini API access enabled.";
+      } else if (PROVIDER === "gemini" && upstream.status === 404) {
+        friendly = "Gemini could not find the configured model. Check GEMINI_MODEL and the model access available to this API key.";
+      } else if (PROVIDER === "gemini" && upstream.status === 400) {
+        friendly = "Gemini rejected the request. The Render API logs contain the provider error code and diagnostic detail.";
+      } else if (PROVIDER === "gemini" && upstream.status >= 500) {
+        friendly = "Gemini is temporarily returning a server error. Check Render logs and retry shortly.";
+      } else if (PROVIDER === "gemini") {
+        friendly = "Gemini could not complete the reply. Check the API key, model access, quota and the provider error in Render logs.";
+      } else {
+        friendly = "The AI service could not complete the reply. Check the provider error in Render logs and try again.";
+      }
+      return json(response, upstream.status === 429 ? 429 : 502, {
+        error: friendly,
+        errorCode,
+        provider: PROVIDER,
+        upstreamStatus: upstream.status
+      }, headers || {});
     }
 
     const result = await upstream.json();
@@ -530,8 +557,16 @@ const app = http.createServer(async (request, response) => {
     if (status === 400 || status === 413) {
       return json(response, status, { error: error.message }, headers || {});
     }
-    console.error("SYNQ.ME API handler error", error?.name || "Error");
-    return json(response, 500, { error: "The chat service encountered an error. Please try again." }, headers || {});
+    console.error("SYNQ.ME API handler error", {
+      name: error?.name || "Error",
+      message: String(error?.message || "Unknown server error").slice(0, 300)
+    });
+    return json(response, 502, {
+      error: PROVIDER === "gemini"
+        ? "The SYNQ.ME backend could not complete the request to Gemini. Check the backend logs for the diagnostic error."
+        : "The SYNQ.ME backend could not complete the request to the AI provider. Check the backend logs for the diagnostic error.",
+      provider: PROVIDER
+    }, headers || {});
   }
 });
 
