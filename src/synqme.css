@@ -336,3 +336,27 @@ body.profile-setup-required .settings-backdrop { cursor: default !important; }
 
 /* Keep the setup/settings modal truly hidden until JavaScript opens it. */
 .settings-overlay[hidden] { display: none !important; }
+
+
+/* PEXI transfer-readiness panel */
+.pexi-readiness {
+  margin-top: 18px;
+  padding: 14px;
+  border: 1px solid #2d3847;
+  border-radius: 5px;
+  background: #121720;
+}
+.pexi-readiness .settings-subhead { margin-bottom: 8px; }
+.pexi-readiness .settings-subhead span:last-child {
+  color: #b8d1f2;
+  font-size: 8px;
+  letter-spacing: .35px;
+  text-align: right;
+}
+.pexi-readiness p {
+  margin: 0;
+  color: #a8b2c0;
+  font-family: system-ui, sans-serif;
+  font-size: 10px;
+  line-height: 1.7;
+}
