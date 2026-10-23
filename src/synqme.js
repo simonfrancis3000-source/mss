@@ -736,6 +736,37 @@ function resolvePendingClarification(message) {
 }
 
 
+function replyToResolvedClarification(answer, pending) {
+  const lower = String(answer || "").trim().toLowerCase();
+  const preference = state.preferences.find((item) => item.id === pending?.preferenceId);
+
+  if (pending?.type === "supply_scope") {
+    const scopeLabel = /(just (the )?kitchen|kitchen only|only (in )?the kitchen|kitchen surfaces only)/i.test(lower)
+      ? "just the kitchen"
+      : "all surface cleaning";
+    const sprayStillUnspecified = (preference?.unresolvedFields || []).includes("specific_cleaning_spray");
+    if (sprayStillUnspecified) {
+      return "Got it — " + scopeLabel + ". I’ll leave the spray itself unspecified until you show it to me. Are there any kitchen surfaces you’d want me to avoid using it on?";
+    }
+    return "Got it — " + scopeLabel + ". I’ve recorded that scope for those cleaning supplies. Is there a surface or material they should not be used on?";
+  }
+
+  if (pending?.type === "cleaning_times") {
+    const times = ["morning", "afternoon", "evening"].filter((time) => new RegExp("\\b" + time + "\\b", "i").test(lower));
+    const timeLabel = times.length ? times.join(" and ") : String(answer || "").trim();
+    return "Got it — " + timeLabel + ". Is there a room or task you’d want prioritised at one of those times?";
+  }
+
+  if (pending?.type === "approval_scope") {
+    if (/(every household task|every action|all actions|anything in my home|always ask|all the time)/i.test(lower)) {
+      return "Got it — I’ll record that I should ask before every household action. Is there anything you would explicitly allow without checking first?";
+    }
+    return "Got it — I’ll record that I should ask before moving or handling items. Are there any belongings that should never be moved without your permission?";
+  }
+
+  return "Got it — I’ve recorded that clarification. What is one practical detail that would help me respect that preference?";
+}
+
 function addElement(parent, className, text) {
   const element = document.createElement("div");
   element.className = className;
@@ -1018,13 +1049,18 @@ async function sendMessage(rawText) {
   elements.messageInput.disabled = true;
   elements.conversationStatus.textContent = "ELO is thinking";
   state.messages.push({ role: "user", content: message });
+  const pendingBeforeAnswer = state.pendingClarification ? { ...state.pendingClarification } : null;
   const answeredPendingClarification = resolvePendingClarification(message);
   if (!answeredPendingClarification) savePreference(message);
   persist();
   renderAll();
 
-  let reply = await requestAIReply();
-  if (!reply || responseRepeatsUser(reply, message) || /I've captured this preference for your browser-based SecondSelf|I've added it to your local digital persona|That's useful context for your SecondSelf|Let's make that preference more precise|What detail would matter most to get right/i.test(reply)) {
+  // A clarification answer must be handled against the pending question, not
+  // sent back to the general-purpose chat model where it can lose context.
+  let reply = answeredPendingClarification
+    ? replyToResolvedClarification(message, pendingBeforeAnswer)
+    : await requestAIReply();
+  if (!answeredPendingClarification && (!reply || responseRepeatsUser(reply, message) || /I've captured this preference for your browser-based SecondSelf|I've added it to your local digital persona|That's useful context for your SecondSelf|Let's make that preference more precise|What detail would matter most to get right|What matters most to you when getting that right/i.test(reply))) {
     reply = localReply(message);
   }
   state.messages.push({ role: "assistant", content: reply });
