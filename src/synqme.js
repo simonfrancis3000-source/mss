@@ -572,6 +572,7 @@ function extractExplicitPreferenceFacets(text) {
   if (/\bafternoon\b/.test(lower)) times.push("afternoon");
   if (/\bevening\b/.test(lower)) times.push("evening");
   if (times.length) facets.timeOfDay = times;
+  if (facets.frequency && facets.frequency.count > 1 && !facets.timeOfDay) unresolvedFields.push("preferred_times");
 
   if (/surfaces?.{0,40}\bbefore\b.{0,30}\bfloors?\b|\bfloors?.{0,40}\bafter\b.{0,30}\bsurfaces?\b/.test(lower)) {
     facets.taskOrder = ["surface_cleaning", "floor_cleaning"];
@@ -614,6 +615,118 @@ function savePreference(message) {
   }
   state.preferences = state.preferences.slice(0, 24);
 }
+
+
+
+function detectPendingClarification(userMessage, reply) {
+  const response = String(reply || "").toLowerCase();
+  const latest = String(userMessage || "").toLowerCase();
+
+  const mentionsSupplies = /(paper towels?|spray|cleaning product|surface cleaner|cleaning supplies)/i.test(latest);
+  const asksSupplyScope = /(all surface cleaning|all surfaces|every surface|just the kitchen|kitchen only|which rooms.*(clean|surface)|supplies.*(apply|use|scope))/i.test(response);
+  if (mentionsSupplies && asksSupplyScope) {
+    const target = state.preferences.find((item) =>
+      item.explicitFacets?.cleaningSupplies?.length || /(paper towels?|spray|cleaning product)/i.test(item.text)
+    );
+    if (target) return { type: "supply_scope", field: "scope", preferenceId: target.id };
+  }
+
+  const asksCleaningTime = /(morning and evening|two other times|what time of day|which times|when should.*clean)/i.test(response);
+  if (asksCleaningTime && /(twice|two times|2 times|two a day|2 a day|daily)/i.test(latest)) {
+    const target = state.preferences.find((item) =>
+      item.explicitFacets?.frequency?.count > 1 || /(twice|two times|2 times|two a day|2 a day)/i.test(item.text)
+    );
+    if (target) return { type: "cleaning_times", field: "preferred_times", preferenceId: target.id };
+  }
+
+  const asksApprovalScope = /(should asking first apply|every household task|every proposed action|moving and putting things away|all household actions)/i.test(response);
+  if (asksApprovalScope && /(ask me before|ask before|permission|confirm before|without asking)/i.test(latest)) {
+    const target = state.preferences.find((item) =>
+      item.category === "Consent & boundaries" || item.explicitFacets?.approvalBoundary
+    );
+    if (target) return { type: "approval_scope", field: "approval_scope", preferenceId: target.id };
+  }
+  return null;
+}
+
+function resolvePendingClarification(message) {
+  const pending = state.pendingClarification;
+  if (!pending) return false;
+  const preference = state.preferences.find((item) => item.id === pending.preferenceId);
+  if (!preference) {
+    state.pendingClarification = null;
+    return false;
+  }
+
+  const answer = String(message || "").trim();
+  const lower = answer.toLowerCase();
+  let clarificationValue = null;
+  preference.explicitFacets = { ...(preference.explicitFacets || {}) };
+  let resolvedField = pending.field;
+
+  if (pending.type === "supply_scope") {
+    if (/(just (the )?kitchen|kitchen only|only (in )?the kitchen|kitchen surfaces only)/i.test(lower)) {
+      preference.explicitFacets.room = "kitchen";
+      preference.explicitFacets.scope = "kitchen_surface_cleaning";
+      clarificationValue = "kitchen_surface_cleaning";
+    } else if (/(all surfaces|all surface cleaning|every surface|throughout the house|all rooms)/i.test(lower)) {
+      preference.explicitFacets.scope = "all_surface_cleaning";
+      clarificationValue = "all_surface_cleaning";
+    } else {
+      state.pendingClarification = null;
+      return false;
+    }
+  } else if (pending.type === "cleaning_times") {
+    const times = [];
+    if (/\bmorning\b/i.test(lower)) times.push("morning");
+    if (/\bafternoon\b/i.test(lower)) times.push("afternoon");
+    if (/\bevening\b/i.test(lower)) times.push("evening");
+    if (times.length) {
+      preference.explicitFacets.timeOfDay = [...new Set(times)];
+      clarificationValue = preference.explicitFacets.timeOfDay;
+    } else {
+      const clockTimes = lower.match(/\b(?:1[0-2]|0?[1-9])(?::[0-5]\d)?\s?(?:am|pm)\b/g);
+      if (clockTimes && clockTimes.length) {
+        preference.explicitFacets.clockTimes = [...new Set(clockTimes)];
+        clarificationValue = preference.explicitFacets.clockTimes;
+      } else {
+        state.pendingClarification = null;
+        return false;
+      }
+    }
+  } else if (pending.type === "approval_scope") {
+    if (/(every household task|every action|all actions|anything in my home|always ask|all the time)/i.test(lower)) {
+      preference.explicitFacets.approvalBoundary = "ask_before_every_household_action";
+      clarificationValue = "ask_before_every_household_action";
+    } else if (/(moving|putting things away|moving or storing|handling items|rearranging)/i.test(lower)) {
+      preference.explicitFacets.approvalBoundary = "ask_before_moving_or_handling_items";
+      clarificationValue = "ask_before_moving_or_handling_items";
+    } else {
+      state.pendingClarification = null;
+      return false;
+    }
+  }
+
+  if (clarificationValue === null) {
+    state.pendingClarification = null;
+    return false;
+  }
+
+  preference.clarifications = Array.isArray(preference.clarifications) ? preference.clarifications : [];
+  preference.clarifications.push({
+    field: resolvedField,
+    value: clarificationValue,
+    answer,
+    status: "user_confirmed",
+    recordedAt: new Date().toISOString()
+  });
+  preference.unresolvedFields = (Array.isArray(preference.unresolvedFields) ? preference.unresolvedFields : [])
+    .filter((field) => field !== resolvedField);
+  preference.status = "user_stated";
+  state.pendingClarification = null;
+  return true;
+}
+
 
 function addElement(parent, className, text) {
   const element = document.createElement("div");
@@ -877,7 +990,8 @@ async function sendMessage(rawText) {
   elements.messageInput.disabled = true;
   elements.conversationStatus.textContent = "ELO is thinking";
   state.messages.push({ role: "user", content: message });
-  savePreference(message);
+  const answeredPendingClarification = resolvePendingClarification(message);
+  if (!answeredPendingClarification) savePreference(message);
   persist();
   renderAll();
 
@@ -886,6 +1000,7 @@ async function sendMessage(rawText) {
     reply = localReply(message);
   }
   state.messages.push({ role: "assistant", content: reply });
+  state.pendingClarification = detectPendingClarification(message, reply);
   state.messages = state.messages.slice(-50);
   persist();
   renderAll();
