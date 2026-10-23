@@ -1018,7 +1018,7 @@ async function sendMessage(rawText) {
   renderAll();
 
   let reply = await requestAIReply();
-  if (!reply || responseRepeatsUser(reply, message) || /I've captured this preference for your browser-based SecondSelf|I've added it to your local digital persona|That's useful context for your SecondSelf/i.test(reply)) {
+  if (!reply || responseRepeatsUser(reply, message) || /I've captured this preference for your browser-based SecondSelf|I've added it to your local digital persona|That's useful context for your SecondSelf|Let's make that preference more precise|What detail would matter most to get right/i.test(reply)) {
     reply = localReply(message);
   }
   state.messages.push({ role: "assistant", content: reply });
