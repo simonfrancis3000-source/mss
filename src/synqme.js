@@ -194,20 +194,29 @@ function scheduleCloudSave() {
   }, 300);
 }
 
+function preferenceExtraction(item) {
+  const extracted = extractExplicitPreferenceFacets(item.text);
+  const storedFields = item.explicitFacets && typeof item.explicitFacets === "object" ? item.explicitFacets : {};
+  const explicitFields = Object.keys(storedFields).length ? storedFields : extracted.explicitFacets;
+  const storedUnresolved = Array.isArray(item.unresolvedFields) ? item.unresolvedFields : [];
+  const unresolvedFields = storedUnresolved.length ? storedUnresolved : extracted.unresolvedFields;
+  return { explicitFields, unresolvedFields };
+}
+
 async function saveCloudState() {
   if (!supabase || !cloudUserId) return;
   const snapshot = {
     profile: { ...state.profile },
     functions: [...state.functions],
     preferences: state.preferences.map((item) => {
-      const extracted = extractExplicitPreferenceFacets(item.text);
+      const extracted = preferenceExtraction(item);
       return {
         text: item.text,
         category: item.category || classifyPreference(item.text),
         normalised: (item.normalised || item.text.toLowerCase()).slice(0, 240),
         status: item.status || "user_stated",
-        explicitFacets: item.explicitFacets || extracted.explicitFacets,
-        unresolvedFields: item.unresolvedFields || extracted.unresolvedFields,
+        explicitFacets: extracted.explicitFields,
+        unresolvedFields: extracted.unresolvedFields,
         sourceMessage: item.sourceMessage || item.text,
         recordedAt: item.recordedAt || new Date().toISOString()
       };
@@ -812,13 +821,13 @@ async function requestAIReply() {
       body: JSON.stringify({
         messages: state.messages.slice(-20).map((message) => ({ role: message.role, content: message.content })),
         preferences: state.preferences.map((preference) => {
-          const extracted = extractExplicitPreferenceFacets(preference.text);
+          const extracted = preferenceExtraction(preference);
           return {
             category: preference.category || classifyPreference(preference.text),
             text: preference.text,
             epistemicStatus: preference.status || "user_stated",
-            explicitFields: preference.explicitFacets || extracted.explicitFacets,
-            unresolvedFields: preference.unresolvedFields || extracted.unresolvedFields
+            explicitFields: extracted.explicitFields,
+            unresolvedFields: extracted.unresolvedFields
           };
         }),
         profile: {
@@ -911,7 +920,7 @@ elements.resetDemo.addEventListener("click", () => {
 function buildPexiPersonaPackage() {
   const now = new Date().toISOString();
   const preferences = state.preferences.map((item) => {
-    const extracted = extractExplicitPreferenceFacets(item.text);
+    const extracted = preferenceExtraction(item);
     return {
       preference_id: item.id,
       statement: item.text,
@@ -923,8 +932,8 @@ function buildPexiPersonaPackage() {
         recorded_at: item.recordedAt || now,
         source_message: item.sourceMessage || item.text
       },
-      explicit_fields: item.explicitFacets || extracted.explicitFacets,
-      unresolved_fields: item.unresolvedFields || extracted.unresolvedFields,
+      explicit_fields: extracted.explicitFields,
+      unresolved_fields: extracted.unresolvedFields,
       execution_status: "not_executable",
       requires_robot_capability_mapping: true
     };
