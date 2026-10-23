@@ -360,3 +360,135 @@ body.profile-setup-required .settings-backdrop { cursor: default !important; }
   font-size: 10px;
   line-height: 1.7;
 }
+
+
+/* Mobile viewport containment: prevent the app shell and nested panels from
+   creating a page-wide horizontal scroll on narrow phones. */
+html,
+body {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: clip;
+}
+img,
+svg,
+video,
+canvas {
+  max-width: 100%;
+}
+@media (max-width: 800px) {
+  .site-header,
+  .nav-wrap,
+  main,
+  .hero,
+  .hero-copy,
+  .app-grid,
+  .conversation-panel,
+  .panel,
+  .panel-heading,
+  .conversation-intro,
+  .chat-messages,
+  .settings-overlay,
+  .settings-sheet {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .app-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .conversation-intro > div:last-child,
+  .panel-heading > *,
+  .mobile-summary > *,
+  .composer-foot > *,
+  .settings-heading,
+  .settings-form,
+  .settings-actions,
+  .pexi-readiness {
+    min-width: 0;
+  }
+
+  .conversation-intro > div:last-child {
+    flex: 1 1 0;
+    overflow-wrap: anywhere;
+  }
+
+  .intro-title,
+  .panel-status,
+  .preference-text,
+  .settings-heading h2,
+  .settings-heading p,
+  .field-help,
+  .settings-section-copy,
+  .settings-note,
+  .pexi-readiness p {
+    overflow-wrap: anywhere;
+    word-break: normal;
+  }
+
+  .panel-status {
+    white-space: normal;
+  }
+
+  .route-node {
+    grid-template-columns: 28px minmax(0, 1fr);
+  }
+
+  .route-state {
+    grid-column: 2;
+    white-space: normal;
+  }
+
+  .settings-sheet {
+    width: 100%;
+  }
+
+  .settings-form input:not([type="checkbox"]),
+  .settings-form select,
+  .settings-form textarea {
+    min-width: 0;
+    max-width: 100%;
+  }
+}
+@media (max-width: 480px) {
+  .nav-wrap,
+  main {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .settings-sheet {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .chat-composer {
+    min-width: 0;
+    max-width: calc(100% - 24px);
+  }
+
+  .chat-composer textarea {
+    width: 0;
+  }
+
+  .send-button {
+    flex: 0 0 auto;
+    padding-right: 9px;
+    padding-left: 9px;
+  }
+
+  .preference-header {
+    gap: 8px;
+  }
+
+  .settings-actions {
+    flex-wrap: wrap;
+  }
+
+  .settings-save,
+  .settings-cancel {
+    min-width: 0;
+    max-width: 100%;
+  }
+}
