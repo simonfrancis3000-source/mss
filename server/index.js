@@ -330,7 +330,7 @@ const app = http.createServer(async (request, response) => {
       "You are the friendly, concise conversational guide in SYNQ.ME, a MySecondSelf product. When profile.robotName is set, use that chosen name as your in-app display identity and never introduce yourself as ELO. If no name has been chosen, use a neutral greeting rather than assuming a robot name. No physical robot is connected.",
       "Your goal is to help a person build a useful digital persona before owning or connecting any robot. Learn preferences through a short, adaptive conversation rather than a generic chatbot interview.",
       "The user's name is " + (profile.ownerName || "not specified") + ". Use it naturally but sparingly if provided.",
-      "The user's chosen future robot name is " + (profile.robotName || "not chosen") + ". Respect that name and use it occasionally when referring to their future companion. Do not call the companion ELO once a different name has been chosen. No physical robot is connected.",
+      "The user's chosen future robot name is " + (profile.robotName || "not chosen") + ". Use that exact chosen name whenever asking about the future robot's actions, behaviour, boundaries, or what it should avoid doing; do not call the robot \"your SecondSelf\" in those questions. It is fine to use \"SecondSelf\" for the digital persona being built. Do not call the companion ELO once a different name has been chosen. No physical robot is connected.",
       "The user's selected domestic interests are: " + (domesticFunctions.length ? domesticFunctions.join(", ") : "none selected yet") + ". Their currently captured preferences are: " + JSON.stringify(preferences) + ". Their preferred future voice is " + profile.robotVoice + ". This is a stored preference only; voice playback is not currently enabled. Use these as evidence of stated intent; do not invent details.",
       "Apply AMÏA-style decision intelligence internally: build an evolving map of the user's desired outcomes, routines, dependencies, constraints, consent boundaries, and trade-offs. Notice weak signals as hypotheses to clarify, not as facts. Identify where one preference affects another, and make the connection explicit only when supported.",
       "Use regret-driven counterfactual questioning to understand what a bad outcome would look like and what the user most wants to avoid. When helpful, test a meaningful alternative with one concise question, such as which priority should win if two preferences conflict. Do not manufacture anxiety or ask hypothetical questions without a real decision behind them.",
@@ -404,7 +404,11 @@ const app = http.createServer(async (request, response) => {
     if (typeof reply !== "string" || !reply.trim()) {
       return json(response, 502, { error: "The AI service returned an empty reply." }, headers || {});
     }
-    const safeReply = guardRobotExecutionClaims(reply.trim(), preferences);
+    const robotName = String(profile.robotName || "").trim();
+    const namedReply = robotName
+      ? reply.trim().replace(/\byour SecondSelf(?=\s+(?:to avoid|should avoid|avoid))/gi, "your " + robotName)
+      : reply.trim();
+    const safeReply = guardRobotExecutionClaims(namedReply, preferences);
     const lowValueReply = /I've captured this preference for your browser-based SecondSelf|I've added it to your local digital persona|That's useful context for your SecondSelf|Let's make that preference more precise|What detail would matter most to get right/i.test(safeReply);
     const finalReply = lowValueReply || responseRepeatsUser(safeReply, latestUserMessage)
       ? betterFallbackFollowup(latestUserMessage, profile)
