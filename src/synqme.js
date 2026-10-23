@@ -1498,14 +1498,14 @@ function localReply(message) {
   if (category === "Home & care") {
     return ask([
       { question: "Are there signs or situations where you would want extra care or a different routine?", seen: /extra care|different routine/i },
-      { question: "Is there anything your SecondSelf should avoid doing in this situation?", seen: /avoid doing in this situation|should avoid doing/i },
+      { question: "Is there anything your " + (state.profile.robotName.trim() || "robot") + " should avoid doing in this situation?", seen: /avoid doing in this situation|should avoid doing/i },
       { question: "Would a regular schedule help, or should the routine adapt from day to day?", seen: /regular schedule help|adapt from day to day/i }
     ]);
   }
   return ask([
     { question: "What would a good result look like for you in practice?", seen: /good result look like|result.*in practice/i },
     { question: "Does that preference apply every time, or only in certain situations?", seen: /apply every time|certain situations/i },
-    { question: "Is there anything you would want your SecondSelf to avoid doing?", seen: /want your SecondSelf to avoid|avoid doing/i },
+    { question: "Is there anything you would want your " + (state.profile.robotName.trim() || "robot") + " to avoid doing?", seen: /want your SecondSelf to avoid|avoid doing/i },
     { question: "What would make that feel right for you in day-to-day use?", seen: /feel right.*day-to-day|day.to.day use/i }
   ]);
 }
