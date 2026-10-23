@@ -7,12 +7,10 @@ const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL || "").replace(/\/+$/, "
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
 const AUTH_REDIRECT_URL = (() => {
   const configured = String(import.meta.env.VITE_AUTH_REDIRECT_URL || "").trim();
-  if (configured) return configured.replace(/\/+$/, "") + "/";
-  const origin = window.location.origin;
-  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) {
-    return "https://synqme.mysecondself.app/";
+  if (configured && !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(configured)) {
+    return configured.replace(/\/+$/, "") + "/";
   }
-  return origin.replace(/\/+$/, "") + "/";
+  return "https://synqme.mysecondself.app/";
 })();
 let rememberMeEnabled = (() => {
   try {
