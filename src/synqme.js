@@ -205,7 +205,13 @@ function preferenceExtraction(item) {
   const storedFields = item.explicitFacets && typeof item.explicitFacets === "object" ? item.explicitFacets : {};
   const explicitFields = Object.keys(storedFields).length ? storedFields : extracted.explicitFacets;
   const storedUnresolved = Array.isArray(item.unresolvedFields) ? item.unresolvedFields : [];
-  const unresolvedFields = storedUnresolved.length ? storedUnresolved : extracted.unresolvedFields;
+  const confirmedFields = new Set(
+    (Array.isArray(item.clarifications) ? item.clarifications : [])
+      .filter((entry) => entry && entry.status === "user_confirmed" && typeof entry.field === "string")
+      .map((entry) => entry.field)
+  );
+  const unresolvedFields = (storedUnresolved.length ? storedUnresolved : extracted.unresolvedFields)
+    .filter((field) => !confirmedFields.has(field));
   return { explicitFields, unresolvedFields };
 }
 
