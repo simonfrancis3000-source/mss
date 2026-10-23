@@ -727,7 +727,7 @@ function populateSettingsForm() {
     checkbox.checked = state.functions.includes(checkbox.value);
   });
 }
-elements.settingsForm?.addEventListener("submit", (event) => {
+elements.settingsForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
   const ownerName = elements.ownerName.value.trim().slice(0, 60);
   const robotName = elements.robotName.value.trim().slice(0, 60);
@@ -748,9 +748,12 @@ elements.settingsForm?.addEventListener("submit", (event) => {
   };
   persist();
   renderAll();
+  const savedToAccount = await flushCloudSave();
   updateSettingsMode();
   closeSettings();
-  elements.conversationStatus.textContent = "Your profile is ready";
+  elements.conversationStatus.textContent = savedToAccount
+    ? "Your profile is ready · saved to account"
+    : "Your profile is updated locally; account sync needs attention";
 });
 
 elements.functionGrid?.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
@@ -1603,8 +1606,8 @@ elements.runTask.addEventListener("click", () => {
       ? "Use the domestic functions you selected: " + state.functions.map((id) => ACTIVITIES.find((activity) => activity.id === id)?.label).filter(Boolean).join(", ") + "."
       : "No domestic functions selected yet. Choose the areas of home life you want your SecondSelf to learn about in Settings.");
     makeTaskStep(2, "Use your personal preferences", state.preferences.length
-      ? "Reference the " + state.preferences.length + (state.preferences.length === 1 ? " preference" : " preferences") + " currently stored in this browser."
-      : "No preferences recorded yet. Start a conversation with ELO to add details to your persona.");
+      ? "Reference the " + state.preferences.length + (state.preferences.length === 1 ? " preference" : " preferences") + " saved to your account."
+      : "No preferences recorded yet. Start a conversation with your chosen companion to add details to your persona.");
     makeTaskStep(3, "Build the persona, not a robot connection", "The preview shows a conceptual structure for personalisation. No physical robot is connected, and no action is executed.");
     elements.amyaState.textContent = "Context outlined";
     elements.pexiState.textContent = "Not connected";
@@ -1700,6 +1703,11 @@ async function submitAccountForm(event) {
           : /password/i.test(raw) && /length|characters|short/i.test(raw)
             ? "Use a longer password (at least 8 characters)."
             : "We couldn’t complete that request. Check your details and connection, then try again.";
+    cloudUserId = null;
+    cloudUserEmail = "";
+    cloudMode = "error";
+    setAuthGateVisible(true);
+    renderAccountStatus();
     setAuthMode(authMode, message);
     console.info("SYNQ.ME account action failed.", error);
   } finally {
