@@ -811,7 +811,16 @@ async function requestAIReply() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         messages: state.messages.slice(-20).map((message) => ({ role: message.role, content: message.content })),
-        preferences: state.preferences.map((preference) => ({ category: preference.category || classifyPreference(preference.text), text: preference.text })),
+        preferences: state.preferences.map((preference) => {
+          const extracted = extractExplicitPreferenceFacets(preference.text);
+          return {
+            category: preference.category || classifyPreference(preference.text),
+            text: preference.text,
+            epistemicStatus: preference.status || "user_stated",
+            explicitFields: preference.explicitFacets || extracted.explicitFacets,
+            unresolvedFields: preference.unresolvedFields || extracted.unresolvedFields
+          };
+        }),
         profile: {
           ownerName: state.profile.ownerName,
           robotName: state.profile.robotName,
