@@ -137,6 +137,8 @@ const elements = {
   authPassword: $("#authPassword"),
   authPasswordLabel: $("#authPasswordLabel"),
   rememberMe: $("#rememberMe"),
+  authImportDraft: $("#authImportDraft"),
+  authImportDraftWrap: $("#authImportDraftWrap"),
   authStatus: $("#authStatus"),
   authSubmit: $("#authSubmit"),
   authModeToggle: $("#authModeToggle"),
@@ -493,6 +495,7 @@ function setAuthMode(mode, message = "") {
     elements.authModeToggle.textContent = isSignup ? "Already have an account? Sign in" : "New to SYNQ.ME? Create an account";
   }
   if (elements.authForgotPassword) elements.authForgotPassword.hidden = mode !== "signin";
+  if (elements.authImportDraftWrap) elements.authImportDraftWrap.hidden = !isSignup;
   if (elements.authEmail) {
     elements.authEmail.hidden = isRecovery;
     elements.authEmail.required = !isRecovery;
@@ -1663,7 +1666,10 @@ async function submitAccountForm(event) {
     }
 
     if (authMode === "signup") {
-      savePendingAccountDraft(email);
+      if (elements.authImportDraft?.checked) savePendingAccountDraft(email);
+      else {
+        try { localStorage.removeItem(ACCOUNT_DRAFT_KEY); } catch {}
+      }
       const { data: currentData, error: currentError } = await supabase.auth.getSession();
       if (currentError) throw currentError;
       if (currentData.session?.user?.is_anonymous) {
