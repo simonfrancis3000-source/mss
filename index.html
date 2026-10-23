@@ -24,6 +24,29 @@
       <div class="splash-caption">SYNQ.ME <span>PERSONAL INTELLIGENCE</span></div>
       <div class="splash-track"><span></span></div>
     </div>
+    <section class="auth-overlay" id="authGate" hidden aria-labelledby="authTitle">
+      <div class="auth-card">
+        <img class="auth-logo" src="https://mysecondself.app/wp-content/uploads/2026/10/MySecondSelf-Dual-Head-Logo.png" alt="MySecondSelf" />
+        <div class="section-kicker">SYNQ.ME / PERSONAL ACCOUNT</div>
+        <h1 id="authTitle">Your SecondSelf, saved.</h1>
+        <p class="auth-description" id="authDescription">Sign in to continue building your personal digital persona. Your conversations and preferences will be saved to your account.</p>
+        <form id="authForm" class="auth-form">
+          <label for="authEmail">Email address</label>
+          <input id="authEmail" name="email" type="email" autocomplete="email" maxlength="254" placeholder="you@example.com" required />
+          <label for="authPassword">Password</label>
+          <input id="authPassword" name="password" type="password" autocomplete="current-password" minlength="8" placeholder="At least 8 characters" required />
+          <label class="auth-remember" for="rememberMe">
+            <input type="checkbox" id="rememberMe" name="rememberMe" checked />
+            <span>Remember me on this device</span>
+          </label>
+          <p class="auth-status" id="authStatus" role="status" aria-live="polite"></p>
+          <button class="auth-submit" id="authSubmit" type="submit">Sign in</button>
+          <button class="auth-mode-toggle" id="authModeToggle" type="button">New to SYNQ.ME? Create an account</button>
+          <button class="auth-forgot" id="authForgotPassword" type="button">Forgot password?</button>
+        </form>
+        <p class="auth-privacy-note">Your account keeps your profile, preferences and chat history together. Use “Remember me” only on a device you trust.</p>
+      </div>
+    </section>
     <header class="site-header">
       <div class="nav-wrap">
         <a class="brand" href="https://mysecondself.app/" aria-label="MySecondSelf home">
@@ -105,7 +128,7 @@
 
           <form class="chat-composer" id="chatForm">
             <label class="sr-only" for="messageInput">Tell SYNQ.ME a preference</label>
-            <textarea id="messageInput" name="message" rows="2" maxlength="1200" placeholder="Tell ELO how you like things done..." required></textarea>
+            <textarea id="messageInput" name="message" rows="2" maxlength="1200" placeholder="Tell your SecondSelf how you like things done..." required></textarea>
             <button class="send-button" id="sendButton" type="submit" aria-label="Send message">
               <span>Send</span>
               <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 10h13M10 4l6 6-6 6"></path></svg>
@@ -217,7 +240,7 @@
           <div>
             <div class="section-kicker">PERSONALISE YOUR APP</div>
             <h2 id="settingsTitle">Settings</h2>
-            <p id="settingsIntro">Make SYNQ.ME feel like yours. Your settings are saved for this browser profile.</p>
+            <p id="settingsIntro">Make SYNQ.ME feel like yours. Your profile, preferences and conversation history are saved to your account.</p>
             <p id="profileSetupNotice" class="profile-setup-notice" hidden>First, add your name and choose a name for your future robot before beginning.</p>
           </div>
           <button type="button" class="settings-close" id="closeSettings" aria-label="Close settings">×</button>
@@ -281,6 +304,13 @@
         <div class="pexi-readiness" id="pexiReadiness">
           <div class="settings-subhead"><span>PEXI TRANSFER READINESS</span><span id="pexiReadinessStatus">NOT STARTED</span></div>
           <p id="pexiReadinessSummary">Your stated preferences and unresolved details will be kept separate. PEXI must map these to a compatible robot before use.</p>
+        </div>
+        <div class="account-status-panel" id="accountStatusPanel">
+          <div>
+            <div class="settings-subhead"><span>YOUR ACCOUNT</span><span id="accountStatusLabel">SIGNED IN</span></div>
+            <p id="accountEmail">Your account</p>
+          </div>
+          <button type="button" id="signOutButton" class="settings-task-link account-signout">Sign out <span>↗</span></button>
         </div>
         <button type="button" class="settings-task-link" id="exportPexiPackage">Export persona package for PEXI <span>↗</span></button>
         <button type="button" class="settings-task-link" id="openTaskFromSettings">Preview persona journey <span>↗</span></button>
