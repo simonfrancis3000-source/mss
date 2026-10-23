@@ -358,82 +358,268 @@ async function saveCloudState() {
   renderPreferences();
 }
 
-async function initialiseCloudStorage() {
-  if (!supabase) {
-    cloudMode = "local";
-    renderPreferences();
-    return;
-  }
+function snapshotAppState() {
+  return {
+    messages: state.messages.slice(-5000),
+    preferences: state.preferences.slice(0, 24).map((item) => ({ ...item })),
+    profile: { ...state.profile },
+    functions: [...state.functions],
+    pendingClarification: state.pendingClarification ? { ...state.pendingClarification } : null
+  };
+}
+
+function savePendingAccountDraft(email) {
   try {
-    let { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-    if (sessionError) throw sessionError;
-    if (!sessionData.session) {
-      const { data, error } = await supabase.auth.signInAnonymously();
-      if (error) throw error;
-      sessionData = { session: data.session };
-    }
-    if (!sessionData.session?.user?.id) throw new Error("Supabase did not return an authenticated user.");
-    cloudUserId = sessionData.session.user.id;
-
-    const [profileResult, preferencesResult] = await Promise.all([
-      supabase.from("synqme_profiles").select("*").eq("user_id", cloudUserId).maybeSingle(),
-      supabase.from("synqme_preferences").select("category,preference_text,normalised_text,preference_status,explicit_facets,unresolved_fields,source_message,created_at,schema_version,clarifications").eq("user_id", cloudUserId).order("created_at", { ascending: false }).limit(24)
-    ]);
-    if (profileResult.error) throw profileResult.error;
-    if (preferencesResult.error) throw preferencesResult.error;
-
-    const remoteProfile = profileResult.data;
-    if (remoteProfile) {
-      state.profile = {
-        ownerName: remoteProfile.owner_name || state.profile.ownerName || "",
-        robotName: remoteProfile.future_robot_name || state.profile.robotName || "",
-        robotType: remoteProfile.future_robot_type || state.profile.robotType || "Humanoid robot",
-        robotVoice: remoteProfile.future_robot_voice || state.profile.robotVoice || "female",
-        confirmActions: Boolean(remoteProfile.confirm_actions)
-      };
-      const remoteFunctions = Array.isArray(remoteProfile.domestic_functions)
-        ? remoteProfile.domestic_functions.filter((id) => ACTIVITIES.some((activity) => activity.id === id))
-        : [];
-      state.functions = [...new Set([...remoteFunctions, ...state.functions])];
-    }
-
-    const merged = [
-      ...(preferencesResult.data || []).map((item) => ({
-        text: item.preference_text,
-        category: item.category,
-        normalised: item.normalised_text,
-        preference_status: item.preference_status,
-        explicit_facets: item.explicit_facets,
-        unresolved_fields: item.unresolved_fields,
-        source_message: item.source_message,
-        created_at: item.created_at,
-        clarifications: item.clarifications
-      })),
-      ...state.preferences
-    ];
-    const unique = new Map();
-    merged.forEach((item) => {
-      const cleaned = cleanPreference(item.text);
-      if (!cleaned) return;
-      const normalised = (item.normalised || cleaned.normalised).slice(0, 240);
-      if (!unique.has(normalised)) unique.set(normalised, { ...cleaned, category: item.category || cleaned.category, normalised, status: item.status || item.preference_status || cleaned.status, explicitFacets: item.explicitFacets || item.explicit_facets || cleaned.explicitFacets, unresolvedFields: item.unresolvedFields || item.unresolved_fields || cleaned.unresolvedFields, sourceMessage: item.sourceMessage || item.source_message || cleaned.sourceMessage, recordedAt: item.recordedAt || item.created_at || cleaned.recordedAt, clarifications: item.clarifications || cleaned.clarifications || [] });
-    });
-    state.preferences = [...unique.values()].slice(0, 24);
-
-    cloudMode = "cloud";
-    populateSettingsForm();
-    renderAll();
-    persist();
-    if (!remoteProfile) scheduleCloudSave();
+    localStorage.setItem(ACCOUNT_DRAFT_KEY, JSON.stringify({
+      email: String(email || "").trim().toLowerCase(),
+      savedAt: new Date().toISOString(),
+      state: snapshotAppState()
+    }));
   } catch (error) {
-    cloudUserId = null;
-    cloudMode = "local";
-    console.info("SYNQ.ME cloud storage is not ready; keeping persona data in this browser.", error);
-    renderAll();
-    elements.memoryFootnote.textContent = "Saved in this browser. Enable Supabase Anonymous Sign-Ins to add cloud saving.";
+    console.info("SYNQ.ME could not stage browser data for account migration.", error);
   }
 }
 
+function readMatchingAccountDraft(email) {
+  try {
+    const draft = JSON.parse(localStorage.getItem(ACCOUNT_DRAFT_KEY) || "null");
+    return draft && String(draft.email || "").trim().toLowerCase() === String(email || "").trim().toLowerCase()
+      ? draft
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function stateFromSnapshot(snapshot) {
+  const base = initialState();
+  if (!snapshot || typeof snapshot !== "object") return base;
+  const messages = Array.isArray(snapshot.messages)
+    ? snapshot.messages
+        .filter((item) => item && (item.role === "assistant" || item.role === "user") && typeof item.content === "string")
+        .slice(-5000)
+        .map((item) => ({ role: item.role, content: item.content }))
+    : [];
+  base.messages = messages.length ? messages : [{ role: "assistant", content: WELCOME }];
+  base.preferences = Array.isArray(snapshot.preferences)
+    ? snapshot.preferences.slice(0, 24).map((item) => typeof item === "string" ? cleanPreference(item) : cleanPreference(item?.text, item)).filter(Boolean)
+    : [];
+  base.profile = { ...defaultProfile(), ...(snapshot.profile && typeof snapshot.profile === "object" ? snapshot.profile : {}) };
+  base.functions = Array.isArray(snapshot.functions)
+    ? snapshot.functions.filter((id) => ACTIVITIES.some((activity) => activity.id === id))
+    : [];
+  base.pendingClarification = snapshot.pendingClarification && typeof snapshot.pendingClarification === "object"
+    ? snapshot.pendingClarification
+    : null;
+  base.apiConnected = false;
+  return base;
+}
+
+function mergeConversationMessages(...groups) {
+  const messages = [];
+  const seen = new Set();
+  for (const group of groups) {
+    for (const item of Array.isArray(group) ? group : []) {
+      if (!item || (item.role !== "assistant" && item.role !== "user") || typeof item.content !== "string") continue;
+      const content = item.content.trim();
+      if (!content) continue;
+      const key = item.role + "\\n" + content;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      messages.push({ role: item.role, content });
+    }
+  }
+  return (messages.length ? messages : [{ role: "assistant", content: WELCOME }]).slice(-5000);
+}
+
+function mergePreferences(remoteItems, draftItems) {
+  const unique = new Map();
+  for (const item of [...(Array.isArray(remoteItems) ? remoteItems : []), ...(Array.isArray(draftItems) ? draftItems : [])]) {
+    const cleaned = cleanPreference(item?.text, item || {});
+    if (!cleaned) continue;
+    const normalised = String(item?.normalised || item?.normalised_text || cleaned.normalised).slice(0, 240);
+    unique.set(normalised, {
+      ...cleaned,
+      category: item?.category || cleaned.category,
+      normalised,
+      status: item?.status || item?.preference_status || cleaned.status,
+      explicitFacets: item?.explicitFacets || item?.explicit_facets || cleaned.explicitFacets,
+      unresolvedFields: item?.unresolvedFields || item?.unresolved_fields || cleaned.unresolvedFields,
+      sourceMessage: item?.sourceMessage || item?.source_message || cleaned.sourceMessage,
+      recordedAt: item?.recordedAt || item?.created_at || cleaned.recordedAt,
+      clarifications: item?.clarifications || cleaned.clarifications || []
+    });
+  }
+  return [...unique.values()].slice(-24);
+}
+
+function setAuthGateVisible(visible) {
+  if (elements.authGate) elements.authGate.hidden = !visible;
+  document.body.classList.toggle("auth-required", Boolean(visible));
+  if (visible) window.setTimeout(() => elements.authEmail?.focus(), 0);
+}
+
+function setAuthMode(mode, message = "") {
+  authMode = mode;
+  const isSignup = mode === "signup";
+  const isRecovery = mode === "recovery";
+  if (elements.authTitle) elements.authTitle.textContent = isRecovery
+    ? "Choose a new password."
+    : isSignup ? "Create your SYNQ.ME account." : "Your SecondSelf, saved.";
+  if (elements.authDescription) elements.authDescription.textContent = isRecovery
+    ? "Enter a new password for your SYNQ.ME account."
+    : isSignup
+      ? "Create an account to keep your profile, conversations and preferences together across devices."
+      : "Sign in to continue building your personal digital persona. Your conversations and preferences will be saved to your account.";
+  if (elements.authSubmit) elements.authSubmit.textContent = isRecovery ? "Save new password" : isSignup ? "Create account" : "Sign in";
+  if (elements.authModeToggle) {
+    elements.authModeToggle.hidden = isRecovery;
+    elements.authModeToggle.textContent = isSignup ? "Already have an account? Sign in" : "New to SYNQ.ME? Create an account";
+  }
+  if (elements.authForgotPassword) elements.authForgotPassword.hidden = mode !== "signin";
+  if (elements.authEmail) {
+    elements.authEmail.hidden = isRecovery;
+    elements.authEmail.required = !isRecovery;
+  }
+  if (elements.authEmailLabel) elements.authEmailLabel.hidden = isRecovery;
+  if (elements.authPasswordLabel) elements.authPasswordLabel.textContent = isRecovery ? "New password" : "Password";
+  if (elements.authPassword) {
+    elements.authPassword.autocomplete = isSignup || isRecovery ? "new-password" : "current-password";
+    elements.authPassword.minLength = 8;
+  }
+  if (elements.authStatus) elements.authStatus.textContent = message;
+}
+
+function renderAccountStatus() {
+  if (elements.accountStatusLabel) elements.accountStatusLabel.textContent = cloudUserId ? "SIGNED IN" : "SIGN IN REQUIRED";
+  if (elements.accountEmail) elements.accountEmail.textContent = cloudUserEmail || "Sign in to synchronise your SecondSelf.";
+}
+
+async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
+  const user = session?.user;
+  if (!user?.id || !user.email || user.is_anonymous) {
+    cloudUserId = null;
+    cloudUserEmail = "";
+    cloudMode = "local";
+    renderAccountStatus();
+    setAuthGateVisible(true);
+    return false;
+  }
+
+  const email = user.email.trim().toLowerCase();
+  const draft = migrateDraft ? readMatchingAccountDraft(email) : null;
+  const draftState = draft?.state ? stateFromSnapshot(draft.state) : null;
+  const fallbackProfile = draftState?.profile || defaultProfile();
+  const fallbackFunctions = draftState?.functions || [];
+  cloudUserId = user.id;
+  cloudUserEmail = user.email;
+
+  const [profileResult, preferencesResult, conversationResult] = await Promise.all([
+    supabase.from("synqme_profiles").select("*").eq("user_id", cloudUserId).maybeSingle(),
+    supabase.from("synqme_preferences").select("id,category,preference_text,normalised_text,preference_status,explicit_facets,unresolved_fields,source_message,created_at,schema_version,clarifications").eq("user_id", cloudUserId).order("created_at", { ascending: false }).limit(24),
+    supabase.from("synqme_conversations").select("messages,pending_clarification").eq("user_id", cloudUserId).maybeSingle()
+  ]);
+  if (profileResult.error) throw profileResult.error;
+  if (preferencesResult.error) throw preferencesResult.error;
+  if (conversationResult.error) throw conversationResult.error;
+
+  const remoteProfile = profileResult.data;
+  const remotePreferences = (preferencesResult.data || []).map((item) => ({
+    id: item.id,
+    text: item.preference_text,
+    category: item.category,
+    normalised: item.normalised_text,
+    preference_status: item.preference_status,
+    explicit_facets: item.explicit_facets,
+    unresolved_fields: item.unresolved_fields,
+    source_message: item.source_message,
+    created_at: item.created_at,
+    clarifications: item.clarifications
+  }));
+  const remoteConversation = conversationResult.data;
+  state = draftState || initialState();
+
+  if (remoteProfile) {
+    state.profile = {
+      ownerName: remoteProfile.owner_name || fallbackProfile.ownerName || "",
+      robotName: remoteProfile.future_robot_name || fallbackProfile.robotName || "",
+      robotType: remoteProfile.future_robot_type || fallbackProfile.robotType || "Humanoid robot",
+      robotVoice: remoteProfile.future_robot_voice || fallbackProfile.robotVoice || "female",
+      confirmActions: Boolean(remoteProfile.confirm_actions)
+    };
+    const remoteFunctions = Array.isArray(remoteProfile.domestic_functions)
+      ? remoteProfile.domestic_functions.filter((id) => ACTIVITIES.some((activity) => activity.id === id))
+      : [];
+    state.functions = draftState
+      ? [...new Set([...remoteFunctions, ...fallbackFunctions])]
+      : remoteFunctions;
+  } else {
+    state.profile = { ...defaultProfile(), ...fallbackProfile };
+    state.functions = [...fallbackFunctions];
+  }
+
+  state.preferences = mergePreferences(remotePreferences, draftState?.preferences || []);
+  state.messages = mergeConversationMessages(remoteConversation?.messages || [], draftState?.messages || []);
+  state.pendingClarification = remoteConversation?.pending_clarification || draftState?.pendingClarification || null;
+  state.apiConnected = false;
+  cloudMode = "cloud";
+  setAuthGateVisible(false);
+  renderAccountStatus();
+  populateSettingsForm();
+  renderAll();
+  persist();
+
+  await saveCloudState();
+  if (draft) {
+    try { localStorage.removeItem(ACCOUNT_DRAFT_KEY); } catch {}
+  }
+  renderAll();
+  if (!profileComplete()) openSettings();
+  else updateSettingsMode();
+  return true;
+}
+
+async function initialiseCloudStorage() {
+  if (!supabase) {
+    cloudUserId = null;
+    cloudUserEmail = "";
+    cloudMode = "local";
+    setAuthGateVisible(true);
+    setAuthMode("signin", "Account storage is not configured yet. Please check the app’s Supabase connection settings.");
+    renderAccountStatus();
+    return;
+  }
+  try {
+    if (authRecoveryInProgress) {
+      setAuthGateVisible(true);
+      setAuthMode("recovery", "Choose a new password to finish resetting your account.");
+      return;
+    }
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) throw sessionError;
+    const session = sessionData.session;
+    if (!session || !session.user || session.user.is_anonymous || !session.user.email) {
+      cloudUserId = null;
+      cloudUserEmail = "";
+      cloudMode = "local";
+      setAuthGateVisible(true);
+      setAuthMode("signin", session?.user?.is_anonymous
+        ? "Create an account or sign in to keep this persona, its preferences and future replies linked to you."
+        : "");
+      renderAccountStatus();
+      return;
+    }
+    await loadSignedInAccount(session);
+  } catch (error) {
+    cloudUserId = null;
+    cloudUserEmail = "";
+    cloudMode = "local";
+    setAuthGateVisible(true);
+    setAuthMode("signin", "We couldn’t load your account data. Check your connection and try again.");
+    renderAccountStatus();
+    console.info("SYNQ.ME account storage could not be loaded.", error);
+  }
+}
 function dismissSplash() {
   if (!elements.splash) return;
   window.setTimeout(() => elements.splash.classList.add("is-hidden"), 1000);
