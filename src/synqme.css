@@ -928,3 +928,54 @@ body.auth-required { overflow: hidden; }
   .voice-mode-button { padding-right: 8px; padding-left: 8px; }
   .voice-mode-button span { display: none; }
 }
+
+
+/* Conversation layout: input first, latest exchange next, older history below. */
+.conversation-panel {
+  display: flex;
+  flex-direction: column;
+}
+.conversation-panel > .panel-heading { order: 0; }
+.conversation-panel > .conversation-intro { order: 1; }
+.conversation-panel > .suggestions-wrap { order: 2; }
+.conversation-panel > .chat-composer { order: 3; position: static; flex: 0 0 auto; }
+.conversation-panel > .chat-messages { order: 4; }
+.conversation-panel > .composer-foot { order: 5; }
+
+/* On phones, stop the browser zooming into the message field and displacing the app. */
+@media (max-width: 800px) {
+  .hero { display: none !important; }
+  .conversation-panel {
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    overflow: hidden;
+  }
+  .conversation-panel > .chat-composer {
+    position: static;
+    bottom: auto;
+    margin-top: 8px;
+    margin-bottom: 8px;
+  }
+  .conversation-panel > .chat-messages {
+    width: auto;
+    height: min(38svh, 320px);
+    min-height: 140px;
+    max-height: min(38svh, 320px);
+    flex: 0 1 auto;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: auto;
+  }
+  .chat-composer textarea,
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+@media (max-width: 520px) {
+  .chat-composer textarea { min-height: 44px; max-height: 110px; }
+  .conversation-panel > .chat-messages { height: min(36svh, 280px); max-height: min(36svh, 280px); }
+}
