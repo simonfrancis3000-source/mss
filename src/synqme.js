@@ -5,7 +5,17 @@ const ACCOUNT_DRAFT_KEY = "synqme-pending-account-migration-v1";
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
-let rememberMeEnabled = document.querySelector("#rememberMe")?.checked ?? true;
+let rememberMeEnabled = (() => {
+  try {
+    const savedChoice = localStorage.getItem("synqme-remember-me-choice");
+    if (savedChoice === "true") return true;
+    if (savedChoice === "false") return false;
+  } catch {}
+  return document.querySelector("#rememberMe")?.checked ?? true;
+})();
+if (document.querySelector("#rememberMe")) {
+  document.querySelector("#rememberMe").checked = rememberMeEnabled;
+}
 
 // Select localStorage ("Remember me") or sessionStorage (this tab only) for
 // the Supabase session. The persona itself is synchronised to the signed-in
@@ -662,7 +672,7 @@ function updateSettingsMode() {
   if (elements.settingsIntro) {
     elements.settingsIntro.textContent = setupRequired
       ? "First, add your name and choose a name for your future robot. Complete these essentials before starting your conversation."
-      : "Make SYNQ.ME feel like yours. Your settings are saved for this browser profile.";
+      : "Make SYNQ.ME feel like yours. Your profile, preferences and conversation history are saved to your account.";
   }
   if (elements.profileSetupNotice) elements.profileSetupNotice.hidden = !setupRequired;
   if (elements.closeSettings) elements.closeSettings.hidden = setupRequired;
@@ -760,12 +770,14 @@ elements.settingsForm?.addEventListener("submit", async (event) => {
 });
 
 elements.functionGrid?.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
-  checkbox.addEventListener("change", () => {
+  checkbox.addEventListener("change", async () => {
     const selected = new Set(state.functions);
     if (checkbox.checked) selected.add(checkbox.value);
     else selected.delete(checkbox.value);
     state.functions = [...selected];
     persist();
+    renderAll();
+    await flushCloudSave();
     renderAll();
   });
 });
@@ -1634,6 +1646,7 @@ async function submitAccountForm(event) {
   const email = String(elements.authEmail?.value || "").trim().toLowerCase();
   const password = String(elements.authPassword?.value || "");
   rememberMeEnabled = Boolean(elements.rememberMe?.checked);
+  try { localStorage.setItem("synqme-remember-me-choice", String(rememberMeEnabled)); } catch {}
   if (authMode !== "recovery" && !email) {
     setAuthMode(authMode, "Enter your email address to continue.");
     elements.authEmail?.focus();
@@ -1782,7 +1795,8 @@ elements.signOutButton?.addEventListener("click", async () => {
     setAuthGateVisible(true);
     setAuthMode("signin", "You’re signed out. Sign in again to access your saved SecondSelf.");
   } catch (error) {
-    setAuthMode("signin", "We couldn’t safely sign out because the latest data could not be confirmed as saved. Try again when the connection is available.");
+    if (elements.conversationStatus) elements.conversationStatus.textContent = "Sign-out paused: the latest changes could not be confirmed as saved.";
+    if (elements.memoryFootnote) elements.memoryFootnote.textContent = "Account sync needs attention. Reconnect before signing out.";
     console.info("SYNQ.ME sign-out failed.", error);
   } finally {
     authBusy = false;
