@@ -346,6 +346,14 @@ async function saveCloudState() {
     if (deleteError) throw deleteError;
   }
 
+  const { error: conversationError } = await supabase.from("synqme_conversations").upsert({
+    user_id: cloudUserId,
+    messages: state.messages.slice(-5000),
+    pending_clarification: state.pendingClarification || null,
+    updated_at: new Date().toISOString()
+  }, { onConflict: "user_id" });
+  if (conversationError) throw conversationError;
+
   cloudMode = "cloud";
   renderPreferences();
 }
