@@ -4,12 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#08090c" />
-    <meta name="description" content="A lightweight MySecondSelf persona demo with Sarah, Alex and an animated wireframe." />
-    <title>MySecondSelf | Persona Lab</title>
+    <meta name="description" content="Build a personal digital persona with SYNQ.ME, powered by MySecondSelf decision intelligence." />
+    <title>SYNQ.ME | Build Your SecondSelf</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="/src/style.css" />
+    <link rel="stylesheet" href="/src/synqme.css" />
+    <script type="module" src="/src/synqme.js"></script>
   </head>
   <body>
     <header class="site-header">
@@ -28,261 +29,167 @@
 
     <main>
       <section class="hero">
-        <div>
-          <div class="eyebrow">A personalisation layer for robotics</div>
-          <h1>One demo.<br />Two personal responses.</h1>
-          <p>Choose Sarah or Alex, select a household scenario, and see how a SecondSelf profile changes the pace, pauses and confirmations in a lightweight wireframe walkthrough.</p>
+        <div class="hero-copy">
+          <div class="eyebrow">SYNQ.ME <span class="eyebrow-divider">/</span> YOUR PERSONALISATION LAYER</div>
+          <h1>A SecondSelf that<br /><span>knows you.</span></h1>
+          <p>Build a digital persona through natural conversation. Your preferences become the context a compatible robot needs to understand how you like things done.</p>
         </div>
-        <div class="demo-stamp"><span class="stamp-dot"></span> Browser visual demo</div>
+        <div class="demo-stamp"><span class="stamp-dot"></span><span id="providerLabel">Checking AI connection</span></div>
       </section>
 
-      <section class="demo-layout" aria-label="Interactive MySecondSelf persona demo">
-        <section class="panel stage-panel" aria-labelledby="stageTitle">
+      <section class="app-grid" aria-label="SYNQ.ME interactive product demo">
+        <section class="panel conversation-panel" aria-labelledby="conversationTitle">
           <div class="panel-heading">
             <div>
-              <div class="section-kicker">Full body wireframe</div>
-              <h2 id="stageTitle">Household task preview</h2>
+              <div class="section-kicker">01 / Conversation</div>
+              <h2 id="conversationTitle">Build your SecondSelf</h2>
             </div>
-            <span class="mini-tag">WIREFRAME · VISUAL ONLY</span>
+            <div class="panel-status"><span class="status-dot"></span><span id="conversationStatus">Ready to talk</span></div>
           </div>
-          <figure class="viewport">
-            <div class="scene-corner"><span>PERSONA LAB / 01</span><span id="sceneTaskLabel">Prepare breakfast · cup routine</span></div>
-            <div class="scene-legend"><span class="legend-dot"></span><span id="scenePersonaLabel">SARAH · FAMILIAR ROUTINE</span></div>
-            <svg class="wire-scene" id="wireScene" data-motion="idle" data-task="breakfast" viewBox="0 0 1000 620" role="img" aria-labelledby="wireTitle wireDesc" preserveAspectRatio="xMidYMid meet">
-              <title id="wireTitle">MySecondSelf animated wireframe task preview</title>
-              <desc id="wireDesc">A proportioned, full body humanoid wireframe performs a visual storyboard for breakfast, kitchen tidying or welcoming a visitor. The objects and movements are choreographed, not physics based.</desc>
-              <defs>
-                <radialGradient id="stageGlow" cx="50%" cy="53%" r="56%">
-                  <stop offset="0" stop-color="#172337" stop-opacity=".7" />
-                  <stop offset="1" stop-color="#090b0f" stop-opacity="0" />
-                </radialGradient>
-                <linearGradient id="wireTint" x1="0" x2="1" y1="0" y2="1">
-                  <stop offset="0" stop-color="#dceaff" />
-                  <stop offset=".52" stop-color="#91b8eb" />
-                  <stop offset="1" stop-color="#6a86ad" />
-                </linearGradient>
-              </defs>
-              <rect width="1000" height="620" fill="url(#stageGlow)" />
-              <g class="floor-grid" aria-hidden="true">
-                <path d="M86 500H914 M138 472H862 M190 445H810 M242 419H758 M294 396H706" />
-                <path d="M422 393L70 556 M422 393L184 556 M422 393L298 556 M422 393L412 556 M422 393L526 556 M422 393L640 556 M422 393L754 556 M422 393L868 556 M422 393L982 556" />
-                <path class="ground-line" d="M65 500H985" />
-              </g>
-              <g class="kitchen-set" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M526 300H1000V321H526Z M544 321V505H986V321 M544 356H986 M544 488H986" class="set-line" />
-                <path d="M552 300V321M974 300V321" class="set-highlight" />
-                <path d="M565 505V529M966 505V529M552 529H980" class="set-line" />
-              </g>
 
-              <g class="breakfast-props" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path class="coaster" d="M596 297H644M601 301H639" />
-                <g class="cup-object">
-                  <path class="cup-prop" d="M540 269H558L556 295Q549 301 542 295Z M558 274Q571 273 565 286Q563 290 557 290 M543 273H556" />
-                  <path class="cup-detail" d="M543 280H557M545 286H556" />
-                </g>
-                <path class="object-guide" d="M558 262C575 232 589 232 601 272" />
-                <text class="object-label" x="546" y="257">CUP</text>
-                <text class="object-label" x="598" y="286">COASTER</text>
-              </g>
+          <div class="conversation-intro">
+            <div class="elo-avatar" aria-hidden="true">
+              <svg viewBox="0 0 48 48" role="img">
+                <rect x="7" y="10" width="34" height="28" rx="11"></rect>
+                <path d="M13 20h22M16 28h5m6 0h5"></path>
+                <circle cx="17" cy="23" r="2"></circle>
+                <circle cx="31" cy="23" r="2"></circle>
+              </svg>
+            </div>
+            <div>
+              <div class="intro-title">Meet ELO <span class="intro-badge">SYNQ.ME GUIDE</span></div>
+              <p>Tell me what matters to you. I’ll help shape your digital persona, one preference at a time.</p>
+            </div>
+          </div>
 
-              <g class="tidy-props" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <g class="plate-object"><path class="dish-prop" d="M541 291Q554 275 569 291Q555 304 541 291Z M546 291Q555 282 564 291Q555 299 546 291Z" /></g>
-                <g class="jar-object"><path class="jar-prop" d="M573 268H592L595 296H570Z M576 264H589V269H576Z M573 277H593" /></g>
-                <g class="cloth-object"><path class="cloth-prop" d="M603 285L624 278L633 296L612 301Z M610 285L624 293" /></g>
-                <path class="rack-prop" d="M584 295H656M590 295V276M650 295V276M594 284L602 294M608 284L616 294M622 284L630 294M636 284L644 294" />
-                <path class="object-guide" d="M623 263C617 246 609 246 602 268" />
-                <text class="object-label" x="586" y="266">DISH RACK</text>
-                <text class="clear-label" x="570" y="250">WORK AREA</text>
-                <path class="wipe-trail" d="M554 307H729" />
-              </g>
+          <div class="chat-messages" id="chatMessages" role="log" aria-live="polite" aria-relevant="additions text">
+            <article class="message assistant-message">
+              <div class="message-avatar">E</div>
+              <div class="message-body">
+                <div class="message-meta">ELO <span>·</span> SYNQ.ME</div>
+                <p>Hi, I’m ELO. Let’s start with a household routine. If a robot were loading your dishwasher, what would you want it to know about how you like things done?</p>
+              </div>
+            </article>
+          </div>
 
-              <g class="visitor-props" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path class="door-frame" d="M791 353V135Q791 126 801 126H946V353 M814 353V149H925V353" />
-                <path class="door-detail" d="M902 244H911M804 338H934" />
-                <circle class="visitor-wire" cx="866" cy="214" r="22" />
-                <path class="visitor-wire" d="M848 208L860 192L879 193L884 211L875 229L858 231Z M849 254L866 238L883 254L892 304L879 326L852 326L840 303Z M850 257L826 276L813 298 M884 257L901 274L914 294 M852 326L846 360L837 383 M879 326L886 360L897 383" />
-                <path class="visitor-wire detail" d="M848 254L866 267L883 254M840 303L864 294L892 304M866 239V267M846 360L835 365M886 360L899 365" />
-                <text class="object-label" x="840" y="112">VISITOR</text>
-              </g>
+          <div class="suggestions-wrap">
+            <div class="suggestion-label">TRY A STARTING POINT</div>
+            <div class="suggestion-chips">
+              <button type="button" class="suggestion-chip" data-prompt="Put glasses on the top rack and keep delicate items separate.">Protect glassware</button>
+              <button type="button" class="suggestion-chip" data-prompt="Ask me before starting the dishwasher cycle.">Ask before starting</button>
+              <button type="button" class="suggestion-chip" data-prompt="Keep knives pointed down in the cutlery basket.">Handle knives safely</button>
+            </div>
+          </div>
 
-              <path class="reach-trail" d="M486 252C510 270 532 283 565 285" aria-hidden="true" />
-              <circle class="reach-point" cx="565" cy="285" r="4" aria-hidden="true" />
-
-              <g class="robot-rig" fill="none" stroke="url(#wireTint)" stroke-linecap="round" stroke-linejoin="round" aria-label="Full body wireframe humanoid">
-                <g class="leg left-leg" stroke-width="1.8">
-                  <path class="segment-shell" d="M396 299L421 304L415 384L403 395L382 382Z" />
-                  <path class="segment-wire" d="M396 299L403 348L415 384M421 304L403 348L382 382M391 316L416 322M386 369L410 365" />
-                  <circle cx="401" cy="389" r="12" class="joint" />
-                  <g class="shin left-shin">
-                    <path class="segment-shell" d="M388 389L414 390L411 469L402 482L386 472Z" />
-                    <path class="segment-wire" d="M388 389L399 433L386 472M414 390L399 433L411 469M391 411L408 414M388 455L408 450" />
-                    <path class="foot-shell" d="M387 470L405 477L414 491L407 498H365L361 492L375 481Z" />
-                    <path class="segment-wire" d="M375 481L389 490L414 491M369 492H406" />
-                  </g>
-                </g>
-                <g class="leg right-leg" stroke-width="1.8">
-                  <path class="segment-shell" d="M428 304L453 299L467 382L446 395L434 384Z" />
-                  <path class="segment-wire" d="M428 304L447 348L434 384M453 299L447 348L467 382M434 322L459 316M440 365L463 369" />
-                  <circle cx="450" cy="389" r="12" class="joint" />
-                  <g class="shin right-shin">
-                    <path class="segment-shell" d="M438 390L464 389L466 472L450 482L441 469Z" />
-                    <path class="segment-wire" d="M438 390L453 433L441 469M464 389L453 433L466 472M443 414L462 411M443 450L463 455" />
-                    <path class="foot-shell" d="M441 477L459 470L471 481L487 492L483 498H441L434 492Z" />
-                    <path class="segment-wire" d="M441 477L453 490L483 492M441 492H481" />
-                  </g>
-                </g>
-
-                <g class="pelvis-cage" stroke-width="1.8">
-                  <path class="segment-shell" d="M391 279L411 271L422 278L435 271L456 279L464 302L451 319L423 328L395 319L382 302Z" />
-                  <path class="segment-wire" d="M391 279L423 294L456 279M382 302L408 301L423 328L438 301L464 302M411 271L408 301M435 271L438 301M423 294V328" />
-                  <circle cx="401" cy="305" r="10" class="joint" />
-                  <circle cx="447" cy="305" r="10" class="joint" />
-                </g>
-
-                <g class="torso-cage" stroke-width="1.85">
-                  <path class="segment-shell" d="M382 164L402 154L421 160L442 154L463 164L476 203L466 255L449 284L423 293L397 284L379 255L369 203Z" />
-                  <path class="segment-wire" d="M382 164L423 183L463 164M369 203L402 216L423 183L444 216L476 203M379 255L407 246L423 277L439 246L466 255M397 284L407 246L423 293L439 246L449 284" />
-                  <path class="fine-wire" d="M402 165L402 216L407 246L397 284M444 165L444 216L439 246L449 284M423 183V277M382 188L402 198L423 183L444 198L463 188M377 226L402 232H444L470 226M383 266L407 263H439L462 266" />
-                  <path class="core-line" d="M412 193L423 187L434 193V235L423 243L412 235Z M412 250L423 244L434 250V269L423 276L412 269Z" />
-                  <path class="joint-frame" d="M371 160L383 148L395 160L383 172ZM451 160L463 148L475 160L463 172Z" />
-                  <circle cx="383" cy="160" r="10" class="joint" />
-                  <circle cx="463" cy="160" r="10" class="joint" />
-                </g>
-
-                <g class="neck-cage" stroke-width="1.5">
-                  <path d="M411 141L412 164H434L435 141M412 151L434 151M416 145V160M430 145V160" />
-                </g>
-                <g class="head-cage" stroke-width="1.65">
-                  <path class="head-shell" d="M404 100L410 88Q423 81 436 88L442 100V121L436 137L423 142L410 137L404 121Z" />
-                  <path class="segment-wire" d="M404 100L423 105L442 100M404 121L423 117L442 121M410 88L413 102L410 137M436 88L433 102L436 137M423 105V117M410 137L423 131L436 137" />
-                  <path class="face-band" d="M407 105L423 109L439 105M409 114L423 118L437 114" />
-                  <circle class="eye-node" cx="415" cy="111" r="2.1" />
-                  <circle class="eye-node" cx="431" cy="111" r="2.1" />
-                  <path class="fine-wire" d="M415 128L423 131L431 128" />
-                </g>
-
-                <g class="left-arm" stroke-width="1.75">
-                  <path class="segment-shell upper-shell" d="M383 161L397 163L380 226L363 239L350 227Z" />
-                  <path class="segment-wire" d="M383 161L374 202L350 227M397 163L374 202L380 226M366 181L392 188M358 218L379 220" />
-                  <circle cx="365" cy="232" r="10.5" class="joint" />
-                  <g class="left-forearm">
-                    <path class="segment-shell" d="M355 233L375 229L352 282L338 293L328 282Z" />
-                    <path class="segment-wire" d="M355 233L344 264L328 282M375 229L344 264L352 282M337 251L359 260M332 275L349 276" />
-                    <circle cx="341" cy="286" r="8.5" class="joint" />
-                    <path class="hand-shell" d="M335 287L346 285L346 299L339 308L331 305L334 298L327 302L324 298L333 292Z" />
-                    <path class="segment-wire" d="M335 287L337 296L331 305M346 285L341 296L339 308M333 292L341 296" />
-                  </g>
-                </g>
-
-                <g class="right-arm" stroke-width="1.75">
-                  <path class="segment-shell upper-shell" d="M458 163L474 159L496 221L482 239L466 229Z" />
-                  <path class="segment-wire" d="M458 163L480 198L466 229M474 159L480 198L496 221M464 185L489 177M470 221L490 215" />
-                  <circle cx="489" cy="231" r="10.5" class="joint" />
-                  <g class="right-forearm">
-                    <path class="segment-shell" d="M480 232L499 228L521 274L510 290L495 283Z" />
-                    <path class="segment-wire" d="M480 232L505 257L495 283M499 228L505 257L521 274M489 246L512 242M499 276L517 266" />
-                    <circle cx="514" cy="281" r="8.5" class="joint" />
-                    <g class="right-hand">
-                      <path class="hand-shell" d="M508 280L520 278L529 287L527 294L519 293L515 303L510 302L512 293L504 300L500 296L508 289Z" />
-                      <path class="segment-wire fingers-open" d="M508 280L513 289L512 293L519 293L527 294M508 289L500 296M513 289L519 285L525 287M513 293L510 302M519 293L519 300" />
-                      <path class="segment-wire fingers-closed" d="M508 280L513 289L516 294L522 292L527 294M508 289L513 292M513 289L519 285L525 287M516 294L515 300M522 292L521 298" />
-                    </g>
-                  </g>
-                </g>
-              </g>
-
-              <g class="scene-labels" aria-hidden="true">
-                <text x="98" y="237">ARTICULATED WIREFRAME</text>
-                <path d="M98 247H264L340 220" />
-                <text class="motion-label" x="633" y="386">HOUSEHOLD SCENARIO</text>
-                <path d="M628 396H582L565 316" />
-                <text x="500" y="584" text-anchor="middle">CHOREOGRAPHED VISUAL STORYBOARD · NO PHYSICS OR ROBOT CONTROL</text>
-              </g>
-            </svg>
-            <figcaption class="stage-caption"><span id="statusText" role="status" aria-live="polite">Choose a persona and start a task preview.</span><span id="statusDetail">This wireframe is illustrative; it does not demonstrate robot capability.</span></figcaption>
-          </figure>
-          <div class="timeline-wrap" aria-label="Task preview progress">
-            <div class="timeline-top"><span>Preview sequence</span><span id="stepCount">Ready</span></div>
-            <div class="progress-track" id="progressTrack" role="progressbar" aria-label="Preview progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="progress-fill" id="progressFill"></div></div>
-            <div class="timeline-steps" id="timelineSteps" aria-hidden="true"></div>
+          <form class="chat-composer" id="chatForm">
+            <label class="sr-only" for="messageInput">Tell SYNQ.ME a preference</label>
+            <textarea id="messageInput" name="message" rows="2" maxlength="1200" placeholder="Tell ELO how you like things done..." required></textarea>
+            <button class="send-button" id="sendButton" type="submit" aria-label="Send message">
+              <span>Send</span>
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 10h13M10 4l6 6-6 6"></path></svg>
+            </button>
+          </form>
+          <div class="composer-foot">
+            <span><span class="small-lock"></span> Demo memory is saved in this browser</span>
+            <button type="button" id="resetDemo" class="text-button">Reset demo</button>
           </div>
         </section>
 
-        <aside class="panel control-panel" aria-labelledby="controlTitle">
-          <div class="control-head">
-            <div class="section-kicker">Personal response</div>
-            <h2 id="controlTitle">Choose a SecondSelf</h2>
-            <p>Each profile changes how the visual task preview proceeds.</p>
-          </div>
-
-          <span class="form-label">Select a persona</span>
-          <div class="personas" role="group" aria-label="SecondSelf persona">
-            <button class="persona" id="sarahBtn" type="button" aria-pressed="true">
-              <span class="persona-name">Sarah</span>
-              <span class="persona-caption">Quiet mornings · Familiar routines</span>
-            </button>
-            <button class="persona" id="alexBtn" type="button" aria-pressed="false">
-              <span class="persona-name">Alex</span>
-              <span class="persona-caption">Explanations · Confirm new actions</span>
-            </button>
-          </div>
-
-          <div class="preference-box" id="preferenceBox">
-            <div class="preference-title" id="preferenceTitle">Sarah’s preferences</div>
-            <ul class="preference-list" id="preferences">
-              <li>Familiar steps proceed independently</li>
-              <li>A measured pace with a settling pause</li>
-            </ul>
-          </div>
-
-          <label class="form-label" for="taskSelect">Choose a household task</label>
-          <select id="taskSelect">
-            <option value="breakfast">Prepare breakfast · cup routine</option>
-            <option value="tidy">Tidy the kitchen · clear the counter</option>
-            <option value="visitor">Respond to a visitor · greet at the door</option>
-          </select>
-          <p class="task-help" id="taskHelp">A visual storyboard of a familiar breakfast routine.</p>
-
-          <div class="mode-row">
-            <div class="mode-label">
-              <strong>Use SecondSelf personalisation</strong>
-              <small id="modeHelp">Sarah’s pace and settling pauses are active.</small>
+        <aside class="side-stack">
+          <section class="panel persona-panel" aria-labelledby="personaTitle">
+            <div class="panel-heading">
+              <div>
+                <div class="section-kicker">02 / Digital persona</div>
+                <h2 id="personaTitle">Your SecondSelf</h2>
+              </div>
+              <span class="mini-tag" id="memoryCount">0 MEMORIES</span>
             </div>
-            <label class="switch">
-              <input id="personalization" type="checkbox" checked aria-label="Use SecondSelf personalisation" />
-              <span class="switch-ui" aria-hidden="true"></span>
-            </label>
-          </div>
+            <div class="persona-profile">
+              <div class="persona-mark" aria-hidden="true">
+                <svg viewBox="0 0 64 64">
+                  <path d="M32 8 50 18v22L32 54 14 40V18Z"></path>
+                  <path d="M14 18 32 30 50 18M32 30v24M23 24l9-5 9 5M24 39l8-5 8 5"></path>
+                  <circle cx="25" cy="27" r="2"></circle><circle cx="39" cy="27" r="2"></circle>
+                </svg>
+              </div>
+              <div class="persona-heading">
+                <span class="persona-name">My SecondSelf</span>
+                <span class="persona-subtitle">A portable digital persona</span>
+              </div>
+              <span class="memory-pulse" title="Local demo memory"></span>
+            </div>
+            <div class="persona-progress">
+              <div class="progress-copy"><span>Persona foundation</span><strong id="foundationValue">Waiting for your first preference</strong></div>
+              <div class="progress-track"><div class="progress-fill" id="personaProgress"></div></div>
+            </div>
+            <div class="preference-header"><span>LEARNED PREFERENCES</span><span id="preferenceCount">0</span></div>
+            <div id="preferenceList" class="preference-list">
+              <div class="empty-memory"><span class="empty-memory-icon">+</span><div><strong>Your persona starts here</strong><p>Share a preference in the conversation. SYNQ.ME will add it to your SecondSelf.</p></div></div>
+            </div>
+            <div class="persona-footnote"><span class="footnote-dot"></span><span id="memoryFootnote">No preferences saved yet</span></div>
+          </section>
 
-          <div class="explain-card">
-            <strong id="explainTitle">A measured, familiar routine</strong>
-            <p id="explainText">Sarah’s preview moves at a calmer pace and pauses briefly after key moments.</p>
-          </div>
-
-          <div class="actions">
-            <button class="action-button primary" id="runBtn" type="button">Start task preview</button>
-            <button class="action-button" id="pauseBtn" type="button" disabled>Pause</button>
-            <button class="action-button" id="resetBtn" type="button">Reset</button>
-            <button class="action-button confirm" id="confirmBtn" type="button" hidden>Confirm and continue</button>
-          </div>
-          <p class="scope-note">Visual choreography only. No robot, physics engine or hardware is connected.</p>
+          <section class="panel decision-panel" aria-labelledby="decisionTitle">
+            <div class="panel-heading">
+              <div>
+                <div class="section-kicker">03 / AMYA decision intelligence</div>
+                <h2 id="decisionTitle">From preference to action</h2>
+              </div>
+              <span class="mini-tag">DEMO</span>
+            </div>
+            <div class="decision-body">
+              <div class="decision-summary" id="decisionSummary">AMYA will use the preferences you share to shape a personalised task plan.</div>
+              <div class="decision-route">
+                <div class="route-node">
+                  <span class="route-icon">01</span>
+                  <div><strong>AMYA</strong><small>Interprets intent and preferences</small></div>
+                  <span class="route-state" id="amyaState">Waiting</span>
+                </div>
+                <div class="route-connector"></div>
+                <div class="route-node">
+                  <span class="route-icon">02</span>
+                  <div><strong>PEXI</strong><small>Maps the task to robot capabilities</small></div>
+                  <span class="route-state" id="pexiState">Waiting</span>
+                </div>
+              </div>
+              <button class="run-button" type="button" id="runTask">
+                <span>Run dishwasher task demo</span>
+                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 4 14 10 7 16Z"></path></svg>
+              </button>
+              <p class="scope-note">Illustrative simulation only. No physical robot is controlled and no production capability is claimed.</p>
+            </div>
+          </section>
         </aside>
       </section>
 
-      <section class="how" aria-labelledby="howTitle">
-        <div class="how-head">
-          <h2 id="howTitle">How MySecondSelf works</h2>
-          <p>Personal understanding can be built today and made available to compatible robots in the future.</p>
+      <section class="task-result panel" id="taskResult" hidden aria-labelledby="taskResultTitle">
+        <div class="task-visual">
+          <img src="https://mysecondself.app/wp-content/uploads/2026/10/Friendly-Robot-Loads-the-Dishwasher.png" alt="Illustrative domestic robot loading a dishwasher" loading="lazy" />
+          <span class="visual-label"><span class="status-dot"></span> SIMULATION-FIRST VALIDATION</span>
         </div>
-        <div class="flow">
-          <article class="flow-item"><div class="flow-num">01 · BUILD</div><strong>SYNQ.ME</strong><p>People build their SecondSelf through natural conversations, feedback and shared preferences.</p></article>
-          <article class="flow-item"><div class="flow-num">02 · UNDERSTAND</div><strong>AMYA</strong><p>Decision intelligence helps develop and refine the personal context that can guide a response.</p></article>
-          <article class="flow-item"><div class="flow-num">03 · CONNECT</div><strong>PEXI</strong><p>The planned interface makes authorised persona information available to compatible robot software.</p></article>
+        <div class="task-detail">
+          <div class="section-kicker">PEXI / TASK MAPPING</div>
+          <h2 id="taskResultTitle">A task plan shaped around you.</h2>
+          <p id="taskDescription">The demonstration maps a household task to an illustrative capability profile, then applies the preferences saved in your SecondSelf.</p>
+          <div class="task-steps" id="taskSteps"></div>
+          <div class="result-disclaimer">This is a choreographed product demonstration, not a physics simulation or a claim of live robot integration.</div>
+        </div>
+      </section>
+
+      <section class="principles">
+        <div class="principles-heading">
+          <div class="section-kicker">The SYNQ.ME model</div>
+          <h2>Personal intelligence, ready to travel.</h2>
+        </div>
+        <div class="principles-grid">
+          <article class="principle"><span>01</span><h3>Learn</h3><p>Natural conversation builds a digital persona from the way you communicate, choose and prefer.</p></article>
+          <article class="principle"><span>02</span><h3>Reason</h3><p>AMYA applies personal context to interpret intent and shape a more individual response.</p></article>
+          <article class="principle"><span>03</span><h3>Transfer</h3><p>PEXI maps a task to compatible robot capabilities, so a SecondSelf can move with you.</p></article>
         </div>
       </section>
 
       <footer class="footer">
-        <span>MySecondSelf · Persona demo only. The wireframe sequence is not evidence of real robot capability.</span>
+        <span>© MySecondSelf · SYNQ.ME interactive demo</span>
         <nav class="footer-nav" aria-label="Footer navigation">
           <a href="https://mysecondself.app/owners/">OWNERS</a>
           <a href="https://mysecondself.app/partners/">PARTNERS</a>
@@ -291,6 +198,5 @@
         </nav>
       </footer>
     </main>
-    <script type="module" src="/src/main.js"></script>
   </body>
 </html>
