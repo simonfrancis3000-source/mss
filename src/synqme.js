@@ -429,7 +429,7 @@ function renderAll() {
     elements.mobileJourneyText.textContent = count
       ? count + (count === 1 ? " preference" : " preferences") + " captured · " + functionsCount + (functionsCount === 1 ? " home interest" : " home interests")
       : functionsCount
-        ? functionsCount + (functionsCount === 1 ? " home interest selected" : " home interests selected") + " · keep building";
+        ? functionsCount + (functionsCount === 1 ? " home interest selected" : " home interests selected") + " · keep building"
         : "Choose home interests and start your first conversation";
   }
   const achieved = MILESTONES.filter(milestoneUnlocked).length;
