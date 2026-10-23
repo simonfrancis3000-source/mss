@@ -1610,6 +1610,7 @@ function startVoiceListening() {
   }
   recognitionTranscript = "";
   try {
+    recognitionListening = true;
     speechRecognition.start();
   } catch (error) {
     recognitionListening = false;
