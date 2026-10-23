@@ -205,7 +205,17 @@ function betterFallbackFollowup(message, profile = {}, history = []) {
     const a = normalise(reply), b = normalise(question);
     return a === b || a.includes(b) || b.includes(a);
   });
-  const choose = (options) => options.find((option) => !repeated(option)) || options[options.length - 1];
+  const choose = (options) => {
+    const fresh = options.find((option) => !repeated(option));
+    if (fresh) return fresh;
+    const newAngles = [
+      "Can you walk me through how that usually happens at home?",
+      "What tends to happen just before you need that done?",
+      "What small detail would make the biggest difference to you in that situation?",
+      "When this doesn’t go the way you like, what usually goes wrong?"
+    ];
+    return newAngles.find((option) => !repeated(option)) || "What does a typical day look like for you in that situation?";
+  };
 
   if (/^(morning|in the morning|evening|in the evening|afternoon|at night)$/i.test(text) && /(morning and evening|what time|which times|when would|time of day)/i.test(priorAssistant)) {
     if (/morning/i.test(text)) return "Morning sounds like a good fit. Is that because you’re usually up and about then, or would you prefer it done before you start using the kitchen?";
