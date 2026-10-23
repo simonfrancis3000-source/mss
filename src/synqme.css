@@ -650,3 +650,205 @@ body.auth-required { overflow: hidden; }
   .account-status-panel { align-items: flex-start; gap: 8px; padding: 11px; }
   .account-status-panel .account-signout { white-space: normal; }
 }
+
+
+/* Narrow-screen overflow containment v2
+   Prevent min-content sizing in nested flex/grid items from widening the
+   page; keep the containers usable rather than relying on clipping alone. */
+@media (max-width: 800px) {
+  html,
+  body {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: hidden;
+  }
+
+  body,
+  .site-header,
+  .nav-wrap,
+  main,
+  main > *,
+  .hero,
+  .hero-copy,
+  .mobile-summary,
+  .app-grid,
+  .app-grid > *,
+  .side-stack,
+  .side-stack > *,
+  .panel,
+  .panel-heading,
+  .conversation-intro,
+  .chat-messages,
+  .message,
+  .message-body,
+  .suggestions-wrap,
+  .suggestion-chips,
+  .chat-composer,
+  .composer-foot,
+  .task-result,
+  .task-result > *,
+  .principles,
+  .principles-grid,
+  .principles-grid > *,
+  .settings-overlay,
+  .settings-sheet,
+  .settings-heading,
+  .settings-form,
+  .settings-form > *,
+  .function-grid,
+  .function-grid > *,
+  .milestone-list,
+  .milestone,
+  .account-status-panel,
+  .auth-overlay,
+  .auth-card {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .site-header,
+  main {
+    width: 100%;
+    margin-right: 0;
+    margin-left: 0;
+  }
+
+  .nav-wrap,
+  .app-grid,
+  .task-result,
+  .principles-grid,
+  .function-grid,
+  .milestone-list {
+    width: 100%;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .app-grid > *,
+  .side-stack > *,
+  .task-result > *,
+  .principles-grid > *,
+  .function-grid > *,
+  .milestone-list > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .hero-copy,
+  .mobile-summary-copy,
+  .persona-heading,
+  .conversation-intro > div:last-child,
+  .panel-heading > *,
+  .message-body,
+  .preference-copy,
+  .task-detail,
+  .settings-heading,
+  .settings-form,
+  .settings-preferences,
+  .settings-milestones,
+  .account-status-panel > div {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .chat-messages {
+    width: 100%;
+    overflow-x: hidden;
+  }
+
+  .message {
+    width: 100%;
+  }
+
+  .message-body,
+  .message-body p,
+  .preference-text,
+  .decision-summary,
+  .scope-note,
+  .task-detail > p,
+  .task-step p,
+  .settings-note,
+  .field-help,
+  .settings-section-copy,
+  .auth-description,
+  .auth-privacy-note {
+    overflow-wrap: anywhere;
+    word-break: normal;
+  }
+
+  .chat-composer {
+    width: auto;
+    max-width: calc(100% - 24px);
+    box-sizing: border-box;
+  }
+
+  .chat-composer textarea {
+    width: 1px;
+    min-width: 0;
+    flex: 1 1 0;
+  }
+
+  .settings-overlay,
+  .auth-overlay {
+    left: 0;
+    right: 0;
+    width: auto;
+    max-width: 100%;
+    overflow-x: hidden;
+    box-sizing: border-box;
+  }
+
+  .settings-sheet,
+  .auth-card {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  .settings-form input:not([type="checkbox"]),
+  .settings-form select,
+  .settings-form textarea,
+  .auth-form input[type="email"],
+  .auth-form input[type="password"] {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+}
+
+@media (max-width: 380px) {
+  main {
+    padding-right: 10px;
+    padding-left: 10px;
+  }
+
+  .nav-wrap {
+    padding-right: 12px;
+    padding-left: 12px;
+    gap: 8px;
+  }
+
+  .nav-wrap .brand img {
+    width: min(128px, 42vw);
+  }
+
+  .settings-button {
+    gap: 5px;
+    padding-right: 7px;
+    padding-left: 7px;
+    font-size: 8px;
+  }
+
+  .panel-heading,
+  .conversation-intro {
+    min-width: 0;
+  }
+
+  .chat-composer {
+    margin-right: 10px;
+    margin-left: 10px;
+    max-width: calc(100% - 20px);
+  }
+}
