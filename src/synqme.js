@@ -101,6 +101,8 @@ const elements = {
   chatForm: $("#chatForm"),
   messageInput: $("#messageInput"),
   sendButton: $("#sendButton"),
+  voiceModeButton: $("#voiceModeButton"),
+  voiceStatus: $("#voiceStatus"),
   resetDemo: $("#resetDemo"),
   memoryCount: $("#memoryCount"),
   foundationValue: $("#foundationValue"),
@@ -137,6 +139,7 @@ const elements = {
   confirmActions: $("#confirmActions"),
   functionGrid: $("#functionGrid"),
   functionCount: $("#functionCount"),
+  toggleAllFunctions: $("#toggleAllFunctions"),
   settingsPreferenceCount: $("#settingsPreferenceCount"),
   settingsPreferenceList: $("#settingsPreferenceList"),
   milestoneCount: $("#milestoneCount"),
@@ -197,6 +200,17 @@ function cleanPreference(input, metadata = {}) {
   };
 }
 
+function sanitiseConversationMessage(item) {
+  if (!item || (item.role !== "assistant" && item.role !== "user") || typeof item.content !== "string") return null;
+  if (item.role === "assistant" && /what matters most to you when getting that right\\?|what detail would matter most to get right\\?|let'?s make that preference more precise/i.test(item.content)) {
+    return { role: "assistant", content: "Let’s focus on one practical detail at a time." };
+  }
+  if (item.role === "assistant" && /I've captured this preference for your browser-based SecondSelf|I've added it to your local digital persona|That's useful context for your SecondSelf/i.test(item.content)) {
+    return { role: "assistant", content: "Let’s focus on one practical detail at a time." };
+  }
+  return { role: item.role, content: item.content };
+}
+
 function loadState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -210,15 +224,12 @@ function loadState() {
         .slice(-5000)
         .map((m) => {
           if (m.role === "assistant" && /follow these steps automatically|the robot will follow|robot will automatically/i.test(m.content)) {
-            return { role: "assistant", content: "I’ve noted those preferences in this browser demo. They can shape a proposed household routine, but no physical robot is connected or carrying out the task. You can keep building your SecondSelf by adding more preferences." };
+            return { role: "assistant", content: "I’ve noted those preferences for a proposed routine. No physical robot is connected or carrying out the task. You can keep building your SecondSelf by adding more preferences." };
           }
-          if (m.role === "assistant" && /That’s useful context for your SecondSelf|I've captured this preference for your browser-based SecondSelf|I’ve captured this preference for your browser-based SecondSelf|I’ve added it to your local digital persona|I've added it to your local digital persona/i.test(m.content)) {
-            return { role: "assistant", content: "Got it. Let’s make that preference more precise. What detail would matter most to get right?" };
-          }
-          if (m.role === "assistant" && /Hi, I’m ELO, your SYNQ\.ME guide/i.test(m.content)) {
+          if (m.role === "assistant" && /Hi, I’m ELO, your SYNQ\\.ME guide/i.test(m.content)) {
             return { role: "assistant", content: WELCOME };
           }
-          return { role: m.role, content: m.content };
+          return sanitiseConversationMessage(m);
         }),
       preferences: saved.preferences.slice(0, 24)
         .map((p) => typeof p === "string" ? cleanPreference(p) : cleanPreference(p?.text, p))
@@ -236,6 +247,15 @@ function loadState() {
 
 let state = loadState();
 let isSending = false;
+const SpeechRecognitionConstructor = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+const speechSynthesisAvailable = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+let voiceModeActive = false;
+let speechRecognition = null;
+let recognitionListening = false;
+let recognitionTranscript = "";
+let voiceRestartTimer = null;
+let assistantIsSpeaking = false;
+let currentSpeechUtterance = null;
 let taskRunning = false;
 let lastFocusedElement = null;
 let cloudUserId = null;
@@ -431,9 +451,9 @@ function stateFromSnapshot(snapshot) {
   if (!snapshot || typeof snapshot !== "object") return base;
   const messages = Array.isArray(snapshot.messages)
     ? snapshot.messages
-        .filter((item) => item && (item.role === "assistant" || item.role === "user") && typeof item.content === "string")
         .slice(-5000)
-        .map((item) => ({ role: item.role, content: item.content }))
+        .map(sanitiseConversationMessage)
+        .filter(Boolean)
     : [];
   base.messages = messages.length ? messages : [{ role: "assistant", content: WELCOME }];
   base.preferences = Array.isArray(snapshot.preferences)
@@ -457,9 +477,9 @@ function mergeConversationMessages(...groups) {
   let messages = [];
   for (const group of groups) {
     const incoming = (Array.isArray(group) ? group : [])
-      .filter((item) => item && (item.role === "assistant" || item.role === "user") && typeof item.content === "string")
-      .map((item) => ({ role: item.role, content: item.content.trim() }))
-      .filter((item) => item.content);
+      .map(sanitiseConversationMessage)
+      .filter((item) => item && item.content.trim())
+      .map((item) => ({ role: item.role, content: item.content.trim() }));
     if (!incoming.length) continue;
     if (!messages.length) {
       messages = incoming;
