@@ -444,18 +444,34 @@ function stateFromSnapshot(snapshot) {
 }
 
 function mergeConversationMessages(...groups) {
-  const messages = [];
-  const seen = new Set();
+  // Preserve repeated user/assistant messages within each transcript. Only
+  // remove an overlap at the boundary when combining cloud history with a
+  // browser draft for the same account.
+  let messages = [];
   for (const group of groups) {
-    for (const item of Array.isArray(group) ? group : []) {
-      if (!item || (item.role !== "assistant" && item.role !== "user") || typeof item.content !== "string") continue;
-      const content = item.content.trim();
-      if (!content) continue;
-      const key = item.role + "\\n" + content;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      messages.push({ role: item.role, content });
+    const incoming = (Array.isArray(group) ? group : [])
+      .filter((item) => item && (item.role === "assistant" || item.role === "user") && typeof item.content === "string")
+      .map((item) => ({ role: item.role, content: item.content.trim() }))
+      .filter((item) => item.content);
+    if (!incoming.length) continue;
+    if (!messages.length) {
+      messages = incoming;
+      continue;
     }
+    const key = (item) => item.role + "\\n" + item.content;
+    let overlap = Math.min(messages.length, incoming.length);
+    while (overlap > 0) {
+      let matches = true;
+      for (let i = 0; i < overlap; i++) {
+        if (key(messages[messages.length - overlap + i]) !== key(incoming[i])) {
+          matches = false;
+          break;
+        }
+      }
+      if (matches) break;
+      overlap--;
+    }
+    messages.push(...incoming.slice(overlap));
   }
   return (messages.length ? messages : [{ role: "assistant", content: WELCOME }]).slice(-5000);
 }
