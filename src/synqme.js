@@ -1,9 +1,33 @@
 const STORAGE_KEY = "synqme-demo-v1";
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
-const WELCOME = "Hi, I’m ELO. Let’s start with a household routine. If a robot were loading your dishwasher, what would you want it to know about how you like things done?";
+const WELCOME = "Hi, I’m ELO, your SYNQ.ME guide. Let’s start building your SecondSelf. Which parts of home life would you like it to understand first?";
+
+const ACTIVITIES = [
+  { id: "dishwashing", label: "Dishwashing" },
+  { id: "vacuuming", label: "Vacuuming & floors" },
+  { id: "laundry", label: "Laundry" },
+  { id: "folding", label: "Folding & putting away" },
+  { id: "tidying", label: "Tidying" },
+  { id: "surfaces", label: "Surface cleaning" },
+  { id: "meal-prep", label: "Meal preparation" },
+  { id: "cooking", label: "Cooking" },
+  { id: "groceries", label: "Groceries & supplies" },
+  { id: "pet-care", label: "Pet care" },
+  { id: "plants", label: "Plant care" },
+  { id: "recycling", label: "Waste & recycling" }
+];
+
+const MILESTONES = [
+  { id: "first-spark", title: "First spark", reward: "Starter badge", description: "Set your name, choose a home interest, or share your first preference.", unlocked: (s) => Boolean(s.profile.ownerName.trim() || s.functions.length || s.preferences.length) },
+  { id: "home-explorer", title: "Home explorer", reward: "Explorer badge", description: "Choose three domestic functions for your SecondSelf to learn about.", unlocked: (s) => s.functions.length >= 3 },
+  { id: "first-memory", title: "First memory", reward: "Memory badge", description: "Capture your first personal preference in conversation.", unlocked: (s) => s.preferences.length >= 1 },
+  { id: "pattern-finder", title: "Pattern finder", reward: "Personalisation badge", description: "Share five preferences and begin to form recognisable patterns.", unlocked: (s) => s.preferences.length >= 5 },
+  { id: "secondself-builder", title: "SecondSelf builder", reward: "Foundation badge", description: "Choose three functions and capture eight preferences.", unlocked: (s) => s.functions.length >= 3 && s.preferences.length >= 8 }
+];
 
 const $ = (selector) => document.querySelector(selector);
 const elements = {
+  splash: $("#appSplash"),
   providerLabel: $("#providerLabel"),
   conversationStatus: $("#conversationStatus"),
   chatMessages: $("#chatMessages"),
@@ -23,14 +47,53 @@ const elements = {
   runTask: $("#runTask"),
   taskResult: $("#taskResult"),
   taskDescription: $("#taskDescription"),
-  taskSteps: $("#taskSteps")
+  taskSteps: $("#taskSteps"),
+  openSettings: $("#openSettings"),
+  openPersonaFromSummary: $("#openPersonaFromSummary"),
+  settingsDialog: $("#settingsDialog"),
+  settingsSheet: $(".settings-sheet"),
+  settingsBackdrop: $("#settingsBackdrop"),
+  closeSettings: $("#closeSettings"),
+  cancelSettings: $("#cancelSettings"),
+  settingsForm: $("#settingsForm"),
+  ownerName: $("#ownerName"),
+  robotName: $("#robotName"),
+  robotType: $("#robotType"),
+  confirmActions: $("#confirmActions"),
+  functionGrid: $("#functionGrid"),
+  functionCount: $("#functionCount"),
+  settingsPreferenceCount: $("#settingsPreferenceCount"),
+  settingsPreferenceList: $("#settingsPreferenceList"),
+  milestoneCount: $("#milestoneCount"),
+  milestoneList: $("#milestoneList"),
+  openTaskFromSettings: $("#openTaskFromSettings"),
+  mobileOwnerTitle: $("#mobileOwnerTitle"),
+  mobileJourneyText: $("#mobileJourneyText"),
+  mobileProgressValue: $("#mobileProgressValue")
 };
+
+function defaultProfile() {
+  return { ownerName: "", robotName: "", robotType: "Home assistant", confirmActions: false };
+}
 
 function initialState() {
   return {
     messages: [{ role: "assistant", content: WELCOME }],
     preferences: [],
+    profile: defaultProfile(),
+    functions: [],
     apiConnected: false
+  };
+}
+
+function cleanPreference(input) {
+  const text = String(input || "").trim().replace(/\s+/g, " ").slice(0, 240);
+  if (!text) return null;
+  return {
+    text,
+    category: classifyPreference(text),
+    normalised: text.toLowerCase(),
+    id: Date.now() + "-" + Math.random().toString(36).slice(2, 7)
   };
 }
 
@@ -40,11 +103,25 @@ function loadState() {
     if (!raw) return initialState();
     const saved = JSON.parse(raw);
     if (!saved || !Array.isArray(saved.messages) || !Array.isArray(saved.preferences)) return initialState();
-    return {
-      messages: saved.messages.slice(-50),
-      preferences: saved.preferences.slice(0, 12),
+
+    const state = {
+      messages: saved.messages
+        .filter((m) => m && (m.role === "assistant" || m.role === "user") && typeof m.content === "string")
+        .slice(-50)
+        .map((m) => {
+          if (m.role === "assistant" && /follow these steps automatically|the robot will follow|robot will automatically/i.test(m.content)) {
+            return { role: "assistant", content: "I’ve noted those preferences in this browser demo. They can shape a proposed household routine, but no physical robot is connected or carrying out the task. You can keep building your SecondSelf by adding more preferences." };
+          }
+          return { role: m.role, content: m.content };
+        }),
+      preferences: saved.preferences.slice(0, 24)
+        .map((p) => typeof p === "string" ? cleanPreference(p) : cleanPreference(p?.text))
+        .filter(Boolean),
+      profile: { ...defaultProfile(), ...(saved.profile && typeof saved.profile === "object" ? saved.profile : {}) },
+      functions: Array.isArray(saved.functions) ? saved.functions.filter((id) => ACTIVITIES.some((a) => a.id === id)) : [],
       apiConnected: false
     };
+    return state;
   } catch {
     return initialState();
   }
@@ -53,29 +130,106 @@ function loadState() {
 let state = loadState();
 let isSending = false;
 let taskRunning = false;
+let lastFocusedElement = null;
 
 function persist() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       messages: state.messages.slice(-50),
-      preferences: state.preferences.slice(0, 12)
+      preferences: state.preferences.slice(0, 24),
+      profile: state.profile,
+      functions: state.functions
     }));
+    return true;
   } catch {
-    elements.memoryFootnote.textContent = "Session memory only; browser storage is unavailable";
+    if (elements.memoryFootnote) elements.memoryFootnote.textContent = "Session memory only; browser storage is unavailable";
+    return false;
   }
 }
+
+function dismissSplash() {
+  if (!elements.splash) return;
+  window.setTimeout(() => elements.splash.classList.add("is-hidden"), 1000);
+}
+dismissSplash();
+
+function openSettings() {
+  lastFocusedElement = document.activeElement;
+  elements.settingsDialog.hidden = false;
+  document.body.classList.add("settings-open");
+  populateSettingsForm();
+  renderSettingsDetails();
+  window.setTimeout(() => elements.settingsSheet?.focus(), 0);
+}
+function closeSettings() {
+  elements.settingsDialog.hidden = true;
+  document.body.classList.remove("settings-open");
+  if (lastFocusedElement && typeof lastFocusedElement.focus === "function") lastFocusedElement.focus();
+}
+elements.openSettings?.addEventListener("click", openSettings);
+elements.openPersonaFromSummary?.addEventListener("click", openSettings);
+elements.settingsBackdrop?.addEventListener("click", closeSettings);
+elements.closeSettings?.addEventListener("click", closeSettings);
+elements.cancelSettings?.addEventListener("click", closeSettings);
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && elements.settingsDialog && !elements.settingsDialog.hidden) closeSettings();
+});
+
+function populateSettingsForm() {
+  elements.ownerName.value = state.profile.ownerName || "";
+  elements.robotName.value = state.profile.robotName || "";
+  elements.robotType.value = state.profile.robotType || "Home assistant";
+  elements.confirmActions.checked = Boolean(state.profile.confirmActions);
+  elements.functionGrid.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
+    checkbox.checked = state.functions.includes(checkbox.value);
+  });
+}
+elements.settingsForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  state.profile = {
+    ownerName: elements.ownerName.value.trim().slice(0, 60),
+    robotName: elements.robotName.value.trim().slice(0, 60),
+    robotType: elements.robotType.value || "Home assistant",
+    confirmActions: Boolean(elements.confirmActions.checked)
+  };
+  persist();
+  renderAll();
+  closeSettings();
+  elements.conversationStatus.textContent = "Your settings are saved";
+});
+
+elements.functionGrid?.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
+  checkbox.addEventListener("change", () => {
+    const selected = new Set(state.functions);
+    if (checkbox.checked) selected.add(checkbox.value);
+    else selected.delete(checkbox.value);
+    state.functions = [...selected];
+    persist();
+    renderAll();
+  });
+});
+
+elements.openTaskFromSettings?.addEventListener("click", () => {
+  closeSettings();
+  elements.taskResult.hidden = false;
+  elements.taskResult.scrollIntoView({ behavior: "smooth", block: "start" });
+});
 
 function appendMessage(role, content) {
   const article = document.createElement("article");
   article.className = "message " + (role === "user" ? "user-message" : "assistant-message");
   const avatar = document.createElement("div");
   avatar.className = "message-avatar";
-  avatar.textContent = role === "user" ? "Y" : "E";
+  avatar.textContent = role === "user"
+    ? (state.profile.ownerName.trim().charAt(0).toUpperCase() || "Y")
+    : "E";
   const body = document.createElement("div");
   body.className = "message-body";
   const meta = document.createElement("div");
   meta.className = "message-meta";
-  meta.textContent = role === "user" ? "YOU" : (state.apiConnected ? "ELO · AI RESPONSE" : "ELO · SYNQ.ME");
+  meta.textContent = role === "user"
+    ? (state.profile.ownerName.trim().toUpperCase() || "YOU")
+    : (state.apiConnected ? "ELO · AI RESPONSE" : "ELO · SYNQ.ME");
   const paragraph = document.createElement("p");
   paragraph.textContent = content;
   body.append(meta, paragraph);
@@ -91,26 +245,49 @@ function renderMessages() {
 
 function classifyPreference(message) {
   const text = message.toLowerCase();
-  if (/glass|fragile|delicate|mug|cup|top rack/.test(text)) return "Care & placement";
-  if (/ask me|ask before|confirm|permission|before start|before starting/.test(text)) return "Confirmation";
+  if (/glass|fragile|delicate|mug|cup|top rack|upper rack/.test(text)) return "Care & placement";
+  if (/ask me|ask before|confirm|permission|before start|before starting|check with me/.test(text)) return "Consent & boundaries";
   if (/knife|knives|sharp|cutlery|safety|safe/.test(text)) return "Safety";
   if (/quiet|noise|morning|evening|schedule|routine|time|when/.test(text)) return "Routine & timing";
-  if (/clean|tidy|wipe|counter|surface|order/.test(text)) return "Household routine";
+  if (/laundry|wash|dry|fold|clothes|clothing|fabric|temperature/.test(text)) return "Laundry & clothing";
+  if (/vacuum|floor|carpet|clean|tidy|wipe|counter|surface|order/.test(text)) return "Cleaning & organisation";
+  if (/cook|meal|food|recipe|ingredient|spicy|vegetarian|grocery|shopping/.test(text)) return "Food & shopping";
+  if (/pet|dog|cat|plant|water|garden/.test(text)) return "Home & care";
   return "Personal preference";
 }
 
+function splitPreferenceStatements(message) {
+  const sentences = String(message || "")
+    .replace(/[\r\n]+/g, ";")
+    .split(/[.;!?]+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const output = [];
+  const directive = /(?:please\s+)?(?:keep|put|place|leave|ask|always|never|make|use|wash|sort|separate|fold|start|finish|avoid|ensure|prefer|move|store|hang|dry|clean|vacuum|wipe|cook|prepare|feed|water|take|I\s+(?:want|prefer|like|need)|I\s+don['’]t|do\s+not|the\s+robot\s+should|it\s+should|make\s+sure)\b/i;
+  for (const sentence of sentences) {
+    const clauses = sentence.split(/\s+(?:and|also|plus)\s+(?=(?:please\s+)?(?:keep|put|place|leave|ask|always|never|make|use|wash|sort|separate|fold|start|finish|avoid|ensure|prefer|move|store|hang|dry|clean|vacuum|wipe|cook|prepare|feed|water|take|I\s+(?:want|prefer|like|need)|I\s+don['’]t|do\s+not|the\s+robot\s+should|it\s+should)\b)/i);
+    for (const clause of clauses) {
+      const commaClauses = clause.split(/,\s+(?=(?:please\s+)?(?:keep|put|place|leave|ask|always|never|make|use|wash|sort|separate|fold|start|finish|avoid|ensure|prefer|move|store|hang|dry|clean|vacuum|wipe|cook|prepare|feed|water|take|I\s+(?:want|prefer|like|need)|do\s+not)\b)/i);
+      for (const item of commaClauses) {
+        const clean = item.trim().replace(/^and\s+/i, "");
+        if (clean.length > 3) output.push(clean);
+      }
+    }
+  }
+  if (output.length <= 1 && message.length > 100 && !directive.test(message)) return [message.trim()];
+  return output.length ? output : [message.trim()];
+}
+
 function savePreference(message) {
-  const normalised = message.trim().toLowerCase().replace(/\s+/g, " ");
-  if (!normalised) return;
-  const exists = state.preferences.some((preference) => preference.normalised === normalised);
-  if (exists) return;
-  state.preferences.unshift({
-    text: message.trim().slice(0, 240),
-    category: classifyPreference(message),
-    normalised,
-    id: Date.now() + "-" + Math.random().toString(36).slice(2, 7)
-  });
-  state.preferences = state.preferences.slice(0, 12);
+  const statements = splitPreferenceStatements(message);
+  for (const statement of statements) {
+    const preference = cleanPreference(statement);
+    if (!preference) continue;
+    const exists = state.preferences.some((item) => (item.normalised || item.text.toLowerCase()) === preference.normalised);
+    if (exists) continue;
+    state.preferences.unshift(preference);
+  }
+  state.preferences = state.preferences.slice(0, 24);
 }
 
 function addElement(parent, className, text) {
@@ -125,15 +302,15 @@ function renderPreferences() {
   const count = state.preferences.length;
   elements.memoryCount.textContent = count + (count === 1 ? " MEMORY" : " MEMORIES");
   elements.preferenceCount.textContent = String(count);
-  elements.personaProgress.style.width = Math.min(100, count * 17) + "%";
+  elements.personaProgress.style.width = Math.min(100, count * 12.5) + "%";
   elements.foundationValue.textContent = count === 0
     ? "Waiting for your first preference"
     : count === 1
       ? "First preference captured"
-      : count < 4
-        ? "Preference patterns emerging"
-        : "Persona foundation taking shape";
-  $(".memory-pulse").classList.toggle("active", count > 0);
+      : count < 5
+        ? "Your preferences are taking shape"
+        : "A richer personal pattern is emerging";
+  $(".memory-pulse")?.classList.toggle("active", count > 0);
   elements.memoryFootnote.textContent = count === 0
     ? "No preferences saved yet"
     : "Saved in this browser · " + count + (count === 1 ? " preference" : " preferences");
@@ -151,70 +328,139 @@ function renderPreferences() {
     copy.append(title, description);
     empty.append(icon, copy);
     elements.preferenceList.append(empty);
-    return;
+  } else {
+    state.preferences.forEach((preference, index) => {
+      const item = document.createElement("div");
+      item.className = "preference-item";
+      addElement(item, "preference-number", String(index + 1).padStart(2, "0"));
+      const copy = document.createElement("div");
+      copy.className = "preference-copy";
+      addElement(copy, "preference-category", preference.category || classifyPreference(preference.text));
+      addElement(copy, "preference-text", preference.text);
+      item.append(copy);
+      elements.preferenceList.append(item);
+    });
   }
-  state.preferences.forEach((preference, index) => {
-    const item = document.createElement("div");
-    item.className = "preference-item";
-    addElement(item, "preference-number", String(index + 1).padStart(2, "0"));
+
+  if (elements.settingsPreferenceCount) elements.settingsPreferenceCount.textContent = String(count);
+  if (elements.settingsPreferenceList) {
+    elements.settingsPreferenceList.replaceChildren();
+    if (!count) {
+      const p = document.createElement("p");
+      p.className = "settings-empty";
+      p.textContent = "As you chat with ELO, your preferences will appear here.";
+      elements.settingsPreferenceList.append(p);
+    } else {
+      state.preferences.slice(0, 8).forEach((preference) => {
+        const item = document.createElement("div");
+        item.className = "settings-preference";
+        item.textContent = preference.text;
+        elements.settingsPreferenceList.append(item);
+      });
+      if (count > 8) {
+        const p = document.createElement("p");
+        p.className = "settings-empty";
+        p.textContent = "+" + (count - 8) + " more stored preferences";
+        elements.settingsPreferenceList.append(p);
+      }
+    }
+  }
+}
+
+function milestoneUnlocked(milestone) {
+  return Boolean(milestone.unlocked(state));
+}
+
+function renderMilestones() {
+  const unlockedCount = MILESTONES.filter(milestoneUnlocked).length;
+  if (elements.milestoneCount) elements.milestoneCount.textContent = unlockedCount + " OF " + MILESTONES.length;
+  if (!elements.milestoneList) return;
+  elements.milestoneList.replaceChildren();
+  MILESTONES.forEach((milestone, index) => {
+    const unlocked = milestoneUnlocked(milestone);
+    const row = document.createElement("div");
+    row.className = "milestone" + (unlocked ? " is-unlocked" : "");
+    const icon = addElement(row, "milestone-icon", unlocked ? "✓" : "◇");
     const copy = document.createElement("div");
-    copy.className = "preference-copy";
-    addElement(copy, "preference-category", preference.category);
-    addElement(copy, "preference-text", preference.text);
-    item.append(copy);
-    elements.preferenceList.append(item);
+    copy.className = "milestone-copy";
+    addElement(copy, "milestone-title", milestone.title).style.cssText = "display:block;color:#e0e6ef;font-size:10px;font-weight:600";
+    addElement(copy, "milestone-reward", milestone.reward).style.cssText = "display:inline-block;margin-top:4px;padding:2px 6px;border:1px solid #36475c;border-radius:3px;color:#a7c5ed;font-size:7px;letter-spacing:.3px";
+    addElement(copy, "milestone-description", milestone.description).style.cssText = "display:block;margin-top:5px;color:#8792a1;font-family:system-ui,sans-serif;font-size:9px;line-height:1.5";
+    row.append(copy);
+    addElement(row, "milestone-status", unlocked ? "UNLOCKED" : "IN PROGRESS");
+    elements.milestoneList.append(row);
   });
+}
+
+function renderSettingsDetails() {
+  elements.functionCount.textContent = state.functions.length + (state.functions.length === 1 ? " SELECTED" : " SELECTED");
+  renderMilestones();
 }
 
 function updateDecisionSummary() {
   const preferences = state.preferences;
-  if (!preferences.length) {
-    elements.decisionSummary.textContent = "AMYA will use the preferences you share to shape a personalised task plan.";
-    elements.amyaState.textContent = "Waiting";
-    elements.pexiState.textContent = "Waiting";
+  if (!preferences.length && !state.functions.length) {
+    elements.decisionSummary.textContent = "Choose the home activities that matter to you, then share preferences with ELO. Your SecondSelf grows one step at a time.";
+    elements.amyaState.textContent = "Getting started";
+    elements.pexiState.textContent = "Not connected";
     elements.amyaState.classList.remove("ready");
     elements.pexiState.classList.remove("ready");
     return;
   }
-  const hasConfirmation = preferences.some((item) => item.category === "Confirmation");
-  const hasSafety = preferences.some((item) => item.category === "Safety");
-  const details = [];
-  if (hasConfirmation) details.push("a confirmation checkpoint");
-  if (hasSafety) details.push("a safety-first handling step");
-  elements.decisionSummary.textContent = "Your SecondSelf now contains " + preferences.length + (preferences.length === 1 ? " preference" : " preferences") + (details.length ? ". The illustrative task plan will include " + details.join(" and ") + "." : ". AMYA can use this context to personalise the illustrative task plan.");
-  elements.amyaState.textContent = "Context added";
-  elements.pexiState.textContent = "Ready to map";
+  elements.decisionSummary.textContent = "Your persona includes " + preferences.length + (preferences.length === 1 ? " saved preference" : " saved preferences") + " across " + state.functions.length + (state.functions.length === 1 ? " selected domestic function" : " selected domestic functions") + ". Keep going to unlock personalisation milestones.";
+  elements.amyaState.textContent = "Building context";
+  elements.pexiState.textContent = "Future use";
   elements.amyaState.classList.add("ready");
-  elements.pexiState.classList.add("ready");
+  elements.pexiState.classList.remove("ready");
 }
 
 function renderAll() {
   renderMessages();
   renderPreferences();
   updateDecisionSummary();
+  renderSettingsDetails();
+
+  const name = state.profile.ownerName.trim();
+  const robotName = state.profile.robotName.trim();
+  if (elements.mobileOwnerTitle) elements.mobileOwnerTitle.textContent = name ? name + "’s SecondSelf" : "Your SecondSelf";
+  const count = state.preferences.length;
+  const functionsCount = state.functions.length;
+  if (elements.mobileJourneyText) {
+    elements.mobileJourneyText.textContent = count
+      ? count + (count === 1 ? " preference" : " preferences") + " captured · " + functionsCount + (functionsCount === 1 ? " home interest" : " home interests")
+      : functionsCount
+        ? functionsCount + (functionsCount === 1 ? " home interest selected" : " home interests selected") + " · keep building";
+        : "Choose home interests and start your first conversation";
+  }
+  const achieved = MILESTONES.filter(milestoneUnlocked).length;
+  const progress = Math.round((achieved / MILESTONES.length) * 100);
+  if (elements.mobileProgressValue) elements.mobileProgressValue.textContent = progress + "%";
   elements.providerLabel.textContent = state.apiConnected ? "LIVE AI RESPONSE" : (API_BASE ? "AI ENDPOINT CONFIGURED" : "SCRIPTED DEMO MODE");
+  document.title = name ? "SYNQ.ME | " + name + "’s SecondSelf" : "SYNQ.ME | Build Your SecondSelf";
+  const intro = $(".conversation-intro p");
+  if (intro) intro.textContent = robotName
+    ? "Tell me what matters to you. I’ll help shape your digital persona, one preference at a time. Your future robot name is " + robotName + "."
+    : "Tell me what matters to you. I’ll help shape your digital persona, one preference at a time.";
 }
 renderAll();
 
 function localReply(message) {
+  const name = state.profile.ownerName.trim();
+  const hello = name ? name + ", " : "";
   const category = classifyPreference(message);
-  const text = message.toLowerCase();
-  if (category === "Care & placement") {
-    return "Understood. I’ve added that care-and-placement preference to your local SecondSelf. In this demonstration, the task plan will carry that instruction forward rather than treating every household the same.";
+  if (/what can|what does|how does|how do|what is synq/i.test(message)) {
+    return hello + "SYNQ.ME helps you shape a digital persona through natural conversation. Start by choosing the parts of home life that matter to you, then tell me how you prefer things to be done. Your settings and preferences stay in this browser in this demo.";
   }
-  if (category === "Confirmation") {
-    return "I’ll record that you want a confirmation before the cycle starts. That preference should become a checkpoint in the plan, rather than an assumption that the robot can make the decision for you.";
+  if (/laundry|washing|clothes|fold/.test(message.toLowerCase())) {
+    return hello + "Let’s capture your laundry preferences. You might start with how you separate colours, which items need gentle care, drying preferences, or how you like clothes folded. Which matters most to you?";
   }
-  if (category === "Safety") {
-    return "Safety matters. I’ve saved that handling preference to the local persona. The illustrative plan will call it out as a constraint, not just a general suggestion.";
+  if (/vacuum|floor|carpet|tidy|cleaning/.test(message.toLowerCase())) {
+    return hello + "Let’s shape your home-care preferences. We can capture which rooms matter most, when cleaning should happen, surfaces or items that need extra care, and anything you prefer left untouched. What would you like your SecondSelf to know first?";
   }
-  if (category === "Routine & timing") {
-    return "That gives your SecondSelf useful context about timing and routine. I’ve saved it, so the task preview can account for when and how you prefer things to happen.";
+  if (category === "Consent & boundaries" || state.profile.confirmActions) {
+    return hello + "That boundary is useful context for your SecondSelf. I’ve captured it in this browser demo so it can be reflected in a proposed routine. Nothing is sent to or controlled by a physical robot.";
   }
-  if (/dishwasher|dish|plate|load|unload/.test(text)) {
-    return "That is a helpful household instruction. I’ve saved it as part of your SecondSelf. You can add another preference, or run the task demo to see how persona context flows into an illustrative PEXI task plan.";
-  }
-  return "That’s useful context. I’ve added it to your local SecondSelf as a personal preference. The point of SYNQ.ME is to preserve the way you like things done, so compatible robots can use that context rather than starting from a generic routine.";
+  return hello + "That’s useful context for your SecondSelf. I’ve added it to your local digital persona. As you share more, SYNQ.ME can help organise the details into preferences and routines that reflect how you like things done. Is there another detail you’d like to include?";
 }
 
 async function requestAIReply() {
@@ -225,7 +471,14 @@ async function requestAIReply() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         messages: state.messages.slice(-20).map((message) => ({ role: message.role, content: message.content })),
-        preferences: state.preferences.map((preference) => ({ category: preference.category, text: preference.text }))
+        preferences: state.preferences.map((preference) => ({ category: preference.category || classifyPreference(preference.text), text: preference.text })),
+        profile: {
+          ownerName: state.profile.ownerName,
+          robotName: state.profile.robotName,
+          robotType: state.profile.robotType,
+          askBeforeActions: state.profile.confirmActions
+        },
+        domesticFunctions: state.functions.map((id) => ACTIVITIES.find((activity) => activity.id === id)?.label).filter(Boolean)
       })
     });
     if (!response.ok) throw new Error("AI endpoint returned " + response.status);
@@ -253,18 +506,14 @@ async function sendMessage(rawText) {
   state.messages.push({ role: "user", content: message });
   savePreference(message);
   persist();
-  renderMessages();
-  renderPreferences();
-  updateDecisionSummary();
+  renderAll();
 
   let reply = await requestAIReply();
   if (!reply) reply = localReply(message);
   state.messages.push({ role: "assistant", content: reply });
   state.messages = state.messages.slice(-50);
   persist();
-  renderMessages();
-  renderPreferences();
-  updateDecisionSummary();
+  renderAll();
   elements.conversationStatus.textContent = state.apiConnected ? "AI response received" : "Preference captured";
   isSending = false;
   elements.sendButton.disabled = false;
@@ -291,12 +540,13 @@ document.querySelectorAll("[data-prompt]").forEach((button) => {
   });
 });
 elements.resetDemo.addEventListener("click", () => {
-  if (!window.confirm("Reset the conversation and clear the preferences saved by this demo in this browser?")) return;
+  if (!window.confirm("Reset this browser demo, including your settings and saved preferences?")) return;
   try { localStorage.removeItem(STORAGE_KEY); } catch {}
   state = initialState();
   state.apiConnected = false;
   elements.conversationStatus.textContent = "Ready to talk";
   elements.taskResult.hidden = true;
+  populateSettingsForm();
   renderAll();
   persist();
 });
@@ -306,8 +556,9 @@ function makeTaskStep(number, title, description) {
   item.className = "task-step";
   addElement(item, "task-step-number", String(number).padStart(2, "0"));
   const copy = document.createElement("div");
-  addElement(copy, "task-step-title", title).className = "task-step-title";
-  copy.firstChild.style.cssText = "display:block;color:#d9e0e9;font-size:9px;font-weight:600";
+  const strong = document.createElement("strong");
+  strong.textContent = title;
+  copy.append(strong);
   const p = document.createElement("p");
   p.textContent = description;
   copy.append(p);
@@ -319,33 +570,37 @@ elements.runTask.addEventListener("click", () => {
   if (taskRunning) return;
   taskRunning = true;
   elements.runTask.disabled = true;
-  elements.runTask.querySelector("span").textContent = "Preparing task plan…";
+  elements.runTask.querySelector("span").textContent = "Preparing preview…";
   elements.taskResult.hidden = false;
   elements.taskSteps.replaceChildren();
-  elements.amyaState.textContent = "Interpreting";
-  elements.pexiState.textContent = "Waiting";
+  elements.amyaState.textContent = "Structuring";
+  elements.pexiState.textContent = "Future use";
   elements.amyaState.classList.add("ready");
   elements.pexiState.classList.remove("ready");
-  elements.taskDescription.textContent = "AMYA is applying the preferences saved to this browser. PEXI then maps the example task to an illustrative capability profile. The sequence below is a scripted demonstration.";
+  elements.taskDescription.textContent = "This optional preview illustrates how a future household routine could draw on preferences you choose to record. It does not connect to or control a robot.";
   window.setTimeout(() => {
-    elements.amyaState.textContent = "Context applied";
-    elements.pexiState.textContent = "Mapping";
-    const hasConfirmation = state.preferences.some((item) => item.category === "Confirmation");
-    const hasSafety = state.preferences.some((item) => item.category === "Safety");
-    makeTaskStep(1, "AMYA interprets personal context", state.preferences.length
-      ? "Use " + state.preferences.length + (state.preferences.length === 1 ? " saved preference" : " saved preferences") + " from this digital persona."
-      : "No personal preferences are saved yet, so the demo uses a generic starting routine.");
-    makeTaskStep(2, "PEXI maps the example task", "Match the illustrative dishwasher task to a conceptual robot capability profile.");
-    if (hasSafety) makeTaskStep(3, "Apply safety preference", "Carry the saved handling instruction into the example task plan.");
-    if (hasConfirmation) makeTaskStep(hasSafety ? 4 : 3, "Add a confirmation checkpoint", "The example plan pauses for user confirmation before the dishwasher cycle.");
-    makeTaskStep(elements.taskSteps.children.length + 1, "Present the proposed sequence", "Show the personalised plan for review. No physical robot command is sent.");
-    elements.pexiState.textContent = "Mapped (demo)";
-    elements.pexiState.classList.add("ready");
-    elements.taskDescription.textContent = "The demo has translated the current SecondSelf context into a proposed dishwasher task sequence. It shows the intended AMYA-to-PEXI flow, not a verified robot execution.";
-    elements.runTask.querySelector("span").textContent = "Task plan ready";
+    makeTaskStep(1, "Start with your interests", state.functions.length
+      ? "Use the domestic functions you selected: " + state.functions.map((id) => ACTIVITIES.find((activity) => activity.id === id)?.label).filter(Boolean).join(", ") + "."
+      : "No domestic functions selected yet. Choose the areas of home life you want your SecondSelf to learn about in Settings.");
+    makeTaskStep(2, "Use your personal preferences", state.preferences.length
+      ? "Reference the " + state.preferences.length + (state.preferences.length === 1 ? " preference" : " preferences") + " currently stored in this browser."
+      : "No preferences recorded yet. Start a conversation with ELO to add details to your persona.");
+    makeTaskStep(3, "Build the persona, not a robot connection", "The preview shows a conceptual structure for personalisation. No physical robot is connected, and no action is executed.");
+    elements.amyaState.textContent = "Context outlined";
+    elements.pexiState.textContent = "Not connected";
+    elements.taskDescription.textContent = "This is a persona-building preview: a look at how selected interests and stated preferences could be organised into a future household routine. It is not a simulation of verified robot capability.";
+    elements.runTask.querySelector("span").textContent = "Preview ready";
     elements.taskResult.scrollIntoView({ behavior: "smooth", block: "nearest" });
     taskRunning = false;
     elements.runTask.disabled = false;
-    window.setTimeout(() => { elements.runTask.querySelector("span").textContent = "Run dishwasher task demo"; }, 1800);
-  }, 500);
+    window.setTimeout(() => { elements.runTask.querySelector("span").textContent = "Preview future household routine"; }, 1800);
+  }, 350);
 });
+
+if ("serviceWorker" in navigator && import.meta.env.PROD) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch((error) => {
+      console.info("SYNQ.ME offline install features are unavailable on this load.", error);
+    });
+  });
+}
