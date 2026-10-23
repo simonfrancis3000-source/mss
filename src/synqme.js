@@ -1679,7 +1679,8 @@ async function submitAccountForm(event) {
     }
 
     if (authMode === "signup") {
-      if (elements.authImportDraft?.checked) savePendingAccountDraft(email);
+      const importingDraft = Boolean(elements.authImportDraft?.checked);
+      if (importingDraft) savePendingAccountDraft(email);
       else {
         try { localStorage.removeItem(ACCOUNT_DRAFT_KEY); } catch {}
       }
@@ -1701,7 +1702,9 @@ async function submitAccountForm(event) {
       } else {
         if (elements.authEmail) elements.authEmail.value = email;
         if (elements.authPassword) elements.authPassword.value = "";
-        setAuthMode("signin", "Account created. Check your email for the confirmation link, then return here and sign in. Your existing browser draft is ready to move into this account.");
+        setAuthMode("signin", importingDraft
+          ? "Account created. Check your email for the confirmation link, then return here and sign in. The browser persona you chose to import will be saved to this account."
+          : "Account created. Check your email for the confirmation link, then return here and sign in.");
       }
       return;
     }
