@@ -332,3 +332,7 @@ h1 span { color: var(--blue); }
 body.profile-setup-required { overflow: hidden; }
 body.profile-setup-required .settings-overlay { z-index: 9000; }
 body.profile-setup-required .settings-backdrop { cursor: default !important; }
+
+
+/* Keep the setup/settings modal truly hidden until JavaScript opens it. */
+.settings-overlay[hidden] { display: none !important; }
