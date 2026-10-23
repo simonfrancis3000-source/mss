@@ -2041,6 +2041,8 @@ async function requestAIReply(repairMode = false) {
       state.apiConfigured = true;
       const apiError = new Error(data.error || ("AI endpoint returned " + response.status));
       apiError.apiStatus = response.status;
+      apiError.upstreamStatus = Number.isInteger(data.upstreamStatus) ? data.upstreamStatus : null;
+      apiError.errorCode = typeof data.errorCode === "string" ? data.errorCode : "";
       throw apiError;
     }
     const reply = typeof data.reply === "string" ? data.reply : typeof data.message === "string" ? data.message : "";
@@ -2061,7 +2063,10 @@ async function requestAIReply(repairMode = false) {
     state.apiConnected = false;
     state.apiError = responseErrorLabel(error);
     state.apiErrorDetail = Number.isInteger(error?.apiStatus)
-      ? "The AI service returned HTTP " + error.apiStatus + ": " + String(error?.message || "Request failed").slice(0, 260)
+      ? "The AI service returned HTTP " + error.apiStatus +
+        (Number.isInteger(error?.upstreamStatus) ? " (Gemini upstream HTTP " + error.upstreamStatus + ")" : "") +
+        ": " + String(error?.message || "Request failed").slice(0, 260) +
+        (error?.errorCode ? " [reference " + error.errorCode + "]" : "")
       : "";
     elements.providerLabel.textContent = (state.apiProvider ? state.apiProvider.toUpperCase() : "AI SERVICE") + " · " + state.apiError.toUpperCase().replace(/_/g, " ");
     return null;
