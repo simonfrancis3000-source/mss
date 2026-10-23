@@ -1076,10 +1076,12 @@ function renderPreferences() {
         : "A richer personal pattern is emerging";
   $(".memory-pulse")?.classList.toggle("active", count > 0);
   elements.memoryFootnote.textContent = cloudMode === "cloud"
-    ? "Cloud-synced to this browser profile · " + count + (count === 1 ? " preference" : " preferences")
-    : count === 0
-      ? "Your persona starts in this browser"
-      : "Saved in this browser · " + count + (count === 1 ? " preference" : " preferences");
+    ? "Saved to your account · " + count + (count === 1 ? " preference" : " preferences") + " and conversation history sync automatically"
+    : cloudMode === "error"
+      ? "Account sync needs attention. Keep this tab open and check your connection."
+      : count === 0
+        ? "Sign in to save your SecondSelf to your account"
+        : "Account not connected · " + count + (count === 1 ? " preference" : " preferences") + " currently in this browser";
 
   elements.preferenceList.replaceChildren();
   if (!count) {
@@ -1327,6 +1329,11 @@ async function requestAIReply() {
 }
 
 async function sendMessage(rawText) {
+  if (!cloudUserId) {
+    setAuthGateVisible(true);
+    setAuthMode("signin", "Sign in or create an account before continuing. Your conversation history is saved to your account.");
+    return;
+  }
   if (!profileComplete()) {
     openSettings();
     elements.conversationStatus.textContent = "Set up your profile to begin";
@@ -1546,9 +1553,178 @@ elements.runTask.addEventListener("click", () => {
   }, 350);
 });
 
+async function submitAccountForm(event) {
+  event.preventDefault();
+  if (authBusy) return;
+  if (!supabase) {
+    setAuthMode(authMode, "Account sign-in is unavailable because Supabase is not configured for this deployment.");
+    return;
+  }
+
+  const email = String(elements.authEmail?.value || "").trim().toLowerCase();
+  const password = String(elements.authPassword?.value || "");
+  rememberMeEnabled = Boolean(elements.rememberMe?.checked);
+  if (authMode !== "recovery" && !email) {
+    setAuthMode(authMode, "Enter your email address to continue.");
+    elements.authEmail?.focus();
+    return;
+  }
+  if (password.length < 8) {
+    setAuthMode(authMode, "Use a password with at least 8 characters.");
+    elements.authPassword?.focus();
+    return;
+  }
+
+  authBusy = true;
+  if (elements.authSubmit) {
+    elements.authSubmit.disabled = true;
+    elements.authSubmit.textContent = authMode === "signup" ? "Creating account…" : authMode === "recovery" ? "Saving password…" : "Signing in…";
+  }
+
+  try {
+    if (authMode === "recovery") {
+      const { error } = await supabase.auth.updateUser({ password });
+      if (error) throw error;
+      authRecoveryInProgress = false;
+      const { data, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) throw sessionError;
+      if (!data.session) throw new Error("Your password was changed, but the account session could not be restored. Please sign in.");
+      await loadSignedInAccount(data.session, { migrateDraft: true });
+      if (elements.authPassword) elements.authPassword.value = "";
+      if (window.location.hash) history.replaceState(null, "", window.location.pathname + window.location.search);
+      return;
+    }
+
+    if (authMode === "signup") {
+      savePendingAccountDraft(email);
+      const { data: currentData, error: currentError } = await supabase.auth.getSession();
+      if (currentError) throw currentError;
+      if (currentData.session?.user?.is_anonymous) {
+        const { error: signOutError } = await supabase.auth.signOut({ scope: "local" });
+        if (signOutError) throw signOutError;
+      }
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { emailRedirectTo: window.location.origin + "/" }
+      });
+      if (error) throw error;
+      if (data.session && data.user && !data.user.is_anonymous) {
+        await loadSignedInAccount(data.session, { migrateDraft: true });
+        if (elements.authPassword) elements.authPassword.value = "";
+      } else {
+        if (elements.authEmail) elements.authEmail.value = email;
+        if (elements.authPassword) elements.authPassword.value = "";
+        setAuthMode("signin", "Account created. Check your email for the confirmation link, then return here and sign in. Your existing browser draft is ready to move into this account.");
+      }
+      return;
+    }
+
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+    if (!data.session || !data.user || data.user.is_anonymous) throw new Error("We couldn’t establish your account session. Please try again.");
+    await loadSignedInAccount(data.session, { migrateDraft: true });
+    if (elements.authPassword) elements.authPassword.value = "";
+  } catch (error) {
+    const raw = String(error?.message || "");
+    const message = /invalid login credentials/i.test(raw)
+      ? "That email and password combination was not recognised. Check your details or create an account."
+      : /email not confirmed/i.test(raw)
+        ? "Please confirm your email address using the link we sent you, then sign in."
+        : /already registered|user already registered/i.test(raw)
+          ? "An account already exists for that email. Switch to Sign in or use Forgot password."
+          : /password/i.test(raw) && /length|characters|short/i.test(raw)
+            ? "Use a longer password (at least 8 characters)."
+            : "We couldn’t complete that request. Check your details and connection, then try again.";
+    setAuthMode(authMode, message);
+    console.info("SYNQ.ME account action failed.", error);
+  } finally {
+    authBusy = false;
+    if (elements.authSubmit) {
+      elements.authSubmit.disabled = false;
+      elements.authSubmit.textContent = authMode === "signup" ? "Create account" : authMode === "recovery" ? "Save new password" : "Sign in";
+    }
+  }
+}
+
+elements.authForm?.addEventListener("submit", submitAccountForm);
+elements.rememberMe?.addEventListener("change", () => {
+  rememberMeEnabled = Boolean(elements.rememberMe.checked);
+});
+elements.authModeToggle?.addEventListener("click", () => {
+  if (authBusy) return;
+  setAuthMode(authMode === "signup" ? "signin" : "signup");
+});
+elements.authForgotPassword?.addEventListener("click", async () => {
+  if (!supabase) {
+    setAuthMode("signin", "Password reset is unavailable because Supabase is not configured.");
+    return;
+  }
+  const email = String(elements.authEmail?.value || "").trim().toLowerCase();
+  if (!email) {
+    setAuthMode("signin", "Enter your email address first, then choose Forgot password.");
+    elements.authEmail?.focus();
+    return;
+  }
+  try {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + "/"
+    });
+    if (error) throw error;
+    setAuthMode("signin", "If an account exists for that address, a password-reset email has been sent. Follow its link to choose a new password.");
+  } catch (error) {
+    setAuthMode("signin", "We couldn’t send a reset email right now. Check your connection and try again.");
+    console.info("SYNQ.ME password reset request failed.", error);
+  }
+});
+elements.signOutButton?.addEventListener("click", async () => {
+  if (!supabase || authBusy) return;
+  authBusy = true;
+  elements.signOutButton.disabled = true;
+  try {
+    if (cloudUserId) await saveCloudState();
+    const { error } = await supabase.auth.signOut();
+    if (error) throw error;
+    if (cloudSaveTimer) window.clearTimeout(cloudSaveTimer);
+    cloudSaveTimer = null;
+    cloudUserId = null;
+    cloudUserEmail = "";
+    cloudMode = "local";
+    state = initialState();
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(ACCOUNT_DRAFT_KEY);
+    } catch {}
+    populateSettingsForm();
+    renderAll();
+    renderAccountStatus();
+    setAuthGateVisible(true);
+    setAuthMode("signin", "You’re signed out. Sign in again to access your saved SecondSelf.");
+  } catch (error) {
+    setAuthMode("signin", "We couldn’t safely sign out because the latest data could not be confirmed as saved. Try again when the connection is available.");
+    console.info("SYNQ.ME sign-out failed.", error);
+  } finally {
+    authBusy = false;
+    elements.signOutButton.disabled = false;
+  }
+});
+
+if (supabase) {
+  supabase.auth.onAuthStateChange((event) => {
+    if (event === "PASSWORD_RECOVERY") {
+      authRecoveryInProgress = true;
+      setAuthGateVisible(true);
+      setAuthMode("recovery", "Enter a new password to finish resetting your account.");
+    }
+  });
+}
+
 initialiseCloudStorage().finally(() => {
-  if (!profileComplete()) openSettings();
-  else updateSettingsMode();
+  renderAccountStatus();
+  if (cloudUserId) {
+    if (!profileComplete()) openSettings();
+    else updateSettingsMode();
+  }
 });
 
 if ("serviceWorker" in navigator && import.meta.env.PROD) {
