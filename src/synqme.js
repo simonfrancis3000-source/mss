@@ -67,6 +67,7 @@ const elements = {
   settingsIntro: $("#settingsIntro"),
   settingsSaveButton: $(".settings-save"),
   companionName: $("#companionName"),
+  exportPexiPackage: $("#exportPexiPackage"),
   closeSettings: $("#closeSettings"),
   cancelSettings: $("#cancelSettings"),
   settingsForm: $("#settingsForm"),
@@ -100,14 +101,19 @@ function initialState() {
   };
 }
 
-function cleanPreference(input) {
+function cleanPreference(input, metadata = {}) {
   const text = String(input || "").trim().replace(/\s+/g, " ").slice(0, 240);
   if (!text) return null;
   return {
     text,
-    category: classifyPreference(text),
-    normalised: text.toLowerCase(),
-    id: Date.now() + "-" + Math.random().toString(36).slice(2, 7)
+    category: metadata.category || classifyPreference(text),
+    normalised: metadata.normalised || metadata.normalised_text || text.toLowerCase(),
+    id: metadata.id || (Date.now() + "-" + Math.random().toString(36).slice(2, 7)),
+    recordedAt: metadata.recordedAt || metadata.created_at || new Date().toISOString(),
+    sourceMessage: metadata.sourceMessage || metadata.source_message || "",
+    status: metadata.status || metadata.preference_status || "user_stated",
+    explicitFacets: metadata.explicitFacets || metadata.explicit_facets || {},
+    unresolvedFields: metadata.unresolvedFields || metadata.unresolved_fields || []
   };
 }
 
@@ -135,7 +141,7 @@ function loadState() {
           return { role: m.role, content: m.content };
         }),
       preferences: saved.preferences.slice(0, 24)
-        .map((p) => typeof p === "string" ? cleanPreference(p) : cleanPreference(p?.text))
+        .map((p) => typeof p === "string" ? cleanPreference(p) : cleanPreference(p?.text, p))
         .filter(Boolean),
       profile: { ...defaultProfile(), ...(saved.profile && typeof saved.profile === "object" ? saved.profile : {}) },
       functions: Array.isArray(saved.functions) ? saved.functions.filter((id) => ACTIVITIES.some((a) => a.id === id)) : [],
@@ -193,11 +199,19 @@ async function saveCloudState() {
   const snapshot = {
     profile: { ...state.profile },
     functions: [...state.functions],
-    preferences: state.preferences.map((item) => ({
-      text: item.text,
-      category: item.category || classifyPreference(item.text),
-      normalised: (item.normalised || item.text.toLowerCase()).slice(0, 240)
-    }))
+    preferences: state.preferences.map((item) => {
+      const extracted = extractExplicitPreferenceFacets(item.text);
+      return {
+        text: item.text,
+        category: item.category || classifyPreference(item.text),
+        normalised: (item.normalised || item.text.toLowerCase()).slice(0, 240),
+        status: item.status || "user_stated",
+        explicitFacets: item.explicitFacets || extracted.explicitFacets,
+        unresolvedFields: item.unresolvedFields || extracted.unresolvedFields,
+        sourceMessage: item.sourceMessage || item.text,
+        recordedAt: item.recordedAt || new Date().toISOString()
+      };
+    })
   };
 
   const { error: profileError } = await supabase.from("synqme_profiles").upsert({
@@ -216,7 +230,12 @@ async function saveCloudState() {
     user_id: cloudUserId,
     category: item.category,
     preference_text: item.text,
-    normalised_text: item.normalised
+    normalised_text: item.normalised,
+    preference_status: item.status,
+    explicit_facets: item.explicitFacets,
+    unresolved_fields: item.unresolvedFields,
+    source_message: item.sourceMessage,
+    schema_version: 1
   }));
 
   if (desired.length) {
@@ -266,7 +285,7 @@ async function initialiseCloudStorage() {
 
     const [profileResult, preferencesResult] = await Promise.all([
       supabase.from("synqme_profiles").select("*").eq("user_id", cloudUserId).maybeSingle(),
-      supabase.from("synqme_preferences").select("category,preference_text,normalised_text").eq("user_id", cloudUserId).order("created_at", { ascending: false }).limit(24)
+      supabase.from("synqme_preferences").select("category,preference_text,normalised_text,preference_status,explicit_facets,unresolved_fields,source_message,created_at,schema_version").eq("user_id", cloudUserId).order("created_at", { ascending: false }).limit(24)
     ]);
     if (profileResult.error) throw profileResult.error;
     if (preferencesResult.error) throw preferencesResult.error;
@@ -290,7 +309,12 @@ async function initialiseCloudStorage() {
       ...(preferencesResult.data || []).map((item) => ({
         text: item.preference_text,
         category: item.category,
-        normalised: item.normalised_text
+        normalised: item.normalised_text,
+        preference_status: item.preference_status,
+        explicit_facets: item.explicit_facets,
+        unresolved_fields: item.unresolved_fields,
+        source_message: item.source_message,
+        created_at: item.created_at
       })),
       ...state.preferences
     ];
@@ -299,7 +323,7 @@ async function initialiseCloudStorage() {
       const cleaned = cleanPreference(item.text);
       if (!cleaned) return;
       const normalised = (item.normalised || cleaned.normalised).slice(0, 240);
-      if (!unique.has(normalised)) unique.set(normalised, { ...cleaned, category: item.category || cleaned.category, normalised });
+      if (!unique.has(normalised)) unique.set(normalised, { ...cleaned, category: item.category || cleaned.category, normalised, status: item.status || item.preference_status || cleaned.status, explicitFacets: item.explicitFacets || item.explicit_facets || cleaned.explicitFacets, unresolvedFields: item.unresolvedFields || item.unresolved_fields || cleaned.unresolvedFields, sourceMessage: item.sourceMessage || item.source_message || cleaned.sourceMessage, recordedAt: item.recordedAt || item.created_at || cleaned.recordedAt });
     });
     state.preferences = [...unique.values()].slice(0, 24);
 
@@ -442,6 +466,8 @@ elements.functionGrid?.querySelectorAll('input[type="checkbox"]').forEach((check
   });
 });
 
+ elements.exportPexiPackage?.addEventListener("click", exportPexiPersonaPackage);
+
 elements.openTaskFromSettings?.addEventListener("click", () => {
   closeSettings();
   elements.taskResult.hidden = false;
@@ -511,11 +537,59 @@ function splitPreferenceStatements(message) {
   return output.length ? output : [message.trim()];
 }
 
+function extractExplicitPreferenceFacets(text) {
+  const lower = String(text || "").toLowerCase();
+  const facets = {};
+  const unresolvedFields = [];
+
+  if (/\bkitchen\b/.test(lower)) facets.room = "kitchen";
+  if (/\b(bathroom|bathrooms|bedroom|bedrooms|living room|living rooms|hallway|hallways)\b/.test(lower)) {
+    const rooms = lower.match(/\b(kitchen|bathrooms?|bedrooms?|living rooms?|hallways?)\b/g);
+    if (rooms) facets.rooms = [...new Set(rooms)];
+  }
+  if (/\b(twice|two times|2 times)\s+(a|per)\s+day\b|\b(two|2) times daily\b/.test(lower)) facets.frequency = { count: 2, unit: "per_day" };
+  else if (/\bonce\s+(a|per)\s+day\b|\bdaily\b|\bevery day\b/.test(lower)) facets.frequency = { count: 1, unit: "per_day" };
+  else if (/\bthree times\s+(a|per)\s+day\b|\bthree times daily\b/.test(lower)) facets.frequency = { count: 3, unit: "per_day" };
+
+  const times = [];
+  if (/\bmorning\b/.test(lower)) times.push("morning");
+  if (/\bafternoon\b/.test(lower)) times.push("afternoon");
+  if (/\bevening\b/.test(lower)) times.push("evening");
+  if (times.length) facets.timeOfDay = times;
+
+  if (/surfaces?.{0,40}\bbefore\b.{0,30}\bfloors?\b|\bfloors?.{0,40}\bafter\b.{0,30}\bsurfaces?\b/.test(lower)) {
+    facets.taskOrder = ["surface_cleaning", "floor_cleaning"];
+  }
+  if (/\bpaper towels?\b/.test(lower)) facets.cleaningSupplies = [...(facets.cleaningSupplies || []), { type: "paper_towels", detail: "explicitly requested" }];
+  if (/\bspray\b/.test(lower) && /\b(show you|show me|particular|specific|later|when i)\b/.test(lower)) {
+    facets.cleaningSupplies = [...(facets.cleaningSupplies || []), { type: "spray", identity: "to_be_provided_by_user" }];
+    unresolvedFields.push("specific_cleaning_spray");
+  } else if (/\bspray\b/.test(lower)) {
+    facets.cleaningSupplies = [...(facets.cleaningSupplies || []), { type: "spray", detail: "spray mentioned; exact product unspecified" }];
+    unresolvedFields.push("specific_cleaning_spray");
+  }
+  if (/\b(ask me before|ask before|check with me before|confirm with me|my permission|without asking me)\b/.test(lower)) {
+    facets.approvalBoundary = "ask_before_action";
+  }
+  if (/\bnever\b/.test(lower)) facets.negativeConstraint = "explicit_never_statement";
+  if (/\b(?:don't|do not|must not|never)\b/.test(lower) && /\bmove|touch|use|throw away|discard|change\b/.test(lower)) {
+    facets.preserveOrAvoid = "explicit_user_constraint";
+  }
+  if (/(show you|show me|tell you later|provide it later|when i arrive|when you arrive)/i.test(text) && unresolvedFields.length === 0) {
+    unresolvedFields.push("detail_promised_for_later");
+  }
+  return { explicitFacets: facets, unresolvedFields: [...new Set(unresolvedFields)] };
+}
+
 function savePreference(message) {
   const statements = splitPreferenceStatements(message);
   for (const statement of statements) {
     const preference = cleanPreference(statement);
     if (!preference) continue;
+    const extracted = extractExplicitPreferenceFacets(statement);
+    preference.explicitFacets = extracted.explicitFacets;
+    preference.unresolvedFields = extracted.unresolvedFields;
+    preference.sourceMessage = message;
     const exists = state.preferences.some((item) => (item.normalised || item.text.toLowerCase()) === preference.normalised);
     if (exists) continue;
     state.preferences.unshift(preference);
@@ -714,6 +788,21 @@ function localReply(message) {
   return namePrefix + acknowledgement + " What matters most to you when getting that right?";
 }
 
+function responseRepeatsUser(reply, userMessage) {
+  const normalise = (value) => String(value || "").toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
+  const userText = normalise(userMessage);
+  const replyText = normalise(reply);
+  if (!userText || userText.length < 24) return false;
+  if (replyText.includes(userText)) return true;
+
+  const stopWords = new Set(["that","this","with","your","you","have","will","would","when","then","they","them","and","the","for","from","into","onto","some","particular","specific","about","because","before","after","once","what","where","which","just","like","need","want","i","me","my","to","a","an","of","it","is"]);
+  const words = [...new Set(userText.split(" ").filter((word) => word.length >= 3 && !stopWords.has(word)))];
+  if (words.length < 8) return false;
+  const replyWords = new Set(replyText.split(" "));
+  const overlap = words.filter((word) => replyWords.has(word)).length / words.length;
+  return overlap >= 0.78;
+}
+
 async function requestAIReply() {
   if (!API_BASE) return null;
   try {
@@ -766,7 +855,9 @@ async function sendMessage(rawText) {
   renderAll();
 
   let reply = await requestAIReply();
-  if (!reply) reply = localReply(message);
+  if (!reply || responseRepeatsUser(reply, message) || /I've captured this preference for your browser-based SecondSelf|I've added it to your local digital persona|That's useful context for your SecondSelf/i.test(reply)) {
+    reply = localReply(message);
+  }
   state.messages.push({ role: "assistant", content: reply });
   state.messages = state.messages.slice(-50);
   persist();
@@ -807,6 +898,93 @@ elements.resetDemo.addEventListener("click", () => {
   renderAll();
   persist();
 });
+
+function buildPexiPersonaPackage() {
+  const now = new Date().toISOString();
+  const preferences = state.preferences.map((item) => {
+    const extracted = extractExplicitPreferenceFacets(item.text);
+    return {
+      preference_id: item.id,
+      statement: item.text,
+      category: item.category || classifyPreference(item.text),
+      epistemic_status: item.status === "user_confirmed" ? "user_confirmed" : "user_stated",
+      provenance: {
+        source_application: "SYNQ.ME",
+        source_type: "conversation",
+        recorded_at: item.recordedAt || now,
+        source_message: item.sourceMessage || item.text
+      },
+      explicit_fields: item.explicitFacets || extracted.explicitFacets,
+      unresolved_fields: item.unresolvedFields || extracted.unresolvedFields,
+      execution_status: "not_executable",
+      requires_robot_capability_mapping: true
+    };
+  });
+
+  const boundaries = preferences.filter((item) =>
+    item.category === "Consent & boundaries" ||
+    item.explicit_fields.approvalBoundary ||
+    item.explicit_fields.negativeConstraint ||
+    item.explicit_fields.preserveOrAvoid
+  );
+
+  return {
+    schema: "app.mysecondself.pexi-persona",
+    schema_version: "1.0.0",
+    package_type: "portable_persona_profile",
+    exported_at: now,
+    source: {
+      product: "SYNQ.ME",
+      platform: "MySecondSelf",
+      intelligence_layer: "AMÏA",
+      package_status: "data_export_only"
+    },
+    owner: {
+      display_name: state.profile.ownerName || ""
+    },
+    companion_profile: {
+      chosen_name: state.profile.robotName || "",
+      target_robot_type: state.profile.robotType || "Humanoid robot",
+      preferred_voice: state.profile.robotVoice || "female",
+      ask_before_actions: Boolean(state.profile.confirmActions)
+    },
+    domestic_functions: state.functions.map((id) => {
+      const activity = ACTIVITIES.find((item) => item.id === id);
+      return { function_id: id, label: activity?.label || id, status: "user_selected" };
+    }),
+    preferences,
+    boundaries,
+    completeness: {
+      preference_count: preferences.length,
+      selected_domestic_function_count: state.functions.length,
+      unresolved_detail_count: preferences.reduce((sum, item) => sum + item.unresolved_fields.length, 0)
+    },
+    pexi_transfer_contract: {
+      target: "PEXI",
+      transfer_status: "portable_persona_data_package",
+      requires_robot_capability_mapping: true,
+      requires_target_robot_safety_validation: true,
+      requires_user_authorisation_before_physical_actions: true,
+      physical_robot_connected: false,
+      physical_actions_enabled: false,
+      note: "This package carries stated persona data and unresolved details. It is not a robot-control command or proof of compatibility."
+    }
+  };
+}
+
+function exportPexiPersonaPackage() {
+  const payload = buildPexiPersonaPackage();
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = "mysecondself-pexi-persona.json";
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  if (elements.conversationStatus) elements.conversationStatus.textContent = "Persona package exported";
+}
 
 function makeTaskStep(number, title, description) {
   const item = document.createElement("div");
