@@ -183,7 +183,8 @@ function initialState() {
     apiProvider: "",
     apiModel: "",
     apiConfigured: null,
-    apiError: ""
+    apiError: "",
+    apiErrorDetail: ""
   };
 }
 
@@ -241,7 +242,12 @@ function loadState() {
       profile: { ...defaultProfile(), ...(saved.profile && typeof saved.profile === "object" ? saved.profile : {}) },
       functions: Array.isArray(saved.functions) ? saved.functions.filter((id) => ACTIVITIES.some((a) => a.id === id)) : [],
       pendingClarification: saved.pendingClarification && typeof saved.pendingClarification === "object" ? saved.pendingClarification : null,
-      apiConnected: false
+      apiConnected: false,
+      apiProvider: "",
+      apiModel: "",
+      apiConfigured: null,
+      apiError: "",
+      apiErrorDetail: ""
     };
     return state;
   } catch {
@@ -1999,6 +2005,7 @@ function responseRepeatsUser(reply, userMessage) {
 
 async function requestAIReply(repairMode = false) {
   if (!API_BASE) return null;
+  state.apiErrorDetail = "";
   try {
     const response = await fetch(API_BASE + "/api/chat", {
       method: "POST",
@@ -2032,13 +2039,16 @@ async function requestAIReply(repairMode = false) {
     if (data.model) state.apiModel = String(data.model);
     if (!response.ok) {
       state.apiConfigured = true;
-      throw new Error(data.error || ("AI endpoint returned " + response.status));
+      const apiError = new Error(data.error || ("AI endpoint returned " + response.status));
+      apiError.apiStatus = response.status;
+      throw apiError;
     }
     const reply = typeof data.reply === "string" ? data.reply : typeof data.message === "string" ? data.message : "";
     if (!reply.trim()) throw new Error("AI endpoint returned no reply text");
     state.apiConnected = true;
     state.apiConfigured = true;
     state.apiError = "";
+    state.apiErrorDetail = "";
     elements.providerLabel.textContent = (state.apiProvider || "AI").toUpperCase() + " · " + (state.apiModel || "model") + " · LIVE";
 
     // If the server had to use a canned fallback, ask the configured model once
@@ -2050,6 +2060,9 @@ async function requestAIReply(repairMode = false) {
     console.info("SYNQ.ME AI request failed; no scripted question will be substituted.", error);
     state.apiConnected = false;
     state.apiError = responseErrorLabel(error);
+    state.apiErrorDetail = Number.isInteger(error?.apiStatus)
+      ? "The AI service returned HTTP " + error.apiStatus + ": " + String(error?.message || "Request failed").slice(0, 260)
+      : "";
     elements.providerLabel.textContent = (state.apiProvider ? state.apiProvider.toUpperCase() : "AI SERVICE") + " · " + state.apiError.toUpperCase().replace(/_/g, " ");
     return null;
   }
@@ -2057,7 +2070,10 @@ async function requestAIReply(repairMode = false) {
 
 function responseErrorLabel(error) {
   const message = String(error?.message || "").toLowerCase();
-  if (/429|quota|usage limit/.test(message)) return "quota limit";
+  if (/429|quota|usage limit/.test(message) || error?.apiStatus === 429) return "quota limit";
+  if (error?.apiStatus === 401 || error?.apiStatus === 403) return "AI key/access error";
+  if (Number.isInteger(error?.apiStatus) && error.apiStatus >= 500) return "AI provider error";
+  if (error?.apiStatus) return "API error " + error.apiStatus;
   if (/503|not configured|api key/.test(message)) return "not configured";
   if (/failed to fetch|network|cors|timeout|aborted/.test(message)) return "connection failed";
   return "request failed";
@@ -2148,7 +2164,7 @@ async function sendMessage(rawText) {
         reply = "I’m having trouble making a useful connection from that answer, and I don’t want to give you another canned question. I’ve understood the detail you shared; please try once more, or tell me which part of your routine you’d like to explore.";
       }
     } else if (!reply && API_BASE) {
-      reply = "I can’t reach the AI conversation service right now, so I haven’t substituted a scripted answer. Please try again shortly.";
+      reply = state.apiErrorDetail || "I can’t reach the AI conversation service right now, so I haven’t substituted a scripted answer. Please try again shortly.";
     } else if (!reply) {
       reply = localReply(message);
     } else if (reply === "__SYNQME_UNHELPFUL_AI_RESPONSE__") {
