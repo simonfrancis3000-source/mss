@@ -9,7 +9,7 @@ const supabase = SUPABASE_URL && SUPABASE_KEY
       auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
     })
   : null;
-const WELCOME = "Hi, I’m ELO, your SYNQ.ME guide. Let’s start building your SecondSelf. Which parts of home life would you like it to understand first?";
+const WELCOME = "Hi, I’m here to help you build your SecondSelf. Which parts of home life would you like it to understand first?";
 
 const ACTIVITIES = [
   { id: "dishwashing", label: "Dishwashing" },
@@ -62,6 +62,11 @@ const elements = {
   settingsDialog: $("#settingsDialog"),
   settingsSheet: $(".settings-sheet"),
   settingsBackdrop: $("#settingsBackdrop"),
+  profileSetupNotice: $("#profileSetupNotice"),
+  settingsTitle: $("#settingsTitle"),
+  settingsIntro: $("#settingsIntro"),
+  settingsSaveButton: $(".settings-save"),
+  companionName: $("#companionName"),
   closeSettings: $("#closeSettings"),
   cancelSettings: $("#cancelSettings"),
   settingsForm: $("#settingsForm"),
@@ -82,7 +87,7 @@ const elements = {
 };
 
 function defaultProfile() {
-  return { ownerName: "", robotName: "", robotType: "Home assistant", confirmActions: false };
+  return { ownerName: "", robotName: "", robotType: "Humanoid robot", robotVoice: "female", confirmActions: false };
 }
 
 function initialState() {
@@ -194,6 +199,7 @@ async function saveCloudState() {
     owner_name: snapshot.profile.ownerName,
     future_robot_name: snapshot.profile.robotName,
     future_robot_type: snapshot.profile.robotType,
+    future_robot_voice: snapshot.profile.robotVoice || "female",
     confirm_actions: snapshot.profile.confirmActions,
     domestic_functions: snapshot.functions,
     updated_at: new Date().toISOString()
@@ -264,7 +270,8 @@ async function initialiseCloudStorage() {
       state.profile = {
         ownerName: remoteProfile.owner_name || state.profile.ownerName || "",
         robotName: remoteProfile.future_robot_name || state.profile.robotName || "",
-        robotType: remoteProfile.future_robot_type || state.profile.robotType || "Home assistant",
+        robotType: remoteProfile.future_robot_type || state.profile.robotType || "Humanoid robot",
+        robotVoice: remoteProfile.future_robot_voice || state.profile.robotVoice || "female",
         confirmActions: Boolean(remoteProfile.confirm_actions)
       };
       const remoteFunctions = Array.isArray(remoteProfile.domestic_functions)
@@ -335,7 +342,9 @@ document.addEventListener("keydown", (event) => {
 function populateSettingsForm() {
   elements.ownerName.value = state.profile.ownerName || "";
   elements.robotName.value = state.profile.robotName || "";
-  elements.robotType.value = state.profile.robotType || "Home assistant";
+  elements.robotType.value = state.profile.robotType || "Humanoid robot";
+  const voiceField = document.querySelector("#robotVoice");
+  if (voiceField) voiceField.value = state.profile.robotVoice || "female";
   elements.confirmActions.checked = Boolean(state.profile.confirmActions);
   elements.functionGrid.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
     checkbox.checked = state.functions.includes(checkbox.value);
@@ -386,7 +395,7 @@ function appendMessage(role, content) {
   meta.className = "message-meta";
   meta.textContent = role === "user"
     ? (state.profile.ownerName.trim().toUpperCase() || "YOU")
-    : (state.apiConnected ? "ELO · AI RESPONSE" : "ELO · SYNQ.ME");
+    : ((state.profile.robotName.trim() || "ELO") + " · SYNQ.ME");
   const paragraph = document.createElement("p");
   paragraph.textContent = content;
   body.append(meta, paragraph);
@@ -581,6 +590,7 @@ function renderAll() {
 
   const name = state.profile.ownerName.trim();
   const robotName = state.profile.robotName.trim();
+  if (elements.companionName) elements.companionName.textContent = robotName || "ELO";
   if (elements.mobileOwnerTitle) elements.mobileOwnerTitle.textContent = name ? name + "’s SecondSelf" : "Your SecondSelf";
   const count = state.preferences.length;
   const functionsCount = state.functions.length;
