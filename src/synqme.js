@@ -256,6 +256,17 @@ let recognitionTranscript = "";
 let voiceRestartTimer = null;
 let assistantIsSpeaking = false;
 let currentSpeechUtterance = null;
+let voiceMediaStream = null;
+let voiceAudioContext = null;
+let voiceAnalyser = null;
+let voiceAnalysisBuffer = null;
+let voiceMonitorFrame = 0;
+let activeMediaRecorder = null;
+let voiceAudioChunks = [];
+let voiceSpeechDetected = false;
+let voiceLastSpeechAt = 0;
+let voiceRecordingStartedAt = 0;
+let voiceTranscribing = false;
 let taskRunning = false;
 let lastFocusedElement = null;
 let cloudUserId = null;
@@ -1519,6 +1530,8 @@ function stopVoiceConversation(statusMessage = "Voice conversation stopped.") {
   if (voiceRestartTimer) window.clearTimeout(voiceRestartTimer);
   voiceRestartTimer = null;
   recognitionTranscript = "";
+  releaseVoiceMedia();
+  voiceTranscribing = false;
   if (speechRecognition && recognitionListening) {
     try { speechRecognition.abort(); } catch {}
   }
@@ -1543,6 +1556,206 @@ function scheduleVoiceListening(delay = 350) {
     voiceRestartTimer = null;
     startVoiceListening();
   }, delay);
+}
+
+
+function stopVoiceMonitor() {
+  if (voiceMonitorFrame) window.cancelAnimationFrame(voiceMonitorFrame);
+  voiceMonitorFrame = 0;
+}
+
+function releaseVoiceMedia() {
+  stopVoiceMonitor();
+  if (activeMediaRecorder && activeMediaRecorder.state !== "inactive") {
+    const recorder = activeMediaRecorder;
+    recorder.onstop = null;
+    try { recorder.stop(); } catch {}
+  }
+  activeMediaRecorder = null;
+  voiceAudioChunks = [];
+  if (voiceMediaStream) {
+    voiceMediaStream.getTracks().forEach((track) => track.stop());
+    voiceMediaStream = null;
+  }
+  voiceAnalyser = null;
+  voiceAnalysisBuffer = null;
+  if (voiceAudioContext) {
+    const context = voiceAudioContext;
+    voiceAudioContext = null;
+    void context.close().catch(() => {});
+  }
+}
+
+function voiceRecorderAvailable() {
+  return Boolean(
+    API_BASE &&
+    typeof window.MediaRecorder === "function" &&
+    navigator.mediaDevices &&
+    typeof navigator.mediaDevices.getUserMedia === "function" &&
+    (window.AudioContext || window.webkitAudioContext)
+  );
+}
+
+function monitorVoiceSilence() {
+  if (!voiceModeActive || !activeMediaRecorder || activeMediaRecorder.state !== "recording" || !voiceAnalyser || !voiceAnalysisBuffer) {
+    voiceMonitorFrame = 0;
+    return;
+  }
+  voiceAnalyser.getByteTimeDomainData(voiceAnalysisBuffer);
+  let sum = 0;
+  for (let i = 0; i < voiceAnalysisBuffer.length; i++) {
+    const centred = (voiceAnalysisBuffer[i] - 128) / 128;
+    sum += centred * centred;
+  }
+  const rms = Math.sqrt(sum / voiceAnalysisBuffer.length);
+  const now = performance.now();
+  const elapsed = now - voiceRecordingStartedAt;
+  if (rms > 0.045) {
+    voiceSpeechDetected = true;
+    voiceLastSpeechAt = now;
+  }
+  if (voiceSpeechDetected && elapsed > 1400 && now - voiceLastSpeechAt > 1350) {
+    try { activeMediaRecorder.stop(); } catch {}
+    return;
+  }
+  if (!voiceSpeechDetected && elapsed > 12000) {
+    stopVoiceConversation("I didn't hear speech. Tap Voice to try again, or type your message.");
+    return;
+  }
+  if (elapsed > 20000) {
+    try { activeMediaRecorder.stop(); } catch {}
+    return;
+  }
+  voiceMonitorFrame = window.requestAnimationFrame(monitorVoiceSilence);
+}
+
+function startVoiceMonitor() {
+  stopVoiceMonitor();
+  voiceMonitorFrame = window.requestAnimationFrame(monitorVoiceSilence);
+}
+
+function blobToBase64(blob) {
+  return blob.arrayBuffer().then((buffer) => {
+    const bytes = new Uint8Array(buffer);
+    let binary = "";
+    const chunkSize = 0x8000;
+    for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+      binary += String.fromCharCode(...bytes.subarray(offset, Math.min(offset + chunkSize, bytes.length)));
+    }
+    return btoa(binary);
+  });
+}
+
+async function transcribeVoiceRecording(blob) {
+  if (!voiceModeActive || voiceTranscribing) return;
+  if (!blob || blob.size < 1500) {
+    if (elements.voiceStatus) elements.voiceStatus.textContent = "I didn't catch that clearly. Listening again…";
+    scheduleVoiceListening(500);
+    return;
+  }
+  voiceTranscribing = true;
+  if (elements.conversationStatus) elements.conversationStatus.textContent = "Transcribing your speech";
+  if (elements.voiceStatus) elements.voiceStatus.textContent = "Transcribing · Google Gemini";
+  try {
+    const audioBase64 = await blobToBase64(blob);
+    if (!voiceModeActive) return;
+    const response = await fetch(API_BASE + "/api/transcribe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ audioBase64, mimeType: blob.type || "audio/mp4" }),
+      signal: AbortSignal.timeout(45_000)
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Voice transcription could not complete.");
+    const transcript = String(data.text || "").trim();
+    if (!transcript) throw new Error("I couldn't make out those words. Please try again.");
+    if (elements.voiceStatus) elements.voiceStatus.textContent = "Heard: " + transcript.slice(0, 95);
+    if (elements.messageInput) elements.messageInput.value = "";
+    voiceTranscribing = false;
+    await sendMessage(transcript);
+  } catch (error) {
+    voiceTranscribing = false;
+    if (voiceModeActive) stopVoiceConversation(error?.message || "Voice transcription failed. Please try again or type.");
+  } finally {
+    voiceTranscribing = false;
+  }
+}
+
+async function startMediaRecorderListening() {
+  if (!voiceModeActive || isSending || assistantIsSpeaking || voiceTranscribing || activeMediaRecorder?.state === "recording") return;
+  try {
+    if (!voiceMediaStream) {
+      voiceMediaStream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+      });
+    }
+    if (!voiceModeActive) {
+      releaseVoiceMedia();
+      return;
+    }
+    if (!voiceAudioContext) {
+      const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
+      voiceAudioContext = new AudioContextConstructor();
+      voiceAnalyser = voiceAudioContext.createAnalyser();
+      voiceAnalyser.fftSize = 1024;
+      voiceAnalysisBuffer = new Uint8Array(voiceAnalyser.fftSize);
+      const source = voiceAudioContext.createMediaStreamSource(voiceMediaStream);
+      source.connect(voiceAnalyser);
+    }
+    if (voiceAudioContext.state === "suspended") await voiceAudioContext.resume();
+    if (!voiceModeActive) return;
+
+    const preferredTypes = [
+      "audio/mp4;codecs=mp4a.40.2",
+      "audio/mp4",
+      "audio/webm;codecs=opus",
+      "audio/webm",
+      "audio/ogg;codecs=opus"
+    ];
+    const supportedType = preferredTypes.find((type) => MediaRecorder.isTypeSupported?.(type));
+    const recorder = supportedType
+      ? new MediaRecorder(voiceMediaStream, { mimeType: supportedType })
+      : new MediaRecorder(voiceMediaStream);
+    activeMediaRecorder = recorder;
+    voiceAudioChunks = [];
+    voiceSpeechDetected = false;
+    voiceLastSpeechAt = 0;
+    voiceRecordingStartedAt = performance.now();
+    recorder.ondataavailable = (event) => {
+      if (event.data?.size) voiceAudioChunks.push(event.data);
+    };
+    recorder.onerror = () => {
+      stopVoiceConversation("The microphone recording failed. Please try again or type your message.");
+    };
+    recorder.onstop = () => {
+      stopVoiceMonitor();
+      const blobType = recorder.mimeType || supportedType || "audio/mp4";
+      const blob = new Blob(voiceAudioChunks, { type: blobType });
+      voiceAudioChunks = [];
+      if (activeMediaRecorder === recorder) activeMediaRecorder = null;
+      if (!voiceModeActive) return;
+      if (!voiceSpeechDetected) {
+        stopVoiceConversation("I didn't hear speech. Tap Voice to try again, or type your message.");
+        return;
+      }
+      void transcribeVoiceRecording(blob);
+    };
+    recorder.start(200);
+    if (elements.conversationStatus) elements.conversationStatus.textContent = "Listening · speak naturally, then pause";
+    if (elements.voiceStatus) {
+      elements.voiceStatus.dataset.error = "";
+      elements.voiceStatus.textContent = "Listening · pauses send your words to Google Gemini";
+    }
+    startVoiceMonitor();
+  } catch (error) {
+    stopVoiceConversation(
+      error?.name === "NotAllowedError"
+        ? "Microphone access blocked. Allow microphone access in browser settings, then try again."
+        : error?.name === "NotFoundError"
+          ? "No microphone was found. Connect or enable a microphone, then try again."
+          : "Voice recording could not start. Please allow microphone access or type your message."
+    );
+  }
 }
 
 function createSpeechRecognition() {
@@ -1601,8 +1814,12 @@ function createSpeechRecognition() {
   }
 }
 
-function startVoiceListening() {
-  if (!voiceModeActive || isSending || assistantIsSpeaking || recognitionListening) return;
+async function startVoiceListening() {
+  if (!voiceModeActive || isSending || assistantIsSpeaking || voiceTranscribing || recognitionListening) return;
+  if (voiceRecorderAvailable()) {
+    await startMediaRecorderListening();
+    return;
+  }
   if (!speechRecognition) speechRecognition = createSpeechRecognition();
   if (!speechRecognition) {
     stopVoiceConversation("Voice input isn't supported by this browser. Try a current version of Chrome or use typing.");
@@ -1694,6 +1911,33 @@ elements.voiceModeButton?.addEventListener("click", () => {
   startVoiceListening();
 });
 
+
+function isClarificationRequest(message) {
+  const value = String(message || "").toLowerCase().replace(/[.!?]+$/g, "").trim();
+  return /^(such as what|like what|what do you mean|what do you mean by that|examples?|give me an example|can you give me an example|can you give me some examples|could you give me an example|could you give me some examples|what kind of things|what sort of things|can you explain that|could you explain that)$/.test(value);
+}
+
+function clarificationHelpReply(previousAssistantMessage, previousUserMessage = "") {
+  const question = String(previousAssistantMessage || "").toLowerCase();
+  const previousPreference = String(previousUserMessage || "");
+  if (/(avoid|prevent|left untouched|never happen|shouldn't|should not)/i.test(question)) {
+    return "For example, you might want me to ask before moving personal belongings, avoid touching fragile or private items, leave certain rooms alone, or check with you before throwing anything away. Those are just examples—do any apply to you, or is there something else?";
+  }
+  if (/(ask|permission|confirm|check with me)/i.test(question)) {
+    return "For example, asking before moving your belongings, using a new cleaning product, throwing something away, or handling something fragile. Which, if any, would you want me to check with you first?";
+  }
+  if (/(time|timing|schedule|morning|evening|when)/i.test(question)) {
+    return "For example, you might prefer a task before breakfast, after you leave a room, at a set time each day, or only when needed. Which sounds closest to your routine?";
+  }
+  if (/(order|sequence|first|before|after)/i.test(question)) {
+    return "For example, cleaning surfaces before floors, putting things away before wiping a counter, or finishing one room before moving to the next. Is there a particular order you prefer?";
+  }
+  if (/(clean|surface|floor|vacuum|tidy|kitchen)/i.test(question) || /(clean|surface|floor|vacuum|tidy|kitchen)/i.test(previousPreference)) {
+    return "For example, protecting delicate surfaces, using only products you approve, leaving personal items where they are, or cleaning high-use areas first. Which detail matters in your home?";
+  }
+  return "For example, I can learn about timing, task order, items that need special care, or things you want me to ask about before changing. Is there one of those you want to explore first?";
+}
+
 function responseRepeatsRecentAssistant(reply) {
   const normalise = (value) => String(value || "").toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
   const current = normalise(reply);
@@ -1775,6 +2019,7 @@ async function sendMessage(rawText) {
   }
   const message = rawText.trim();
   if (!message || isSending) return;
+  const clarificationRequest = isClarificationRequest(message);
   isSending = true;
   elements.sendButton.disabled = true;
   elements.messageInput.disabled = true;
@@ -1795,15 +2040,17 @@ async function sendMessage(rawText) {
   if (!state.pendingClarification && inferredPending) state.pendingClarification = inferredPending;
   const pendingBeforeAnswer = state.pendingClarification ? { ...state.pendingClarification } : null;
   const answeredPendingClarification = resolvePendingClarification(message);
-  if (!answeredPendingClarification) savePreference(message);
+  if (!answeredPendingClarification && !clarificationRequest) savePreference(message);
   persist();
   renderAll();
 
   // A clarification answer must be handled against the pending question, not
   // sent back to the general-purpose chat model where it can lose context.
-  let reply = answeredPendingClarification
-    ? replyToResolvedClarification(message, pendingBeforeAnswer)
-    : await requestAIReply();
+  let reply = clarificationRequest
+    ? clarificationHelpReply(previousAssistantMessage, previousUserMessage)
+    : answeredPendingClarification
+      ? replyToResolvedClarification(message, pendingBeforeAnswer)
+      : await requestAIReply();
   if (!answeredPendingClarification && (!reply || responseRepeatsUser(reply, message) || responseRepeatsRecentAssistant(reply) || /I've captured this preference for your browser-based SecondSelf|I've added it to your local digital persona|That's useful context for your SecondSelf|Let's make that preference more precise|What detail would matter most to get right|What matters most to you when getting that right|Which laundry detail matters most to you: sorting, washing and drying, or how clothes are put away/i.test(reply))) {
     reply = localReply(message);
   }
