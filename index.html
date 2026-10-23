@@ -224,10 +224,10 @@
         </div>
         <form id="settingsForm" class="settings-form">
           <label for="ownerName">Your name</label>
-          <input id="ownerName" name="ownerName" maxlength="60" autocomplete="given-name" placeholder="What should ELO call you?" required />
+          <input id="ownerName" name="ownerName" maxlength="60" autocomplete="given-name" placeholder="What should your companion call you?" required />
           <label for="robotName">Name your future robot (your choice)</label>
           <input id="robotName" name="robotName" maxlength="60" placeholder="Choose a name for your future robot" required />
-          <p class="field-help">ELO is your SYNQ.ME conversation guide. Your future robot can have any name you choose.</p>
+          <p class="field-help">The name you choose here will be used for your SYNQ.ME companion. You can change it later.</p>
           <label for="robotType">Robot you may want to personalise in the future</label>
           <select id="robotType" name="robotType">
             <option value="Humanoid robot" selected>Humanoid robot</option>
@@ -241,7 +241,7 @@
             <option value="male">Male voice</option>
           </select>
           <p class="field-help">This saves your preference for future voice support; voice playback is not enabled in this demo yet.</p>
-          <label class="settings-toggle" for="confirmActions>
+          <label class="settings-toggle" for="confirmActions">
             <span><strong>Ask me before actions</strong><small>Record this as a personal preference for future task plans.</small></span>
             <input type="checkbox" id="confirmActions" name="confirmActions" />
             <span class="toggle-ui" aria-hidden="true"></span>
