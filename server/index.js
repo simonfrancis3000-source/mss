@@ -405,7 +405,6 @@ const app = http.createServer(async (request, response) => {
       return json(response, 502, { error: "The AI service returned an empty reply." }, headers || {});
     }
     const safeReply = guardRobotExecutionClaims(reply.trim(), preferences);
-    const latestUserMessage = messages[messages.length - 1].content;
     const lowValueReply = /I've captured this preference for your browser-based SecondSelf|I've added it to your local digital persona|That's useful context for your SecondSelf|Let's make that preference more precise|What detail would matter most to get right/i.test(safeReply);
     const finalReply = lowValueReply || responseRepeatsUser(safeReply, latestUserMessage)
       ? betterFallbackFollowup(latestUserMessage, profile)
