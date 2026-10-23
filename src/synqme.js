@@ -1413,7 +1413,17 @@ function localReply(message) {
   const recentAssistant = state.messages.filter((item) => item.role === "assistant").slice(-6).map((item) => item.content);
   const normalise = (value) => String(value || "").toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
   const alreadyAsked = (question) => recentAssistant.some((reply) => normalise(reply).includes(normalise(question)) || normalise(question).includes(normalise(reply)));
-  const choose = (options) => options.find((option) => !alreadyAsked(option)) || options[options.length - 1];
+  const choose = (options) => {
+    const fresh = options.find((option) => !alreadyAsked(option));
+    if (fresh) return fresh;
+    const newAngles = [
+      "Can you walk me through how that usually happens at home?",
+      "What tends to happen just before you need that done?",
+      "What small detail would make the biggest difference to you in that situation?",
+      "When this doesn’t go the way you like, what usually goes wrong?"
+    ];
+    return newAngles.find((option) => !alreadyAsked(option)) || "What does a typical day look like for you in that situation?";
+  };
   const lastWas = (pattern) => pattern.test(previousAssistant);
 
   if (isClarificationRequest(text)) return clarificationHelpReply(previousAssistant, state.messages.filter((item) => item.role === "user").slice(-2, -1)[0]?.content || "");
