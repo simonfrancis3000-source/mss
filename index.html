@@ -133,13 +133,18 @@
           <form class="chat-composer" id="chatForm">
             <label class="sr-only" for="messageInput">Tell SYNQ.ME a preference</label>
             <textarea id="messageInput" name="message" rows="2" maxlength="1200" placeholder="Tell your SecondSelf how you like things done..." required></textarea>
+            <button class="voice-mode-button" id="voiceModeButton" type="button" aria-pressed="false" aria-label="Start voice conversation" title="Start a spoken conversation">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"></rect><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3m-4 0h8"></path></svg>
+              <span>Voice</span>
+            </button>
             <button class="send-button" id="sendButton" type="submit" aria-label="Send message">
               <span>Send</span>
               <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 10h13M10 4l6 6-6 6"></path></svg>
             </button>
           </form>
           <div class="composer-foot">
-            <span><span class="small-lock"></span> Your SecondSelf is saved in this browser</span>
+            <span><span class="small-lock"></span> Your SecondSelf is saved to your account</span>
+            <span id="voiceStatus" class="voice-status" aria-live="polite">Voice off · browser speech services</span>
             <button type="button" id="resetDemo" class="text-button">Reset demo</button>
           </div>
         </section>
@@ -267,14 +272,14 @@
             <option value="female" selected>Female voice</option>
             <option value="male">Male voice</option>
           </select>
-          <p class="field-help">This saves your preference for future voice support; voice playback is not enabled in this demo yet.</p>
+          <p class="field-help">Voice mode speaks replies using an available voice on your device. The selected voice preference is used when a matching device voice is available.</p>
           <label class="settings-toggle" for="confirmActions">
             <span><strong>Ask me before actions</strong><small>Record this as a personal preference for future task plans.</small></span>
             <input type="checkbox" id="confirmActions" name="confirmActions" />
             <span class="toggle-ui" aria-hidden="true"></span>
           </label>
           <div class="settings-section">
-            <div class="settings-subhead"><span>DOMESTIC FUNCTIONS</span><span id="functionCount">0 SELECTED</span></div>
+            <div class="settings-subhead function-section-head"><span>DOMESTIC FUNCTIONS</span><div class="function-section-controls"><span id="functionCount">0 SELECTED</span><button type="button" id="toggleAllFunctions" class="select-all-functions">Select all</button></div></div>
             <p class="settings-section-copy">Choose the parts of everyday life you want your SecondSelf to learn about. You can change these at any time.</p>
             <div class="function-grid" id="functionGrid">
               <label class="function-option"><input type="checkbox" value="dishwashing"><span class="function-symbol">01</span><span class="function-label"><strong>Dishwashing</strong><small>Loading, unloading, preferences</small></span></label>
