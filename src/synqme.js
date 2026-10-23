@@ -68,6 +68,8 @@ const elements = {
   settingsSaveButton: $(".settings-save"),
   companionName: $("#companionName"),
   exportPexiPackage: $("#exportPexiPackage"),
+  pexiReadinessSummary: $("#pexiReadinessSummary"),
+  pexiReadinessStatus: $("#pexiReadinessStatus"),
   closeSettings: $("#closeSettings"),
   cancelSettings: $("#cancelSettings"),
   settingsForm: $("#settingsForm"),
@@ -811,6 +813,25 @@ function milestoneUnlocked(milestone) {
   return Boolean(milestone.unlocked(state));
 }
 
+function renderPexiReadiness() {
+  const count = state.preferences.length;
+  const unresolved = state.preferences.reduce((sum, item) => {
+    return sum + preferenceExtraction(item).unresolvedFields.length;
+  }, 0);
+  if (elements.pexiReadinessStatus) {
+    elements.pexiReadinessStatus.textContent = unresolved
+      ? unresolved + (unresolved === 1 ? " OPEN DETAIL" : " OPEN DETAILS")
+      : count ? "READY FOR MAPPING" : "NOT STARTED";
+  }
+  if (elements.pexiReadinessSummary) {
+    elements.pexiReadinessSummary.textContent = !count
+      ? "As you share preferences, SYNQ.ME will separate what you stated from details that still need clarification. PEXI mapping remains a later compatibility step."
+      : unresolved
+        ? count + (count === 1 ? " stated preference" : " stated preferences") + " recorded. " + unresolved + (unresolved === 1 ? " detail still" : " details still") + " need clarification before the profile can be fully mapped for PEXI."
+        : count + (count === 1 ? " stated preference" : " stated preferences") + " recorded. The package can be exported for PEXI mapping, but target-robot capability and safety checks are still required.";
+  }
+}
+
 function renderMilestones() {
   const unlockedCount = MILESTONES.filter(milestoneUnlocked).length;
   if (elements.milestoneCount) elements.milestoneCount.textContent = unlockedCount + " OF " + MILESTONES.length;
@@ -859,6 +880,7 @@ function renderAll() {
   renderPreferences();
   updateDecisionSummary();
   renderSettingsDetails();
+  renderPexiReadiness();
 
   const name = state.profile.ownerName.trim();
   const robotName = state.profile.robotName.trim();
