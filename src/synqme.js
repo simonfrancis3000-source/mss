@@ -1,12 +1,53 @@
 import { createClient } from "@supabase/supabase-js";
 
 const STORAGE_KEY = "synqme-demo-v1";
+const ACCOUNT_DRAFT_KEY = "synqme-pending-account-migration-v1";
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
+let rememberMeEnabled = document.querySelector("#rememberMe")?.checked ?? true;
+
+// Select localStorage ("Remember me") or sessionStorage (this tab only) for
+// the Supabase session. The persona itself is synchronised to the signed-in
+// account and is not dependent on this device keeping an auth token.
+const rememberMeStorage = {
+  async getItem(key) {
+    let persistent = null;
+    let tabSession = null;
+    try { persistent = localStorage.getItem(key); } catch {}
+    try { tabSession = sessionStorage.getItem(key); } catch {}
+    const rememberCheckbox = document.querySelector("#rememberMe");
+    if (persistent !== null) {
+      rememberMeEnabled = true;
+      if (rememberCheckbox) rememberCheckbox.checked = true;
+      return persistent;
+    }
+    if (tabSession !== null) {
+      rememberMeEnabled = false;
+      if (rememberCheckbox) rememberCheckbox.checked = false;
+      return tabSession;
+    }
+    return null;
+  },
+  async setItem(key, value) {
+    const preferred = rememberMeEnabled ? localStorage : sessionStorage;
+    const other = rememberMeEnabled ? sessionStorage : localStorage;
+    try { other.removeItem(key); } catch {}
+    preferred.setItem(key, value);
+  },
+  async removeItem(key) {
+    try { localStorage.removeItem(key); } catch {}
+    try { sessionStorage.removeItem(key); } catch {}
+  }
+};
 const supabase = SUPABASE_URL && SUPABASE_KEY
   ? createClient(SUPABASE_URL, SUPABASE_KEY, {
-      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
+      auth: {
+        storage: rememberMeStorage,
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true
+      }
     })
   : null;
 const WELCOME = "Hi, I’m here to help you build your SecondSelf. Which parts of home life would you like it to understand first?";
@@ -86,7 +127,23 @@ const elements = {
   openTaskFromSettings: $("#openTaskFromSettings"),
   mobileOwnerTitle: $("#mobileOwnerTitle"),
   mobileJourneyText: $("#mobileJourneyText"),
-  mobileProgressValue: $("#mobileProgressValue")
+  mobileProgressValue: $("#mobileProgressValue"),
+  authGate: $("#authGate"),
+  authForm: $("#authForm"),
+  authTitle: $("#authTitle"),
+  authDescription: $("#authDescription"),
+  authEmail: $("#authEmail"),
+  authEmailLabel: $("#authEmailLabel"),
+  authPassword: $("#authPassword"),
+  authPasswordLabel: $("#authPasswordLabel"),
+  rememberMe: $("#rememberMe"),
+  authStatus: $("#authStatus"),
+  authSubmit: $("#authSubmit"),
+  authModeToggle: $("#authModeToggle"),
+  authForgotPassword: $("#authForgotPassword"),
+  accountStatusLabel: $("#accountStatusLabel"),
+  accountEmail: $("#accountEmail"),
+  signOutButton: $("#signOutButton")
 };
 
 function defaultProfile() {
@@ -131,7 +188,7 @@ function loadState() {
     const state = {
       messages: saved.messages
         .filter((m) => m && (m.role === "assistant" || m.role === "user") && typeof m.content === "string")
-        .slice(-50)
+        .slice(-5000)
         .map((m) => {
           if (m.role === "assistant" && /follow these steps automatically|the robot will follow|robot will automatically/i.test(m.content)) {
             return { role: "assistant", content: "I’ve noted those preferences in this browser demo. They can shape a proposed household routine, but no physical robot is connected or carrying out the task. You can keep building your SecondSelf by adding more preferences." };
@@ -163,6 +220,10 @@ let isSending = false;
 let taskRunning = false;
 let lastFocusedElement = null;
 let cloudUserId = null;
+let cloudUserEmail = "";
+let authMode = "signin";
+let authBusy = false;
+let authRecoveryInProgress = Boolean(/type=recovery/i.test(window.location.hash || ""));
 let cloudMode = "local";
 let cloudSaveTimer = null;
 let cloudSaveChain = Promise.resolve();
@@ -171,7 +232,7 @@ function persist() {
   let localSaved = false;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      messages: state.messages.slice(-50),
+      messages: state.messages.slice(-5000),
       preferences: state.preferences.slice(0, 24),
       profile: state.profile,
       functions: state.functions,
@@ -954,6 +1015,9 @@ function renderAll() {
   const name = state.profile.ownerName.trim();
   const robotName = state.profile.robotName.trim();
   if (elements.companionName) elements.companionName.textContent = robotName || "ELO";
+  if (elements.messageInput) elements.messageInput.placeholder = robotName
+    ? "Tell " + robotName + " how you like things done..."
+    : "Tell your SecondSelf how you like things done...";
   if (elements.mobileOwnerTitle) elements.mobileOwnerTitle.textContent = name ? name + "’s SecondSelf" : "Your SecondSelf";
   const count = state.preferences.length;
   const functionsCount = state.functions.length;
@@ -1111,7 +1175,7 @@ async function sendMessage(rawText) {
   }
   state.messages.push({ role: "assistant", content: reply });
   state.pendingClarification = detectPendingClarification(message, reply);
-  state.messages = state.messages.slice(-50);
+  state.messages = state.messages.slice(-5000);
   persist();
   renderAll();
   elements.conversationStatus.textContent = state.apiConnected ? "AI response received" : "Preference captured";
