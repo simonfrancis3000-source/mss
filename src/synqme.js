@@ -505,7 +505,14 @@ function setAuthMode(mode, message = "") {
     elements.authModeToggle.textContent = isSignup ? "Already have an account? Sign in" : "New to SYNQ.ME? Create an account";
   }
   if (elements.authForgotPassword) elements.authForgotPassword.hidden = mode !== "signin";
-  if (elements.authImportDraftWrap) elements.authImportDraftWrap.hidden = !isSignup;
+  const hasLocalBrowserPersona = Boolean(
+    state.preferences.length ||
+    state.functions.length ||
+    state.profile.ownerName.trim() ||
+    state.profile.robotName.trim() ||
+    state.messages.length > 1
+  );
+  if (elements.authImportDraftWrap) elements.authImportDraftWrap.hidden = isRecovery || !hasLocalBrowserPersona;
   if (elements.authEmail) {
     elements.authEmail.hidden = isRecovery;
     elements.authEmail.required = !isRecovery;
@@ -1678,12 +1685,13 @@ async function submitAccountForm(event) {
       return;
     }
 
-    if (authMode === "signup") {
+    if (authMode === "signup" || authMode === "signin") {
       const importingDraft = Boolean(elements.authImportDraft?.checked);
       if (importingDraft) savePendingAccountDraft(email);
       else {
         try { localStorage.removeItem(ACCOUNT_DRAFT_KEY); } catch {}
       }
+      if (authMode === "signup") {
       const { data: currentData, error: currentError } = await supabase.auth.getSession();
       if (currentError) throw currentError;
       if (currentData.session?.user?.is_anonymous) {
@@ -1707,6 +1715,7 @@ async function submitAccountForm(event) {
           : "Account created. Check your email for the confirmation link, then return here and sign in.");
       }
       return;
+      }
     }
 
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
