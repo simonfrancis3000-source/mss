@@ -337,7 +337,8 @@ const app = http.createServer(async (request, response) => {
       service: "synqme-ai-api",
       provider: PROVIDER,
       configured: Boolean(API_KEY),
-      model: MODEL
+      model: MODEL,
+      diagnosticsVersion: "gemini-upstream-errors-v1"
     }, headers || {});
   }
 
