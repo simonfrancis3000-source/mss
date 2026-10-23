@@ -126,6 +126,12 @@ function loadState() {
           if (m.role === "assistant" && /follow these steps automatically|the robot will follow|robot will automatically/i.test(m.content)) {
             return { role: "assistant", content: "I’ve noted those preferences in this browser demo. They can shape a proposed household routine, but no physical robot is connected or carrying out the task. You can keep building your SecondSelf by adding more preferences." };
           }
+          if (m.role === "assistant" && /That’s useful context for your SecondSelf|I've captured this preference for your browser-based SecondSelf|I’ve captured this preference for your browser-based SecondSelf|I’ve added it to your local digital persona|I've added it to your local digital persona/i.test(m.content)) {
+            return { role: "assistant", content: "Got it. Let’s make that preference more precise. What detail would matter most to get right?" };
+          }
+          if (m.role === "assistant" && /Hi, I’m ELO, your SYNQ\.ME guide/i.test(m.content)) {
+            return { role: "assistant", content: WELCOME };
+          }
           return { role: m.role, content: m.content };
         }),
       preferences: saved.preferences.slice(0, 24)
@@ -449,7 +455,7 @@ function appendMessage(role, content) {
   avatar.className = "message-avatar";
   avatar.textContent = role === "user"
     ? (state.profile.ownerName.trim().charAt(0).toUpperCase() || "Y")
-    : "E";
+    : (state.profile.robotName.trim().charAt(0).toUpperCase() || "E");
   const body = document.createElement("div");
   body.className = "message-body";
   const meta = document.createElement("div");
