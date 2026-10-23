@@ -202,7 +202,7 @@ function cleanPreference(input, metadata = {}) {
 
 function sanitiseConversationMessage(item) {
   if (!item || (item.role !== "assistant" && item.role !== "user") || typeof item.content !== "string") return null;
-  if (item.role === "assistant" && /what matters most to you when getting that right\\?|what detail would matter most to get right\\?|let'?s make that preference more precise/i.test(item.content)) {
+  if (item.role === "assistant" && /what matters most to you when getting that right\?|what detail would matter most to get right\?|let'?s make that preference more precise/i.test(item.content)) {
     return { role: "assistant", content: "Let’s focus on one practical detail at a time." };
   }
   if (item.role === "assistant" && /I've captured this preference for your browser-based SecondSelf|I've added it to your local digital persona|That's useful context for your SecondSelf/i.test(item.content)) {
@@ -226,7 +226,7 @@ function loadState() {
           if (m.role === "assistant" && /follow these steps automatically|the robot will follow|robot will automatically/i.test(m.content)) {
             return { role: "assistant", content: "I’ve noted those preferences for a proposed routine. No physical robot is connected or carrying out the task. You can keep building your SecondSelf by adding more preferences." };
           }
-          if (m.role === "assistant" && /Hi, I’m ELO, your SYNQ\\.ME guide/i.test(m.content)) {
+          if (m.role === "assistant" && /Hi, I’m ELO, your SYNQ\.ME guide/i.test(m.content)) {
             return { role: "assistant", content: WELCOME };
           }
           return sanitiseConversationMessage(m);
@@ -832,6 +832,23 @@ elements.functionGrid?.querySelectorAll('input[type="checkbox"]').forEach((check
   });
 });
 
+elements.toggleAllFunctions?.addEventListener("click", async () => {
+  const allSelected = ACTIVITIES.every((activity) => state.functions.includes(activity.id));
+  state.functions = allSelected ? [] : ACTIVITIES.map((activity) => activity.id);
+  elements.functionGrid?.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
+    checkbox.checked = state.functions.includes(checkbox.value);
+  });
+  persist();
+  renderAll();
+  const saved = await flushCloudSave();
+  renderAll();
+  if (elements.conversationStatus) {
+    elements.conversationStatus.textContent = saved
+      ? "Domestic functions updated · saved to account"
+      : "Domestic functions updated · account sync needs attention";
+  }
+});
+
  elements.exportPexiPackage?.addEventListener("click", exportPexiPersonaPackage);
 
 elements.openTaskFromSettings?.addEventListener("click", () => {
@@ -1303,7 +1320,12 @@ function renderMilestones() {
 }
 
 function renderSettingsDetails() {
-  elements.functionCount.textContent = state.functions.length + (state.functions.length === 1 ? " SELECTED" : " SELECTED");
+  elements.functionCount.textContent = state.functions.length + " SELECTED";
+  if (elements.toggleAllFunctions) {
+    const allSelected = ACTIVITIES.every((activity) => state.functions.includes(activity.id));
+    elements.toggleAllFunctions.textContent = allSelected ? "Deselect all" : "Select all";
+    elements.toggleAllFunctions.setAttribute("aria-pressed", String(allSelected));
+  }
   renderMilestones();
 }
 
@@ -1359,44 +1381,326 @@ function renderAll() {
 }
 renderAll();
 
+function chooseFallbackQuestion(options) {
+  const recentReplies = state.messages
+    .filter((item) => item.role === "assistant")
+    .slice(-6)
+    .map((item) => item.content);
+  const unused = options.find((option) => !recentReplies.some((reply) => option.seen.test(reply)));
+  if (unused) return unused.question;
+  const latest = recentReplies[recentReplies.length - 1] || "";
+  const differentFromLatest = options.find((option) => !option.seen.test(latest));
+  return (differentFromLatest || options[0]).question;
+}
+
 function localReply(message) {
-  const lower = message.toLowerCase();
+  const lower = String(message || "").toLowerCase();
   const category = classifyPreference(message);
   const assistantTurns = state.messages.filter((item) => item.role === "assistant").length;
-  const acknowledgements = ["Gotcha.", "Got it.", "Cool, thanks for telling me.", "Understood.", "Right, that makes sense."];
+  const acknowledgements = ["Gotcha.", "Got it.", "Thanks, that helps.", "Understood.", "Right, that makes sense."];
   const acknowledgement = acknowledgements[assistantTurns % acknowledgements.length];
   const ownerName = state.profile.ownerName.trim();
   const namePrefix = ownerName && assistantTurns > 0 && assistantTurns % 4 === 2 ? ownerName + ", " : "";
+  const ask = (options) => namePrefix + acknowledgement + " " + chooseFallbackQuestion(options);
 
   if (/(paper towels?|spray|cleaning product|surface cleaner|cleaner you|detergent)/i.test(message)) {
-    return namePrefix + "Gotcha. Should I treat those as your standard supplies for all surface cleaning, or just the kitchen?";
+    return ask([
+      { question: "Should I treat those as standard supplies for all surface cleaning, or just the kitchen?", seen: /standard supplies.*all surface cleaning|supplies.*just the kitchen/i },
+      { question: "Are there any surfaces or products you would want left untouched or avoided?", seen: /surfaces.*left untouched|products.*avoided|products.*avoid/i },
+      { question: "Would you prefer the same supplies in every room, or different choices for different surfaces?", seen: /same supplies.*every room|different choices.*surfaces/i }
+    ]);
   }
   if (/(kitchen|counter|worktop|surface)/i.test(message) &&
       /(twice|two times|2 times|two a day|2 a day|daily|each day|every day|a day)/i.test(message)) {
-    return namePrefix + "Gotcha. Would morning and evening suit you, or do you prefer two other times?";
+    return ask([
+      { question: "Would morning and evening suit you, or do you prefer two other times?", seen: /morning and evening|two other times/i },
+      { question: "Should the routine stay the same every day, or change depending on how the room is used?", seen: /same every day|change depending on how the room is used/i },
+      { question: "Are there times when you would prefer cleaning not to happen?", seen: /prefer cleaning not to happen|times.*avoid cleaning/i }
+    ]);
   }
   if (/(ask me|ask before|check with me|permission|confirm before|before changing|before moving|without asking)/i.test(message)) {
-    return namePrefix + "Understood. Should asking first apply to every household task, or especially when something would be moved or handled?";
+    return ask([
+      { question: "Should asking first apply to every household task, or especially when something would be moved or handled?", seen: /asking first apply to every household task|especially when.*moved or handled/i },
+      { question: "Which matters most for approval: protecting personal belongings, avoiding mistakes, or keeping control over timing?", seen: /protecting personal belongings|keeping control over timing/i },
+      { question: "Are there any actions that should always wait for your explicit permission?", seen: /always wait.*explicit permission|explicit permission/i }
+    ]);
   }
   if (/(what can|what does|how does|how do|what is synq)/i.test(message)) {
-    return "SYNQ.ME helps you build a digital persona through natural conversation. We explore what you prefer, what matters most, and what you want to avoid, one useful question at a time.";
+    return "SYNQ.ME helps you build a digital persona through natural conversation. You can speak or type preferences, and the app can ask focused follow-up questions to make those preferences more useful.";
   }
   if (/^(washing|wash|washing and drying|wash and dry|laundering|cleaning clothes)$/i.test(lower.trim())) {
-    return namePrefix + acknowledgement + " Do you prefer clothes to be air-dried, tumble-dried, or handled differently depending on the garment?";
+    return ask([
+      { question: "Do you prefer clothes to be air-dried, tumble-dried, or handled differently depending on the garment?", seen: /air.dried|tumble.dried|tumble dry/i },
+      { question: "Should delicate items be washed separately or use a gentler routine?", seen: /delicate items|washed separately|gentler routine/i },
+      { question: "Would you like towels and bedding handled differently from everyday clothes?", seen: /towels and bedding|bedding.*differently/i }
+    ]);
   }
   if (/^(sorting|sort|separating|separate clothes|sorting clothes)$/i.test(lower.trim())) {
-    return namePrefix + acknowledgement + " Do you prefer clothes separated by colour, fabric, or washing temperature?";
+    return ask([
+      { question: "Do you prefer clothes separated by colour, fabric, or washing temperature?", seen: /separated by colou?r, fabric|washing temperature/i },
+      { question: "Should darks, whites, and colours always be washed in separate loads?", seen: /darks, whites.*separate loads|separate loads/i },
+      { question: "Are there any fabrics or items you would always keep out of a regular wash?", seen: /keep out of a regular wash|fabrics.*always/i }
+    ]);
   }
   if (/(laundry|washing|clothes|fold)/i.test(lower)) {
-    return namePrefix + acknowledgement + " Which laundry detail matters most to you: sorting, washing and drying, or how clothes are put away?";
+    return ask([
+      { question: "Which part matters most to get right: sorting, washing and drying, or putting clothes away?", seen: /which laundry detail matters most|sorting, washing and drying|which part matters most.*sorting/i },
+      { question: "Are there fabrics or garments that need special treatment?", seen: /fabrics or garments.*special treatment|special treatment/i },
+      { question: "Would you prefer one routine for every load, or different rules for colours and fabrics?", seen: /one routine for every load|different rules for colou?rs and fabrics/i }
+    ]);
   }
   if (/(vacuum|floor|carpet|tidy|cleaning|clean|surface|counter|worktop)/i.test(lower)) {
-    return namePrefix + acknowledgement + " What matters most to get right here: timing, task order, or anything that must be left untouched?";
+    return ask([
+      { question: "For this routine, should I focus on timing, task order, or areas that must be left untouched?", seen: /focus on timing, task order|task order.*left untouched|timing.*left untouched/i },
+      { question: "Are there any items, surfaces, or rooms that need special care or should be avoided?", seen: /items, surfaces, or rooms.*special care|should be avoided/i },
+      { question: "Would you prefer the same routine each time, or changes depending on the room or situation?", seen: /same routine each time|changes depending on the room/i }
+    ]);
   }
   if (category === "Consent & boundaries" || state.profile.confirmActions) {
-    return namePrefix + acknowledgement + " What would you most want to prevent: things being moved, a wrong choice, or something happening at the wrong time?";
+    return ask([
+      { question: "What would you most want to prevent: items being moved, a wrong choice, or something happening at the wrong time?", seen: /most want to prevent|items being moved, a wrong choice/i },
+      { question: "Which things should always be left exactly where they are?", seen: /left exactly where they are|left untouched/i },
+      { question: "When should your SecondSelf always pause and check with you first?", seen: /pause and check with you first|check with you first/i }
+    ]);
   }
-  return namePrefix + acknowledgement + " What matters most to you when getting that right?";
+  if (category === "Routine & timing") {
+    return ask([
+      { question: "Does that schedule stay the same every day, or change depending on the situation?", seen: /same every day|change depending on the situation/i },
+      { question: "Is there a time when this should never happen?", seen: /time.*should never happen|never happen/i },
+      { question: "Would a reminder or a clear sequence make this routine easier to follow?", seen: /reminder or a clear sequence|clear sequence/i }
+    ]);
+  }
+  if (category === "Care & placement" || category === "Safety") {
+    return ask([
+      { question: "Would you like those items kept in a particular place, or simply handled carefully?", seen: /kept in a particular place|handled carefully/i },
+      { question: "Is there anything that should never be moved, stacked, or touched?", seen: /never be moved, stacked, or touched|never be moved/i },
+      { question: "What would tell you that this has been handled properly?", seen: /handled properly|tell you that.*properly/i }
+    ]);
+  }
+  if (category === "Food & shopping") {
+    return ask([
+      { question: "Are there ingredients or products you prefer to avoid or always keep available?", seen: /ingredients or products.*avoid|keep available/i },
+      { question: "Should shopping and meal choices stay within a particular budget or routine?", seen: /particular budget|shopping and meal choices/i },
+      { question: "Do you prefer familiar choices, or would you like new options suggested sometimes?", seen: /familiar choices|new options suggested/i }
+    ]);
+  }
+  if (category === "Home & care") {
+    return ask([
+      { question: "Are there signs or situations where you would want extra care or a different routine?", seen: /extra care|different routine/i },
+      { question: "Is there anything your SecondSelf should avoid doing in this situation?", seen: /avoid doing in this situation|should avoid doing/i },
+      { question: "Would a regular schedule help, or should the routine adapt from day to day?", seen: /regular schedule help|adapt from day to day/i }
+    ]);
+  }
+  return ask([
+    { question: "What would a good result look like for you in practice?", seen: /good result look like|result.*in practice/i },
+    { question: "Does that preference apply every time, or only in certain situations?", seen: /apply every time|certain situations/i },
+    { question: "Is there anything you would want your SecondSelf to avoid doing?", seen: /want your SecondSelf to avoid|avoid doing/i },
+    { question: "What would make that feel right for you in day-to-day use?", seen: /feel right.*day-to-day|day.to.day use/i }
+  ]);
+}
+
+
+function updateVoiceModeButton() {
+  if (elements.voiceModeButton) {
+    elements.voiceModeButton.classList.toggle("is-active", voiceModeActive);
+    elements.voiceModeButton.setAttribute("aria-pressed", String(voiceModeActive));
+    elements.voiceModeButton.setAttribute("aria-label", voiceModeActive ? "Stop voice conversation" : "Start voice conversation");
+    elements.voiceModeButton.title = voiceModeActive ? "Stop voice conversation" : "Start a spoken conversation";
+    const label = elements.voiceModeButton.querySelector("span");
+    if (label) label.textContent = voiceModeActive ? "Stop" : "Voice";
+  }
+  if (elements.voiceStatus && !voiceModeActive && !elements.voiceStatus.dataset.error) {
+    elements.voiceStatus.textContent = "Voice off · browser speech services";
+  }
+}
+
+function stopVoiceConversation(statusMessage = "Voice conversation stopped.") {
+  voiceModeActive = false;
+  if (voiceRestartTimer) window.clearTimeout(voiceRestartTimer);
+  voiceRestartTimer = null;
+  recognitionTranscript = "";
+  if (speechRecognition && recognitionListening) {
+    try { speechRecognition.abort(); } catch {}
+  }
+  recognitionListening = false;
+  if (speechSynthesisAvailable) {
+    currentSpeechUtterance = null;
+    assistantIsSpeaking = false;
+    window.speechSynthesis.cancel();
+  }
+  if (elements.voiceStatus) {
+    elements.voiceStatus.dataset.error = "";
+    elements.voiceStatus.textContent = statusMessage;
+  }
+  updateVoiceModeButton();
+  if (elements.conversationStatus) elements.conversationStatus.textContent = "Ready to talk";
+}
+
+function scheduleVoiceListening(delay = 350) {
+  if (!voiceModeActive || isSending || assistantIsSpeaking) return;
+  if (voiceRestartTimer) window.clearTimeout(voiceRestartTimer);
+  voiceRestartTimer = window.setTimeout(() => {
+    voiceRestartTimer = null;
+    startVoiceListening();
+  }, delay);
+}
+
+function createSpeechRecognition() {
+  if (!SpeechRecognitionConstructor) return null;
+  try {
+    const recognizer = new SpeechRecognitionConstructor();
+    recognizer.lang = "en-GB";
+    recognizer.continuous = false;
+    recognizer.interimResults = true;
+    recognizer.maxAlternatives = 1;
+    recognizer.onstart = () => {
+      recognitionListening = true;
+      if (elements.conversationStatus) elements.conversationStatus.textContent = "Listening · speak naturally";
+      if (elements.voiceStatus) {
+        elements.voiceStatus.dataset.error = "";
+        elements.voiceStatus.textContent = "Voice on · say a sentence at a time";
+      }
+    };
+    recognizer.onresult = (event) => {
+      let finalText = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i];
+        const transcript = String(result?.[0]?.transcript || "").trim();
+        if (result.isFinal && transcript) finalText += (finalText ? " " : "") + transcript;
+      }
+      if (finalText) recognitionTranscript = [recognitionTranscript, finalText].filter(Boolean).join(" ").trim();
+    };
+    recognizer.onerror = (event) => {
+      if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+        stopVoiceConversation("Microphone blocked. Allow microphone access in your browser settings, then try again.");
+      } else if (event.error === "audio-capture") {
+        stopVoiceConversation("No microphone was found. Connect or enable a microphone, then try again.");
+      } else if (event.error === "network") {
+        stopVoiceConversation("The browser speech service is unavailable. You can continue by typing.");
+      } else if (event.error !== "no-speech" && elements.voiceStatus) {
+        elements.voiceStatus.textContent = "Voice input stopped · you can try again or type";
+      }
+    };
+    recognizer.onend = () => {
+      recognitionListening = false;
+      const transcript = recognitionTranscript.trim();
+      recognitionTranscript = "";
+      if (!voiceModeActive) return;
+      if (transcript) {
+        if (elements.messageInput) elements.messageInput.value = "";
+        if (elements.conversationStatus) elements.conversationStatus.textContent = "Heard you · preparing a reply";
+        void sendMessage(transcript);
+        return;
+      }
+      scheduleVoiceListening(350);
+    };
+    return recognizer;
+  } catch (error) {
+    console.info("SYNQ.ME speech recognition could not be initialised.", error);
+    return null;
+  }
+}
+
+function startVoiceListening() {
+  if (!voiceModeActive || isSending || assistantIsSpeaking || recognitionListening) return;
+  if (!speechRecognition) speechRecognition = createSpeechRecognition();
+  if (!speechRecognition) {
+    stopVoiceConversation("Voice input isn't supported by this browser. Try a current version of Chrome or use typing.");
+    return;
+  }
+  recognitionTranscript = "";
+  try {
+    speechRecognition.start();
+  } catch (error) {
+    recognitionListening = false;
+    if (voiceModeActive) {
+      if (elements.voiceStatus) elements.voiceStatus.textContent = "Starting microphone…";
+      scheduleVoiceListening(700);
+    }
+  }
+}
+
+function speakAssistantReply(reply) {
+  if (!voiceModeActive) return;
+  if (!speechSynthesisAvailable) {
+    if (elements.voiceStatus) elements.voiceStatus.textContent = "This browser can hear you but cannot speak replies.";
+    scheduleVoiceListening(500);
+    return;
+  }
+
+  window.speechSynthesis.cancel();
+  currentSpeechUtterance = null;
+  assistantIsSpeaking = false;
+  const utterance = new SpeechSynthesisUtterance(String(reply || ""));
+  utterance.lang = "en-GB";
+  utterance.rate = 1;
+  utterance.pitch = state.profile.robotVoice === "male" ? 0.92 : 1.04;
+  const voices = window.speechSynthesis.getVoices();
+  const englishVoices = voices.filter((voice) => /^en([_-]|$)/i.test(voice.lang));
+  const namePattern = state.profile.robotVoice === "male"
+    ? /(male|daniel|fred|alex|george|oliver|aaron|david)/i
+    : /(female|samantha|victoria|serena|karen|moira|fiona|libby|susan|kate|ava)/i;
+  const preferredVoice = englishVoices.find((voice) => namePattern.test(voice.name));
+  const selectedVoice = preferredVoice || englishVoices.find((voice) => voice.default) || englishVoices[0] || voices[0];
+  if (selectedVoice) utterance.voice = selectedVoice;
+
+  currentSpeechUtterance = utterance;
+  assistantIsSpeaking = true;
+  utterance.onstart = () => {
+    if (currentSpeechUtterance !== utterance) return;
+    if (elements.conversationStatus) elements.conversationStatus.textContent = (state.profile.robotName || "Your SecondSelf") + " is speaking";
+    if (elements.voiceStatus) elements.voiceStatus.textContent = "Voice on · reply spoken aloud";
+  };
+  utterance.onend = () => {
+    if (currentSpeechUtterance !== utterance) return;
+    currentSpeechUtterance = null;
+    assistantIsSpeaking = false;
+    if (voiceModeActive) scheduleVoiceListening(250);
+  };
+  utterance.onerror = () => {
+    if (currentSpeechUtterance !== utterance) return;
+    currentSpeechUtterance = null;
+    assistantIsSpeaking = false;
+    if (voiceModeActive) {
+      if (elements.voiceStatus) elements.voiceStatus.textContent = "Reply is visible in chat · listening again";
+      scheduleVoiceListening(350);
+    }
+  };
+  window.speechSynthesis.speak(utterance);
+}
+
+elements.voiceModeButton?.addEventListener("click", () => {
+  if (voiceModeActive) {
+    stopVoiceConversation();
+    return;
+  }
+  if (!SpeechRecognitionConstructor) {
+    if (elements.voiceStatus) {
+      elements.voiceStatus.dataset.error = "true";
+      elements.voiceStatus.textContent = "Voice input isn't supported here. Try Chrome or use typing.";
+    }
+    if (elements.conversationStatus) elements.conversationStatus.textContent = "Voice input isn't supported by this browser";
+    return;
+  }
+  voiceModeActive = true;
+  if (elements.voiceStatus) {
+    elements.voiceStatus.dataset.error = "";
+    elements.voiceStatus.textContent = speechSynthesisAvailable
+      ? "Voice on · say a sentence at a time"
+      : "Voice input on · spoken replies may not be supported";
+  }
+  updateVoiceModeButton();
+  startVoiceListening();
+});
+
+function responseRepeatsRecentAssistant(reply) {
+  const normalise = (value) => String(value || "").toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
+  const current = normalise(reply);
+  if (/what matters most to you when getting that right/.test(current)) return true;
+  return state.messages
+    .filter((item) => item.role === "assistant")
+    .slice(-4)
+    .some((item) => normalise(item.content) === current && current.length > 8);
 }
 
 function responseRepeatsUser(reply, userMessage) {
@@ -1499,7 +1803,7 @@ async function sendMessage(rawText) {
   let reply = answeredPendingClarification
     ? replyToResolvedClarification(message, pendingBeforeAnswer)
     : await requestAIReply();
-  if (!answeredPendingClarification && (!reply || responseRepeatsUser(reply, message) || /I've captured this preference for your browser-based SecondSelf|I've added it to your local digital persona|That's useful context for your SecondSelf|Let's make that preference more precise|What detail would matter most to get right|What matters most to you when getting that right|Which laundry detail matters most to you: sorting, washing and drying, or how clothes are put away/i.test(reply))) {
+  if (!answeredPendingClarification && (!reply || responseRepeatsUser(reply, message) || responseRepeatsRecentAssistant(reply) || /I've captured this preference for your browser-based SecondSelf|I've added it to your local digital persona|That's useful context for your SecondSelf|Let's make that preference more precise|What detail would matter most to get right|What matters most to you when getting that right|Which laundry detail matters most to you: sorting, washing and drying, or how clothes are put away/i.test(reply))) {
     reply = localReply(message);
   }
   state.messages.push({ role: "assistant", content: reply });
@@ -1515,7 +1819,8 @@ async function sendMessage(rawText) {
   isSending = false;
   elements.sendButton.disabled = false;
   elements.messageInput.disabled = false;
-  elements.messageInput.focus();
+  if (voiceModeActive) speakAssistantReply(reply);
+  else elements.messageInput.focus();
 }
 
 elements.chatForm.addEventListener("submit", (event) => {
