@@ -606,20 +606,30 @@ renderAll();
 function localReply(message) {
   const name = state.profile.ownerName.trim();
   const hello = name ? name + ", " : "";
+  const lower = message.toLowerCase();
   const category = classifyPreference(message);
-  if (/what can|what does|how does|how do|what is synq/i.test(message)) {
-    return hello + "SYNQ.ME helps you shape a digital persona through natural conversation. Start by choosing the parts of home life that matter to you, then tell me how you prefer things to be done. Your settings and preferences stay in this browser in this demo.";
+
+  // Acknowledge the specific preference, then ask one useful next question.
+  if (/(kitchen|counter|worktop|surface)/i.test(message) &&
+      /(twice|two times|2 times|two a day|2 a day|daily|each day|every day|a day)/i.test(message)) {
+    return hello + "Understood: you want the kitchen surfaces cleaned twice a day. Should those cleans be in the morning and evening, or would you prefer two other times?";
   }
-  if (/laundry|washing|clothes|fold/.test(message.toLowerCase())) {
-    return hello + "Let’s capture your laundry preferences. You might start with how you separate colours, which items need gentle care, drying preferences, or how you like clothes folded. Which matters most to you?";
+  if (/(ask me|ask before|check with me|permission|confirm before|before changing|before moving|without asking)/i.test(message)) {
+    return hello + "Understood: you want to be asked before changes are made in your home. Is that especially important when something is moved or put away, or should it apply to every proposed household action?";
   }
-  if (/vacuum|floor|carpet|tidy|cleaning/.test(message.toLowerCase())) {
-    return hello + "Let’s shape your home-care preferences. We can capture which rooms matter most, when cleaning should happen, surfaces or items that need extra care, and anything you prefer left untouched. What would you like your SecondSelf to know first?";
+  if (/(what can|what does|how does|how do|what is synq)/i.test(message)) {
+    return hello + "SYNQ.ME helps you shape a digital persona through natural conversation. We capture what you prefer, what matters most, and what you want to avoid, then build a clearer picture one decision at a time. Your settings and preferences remain in this browser demo unless the app confirms cloud saving.";
+  }
+  if (/(laundry|washing|clothes|fold)/i.test(lower)) {
+    return hello + "I've captured that you want to define laundry preferences. Which detail would make the biggest difference: how clothes are sorted, how they're washed or dried, or how they're folded and put away?";
+  }
+  if (/(vacuum|floor|carpet|tidy|cleaning|clean|surface|counter|worktop)/i.test(lower)) {
+    return hello + "I've captured this home-care preference: " + message.trim() + ". To make the routine fit your household, what should it prioritise next—timing, the order of tasks, or anything that must be left untouched?";
   }
   if (category === "Consent & boundaries" || state.profile.confirmActions) {
-    return hello + "That boundary is useful context for your SecondSelf. I’ve captured it in this browser demo so it can be reflected in a proposed routine. Nothing is sent to or controlled by a physical robot.";
+    return hello + "That boundary matters. I've captured: " + message.trim() + ". What is the main thing you want to prevent—items being moved, the wrong choice being made, or an action happening at the wrong time?";
   }
-  return hello + "That’s useful context for your SecondSelf. I’ve added it to your local digital persona. As you share more, SYNQ.ME can help organise the details into preferences and routines that reflect how you like things done. Is there another detail you’d like to include?";
+  return hello + "I've captured this preference for your browser-based SecondSelf: " + message.trim() + ". To make it more useful, what would you most want to get right—or avoid getting wrong?";
 }
 
 async function requestAIReply() {
