@@ -630,6 +630,14 @@ function detectPendingClarification(userMessage, reply) {
   const response = String(reply || "").toLowerCase();
   const latest = String(userMessage || "").toLowerCase();
 
+  const asksLaundryDetail = /(which laundry detail matters most|sorting, washing and drying|how clothes are put away)/i.test(response);
+  if (asksLaundryDetail && /(laundry|washing|clothes|fold)/i.test(latest)) {
+    const target = [...state.preferences].find((item) =>
+      /(laundry|washing|clothes|fold)/i.test(item.text) || /laundry/i.test(item.category)
+    );
+    if (target) return { type: "laundry_detail", field: "laundry_detail", preferenceId: target.id };
+  }
+
   const mentionsSupplies = /(paper towels?|spray|cleaning product|surface cleaner|cleaning supplies)/i.test(latest);
   const asksSupplyScope = /(all surface cleaning|all surfaces|every surface|just the kitchen|kitchen only|which rooms.*(clean|surface)|supplies.*(apply|use|scope))/i.test(response);
   if (mentionsSupplies && asksSupplyScope) {
@@ -672,7 +680,20 @@ function resolvePendingClarification(message) {
   preference.explicitFacets = { ...(preference.explicitFacets || {}) };
   let resolvedField = pending.field;
 
-  if (pending.type === "supply_scope") {
+  if (pending.type === "laundry_detail") {
+    if (/^(washing|wash|washing and drying|wash and dry|laundering|cleaning clothes)$/i.test(lower)) {
+      preference.explicitFacets.laundryDetail = "washing_and_drying";
+      clarificationValue = "washing_and_drying";
+    } else if (/^(sorting|sort|separating|separate clothes|sorting clothes)$/i.test(lower)) {
+      preference.explicitFacets.laundryDetail = "sorting";
+      clarificationValue = "sorting";
+    } else if (/(put(ting)? clothes away|clothes are put away|put away|folding|fold clothes|hanging|hang clothes|storage)/i.test(lower)) {
+      preference.explicitFacets.laundryDetail = "putting_clothes_away";
+      clarificationValue = "putting_clothes_away";
+    } else {
+      return false;
+    }
+  } else if (pending.type === "supply_scope") {
     if (/(just (the )?kitchen|kitchen only|only (in )?the kitchen|kitchen surfaces only)/i.test(lower)) {
       preference.explicitFacets.room = "kitchen";
       preference.explicitFacets.scope = "kitchen_surface_cleaning";
@@ -739,6 +760,19 @@ function resolvePendingClarification(message) {
 function replyToResolvedClarification(answer, pending) {
   const lower = String(answer || "").trim().toLowerCase();
   const preference = state.preferences.find((item) => item.id === pending?.preferenceId);
+
+  if (pending?.type === "laundry_detail") {
+    if (preference?.explicitFacets?.laundryDetail === "washing_and_drying") {
+      return "Got it — washing and drying. Do you prefer clothes to be air-dried, tumble-dried, or handled differently depending on the garment?";
+    }
+    if (preference?.explicitFacets?.laundryDetail === "sorting") {
+      return "Got it — sorting. Do you prefer clothes separated by colour, fabric, or washing temperature?";
+    }
+    if (preference?.explicitFacets?.laundryDetail === "putting_clothes_away") {
+      return "Got it — putting clothes away. Would you prefer items folded, hung up, or handled differently depending on the garment?";
+    }
+    return "Got it — I’ve recorded your laundry preference. Is there anything you’d like handled differently for delicate items?";
+  }
 
   if (pending?.type === "supply_scope") {
     const scopeLabel = /(just (the )?kitchen|kitchen only|only (in )?the kitchen|kitchen surfaces only)/i.test(lower)
@@ -1047,6 +1081,20 @@ async function sendMessage(rawText) {
   elements.messageInput.disabled = true;
   elements.conversationStatus.textContent = "ELO is thinking";
   state.messages.push({ role: "user", content: message });
+  const previousAssistantMessage = state.messages.length > 1 && state.messages[state.messages.length - 2]?.role === "assistant"
+    ? state.messages[state.messages.length - 2].content
+    : "";
+  const inferredPending = !state.pendingClarification &&
+    /(which laundry detail matters most|sorting, washing and drying|how clothes are put away)/i.test(previousAssistantMessage) &&
+    /^(washing|wash|washing and drying|wash and dry|laundering|cleaning clothes|sorting|sort|separating|separate clothes|sorting clothes|put(ting)? clothes away|clothes are put away|put away|folding|fold clothes|hanging|hang clothes|storage)$/i.test(message.trim())
+    ? (() => {
+        const target = [...state.preferences].find((item) =>
+          /(laundry|washing|clothes|fold)/i.test(item.text) || /laundry/i.test(item.category)
+        );
+        return target ? { type: "laundry_detail", field: "laundry_detail", preferenceId: target.id } : null;
+      })()
+    : null;
+  if (!state.pendingClarification && inferredPending) state.pendingClarification = inferredPending;
   const pendingBeforeAnswer = state.pendingClarification ? { ...state.pendingClarification } : null;
   const answeredPendingClarification = resolvePendingClarification(message);
   if (!answeredPendingClarification) savePreference(message);
