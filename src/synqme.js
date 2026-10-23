@@ -881,15 +881,51 @@ function savePreference(message) {
 
 
 
+function findOrCreateLaundryPreference(contextMessage = "", answer = "") {
+  const normalise = (value) => String(value || "").trim().toLowerCase().replace(/\\s+/g, " ");
+  const context = String(contextMessage || "").trim();
+  const contextKey = normalise(context);
+  const answerKey = normalise(answer);
+  const candidates = state.preferences.filter((item) =>
+    normalise(item.text) !== answerKey &&
+    (/(laundry|washing|clothes|fold)/i.test(item.text) || /laundry/i.test(item.category))
+  );
+  if (contextKey) {
+    const exactSource = candidates.find((item) => normalise(item.sourceMessage) === contextKey);
+    if (exactSource) return exactSource;
+    const exactText = candidates.find((item) => normalise(item.text) === contextKey);
+    if (exactText) return exactText;
+  }
+  if (candidates.length) return candidates[0];
+
+  // In some turns the assistant asks a useful follow-up even though the
+  // original user wording was not classified as a saved preference. Create
+  // a source-linked record so a short answer such as "washing" has a parent.
+  if (!context || /^(washing|wash|sorting|sort|folding|fold|yes|no|okay|ok)$/i.test(context)) return null;
+  const preference = cleanPreference(context, {
+    category: "Laundry & clothing",
+    sourceMessage: context
+  });
+  if (!preference) return null;
+  const extracted = extractExplicitPreferenceFacets(context);
+  preference.category = "Laundry & clothing";
+  preference.explicitFacets = { ...extracted.explicitFacets };
+  preference.unresolvedFields = [...new Set([...extracted.unresolvedFields, "laundry_detail"])];
+  preference.sourceMessage = context;
+  preference.clarifications = [];
+  state.preferences.unshift(preference);
+  state.preferences = state.preferences.slice(0, 24);
+  return preference;
+}
+
 function detectPendingClarification(userMessage, reply) {
   const response = String(reply || "").toLowerCase();
   const latest = String(userMessage || "").toLowerCase();
 
   const asksLaundryDetail = /(which laundry detail matters most|sorting, washing and drying|how clothes are put away)/i.test(response);
-  if (asksLaundryDetail && /(laundry|washing|clothes|fold)/i.test(latest)) {
-    const target = [...state.preferences].find((item) =>
-      /(laundry|washing|clothes|fold)/i.test(item.text) || /laundry/i.test(item.category)
-    );
+  const isShortLaundryChoice = /^(washing|wash|washing and drying|wash and dry|laundering|cleaning clothes|sorting|sort|separating|separate clothes|sorting clothes|put(ting)? clothes away|clothes are put away|put away|folding|fold clothes|hanging|hang clothes|storage)$/i.test(latest.trim());
+  if (asksLaundryDetail && !isShortLaundryChoice) {
+    const target = findOrCreateLaundryPreference(userMessage);
     if (target) return { type: "laundry_detail", field: "laundry_detail", preferenceId: target.id };
   }
 
@@ -1258,6 +1294,12 @@ function localReply(message) {
   if (/(what can|what does|how does|how do|what is synq)/i.test(message)) {
     return "SYNQ.ME helps you build a digital persona through natural conversation. We explore what you prefer, what matters most, and what you want to avoid, one useful question at a time.";
   }
+  if (/^(washing|wash|washing and drying|wash and dry|laundering|cleaning clothes)$/i.test(lower.trim())) {
+    return namePrefix + acknowledgement + " Do you prefer clothes to be air-dried, tumble-dried, or handled differently depending on the garment?";
+  }
+  if (/^(sorting|sort|separating|separate clothes|sorting clothes)$/i.test(lower.trim())) {
+    return namePrefix + acknowledgement + " Do you prefer clothes separated by colour, fabric, or washing temperature?";
+  }
   if (/(laundry|washing|clothes|fold)/i.test(lower)) {
     return namePrefix + acknowledgement + " Which laundry detail matters most to you: sorting, washing and drying, or how clothes are put away?";
   }
@@ -1349,13 +1391,12 @@ async function sendMessage(rawText) {
   const previousAssistantMessage = state.messages.length > 1 && state.messages[state.messages.length - 2]?.role === "assistant"
     ? state.messages[state.messages.length - 2].content
     : "";
+  const previousUserMessage = state.messages.slice(0, -1).reverse().find((item) => item.role === "user")?.content || "";
   const inferredPending = !state.pendingClarification &&
     /(which laundry detail matters most|sorting, washing and drying|how clothes are put away)/i.test(previousAssistantMessage) &&
     /^(washing|wash|washing and drying|wash and dry|laundering|cleaning clothes|sorting|sort|separating|separate clothes|sorting clothes|put(ting)? clothes away|clothes are put away|put away|folding|fold clothes|hanging|hang clothes|storage)$/i.test(message.trim())
     ? (() => {
-        const target = [...state.preferences].find((item) =>
-          /(laundry|washing|clothes|fold)/i.test(item.text) || /laundry/i.test(item.category)
-        );
+        const target = findOrCreateLaundryPreference(previousUserMessage, message);
         return target ? { type: "laundry_detail", field: "laundry_detail", preferenceId: target.id } : null;
       })()
     : null;
