@@ -892,8 +892,9 @@ function appendMessage(role, content) {
 
 function renderMessages() {
   elements.chatMessages.replaceChildren();
-  state.messages.slice(-50).forEach((message) => appendMessage(message.role, message.content));
-  elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
+  // Keep the newest exchange at the top; older conversation history flows downward.
+  state.messages.slice(-50).reverse().forEach((message) => appendMessage(message.role, message.content));
+  elements.chatMessages.scrollTop = 0;
 }
 
 function classifyPreference(message) {
@@ -1405,108 +1406,116 @@ function chooseFallbackQuestion(options) {
 }
 
 function localReply(message) {
-  const lower = String(message || "").toLowerCase();
-  const category = classifyPreference(message);
-  const assistantTurns = state.messages.filter((item) => item.role === "assistant").length;
-  const acknowledgements = ["Gotcha.", "Got it.", "Thanks, that helps.", "Understood.", "Right, that makes sense."];
-  const acknowledgement = acknowledgements[assistantTurns % acknowledgements.length];
-  const ownerName = state.profile.ownerName.trim();
-  const namePrefix = ownerName && assistantTurns > 0 && assistantTurns % 4 === 2 ? ownerName + ", " : "";
-  const ask = (options) => namePrefix + acknowledgement + " " + chooseFallbackQuestion(options);
+  const text = String(message || "").trim();
+  const lower = text.toLowerCase();
+  const robotName = state.profile.robotName.trim() || "robot";
+  const previousAssistant = [...state.messages.slice(0, -1)].reverse().find((item) => item.role === "assistant")?.content || "";
+  const recentAssistant = state.messages.filter((item) => item.role === "assistant").slice(-6).map((item) => item.content);
+  const normalise = (value) => String(value || "").toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
+  const alreadyAsked = (question) => recentAssistant.some((reply) => normalise(reply).includes(normalise(question)) || normalise(question).includes(normalise(reply)));
+  const choose = (options) => options.find((option) => !alreadyAsked(option)) || options[options.length - 1];
+  const lastWas = (pattern) => pattern.test(previousAssistant);
 
-  if (/(paper towels?|spray|cleaning product|surface cleaner|cleaner you|detergent)/i.test(message)) {
-    return ask([
-      { question: "Should I treat those as standard supplies for all surface cleaning, or just the kitchen?", seen: /standard supplies.*all surface cleaning|supplies.*just the kitchen/i },
-      { question: "Are there any surfaces or products you would want left untouched or avoided?", seen: /surfaces.*left untouched|products.*avoided|products.*avoid/i },
-      { question: "Would you prefer the same supplies in every room, or different choices for different surfaces?", seen: /same supplies.*every room|different choices.*surfaces/i }
+  if (isClarificationRequest(text)) return clarificationHelpReply(previousAssistant, state.messages.filter((item) => item.role === "user").slice(-2, -1)[0]?.content || "");
+
+  if (/^(morning|in the morning|evening|in the evening|afternoon|at night)$/i.test(text) && lastWas(/what time|morning and evening|which times|when would/i)) {
+    if (/morning/i.test(text)) return "Morning sounds like a good fit. Is that because you're usually up and about then, or would you prefer it done before you start using the kitchen?";
+    if (/evening|night/i.test(text)) return "Evening, then. Would you picture that happening after you've cooked or eaten, or at a set time regardless?";
+    return "That gives me a better picture. Is that time tied to a particular part of your routine, or does it simply suit you best?";
+  }
+
+  if (/^(washing|wash|washing and drying|wash and dry|laundering)$/i.test(text) && lastWas(/which part|sorting, washing|putting clothes away/i)) {
+    return choose([
+      "When you wash clothes, do you usually separate them by colour first, or pay more attention to fabric and care labels?",
+      "Are there any garments you treat differently from the rest—delicates, wool, work clothes, or anything you prefer to air-dry?",
+      "Do you tend to have a regular laundry day, or do you wash smaller loads as things need doing?"
     ]);
   }
-  if (/(kitchen|counter|worktop|surface)/i.test(message) &&
-      /(twice|two times|2 times|two a day|2 a day|daily|each day|every day|a day)/i.test(message)) {
-    return ask([
-      { question: "Would morning and evening suit you, or do you prefer two other times?", seen: /morning and evening|two other times/i },
-      { question: "Should the routine stay the same every day, or change depending on how the room is used?", seen: /same every day|change depending on how the room is used/i },
-      { question: "Are there times when you would prefer cleaning not to happen?", seen: /prefer cleaning not to happen|times.*avoid cleaning/i }
+
+  if (/^(sorting|sort|separating|separate clothes)$/i.test(text) && lastWas(/which part|sorting, washing/i)) {
+    return choose([
+      "What’s your usual rule for sorting: colours, fabric, or how warm the items can be washed?",
+      "Are there any colours or fabrics you’re especially careful to keep separate?",
+      "Do you prefer to sort everything before a wash starts, or keep separate laundry baskets ready?"
     ]);
   }
-  if (/(ask me|ask before|check with me|permission|confirm before|before changing|before moving|without asking)/i.test(message)) {
-    return ask([
-      { question: "Should asking first apply to every household task, or especially when something would be moved or handled?", seen: /asking first apply to every household task|especially when.*moved or handled/i },
-      { question: "Which matters most for approval: protecting personal belongings, avoiding mistakes, or keeping control over timing?", seen: /protecting personal belongings|keeping control over timing/i },
-      { question: "Are there any actions that should always wait for your explicit permission?", seen: /always wait.*explicit permission|explicit permission/i }
+
+  if (/(paper towels?|spray|cleaning product|surface cleaner|detergent)/i.test(text)) {
+    return choose([
+      "Are those your go-to supplies around the whole home, or do you switch products depending on the surface?",
+      "Is there a surface you’re particularly careful with, where the wrong product could cause damage?",
+      "When you clean, do you prefer to keep your usual products close at hand, or have them brought out only when needed?"
     ]);
   }
-  if (/(what can|what does|how does|how do|what is synq)/i.test(message)) {
-    return "SYNQ.ME helps you build a digital persona through natural conversation. You can speak or type preferences, and the app can ask focused follow-up questions to make those preferences more useful.";
-  }
-  if (/^(washing|wash|washing and drying|wash and dry|laundering|cleaning clothes)$/i.test(lower.trim())) {
-    return ask([
-      { question: "Do you prefer clothes to be air-dried, tumble-dried, or handled differently depending on the garment?", seen: /air.dried|tumble.dried|tumble dry/i },
-      { question: "Should delicate items be washed separately or use a gentler routine?", seen: /delicate items|washed separately|gentler routine/i },
-      { question: "Would you like towels and bedding handled differently from everyday clothes?", seen: /towels and bedding|bedding.*differently/i }
+
+  if (/(twice|two times|2 times|daily|every day|each day)/i.test(text) && /(kitchen|counter|worktop|surface|clean|wipe)/i.test(text)) {
+    return choose([
+      "When you say twice a day, is one of those cleans usually after cooking or meals, or do you prefer set times?",
+      "Would you want the same quick clean each time, or a more thorough one at a particular point in the day?",
+      "Is the aim mainly to keep the surfaces hygienic, clear away crumbs and spills, or both?"
     ]);
   }
-  if (/^(sorting|sort|separating|separate clothes|sorting clothes)$/i.test(lower.trim())) {
-    return ask([
-      { question: "Do you prefer clothes separated by colour, fabric, or washing temperature?", seen: /separated by colou?r, fabric|washing temperature/i },
-      { question: "Should darks, whites, and colours always be washed in separate loads?", seen: /darks, whites.*separate loads|separate loads/i },
-      { question: "Are there any fabrics or items you would always keep out of a regular wash?", seen: /keep out of a regular wash|fabrics.*always/i }
+
+  if (/(ask me|ask before|check with me|permission|confirm before|without asking|don't want.*(?:move|touch|throw away)|should avoid|avoid doing)/i.test(text) ||
+      (/avoid|permission|boundary/i.test(previousAssistant) && text.length < 100)) {
+    return choose([
+      "That’s an important boundary. Are you most concerned about the robot moving or damaging things, entering private spaces, or making a decision without checking with you?",
+      "What kinds of things should it never decide for itself—moving belongings, throwing something away, or using a product you haven’t approved?",
+      "Would you like it to ask about every uncertain action, or only when there’s a real risk of damage, privacy, or an unwanted change?"
+    ]).replace(/\bthe robot\b/gi, robotName);
+  }
+
+  if (/(laundry|washing|clothes|fold|drying|wardrobe)/i.test(lower)) {
+    return choose([
+      "What tends to matter most with laundry in your home: keeping colours separate, protecting delicate items, or having everything ready when you need it?",
+      "How do you like clean clothes left—folded, hung up, or put back in specific places?",
+      "Are there any laundry habits you already have that you’d definitely want your robot to follow?"
+    ]).replace(/\byour robot\b/gi, robotName);
+  }
+
+  if (/(vacuum|floor|carpet|tidy|cleaning|clean|surface|counter|worktop|kitchen)/i.test(lower)) {
+    return choose([
+      "When a room feels properly looked after to you, what do you notice first: clean surfaces, clear floors, or everything being back where it belongs?",
+      "Are there parts of the room you like to deal with first, or do you tend to work around whatever needs attention?",
+      "Is there anything in that space that should stay exactly where it is, even during a tidy-up?"
+    ]).replace(/\byour robot\b/gi, robotName);
+  }
+
+  if (/(cook|meal|food|recipe|ingredient|grocery|shopping)/i.test(lower)) {
+    return choose([
+      "When it comes to meals, do you prefer familiar favourites or a bit of variety during the week?",
+      "Are there ingredients you avoid for taste, preference, or practical reasons?",
+      "What usually makes meal planning easier for you: knowing what's in the fridge, having a plan, or keeping things flexible?"
     ]);
   }
-  if (/(laundry|washing|clothes|fold)/i.test(lower)) {
-    return ask([
-      { question: "Which part matters most to get right: sorting, washing and drying, or putting clothes away?", seen: /which laundry detail matters most|sorting, washing and drying|which part matters most.*sorting/i },
-      { question: "Are there fabrics or garments that need special treatment?", seen: /fabrics or garments.*special treatment|special treatment/i },
-      { question: "Would you prefer one routine for every load, or different rules for colours and fabrics?", seen: /one routine for every load|different rules for colou?rs and fabrics/i }
-    ]);
+
+  if (/(pet|dog|cat|plant|water|garden)/i.test(lower)) {
+    return choose([
+      "What little signs tell you your pet or plants need attention?",
+      "Are there any routines around that you'd want kept exactly as they are?",
+      "Is there anything you’d want the robot to check with you about rather than decide on its own?"
+    ]).replace(/\byour robot\b/gi, robotName);
   }
-  if (/(vacuum|floor|carpet|tidy|cleaning|clean|surface|counter|worktop)/i.test(lower)) {
-    return ask([
-      { question: "For this routine, should I focus on timing, task order, or areas that must be left untouched?", seen: /focus on timing, task order|task order.*left untouched|timing.*left untouched/i },
-      { question: "Are there any items, surfaces, or rooms that need special care or should be avoided?", seen: /items, surfaces, or rooms.*special care|should be avoided/i },
-      { question: "Would you prefer the same routine each time, or changes depending on the room or situation?", seen: /same routine each time|changes depending on the room/i }
-    ]);
+
+  if (/^(yes|yeah|yep|no|nope|probably|maybe|not sure|i don't know)$/i.test(text)) {
+    return "Fair enough. What would help you decide—thinking through a real example at home, or starting with what usually happens today?";
   }
-  if (category === "Consent & boundaries" || state.profile.confirmActions) {
-    return ask([
-      { question: "What would you most want to prevent: items being moved, a wrong choice, or something happening at the wrong time?", seen: /most want to prevent|items being moved, a wrong choice/i },
-      { question: "Which things should always be left exactly where they are?", seen: /left exactly where they are|left untouched/i },
-      { question: "When should your SecondSelf always pause and check with you first?", seen: /pause and check with you first|check with you first/i }
-    ]);
+
+  if (lastWas(/\?$/) || lastWas(/\b(which|what|when|where|how|would you|do you|should)\b/i)) {
+    const previousUser = state.messages.filter((item) => item.role === "user").slice(-2, -1)[0]?.content || "";
+    if (previousUser && previousUser.length > 12) {
+      return choose([
+        "I’m getting a clearer picture now. What’s the one part of that routine you’d be most particular about?",
+        "That helps. Is there a real example from your own home that would make your preference clearer?",
+        "I see. What would be the most annoying thing for the robot to get wrong in that situation?"
+      ]);
+    }
   }
-  if (category === "Routine & timing") {
-    return ask([
-      { question: "Does that schedule stay the same every day, or change depending on the situation?", seen: /same every day|change depending on the situation/i },
-      { question: "Is there a time when this should never happen?", seen: /time.*should never happen|never happen/i },
-      { question: "Would a reminder or a clear sequence make this routine easier to follow?", seen: /reminder or a clear sequence|clear sequence/i }
-    ]);
-  }
-  if (category === "Care & placement" || category === "Safety") {
-    return ask([
-      { question: "Would you like those items kept in a particular place, or simply handled carefully?", seen: /kept in a particular place|handled carefully/i },
-      { question: "Is there anything that should never be moved, stacked, or touched?", seen: /never be moved, stacked, or touched|never be moved/i },
-      { question: "What would tell you that this has been handled properly?", seen: /handled properly|tell you that.*properly/i }
-    ]);
-  }
-  if (category === "Food & shopping") {
-    return ask([
-      { question: "Are there ingredients or products you prefer to avoid or always keep available?", seen: /ingredients or products.*avoid|keep available/i },
-      { question: "Should shopping and meal choices stay within a particular budget or routine?", seen: /particular budget|shopping and meal choices/i },
-      { question: "Do you prefer familiar choices, or would you like new options suggested sometimes?", seen: /familiar choices|new options suggested/i }
-    ]);
-  }
-  if (category === "Home & care") {
-    return ask([
-      { question: "Are there signs or situations where you would want extra care or a different routine?", seen: /extra care|different routine/i },
-      { question: "Is there anything your " + (state.profile.robotName.trim() || "robot") + " should avoid doing in this situation?", seen: /avoid doing in this situation|should avoid doing/i },
-      { question: "Would a regular schedule help, or should the routine adapt from day to day?", seen: /regular schedule help|adapt from day to day/i }
-    ]);
-  }
-  return ask([
-    { question: "What would a good result look like for you in practice?", seen: /good result look like|result.*in practice/i },
-    { question: "Does that preference apply every time, or only in certain situations?", seen: /apply every time|certain situations/i },
-    { question: "Is there anything you would want your " + (state.profile.robotName.trim() || "robot") + " to avoid doing?", seen: /want your SecondSelf to avoid|avoid doing/i },
-    { question: "What would make that feel right for you in day-to-day use?", seen: /feel right.*day-to-day|day.to.day use/i }
+
+  return choose([
+    "Tell me a little more about how that works at home for you. What do you tend to do first?",
+    "I'm curious—what makes that feel right for you: convenience, keeping things consistent, or something else entirely?",
+    "What would you notice first if your future robot really understood your way of doing that?"
   ]);
 }
 
