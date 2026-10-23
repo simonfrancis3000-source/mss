@@ -13,6 +13,11 @@
     <script type="module" src="/src/synqme.js"></script>
   </head>
   <body>
+    <div class="app-splash" id="appSplash" role="status" aria-label="Opening SYNQ.ME">
+      <img class="splash-logo" src="https://mysecondself.app/wp-content/uploads/2026/10/MySecondSelf-Dual-Head-Logo.png" alt="MySecondSelf" />
+      <div class="splash-caption">SYNQ.ME <span>PERSONAL INTELLIGENCE</span></div>
+      <div class="splash-track"><span></span></div>
+    </div>
     <header class="site-header">
       <div class="nav-wrap">
         <a class="brand" href="https://mysecondself.app/" aria-label="MySecondSelf home">
@@ -24,6 +29,10 @@
           <a href="https://mysecondself.app/pexi/">PEXI</a>
           <a href="https://mysecondself.app/contact/">CONTACT</a>
         </nav>
+        <button class="settings-button" type="button" id="openSettings" aria-haspopup="dialog" aria-controls="settingsDialog" aria-label="Open settings">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"/><path d="m19.4 13.5 1.1.9-1.5 2.6-1.4-.5a7.9 7.9 0 0 1-1.8 1l-.2 1.5h-3l-.3-1.5a7.9 7.9 0 0 1-1.8-1l-1.4.5-1.5-2.6 1.1-.9a7.2 7.2 0 0 1 0-2l-1.1-.9 1.5-2.6 1.4.5a7.9 7.9 0 0 1 1.8-1l.3-1.5h3l.2 1.5a7.9 7.9 0 0 1 1.8 1l1.4-.5 1.5 2.6-1.1.9a7.2 7.2 0 0 1 0 2Z" transform="translate(-.4 -1)"/></svg>
+          <span>Settings</span>
+        </button>
       </div>
     </header>
 
@@ -187,6 +196,48 @@
           <article class="principle"><span>03</span><h3>Transfer</h3><p>PEXI maps a task to compatible robot capabilities, so a SecondSelf can move with you.</p></article>
         </div>
       </section>
+
+    <section class="settings-overlay" id="settingsDialog" hidden>
+      <button type="button" class="settings-backdrop" id="settingsBackdrop" aria-label="Close settings"></button>
+      <div class="settings-sheet" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" tabindex="-1">
+        <div class="settings-heading">
+          <div>
+            <div class="section-kicker">PERSONALISE YOUR APP</div>
+            <h2 id="settingsTitle">Settings</h2>
+            <p>Make SYNQ.ME feel like yours. These demo settings stay in this browser.</p>
+          </div>
+          <button type="button" class="settings-close" id="closeSettings" aria-label="Close settings">×</button>
+        </div>
+        <form id="settingsForm" class="settings-form">
+          <label for="ownerName">Your name</label>
+          <input id="ownerName" name="ownerName" maxlength="60" autocomplete="given-name" placeholder="What should ELO call you?" />
+          <label for="robotName">Name your robot</label>
+          <input id="robotName" name="robotName" maxlength="60" placeholder="e.g. ELO, Nova or Alex" />
+          <label for="robotType">Robot type you have in mind</label>
+          <select id="robotType" name="robotType">
+            <option value="Home assistant">Home assistant</option>
+            <option value="Humanoid robot">Humanoid robot</option>
+            <option value="Robot vacuum">Robot vacuum</option>
+            <option value="Other compatible robot">Other compatible robot</option>
+          </select>
+          <label class="settings-toggle" for="confirmActions">
+            <span><strong>Ask me before actions</strong><small>Include a confirmation checkpoint in task plans.</small></span>
+            <input type="checkbox" id="confirmActions" name="confirmActions" />
+            <span class="toggle-ui" aria-hidden="true"></span>
+          </label>
+          <div class="settings-actions">
+            <button type="submit" class="settings-save">Save settings</button>
+            <button type="button" class="settings-cancel" id="cancelSettings">Close</button>
+          </div>
+        </form>
+        <div class="settings-preferences">
+          <div class="settings-subhead"><span>YOUR LEARNED PREFERENCES</span><span id="settingsPreferenceCount">0</span></div>
+          <div id="settingsPreferenceList"><p class="settings-empty">As you chat with ELO, your preferences will appear here.</p></div>
+        </div>
+        <button type="button" class="settings-task-link" id="openTaskFromSettings">Preview dishwasher task plan <span>↗</span></button>
+        <p class="settings-note">This demo stores profile details and preferences in this browser only. It does not control a physical robot.</p>
+      </div>
+    </section>
 
       <footer class="footer">
         <span>© MySecondSelf · SYNQ.ME interactive demo</span>
