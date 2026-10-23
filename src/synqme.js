@@ -254,11 +254,27 @@ function scheduleCloudSave() {
     cloudSaveChain = cloudSaveChain
       .then(() => saveCloudState())
       .catch((error) => {
-        console.info("SYNQ.ME cloud sync unavailable; local browser saving remains active.", error);
-        cloudMode = "local";
+        console.info("SYNQ.ME account sync failed.", error);
+        cloudMode = "error";
         renderPreferences();
       });
   }, 300);
+}
+
+async function flushCloudSave() {
+  if (!supabase || !cloudUserId) return false;
+  if (cloudSaveTimer) window.clearTimeout(cloudSaveTimer);
+  cloudSaveTimer = null;
+  cloudSaveChain = cloudSaveChain
+    .then(() => saveCloudState())
+    .catch((error) => {
+      console.info("SYNQ.ME account sync failed.", error);
+      cloudMode = "error";
+      renderPreferences();
+      return false;
+    });
+  await cloudSaveChain;
+  return cloudMode === "cloud";
 }
 
 function preferenceExtraction(item) {
@@ -562,17 +578,20 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   state.messages = mergeConversationMessages(remoteConversation?.messages || [], draftState?.messages || []);
   state.pendingClarification = remoteConversation?.pending_clarification || draftState?.pendingClarification || null;
   state.apiConnected = false;
-  cloudMode = "cloud";
-  setAuthGateVisible(false);
+  cloudMode = "syncing";
   renderAccountStatus();
   populateSettingsForm();
   renderAll();
   persist();
+  if (cloudSaveTimer) window.clearTimeout(cloudSaveTimer);
+  cloudSaveTimer = null;
 
   await saveCloudState();
   if (draft) {
     try { localStorage.removeItem(ACCOUNT_DRAFT_KEY); } catch {}
   }
+  setAuthGateVisible(false);
+  renderAccountStatus();
   renderAll();
   if (!profileComplete()) openSettings();
   else updateSettingsMode();
@@ -1412,7 +1431,7 @@ async function sendMessage(rawText) {
   let reply = answeredPendingClarification
     ? replyToResolvedClarification(message, pendingBeforeAnswer)
     : await requestAIReply();
-  if (!answeredPendingClarification && (!reply || responseRepeatsUser(reply, message) || /I've captured this preference for your browser-based SecondSelf|I've added it to your local digital persona|That's useful context for your SecondSelf|Let's make that preference more precise|What detail would matter most to get right|What matters most to you when getting that right/i.test(reply))) {
+  if (!answeredPendingClarification && (!reply || responseRepeatsUser(reply, message) || /I've captured this preference for your browser-based SecondSelf|I've added it to your local digital persona|That's useful context for your SecondSelf|Let's make that preference more precise|What detail would matter most to get right|What matters most to you when getting that right|Which laundry detail matters most to you: sorting, washing and drying, or how clothes are put away/i.test(reply))) {
     reply = localReply(message);
   }
   state.messages.push({ role: "assistant", content: reply });
@@ -1420,7 +1439,11 @@ async function sendMessage(rawText) {
   state.messages = state.messages.slice(-5000);
   persist();
   renderAll();
-  elements.conversationStatus.textContent = state.apiConnected ? "AI response received" : "Preference captured";
+  const conversationSaved = await flushCloudSave();
+  renderAll();
+  elements.conversationStatus.textContent = conversationSaved
+    ? (state.apiConnected ? "AI response received · saved to account" : "Reply saved to account")
+    : "Reply received · account sync needs attention";
   isSending = false;
   elements.sendButton.disabled = false;
   elements.messageInput.disabled = false;
@@ -1723,7 +1746,10 @@ elements.signOutButton?.addEventListener("click", async () => {
   authBusy = true;
   elements.signOutButton.disabled = true;
   try {
-    if (cloudUserId) await saveCloudState();
+    if (cloudUserId) {
+      const saved = await flushCloudSave();
+      if (!saved) throw new Error("Latest account data has not synchronised");
+    }
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
     if (cloudSaveTimer) window.clearTimeout(cloudSaveTimer);
