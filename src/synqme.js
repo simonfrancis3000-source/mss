@@ -5,6 +5,15 @@ const ACCOUNT_DRAFT_KEY = "synqme-pending-account-migration-v1";
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
+const AUTH_REDIRECT_URL = (() => {
+  const configured = String(import.meta.env.VITE_AUTH_REDIRECT_URL || "").trim();
+  if (configured) return configured.replace(/\\/+$/, "") + "/";
+  const origin = window.location.origin;
+  if (/^https?:\\/\\/(localhost|127\\.0\\.0\\.1)(:\\d+)?$/i.test(origin)) {
+    return "https://synqme.mysecondself.app/";
+  }
+  return origin.replace(/\\/+$/, "") + "/";
+})();
 let rememberMeEnabled = (() => {
   try {
     const savedChoice = localStorage.getItem("synqme-remember-me-choice");
@@ -1717,7 +1726,7 @@ async function submitAccountForm(event) {
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
-        options: { emailRedirectTo: window.location.origin + "/" }
+        options: { emailRedirectTo: AUTH_REDIRECT_URL }
       });
       if (error) throw error;
       if (data.session && data.user && !data.user.is_anonymous) {
@@ -1787,7 +1796,7 @@ elements.authForgotPassword?.addEventListener("click", async () => {
   }
   try {
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: window.location.origin + "/"
+      redirectTo: AUTH_REDIRECT_URL
     });
     if (error) throw error;
     setAuthMode("signin", "If an account exists for that address, a password-reset email has been sent. Follow its link to choose a new password.");
