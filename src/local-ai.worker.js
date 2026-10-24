@@ -253,6 +253,12 @@ self.addEventListener("message", async ({ data }) => {
     });
     const reply = extractReply(result);
     if (!reply) throw new Error("The local model returned no usable text. Please try again.");
+    if (isUnusableReply(reply)) {
+      if (activeBackend === "webgpu") {
+        throw new Error("WebGPU returned corrupted text output. Restart on CPU mode and retry.");
+      }
+      throw new Error("The local model returned malformed text instead of a readable reply. Try sending the question again.");
+    }
     self.postMessage({ type: "reply", id: data.id, text: reply });
   } catch (error) {
     self.postMessage({ type: "reply-error", id: data.id, message: String(error?.message || "Local generation failed.") });
