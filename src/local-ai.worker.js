@@ -19,6 +19,10 @@ async function loadModel() {
     if (!self.navigator?.gpu) {
       throw new Error("This device/browser does not expose WebGPU. Open SYNQ.ME in an up-to-date Chrome or Edge browser on a WebGPU-compatible device.");
     }
+    const adapter = await self.navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
+    if (!adapter) {
+      throw new Error("WebGPU is present, but no compatible GPU adapter is available. Try a current Chrome or Edge browser on a supported device.");
+    }
     postProgress({ status: "initiate", file: "Qwen3-4B model" });
     generator = await pipeline("text-generation", MODEL_ID, {
       // Pin the model revision so upstream updates do not unexpectedly invalidate the local cache.
