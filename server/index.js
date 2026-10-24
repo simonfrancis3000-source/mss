@@ -327,9 +327,6 @@ function guardRobotExecutionClaims(reply, preferences, language = "en") {
   const claimPattern = /\b(?:the\s+)?robot\s+(?:will|would)\s+(?:automatically\s+)?(?:follow|place|put|handle|sort|load|unload|start|turn on|execute|perform|carry out)\b|\b(?:will happen automatically|automatically carry out)\b/i;
   if (!claimPattern.test(reply)) return reply;
 
-  const saved = preferences.length
-    ? preferences.map((item) => item.text).join("; ")
-    : "";
   const boundary = {
     en: "I can help shape a proposed household routine from these preferences. No physical robot is connected, so no task is being carried out automatically. Actual execution would require a compatible robot, a verified integration and your authorisation. Is there another detail you'd like to add?",
     es: "Puedo ayudarte a definir una rutina doméstica a partir de estas preferencias. No hay ningún robot físico conectado, así que no se está realizando ninguna tarea automáticamente. Para ejecutarla harían falta un robot compatible, una integración verificada y tu autorización. ¿Hay algún otro detalle que quieras añadir?",
@@ -340,8 +337,7 @@ function guardRobotExecutionClaims(reply, preferences, language = "en") {
     ja: "これらの希望をもとに、家事の手順を一緒に考えられます。現在、物理的なロボットは接続されていないため、作業が自動で実行されることはありません。実行には対応するロボット、確認済みの連携機能、そしてあなたの許可が必要です。他に追加したいことはありますか？",
     zh: "我可以根据这些偏好帮助你规划家务流程。目前没有连接实体机器人，因此不会自动执行任何任务。实际执行需要兼容的机器人、经过验证的集成以及你的授权。你还想补充什么细节吗？"
   };
-  const response = boundary[language] || boundary.en;
-  return saved ? response.replace(/[?？]$/, "") + (language === "en" ? " I’ll keep these preferences in mind: " : " 已讨论的偏好：") + saved + (language === "zh" ? "。你还想补充什么细节吗？" : ".") : response;
+  return boundary[language] || boundary.en;
 }
 
 const app = http.createServer(async (request, response) => {
