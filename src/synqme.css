@@ -1758,6 +1758,153 @@ body:not(.auth-required):not(.profile-setup-required) {
   }
 }
 
+/* Structured persona memory library: evidence and conflict states remain visible and editable. */
+.persona-memory-library {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid #2a303a;
+}
+.persona-memory-status {
+  margin: 7px 0 10px;
+  color: #8995a5;
+  font-size: 10px;
+  line-height: 1.5;
+}
+.persona-memory-entry {
+  margin: 9px 0;
+  padding: 12px;
+  border: 1px solid #303743;
+  border-radius: 9px;
+  background: #11151c;
+}
+.persona-memory-entry.is-conflicting {
+  border-color: #9a7742;
+  background: #1b1710;
+}
+.persona-memory-entry.is-inferred {
+  border-style: dashed;
+}
+.persona-memory-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.persona-memory-topic,
+.persona-memory-state {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 3px 7px;
+  border: 1px solid #384354;
+  border-radius: 999px;
+  color: #afc5e4;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: .35px;
+  text-transform: uppercase;
+}
+.persona-memory-state.state-conflicting {
+  border-color: #866434;
+  color: #f0c781;
+}
+.persona-memory-state.state-confirmed {
+  border-color: #355f4f;
+  color: #a5dfc1;
+}
+.persona-memory-state.state-inferred {
+  border-color: #62527e;
+  color: #d2c0f5;
+}
+.persona-memory-statement {
+  margin: 0;
+  color: #e1e6ef;
+  font-size: 12px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.persona-memory-detail {
+  margin-top: 9px;
+  color: #929dad;
+  font-size: 10px;
+  line-height: 1.55;
+}
+.persona-memory-detail summary {
+  width: fit-content;
+  color: #a9bdd8;
+  cursor: pointer;
+  font-size: 10px;
+}
+.persona-memory-detail p {
+  margin: 7px 0 0;
+  overflow-wrap: anywhere;
+}
+.persona-memory-conditions {
+  margin: 7px 0 0;
+  padding-left: 17px;
+}
+.persona-memory-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 10px;
+}
+.persona-memory-action {
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid #3b4656;
+  border-radius: 7px;
+  background: #181e28;
+  color: #dce6f4;
+  font-family: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+.persona-memory-action:hover {
+  border-color: #6d8eb8;
+  background: #202c3d;
+}
+.persona-memory-action.is-danger {
+  border-color: #5b3b3b;
+  color: #e7b9b9;
+}
+.persona-memory-action.is-primary {
+  border-color: #456b9f;
+  background: #1b2d46;
+  color: #d2e3ff;
+}
+.persona-memory-editor {
+  display: block;
+  width: 100%;
+  min-height: 82px;
+  margin-top: 9px;
+  padding: 10px;
+  border: 1px solid #43516a;
+  border-radius: 8px;
+  background: #0b0e13;
+  color: #eef3fa;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.55;
+  resize: vertical;
+}
+.persona-memory-library .settings-note {
+  margin-top: 9px;
+}
+.persona-memory-empty {
+  padding: 11px 0;
+  color: #939cac;
+  font-size: 11px;
+  line-height: 1.6;
+}
+@media (max-width: 560px) {
+  .persona-memory-entry { padding: 10px; }
+  .persona-memory-statement { font-size: 11px; }
+  .persona-memory-actions { gap: 6px; }
+  .persona-memory-action { min-height: 32px; }
+}
+
 /* Small app build label at the very bottom, including compact/mobile layouts. */
 .app-version {
   margin-top: 7px;
