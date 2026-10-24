@@ -2899,24 +2899,34 @@ async function playKokoroReply(reply, voiceId, requestId, onPlaybackStarted = ()
   });
 }
 
-function speakAssistantReplyWithBrowser(reply) {
+function speakAssistantReplyWithBrowser(reply, retryAttempt = 0, userInitiated = false) {
+  const spokenText = String(reply || "");
   if (!speechSynthesisAvailable) {
     if (elements.voiceStatus) elements.voiceStatus.textContent = "Speech output is unavailable in this browser.";
-    updateVoiceExperience("listening", "Your reply is visible in chat. Speak again when ready.");
-    scheduleVoiceListening(500);
+    updateVoiceExperience("listening", "Your reply is visible in chat. Spoken replies are not supported here.");
     return;
   }
 
-  window.speechSynthesis.cancel();
+  const synth = window.speechSynthesis;
+  // Clear any stale utterance before resetting Chrome/Safari's speech queue.
   currentSpeechUtterance = null;
   assistantIsSpeaking = false;
+  try {
+    synth.cancel();
+    synth.resume();
+  } catch (error) {
+    console.info("Browser speech queue reset was not available.", error);
+  }
+
   const language = state.profile.preferredLanguage || "en";
   const locale = SPEECH_LOCALES[language] || "en-US";
-  const utterance = new SpeechSynthesisUtterance(String(reply || ""));
+  const utterance = new SpeechSynthesisUtterance(spokenText);
   utterance.lang = locale;
   utterance.rate = 1;
   utterance.pitch = state.profile.robotVoice === "male" ? 0.96 : 1.03;
-  const voices = window.speechSynthesis.getVoices();
+  utterance.volume = 1;
+
+  const voices = synth.getVoices();
   const languageCode = locale.split("-")[0].toLowerCase();
   const localeVoices = voices.filter((voice) => String(voice.lang || "").toLowerCase().startsWith(languageCode));
   const namePattern = state.profile.robotVoice === "male"
@@ -2926,32 +2936,89 @@ function speakAssistantReplyWithBrowser(reply) {
   const selectedVoice = preferredVoice || localeVoices.find((voice) => voice.default) || localeVoices[0] || voices.find((voice) => voice.default) || voices[0];
   if (selectedVoice) utterance.voice = selectedVoice;
 
+  let didStart = false;
+  let watchdog = null;
+  const clearWatchdog = () => {
+    if (watchdog !== null) {
+      window.clearTimeout(watchdog);
+      watchdog = null;
+    }
+  };
+
+  const reportSpeechFailure = (reason) => {
+    if (currentSpeechUtterance !== utterance) return;
+    clearWatchdog();
+    currentSpeechUtterance = null;
+    assistantIsSpeaking = false;
+    try { synth.cancel(); } catch {}
+
+    console.info("SYNQ.ME browser speech did not complete.", reason);
+    if (retryAttempt < 1 && voiceModeActive) {
+      if (elements.voiceStatus) elements.voiceStatus.textContent = "Restarting your device’s speech service…";
+      window.setTimeout(() => {
+        if (voiceModeActive && lastAssistantReplyForSpeech === spokenText) {
+          speakAssistantReplyWithBrowser(spokenText, retryAttempt + 1);
+        }
+      }, 220);
+      return;
+    }
+
+    if (elements.voiceStatus) elements.voiceStatus.textContent = "Device speech did not start. Your reply is still in chat.";
+    updateVoiceExperience("listening", selectedCompanionDisplayName() + " couldn’t start audio automatically. Your reply is in chat—tap below to hear it.");
+    if (elements.voiceRetrySpeechButton) {
+      elements.voiceRetrySpeechButton.textContent = "Tap to hear " + selectedCompanionDisplayName() + "’s reply";
+      elements.voiceRetrySpeechButton.hidden = false;
+    }
+    if (voiceModeActive) scheduleVoiceListening(500);
+  };
+
   currentSpeechUtterance = utterance;
   assistantIsSpeaking = true;
   utterance.onstart = () => {
     if (currentSpeechUtterance !== utterance) return;
+    didStart = true;
+    clearWatchdog();
+    if (elements.voiceRetrySpeechButton) elements.voiceRetrySpeechButton.hidden = true;
     const companion = selectedCompanionDisplayName();
     updateVoiceExperience("speaking", companion + " is speaking.");
     if (elements.conversationStatus) elements.conversationStatus.textContent = companion + " is speaking";
-    if (elements.voiceStatus) elements.voiceStatus.textContent = "Voice on · browser speech";
+    if (elements.voiceStatus) elements.voiceStatus.textContent = "Voice on · device speech";
   };
   utterance.onend = () => {
     if (currentSpeechUtterance !== utterance) return;
+    clearWatchdog();
     currentSpeechUtterance = null;
     assistantIsSpeaking = false;
+    if (elements.voiceRetrySpeechButton) elements.voiceRetrySpeechButton.hidden = true;
     if (voiceModeActive && !voiceInputMuted) updateVoiceExperience("listening", selectedCompanionDisplayName() + " is listening. Speak naturally.");
     if (voiceModeActive) scheduleVoiceListening(250);
   };
-  utterance.onerror = () => {
-    if (currentSpeechUtterance !== utterance) return;
-    currentSpeechUtterance = null;
-    assistantIsSpeaking = false;
-    if (voiceModeActive) {
-      if (elements.voiceStatus) elements.voiceStatus.textContent = "Reply is visible in chat · listening again";
-      scheduleVoiceListening(350);
+  utterance.onerror = (event) => {
+    reportSpeechFailure(event?.error || "speech synthesis error");
+  };
+
+  const beginSpeaking = () => {
+    if (currentSpeechUtterance !== utterance || !voiceModeActive) return;
+    try {
+      // resume() is important on browsers that leave speechSynthesis paused
+      // after a cancelled or interrupted utterance.
+      synth.resume();
+      synth.speak(utterance);
+    } catch (error) {
+      reportSpeechFailure(error?.message || "speech synthesis threw an exception");
     }
   };
-  window.speechSynthesis.speak(utterance);
+
+  watchdog = window.setTimeout(() => {
+    if (currentSpeechUtterance === utterance && !didStart) {
+      reportSpeechFailure("speech start timeout");
+    }
+  }, 3200);
+
+  // If the user presses the retry button, speak in the same gesture stack so
+  // browsers with stricter audio policies can unlock their speech service.
+  if (userInitiated) beginSpeaking();
+  else window.setTimeout(beginSpeaking, 80);
 }
 
 async function speakAssistantReply(reply) {
