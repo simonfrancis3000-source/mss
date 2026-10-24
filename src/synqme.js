@@ -357,11 +357,7 @@ function loadState() {
 
 let state = loadState();
 let localAIWorker = null;
-let localAIForceCpu = (() => {
-  const ua = String(navigator.userAgent || "");
-  const iPadDesktopUA = /Macintosh/i.test(ua) && Number(navigator.maxTouchPoints || 0) > 1;
-  return /Android|iPhone|iPad|iPod|Mobile/i.test(ua) || iPadDesktopUA;
-})();
+let localAIForceCpu = true;
 let localAIReady = false;
 let localAILoadPromise = null;
 let localAILoadResolve = null;
@@ -3490,7 +3486,7 @@ function ensureLocalAIReady() {
 function runLocalAIRequest(payload) {
   const id = ++localAIRequestSequence;
   return new Promise((resolve, reject) => {
-    const timeoutMs = localAIForceCpu ? 240000 : 60000;
+    const timeoutMs = 120000;
     const timeoutId = window.setTimeout(() => {
       const pending = localAIPendingRequests.get(id);
       if (!pending) return;
