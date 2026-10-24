@@ -134,6 +134,16 @@
               <span id="voiceModelProgressPercentMain"></span>
             </div>
           </div>
+          <div class="local-ai-progress" id="localAIProgress" hidden aria-live="polite">
+            <div class="local-ai-progress-meta">
+              <span id="localAIProgressLabel">Preparing local AI…</span>
+              <span id="localAIProgressPercent"></span>
+            </div>
+            <div class="local-ai-progress-track" id="localAIProgressTrack" role="progressbar" aria-label="Local AI model download progress" aria-valuemin="0" aria-valuemax="100">
+              <span class="local-ai-progress-fill" id="localAIProgressFill"></span>
+            </div>
+            <p>One-time model download: approximately 2.8 GB. Files are cached in this browser for future visits; clearing site data or browser storage eviction can require another download.</p>
+          </div>
           <div class="composer-foot">
             <span><span class="small-lock"></span> Your SecondSelf is saved to your account</span>
             <span id="voiceStatus" class="voice-status" aria-live="polite">Voice off · Kokoro and browser voices</span>
@@ -312,7 +322,7 @@
             <option value="zh">Chinese (Mandarin)</option>
           </select>
           <p class="field-help">SYNQ.ME will reply and save the conversation in your chosen language. The female/male setting selects the voice; English uses an American accent. Kokoro speaks on this device after its first download. For languages or devices without a matching Kokoro voice, SYNQ.ME uses your browser's voice when available.</p>
-          <p class="field-help">Voice input uses your browser's speech recognition when supported. On browsers without it, the existing server transcription service is used.</p>
+          <p class="field-help">Voice input uses your browser’s speech recognition when supported. Processing depends on your browser and device; SYNQ.ME does not upload microphone recordings to a hosted transcription API.</p>
           <label class="settings-toggle" for="confirmActions">
             <span><strong>Ask me before actions</strong><small>Record this as a personal preference for future task plans.</small></span>
             <input type="checkbox" id="confirmActions" name="confirmActions" />
