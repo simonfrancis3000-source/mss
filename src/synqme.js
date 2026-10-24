@@ -357,6 +357,11 @@ function loadState() {
 
 let state = loadState();
 let localAIWorker = null;
+let localAIForceCpu = (() => {
+  const ua = String(navigator.userAgent || "");
+  const iPadDesktopUA = /Macintosh/i.test(ua) && Number(navigator.maxTouchPoints || 0) > 1;
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(ua) || iPadDesktopUA;
+})();
 let localAIReady = false;
 let localAILoadPromise = null;
 let localAILoadResolve = null;
@@ -3222,17 +3227,21 @@ function handleLocalAIWorkerMessage(event) {
   noteLocalAIWorkerActivity();
   if (data.type === "status") {
     const label = String(data.label || "Loading local AMÏA model");
+    const isCompactModel = String(data.modelId || "").includes("Qwen2.5-0.5B-Instruct") || /compact/i.test(label);
     setLocalAIProgress({
       label,
       progress: null,
       indeterminate: true,
       detail: /cached/i.test(label)
         ? "Opening saved model files on this device…"
-        : "First-time setup downloads about 1.2 GB of model weights. Keep this tab open."
+        : isCompactModel
+          ? "First-time compact model download is about 786 MB. Cached files should be reused on later visits."
+          : "First-time desktop setup downloads about 1.22 GB of model weights. Keep this tab open."
     });
     return;
   }
   if (data.type === "progress") {
+    const isCompactModel = String(data.modelId || "").includes("Qwen2.5-0.5B-Instruct");
     const aggregate = data.status === "progress_total" && Number.isFinite(data.progress);
     const perFileProgress = data.status === "progress" && Number.isFinite(data.progress);
     const progress = aggregate || perFileProgress ? data.progress : null;
@@ -3242,15 +3251,17 @@ function handleLocalAIWorkerMessage(event) {
       label = "Starting local AMÏA model";
       detail = "Model files are loaded. Preparing the first on-device response…";
     } else if (data.status === "initiate") {
-      label = "Preparing local AMÏA model download";
-      detail = "First-time setup downloads about 1.2 GB of model weights.";
+      label = isCompactModel ? "Preparing compact local AMÏA model download" : "Preparing local AMÏA model download";
+      detail = isCompactModel ? "First-time compact model download is about 786 MB." : "First-time desktop model download is about 1.22 GB.";
     } else if (aggregate) {
-      label = "Downloading local AMÏA model";
+      label = isCompactModel ? "Downloading compact local AMÏA model" : "Downloading local AMÏA model";
       detail = Number.isFinite(data.loaded) && Number.isFinite(data.total) && data.total > 0
         ? formatModelBytes(data.loaded) + " of " + formatModelBytes(data.total) + " downloaded"
         : "Model download is in progress. Keep this tab open.";
     } else if (data.status === "progress" || data.status === "download") {
-      label = data.cached ? "Loading cached local AMÏA model" : "Downloading local AMÏA model";
+      label = data.cached
+        ? (isCompactModel ? "Loading cached compact local AMÏA model" : "Loading cached local AMÏA model")
+        : (isCompactModel ? "Downloading compact local AMÏA model" : "Downloading local AMÏA model");
       detail = data.file && Number.isFinite(data.loaded) && Number.isFinite(data.total) && data.total > 0
         ? data.file + " · " + formatModelBytes(data.loaded) + " of " + formatModelBytes(data.total)
         : "Receiving model files. The bar continues moving while the browser prepares them.";
@@ -3282,6 +3293,7 @@ function handleLocalAIWorkerMessage(event) {
     const error = new Error(String(data.message || "The local model could not be loaded."));
     if (isWebGPUInstanceLoss(error.message) && !localAILoadRecoveryAttempted && localAILoadPromise) {
       localAILoadRecoveryAttempted = true;
+      localAIForceCpu = true;
       localAIReady = false;
       state.apiConnected = false;
       state.apiError = "";
@@ -3295,7 +3307,7 @@ function handleLocalAIWorkerMessage(event) {
       try {
         startLocalAIProgressWatchdog();
         const worker = replaceLocalAIWorker();
-        worker.postMessage({ type: "load" });
+        worker.postMessage({ type: "load", forceCpu: true });
         return;
       } catch (restartError) {
         console.warn("SYNQ.ME could not restart the local AI worker.", restartError);
@@ -3336,7 +3348,7 @@ function handleLocalAIWorkerMessage(event) {
 
 function isWebGPUInstanceLoss(message) {
   const text = String(message || "");
-  return /valid external instance reference no longer exists|mapasync|failed to download data from buffer|onnxruntime.{0,60}webgpu|webgpu.{0,60}device lost/i.test(text);
+  return /valid external instance reference no longer exists|mapasync|failed to download data from buffer|onnxruntime.{0,60}webgpu|webgpu.{0,100}(device lost|corrupt|malformed|invalid text|response-quality)/i.test(text);
 }
 
 function createLocalAIWorker() {
@@ -3357,6 +3369,7 @@ function replaceLocalAIWorker() {
 
 async function recoverAndRetryLocalAIRequest(pending, originalMessage) {
   localAILoadRecoveryAttempted = true;
+  localAIForceCpu = true;
   setLocalAIProgress({
     label: "Recovering local AMÏA after a GPU interruption…",
     progress: null,
@@ -3421,7 +3434,7 @@ function ensureLocalAIReady() {
         try { await navigator.storage?.persist?.(); } catch {}
         startLocalAIProgressWatchdog();
         if (!localAIWorker) localAIWorker = createLocalAIWorker();
-        localAIWorker.postMessage({ type: "load" });
+        localAIWorker.postMessage({ type: "load", forceCpu: localAIForceCpu });
       } catch (error) {
         reject(error);
       }
@@ -3630,8 +3643,34 @@ async function sendMessage(rawText) {
 elements.chatForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const text = elements.messageInput.value;
-  elements.messageInput.value = "";
-  sendMessage(text);
+  if (!text.trim() || isSending) return;
+
+  // Preserve the draft when the account/profile gate prevents sending.
+  // Once a valid turn begins, sendMessage immediately renders the user message.
+  if (cloudUserId && profileComplete()) elements.messageInput.value = "";
+
+  void sendMessage(text).catch((error) => {
+    console.error("SYNQ.ME could not complete the submitted message.", error);
+    isSending = false;
+    if (elements.sendButton) elements.sendButton.disabled = false;
+    if (elements.messageInput) elements.messageInput.disabled = false;
+
+    const detail = String(error?.message || "An unexpected error interrupted the reply.");
+    if (elements.conversationStatus) {
+      elements.conversationStatus.textContent = "Reply failed. Your message is still available to retry.";
+    }
+    state.apiConnected = false;
+    state.apiError = "message failed";
+    state.apiErrorDetail = detail;
+    state.messages.push({
+      role: "assistant",
+      content: "I couldn’t complete that reply. " + detail + " You can try sending your message again.",
+      timestamp: new Date().toISOString()
+    });
+    persist();
+    renderAll();
+    elements.messageInput?.focus();
+  });
 });
 elements.messageInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && !event.shiftKey) {
