@@ -2998,11 +2998,13 @@ function handleLocalAIWorkerMessage(event) {
   }
   if (data.type === "progress") {
     const progress = Number.isFinite(data.progress) ? data.progress : null;
-    const label = data.cached
-      ? "Loading local AMÏA model"
-      : data.status === "initiate"
-        ? "Preparing local AMÏA model download"
-        : "Downloading local AMÏA model";
+    const label = data.status === "done"
+      ? "Starting local AMÏA model"
+      : data.cached
+        ? "Loading local AMÏA model"
+        : data.status === "initiate"
+          ? "Preparing local AMÏA model download"
+          : "Downloading local AMÏA model";
     setLocalAIProgress({
       label,
       progress,
