@@ -2441,11 +2441,11 @@ async function requestAIReply(repairMode = false) {
     state.apiConnected = false;
     state.apiError = responseErrorLabel(error);
     state.apiErrorDetail = Number.isInteger(error?.apiStatus)
-      ? "The AI service returned HTTP " + error.apiStatus +
-        (Number.isInteger(error?.upstreamStatus) ? " (Gemini upstream HTTP " + error.upstreamStatus + ")" : "") +
+      ? "HTTP " + error.apiStatus +
+        (Number.isInteger(error?.upstreamStatus) ? " · " + (state.apiProvider ? state.apiProvider.toUpperCase() : "UPSTREAM") + " upstream HTTP " + error.upstreamStatus : "") +
         ": " + String(error?.message || "Request failed").slice(0, 260) +
         (error?.errorCode ? " [reference " + error.errorCode + "]" : "")
-      : "";
+      : String(error?.message || "").slice(0, 260);
     elements.providerLabel.textContent = (state.apiProvider ? state.apiProvider.toUpperCase() : "AI SERVICE") + " · " + state.apiError.toUpperCase().replace(/_/g, " ");
     return null;
   }
@@ -2569,7 +2569,7 @@ async function sendMessage(rawText) {
     ? (sentToAIThisTurn && state.apiConnected
         ? responseProviderLabel + " response · saved to account"
         : state.apiError && sentToAIThisTurn
-          ? responseProviderLabel + " unavailable · no scripted reply"
+          ? (state.apiErrorDetail || responseProviderLabel + " unavailable · no scripted reply")
           : "Reply saved to account")
     : "Reply received · account sync needs attention";
   isSending = false;
