@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { buildHomePersonaSystemPrompt } from "./home-persona-reasoning.js";
 
 const STORAGE_KEY = "synqme-demo-v1";
 const ACCOUNT_DRAFT_KEY = "synqme-pending-account-migration-v1";
@@ -3141,21 +3142,44 @@ async function requestAIReply(repairMode = false) {
   if (!repairMode) lastAIReplyUsedFallback = false;
   state.apiErrorDetail = "";
   try {
+    const preferences = state.preferences.map((preference) => {
+      const extracted = preferenceExtraction(preference);
+      return {
+        category: preference.category || classifyPreference(preference.text),
+        text: preference.text,
+        epistemicStatus: preference.status || "user_stated",
+        explicitFields: extracted.explicitFields,
+        unresolvedFields: extracted.unresolvedFields,
+        clarifications: Array.isArray(preference.clarifications) ? preference.clarifications : []
+      };
+    });
+    const domesticFunctions = state.functions
+      .map((id) => ACTIVITIES.find((activity) => activity.id === id)?.label)
+      .filter(Boolean);
+    const systemPrompt = buildHomePersonaSystemPrompt({
+      profile: {
+        ...state.profile,
+        askBeforeActions: state.profile.confirmActions
+      },
+      preferences,
+      domesticFunctions,
+      recentMessages: state.messages.slice(-18),
+      pendingClarification: state.pendingClarification,
+      repairMode
+    });
+    const conversationMessages = state.messages.slice(-20).map((message) => ({
+      role: message.role,
+      content: message.content
+    }));
     const response = await fetch(API_BASE + "/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        messages: state.messages.slice(-20).map((message) => ({ role: message.role, content: message.content })),
-        preferences: state.preferences.map((preference) => {
-          const extracted = preferenceExtraction(preference);
-          return {
-            category: preference.category || classifyPreference(preference.text),
-            text: preference.text,
-            epistemicStatus: preference.status || "user_stated",
-            explicitFields: extracted.explicitFields,
-            unresolvedFields: extracted.unresolvedFields
-          };
-        }),
+        messages: [
+          { role: "system", content: systemPrompt },
+          ...conversationMessages
+        ],
+        preferences,
         profile: {
           ownerName: state.profile.ownerName,
           robotName: state.profile.robotName,
@@ -3164,7 +3188,7 @@ async function requestAIReply(repairMode = false) {
           preferredLanguage: state.profile.preferredLanguage || "en",
           askBeforeActions: state.profile.confirmActions
         },
-        domesticFunctions: state.functions.map((id) => ACTIVITIES.find((activity) => activity.id === id)?.label).filter(Boolean),
+        domesticFunctions,
         repairMode
       })
     });
@@ -3179,7 +3203,6 @@ async function requestAIReply(repairMode = false) {
     if (!response.ok) {
       state.apiConfigured = true;
       let errorMessage = String(data.error || ("AI endpoint returned " + response.status));
-      // Older backend deployments accidentally labelled Groq 429 errors as Gemini.
       if (responseProvider === "groq" && /gemini/i.test(errorMessage)) {
         errorMessage = "Groq has reached a usage limit or rate limit. Check your Groq usage and limits, then try again.";
       }
@@ -3197,8 +3220,8 @@ async function requestAIReply(repairMode = false) {
     state.apiErrorDetail = "";
     elements.providerLabel.textContent = (state.apiProvider || "AI").toUpperCase() + " · " + (state.apiModel || "model") + " · LIVE";
 
-    // The backend has already tried the model and selected a fallback where needed.
-    // Do not trigger another full model request for the same user turn.
+    // The backend can mark an output for review; don't initiate a second request
+    // for a turn that already used its own fallback or repair strategy.
     lastAIReplyUsedFallback = Boolean(data.usedFallback || data.responseNeedsReview);
     if (data.responseNeedsReview) return "__SYNQME_UNHELPFUL_AI_RESPONSE__";
     return reply.trim();
