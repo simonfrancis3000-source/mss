@@ -1695,7 +1695,7 @@ async function transcribeVoiceRecording(blob) {
   }
   voiceTranscribing = true;
   if (elements.conversationStatus) elements.conversationStatus.textContent = "Transcribing your speech";
-  if (elements.voiceStatus) elements.voiceStatus.textContent = "Transcribing · Google Gemini";
+  if (elements.voiceStatus) elements.voiceStatus.textContent = "Transcribing · Groq Whisper";
   try {
     const audioBase64 = await blobToBase64(blob);
     if (!voiceModeActive) return;
@@ -1784,7 +1784,7 @@ async function startMediaRecorderListening() {
     if (elements.conversationStatus) elements.conversationStatus.textContent = "Listening · speak naturally, then pause";
     if (elements.voiceStatus) {
       elements.voiceStatus.dataset.error = "";
-      elements.voiceStatus.textContent = "Listening · pauses send your words to Google Gemini";
+      elements.voiceStatus.textContent = "Listening · pauses send your words to Groq Whisper";
     }
     startVoiceMonitor();
   } catch (error) {
@@ -2005,6 +2005,16 @@ function responseRepeatsUser(reply, userMessage) {
 
 async function requestAIReply(repairMode = false) {
   if (!API_BASE) return null;
+  if (!state.apiProvider) await checkAIBackend();
+  if (state.apiProvider !== "groq") {
+    state.apiConnected = false;
+    state.apiError = "groq-only policy";
+    state.apiErrorDetail = state.apiProvider
+      ? "AI request blocked: SYNQ.ME is configured for Groq only, but the connected backend reported a different provider. Redeploy the Groq-only backend."
+      : "AI request blocked because the backend provider could not be verified as Groq. Redeploy or restore the Groq-only backend.";
+    elements.providerLabel.textContent = "GROQ ONLY · BACKEND CHECK REQUIRED";
+    return null;
+  }
   state.apiErrorDetail = "";
   try {
     const response = await fetch(API_BASE + "/api/chat", {
@@ -2035,11 +2045,20 @@ async function requestAIReply(repairMode = false) {
     });
     let data = {};
     try { data = await response.json(); } catch {}
-    if (data.provider) state.apiProvider = String(data.provider).toLowerCase();
+    const responseProvider = typeof data.provider === "string" ? data.provider.toLowerCase() : state.apiProvider;
+    if (responseProvider && responseProvider !== "groq") {
+      throw new Error("SYNQ.ME is configured for Groq only. The backend response was rejected because its provider did not match the Groq-only policy. Redeploy the Groq-only backend.");
+    }
+    if (data.provider) state.apiProvider = responseProvider;
     if (data.model) state.apiModel = String(data.model);
     if (!response.ok) {
       state.apiConfigured = true;
-      const apiError = new Error(data.error || ("AI endpoint returned " + response.status));
+      let errorMessage = String(data.error || ("AI endpoint returned " + response.status));
+      // Older backend deployments accidentally labelled Groq 429 errors as Gemini.
+      if (responseProvider === "groq" && /gemini/i.test(errorMessage)) {
+        errorMessage = "Groq has reached a usage limit or rate limit. Check your Groq usage and limits, then try again.";
+      }
+      const apiError = new Error(errorMessage);
       apiError.apiStatus = response.status;
       apiError.upstreamStatus = Number.isInteger(data.upstreamStatus) ? data.upstreamStatus : null;
       apiError.errorCode = typeof data.errorCode === "string" ? data.errorCode : "";
@@ -2064,7 +2083,7 @@ async function requestAIReply(repairMode = false) {
     state.apiError = responseErrorLabel(error);
     state.apiErrorDetail = Number.isInteger(error?.apiStatus)
       ? "The AI service returned HTTP " + error.apiStatus +
-        (Number.isInteger(error?.upstreamStatus) ? " (Gemini upstream HTTP " + error.upstreamStatus + ")" : "") +
+        (Number.isInteger(error?.upstreamStatus) ? " (Groq upstream HTTP " + error.upstreamStatus + ")" : "") +
         ": " + String(error?.message || "Request failed").slice(0, 260) +
         (error?.errorCode ? " [reference " + error.errorCode + "]" : "")
       : "";
