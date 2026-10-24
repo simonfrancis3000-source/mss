@@ -671,6 +671,92 @@ async function queryPersonaMemoryRecords() {
   return Array.isArray(data) ? data : [];
 }
 
+function embeddingVectorLiteral(vector) {
+  if (!Array.isArray(vector) || vector.length !== 768 || vector.some((value) => !Number.isFinite(value))) return "";
+  return "[" + vector.map((value) => Number(value).toString()).join(",") + "]";
+}
+
+async function requestPersonaEmbeddings(texts, purpose = "document") {
+  if (!API_BASE || personaEmbeddingUnavailable || !Array.isArray(texts) || !texts.length) return null;
+  try {
+    const response = await fetch(API_BASE + "/api/memory/embed", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ texts: texts.slice(0, 16), purpose: purpose === "query" ? "query" : "document" })
+    });
+    let data = {};
+    try { data = await response.json(); } catch {}
+    if (!response.ok || String(data.provider || "").toLowerCase() !== "groq" ||
+        data.dimensions !== 768 || !Array.isArray(data.embeddings) ||
+        data.embeddings.length !== Math.min(texts.length, 16)) {
+      throw new Error(String(data.error || "Groq returned an incompatible embedding response."));
+    }
+    const vectors = data.embeddings.map((vector) =>
+      Array.isArray(vector) && vector.length === 768 && vector.every(Number.isFinite)
+        ? vector.map(Number)
+        : null
+    );
+    if (vectors.some((vector) => !vector)) throw new Error("Groq returned an invalid 768-dimensional vector.");
+    return vectors;
+  } catch (error) {
+    personaEmbeddingUnavailable = true;
+    if (!personaEmbeddingWarningShown) {
+      console.info("SYNQ.ME semantic memory search is unavailable for this session; topic, keyword and full-text retrieval remain active.", error);
+      personaEmbeddingWarningShown = true;
+    }
+    return null;
+  }
+}
+
+async function backfillPersonaMemoryEmbeddings({ limit = 16 } = {}) {
+  if (!supabase || !cloudUserId || personaMemoryTableUnavailable || personaEmbeddingUnavailable || personaEmbeddingBackfillInFlight) return false;
+  personaEmbeddingBackfillInFlight = true;
+  try {
+    const activeStatuses = ["user_stated", "user_confirmed", "inferred_pending_confirmation", "conflicting"];
+    const { data, error } = await supabase
+      .from("synqme_persona_memories")
+      .select("id,statement,search_terms")
+      .eq("user_id", cloudUserId)
+      .is("embedding", null)
+      .in("status", activeStatuses)
+      .order("updated_at", { ascending: true })
+      .limit(Math.max(1, Math.min(32, limit)));
+    if (error) throw error;
+    const rows = Array.isArray(data) ? data : [];
+    if (!rows.length) return true;
+
+    for (let start = 0; start < rows.length; start += 16) {
+      const batch = rows.slice(start, start + 16);
+      const texts = batch.map((row) =>
+        [row.statement, ...(Array.isArray(row.search_terms) ? row.search_terms : [])]
+          .filter(Boolean).join(". ").slice(0, 1800)
+      );
+      const vectors = await requestPersonaEmbeddings(texts, "document");
+      if (!vectors) return false;
+      for (let index = 0; index < batch.length; index++) {
+        const literal = embeddingVectorLiteral(vectors[index]);
+        if (!literal) continue;
+        const { error: updateError } = await supabase
+          .from("synqme_persona_memories")
+          .update({ embedding: literal })
+          .eq("user_id", cloudUserId)
+          .eq("id", batch[index].id)
+          .is("embedding", null);
+        if (updateError) throw updateError;
+      }
+    }
+    return true;
+  } catch (error) {
+    if (!personaEmbeddingWarningShown) {
+      console.info("SYNQ.ME could not backfill some semantic memory embeddings; keyword and full-text search will remain available.", error);
+      personaEmbeddingWarningShown = true;
+    }
+    return false;
+  } finally {
+    personaEmbeddingBackfillInFlight = false;
+  }
+}
+
 async function backfillPersonaMemoriesFromPreferences() {
   if (!supabase || !cloudUserId || personaMemoryTableUnavailable) return false;
   const rows = activeLegacyPreferences()
@@ -704,6 +790,7 @@ async function loadPersonaMemories({ backfillPreferences = false } = {}) {
     }
     personaMemoryTableUnavailable = false;
     renderPersonaMemoryLibrary();
+    if (backfillPreferences) void backfillPersonaMemoryEmbeddings({ limit: 32 });
     return true;
   } catch (error) {
     if (isMissingHomeMemoryIndexError(error)) {
