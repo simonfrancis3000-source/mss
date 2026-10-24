@@ -382,8 +382,13 @@ let authRecoveryInProgress = Boolean(/type=recovery/i.test(window.location.hash 
 let cloudMode = "local";
 let cloudSaveTimer = null;
 let cloudSaveChain = Promise.resolve();
+let cloudConversationUpdatedAt = null;
+let cloudConversationChannel = null;
+let cloudConversationRefreshTimer = null;
+let cloudConversationRefreshTimeout = null;
+let cloudConversationRefreshInFlight = false;
 
-function persist() {
+function persist(syncCloud = true) {
   let localSaved = false;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
@@ -397,7 +402,7 @@ function persist() {
   } catch {
     if (elements.memoryFootnote) elements.memoryFootnote.textContent = "Session memory only; browser storage is unavailable";
   }
-  scheduleCloudSave();
+  if (syncCloud) scheduleCloudSave();
   return localSaved;
 }
 
@@ -406,6 +411,13 @@ function scheduleCloudSave() {
   if (cloudSaveTimer) window.clearTimeout(cloudSaveTimer);
   cloudSaveTimer = window.setTimeout(() => {
     cloudSaveTimer = null;
+    if (isSending) {
+      cloudSaveTimer = window.setTimeout(() => {
+        cloudSaveTimer = null;
+        scheduleCloudSave();
+      }, 1000);
+      return;
+    }
     cloudSaveChain = cloudSaveChain
       .then(() => saveCloudState())
       .catch((error) => {
