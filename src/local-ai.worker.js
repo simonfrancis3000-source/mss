@@ -41,6 +41,23 @@ async function loadModel() {
     env.useBrowserCache = true;
     env.useWasmCache = true;
     env.cacheKey = "transformers-cache";
+
+    // Ask the browser to keep this origin's cache where supported. Cache API
+    // is separate from the service-worker shell cache, which must not delete it.
+    try { await self.navigator.storage?.persist?.(); } catch {}
+    let hasCachedModelFiles = false;
+    try {
+      if (self.caches && env.useBrowserCache) {
+        const cache = await self.caches.open(env.cacheKey);
+        const requests = await cache.keys();
+        hasCachedModelFiles = requests.some((request) =>
+          decodeURIComponent(request.url).includes(MODEL_ID)
+        );
+      }
+    } catch {}
+    postStatus(hasCachedModelFiles
+      ? "Loading cached local AMÏA model"
+      : "Preparing local AMÏA model download");
     if (!self.navigator?.gpu) {
       throw new Error("This device/browser does not expose WebGPU. Open SYNQ.ME in an up-to-date Chrome or Edge browser on a WebGPU-compatible device.");
     }
