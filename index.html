@@ -96,21 +96,6 @@
             <div class="panel-status"><span class="status-dot"></span><span id="conversationStatus">Ready to talk</span></div>
           </div>
 
-          <div class="conversation-intro">
-            <div class="elo-avatar" aria-hidden="true">
-              <svg viewBox="0 0 48 48" role="img">
-                <rect x="7" y="10" width="34" height="28" rx="11"></rect>
-                <path d="M13 20h22M16 28h5m6 0h5"></path>
-                <circle cx="17" cy="23" r="2"></circle>
-                <circle cx="31" cy="23" r="2"></circle>
-              </svg>
-            </div>
-            <div>
-              <div class="intro-title">Meet <span id="companionName">your companion</span> <span class="intro-badge">SYNQ.ME GUIDE</span></div>
-              <p>Tell me what matters to you. I’ll help shape your digital persona, one preference at a time.</p>
-            </div>
-          </div>
-
           <div class="chat-stage">
             <div class="chat-workspace">
               <div class="chat-messages" id="chatMessages" role="log" aria-live="polite" aria-relevant="additions text">
@@ -149,21 +134,6 @@
             <span id="voiceStatus" class="voice-status" aria-live="polite">Voice off · browser speech services</span>
             <button type="button" id="resetDemo" class="text-button">Reset demo</button>
           </div>
-            </div>
-            <aside class="robot-companion" aria-label="Choose your robot companion">
-              <div class="robot-companion-preview">
-                <div class="robot-art" id="selectedRobotArt" aria-hidden="true"></div>
-                <div class="robot-card-caption">YOUR FUTURE COMPANION</div>
-              </div>
-              <div class="robot-picker-heading">CHOOSE YOUR ROBOT</div>
-              <div class="robot-picker" id="robotPicker" role="group" aria-label="Five robot companions"></div>
-              <input class="sr-only" type="file" id="robotImageInput" accept="image/*" aria-label="Upload your own robot image" />
-              <button class="robot-upload-button" type="button" id="uploadRobotImageButton">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m-4 4 4-4 4 4M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg>
-                <span>Upload your image</span>
-              </button>
-              <p class="robot-upload-note">Your image stays in this browser.</p>
-            </aside>
           </div>
         </section>
 
@@ -278,6 +248,24 @@
           <label for="robotName">Robot name (optional)</label>
           <input id="robotName" name="robotName" maxlength="60" placeholder="Optional — you can name it later" />
           <p class="field-help">You can leave this blank. Your robot image does not need a name to use SYNQ.ME.</p>
+
+          <section class="settings-section robot-appearance-settings" aria-labelledby="robotAppearanceTitle">
+            <div class="settings-subhead" id="robotAppearanceTitle"><span>ROBOT APPEARANCE</span><span>OPTIONAL</span></div>
+            <p class="settings-section-copy">Choose the image shown beside SYNQ.ME replies, or upload your own. You can change this at any time.</p>
+            <div class="robot-settings-preview">
+              <div class="robot-art" id="selectedRobotArt" aria-hidden="true"></div>
+              <span>Selected companion image</span>
+            </div>
+            <div class="robot-picker-heading">CHOOSE AN IMAGE</div>
+            <div class="robot-picker robot-settings-picker" id="robotPicker" role="group" aria-label="Choose from five robot images"></div>
+            <input class="sr-only" type="file" id="robotImageInput" accept="image/*" aria-label="Upload your own robot image" />
+            <button class="robot-upload-button" type="button" id="uploadRobotImageButton">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m-4 4 4-4 4 4M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg>
+              <span>Upload your image</span>
+            </button>
+            <p class="robot-upload-note">Your image stays in this browser.</p>
+          </section>
+
           <label for="robotType">Robot you may want to personalise in the future</label>
           <select id="robotType" name="robotType">
             <option value="Humanoid robot" selected>Humanoid robot</option>
