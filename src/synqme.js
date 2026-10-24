@@ -3653,6 +3653,7 @@ async function sendMessage(rawText) {
   const replyNeedsRepair = (value) => !value ||
     responseRepeatsUser(value, message) ||
     responseRepeatsRecentAssistant(value) ||
+    /i['’]m sorry.{0,100}unable to respond|please send the question again|unable to assist with your request|could not respond to your request/i.test(value) ||
     /I've captured this preference for your browser-based SecondSelf|I've added it to your local digital persona|That's useful context for your SecondSelf|Let's make that preference more precise|What detail would matter most to get right|What matters most to you when getting that right|Which laundry detail matters most to you: sorting, washing and drying, or how clothes are put away|Can you walk me through how that usually happens at home/i.test(value);
   if (replyNeedsRepair(reply) && state.apiConnected && !lastAIReplyUsedFallback) {
     const retriedReply = await requestAIReply(true);
