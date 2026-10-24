@@ -3054,90 +3054,54 @@ async function speakAssistantReply(reply) {
   if (!voiceModeActive) return;
   lastAssistantReplyForSpeech = String(reply || "");
   if (elements.voiceRetrySpeechButton) elements.voiceRetrySpeechButton.hidden = true;
+
   const voiceId = kokoroVoiceForProfile();
-
-  // The browser voice answers immediately while the optional on-device model
-  // downloads. Once Kokoro is ready, later replies can use its selected voice.
-  if (voiceId && !kokoroTTSInstance) {
-    let loadPromise = kokoroLoadPromise;
-    if (!loadPromise && !kokoroLoadFailed) {
-      loadPromise = loadKokoroTTS().catch((error) => {
-        console.info("Kokoro model unavailable; using the browser voice instead.", error);
-        return null;
-      });
-    }
-    if (speechSynthesisAvailable) {
-      if (elements.voiceStatus) elements.voiceStatus.textContent = loadPromise
-        ? "Voice on · built-in speech while the voice model loads"
-        : "Voice on · browser speech";
-      speakAssistantReplyWithBrowser(reply);
-      return;
-    }
-    if (loadPromise) {
-      try { await loadPromise; } catch {}
-    }
-  }
-
-  if (!voiceModeActive) return;
-  if (!voiceId || !kokoroTTSInstance) {
+  // Use the configured character voice for the full reply. Do not speak with
+  // the browser's generic voice just because Kokoro is still downloading.
+  if (!voiceId) {
     speakAssistantReplyWithBrowser(reply);
     return;
   }
 
-  if (speechSynthesisAvailable) window.speechSynthesis.cancel();
-  currentSpeechUtterance = null;
-  {
+  try {
+    if (!kokoroTTSInstance) {
+      const loadPromise = kokoroLoadPromise || loadKokoroTTS();
+      if (elements.voiceStatus) elements.voiceStatus.textContent = "Loading the selected robot voice…";
+      updateVoiceExperience("thinking", "Preparing " + selectedCompanionDisplayName() + "’s voice…");
+      await loadPromise;
+    }
+    if (!voiceModeActive) return;
+    if (!kokoroTTSInstance) throw new Error("The selected voice model is not ready.");
+
+    if (speechSynthesisAvailable) window.speechSynthesis.cancel();
+    currentSpeechUtterance = null;
     const requestId = ++kokoroSpeechGeneration;
-    if (elements.voiceStatus) elements.voiceStatus.textContent = "Preparing Kokoro speech";
+    if (elements.voiceStatus) elements.voiceStatus.textContent = "Preparing the selected robot voice…";
     updateVoiceExperience("thinking", "Preparing " + selectedCompanionDisplayName() + "’s reply…");
 
-    // Model downloading no longer blocks replies. Keep a short safety timeout
-    // for slow on-device speech generation and fall back to browser speech.
-    let startTimeoutId = null;
-    let playbackStarted = false;
-    try {
-      const playPromise = playKokoroReply(String(reply || ""), voiceId, requestId, () => {
-        playbackStarted = true;
-        if (startTimeoutId !== null) {
-          window.clearTimeout(startTimeoutId);
-          startTimeoutId = null;
-        }
-      }).then((played) => ({ kind: "finished", played }));
-
-      const result = await Promise.race([
-        playPromise,
-        new Promise((resolve) => {
-          startTimeoutId = window.setTimeout(() => resolve({ kind: "timeout" }), 2500);
-        })
-      ]);
-      if (startTimeoutId !== null) window.clearTimeout(startTimeoutId);
-
-      if (result.kind === "timeout") {
-        // Invalidate in-flight Kokoro work so it cannot start audio after the
-        // browser fallback. Do not report a spoken reply until audio actually starts.
-        stopKokoroAudio();
-        if (elements.voiceStatus) elements.voiceStatus.textContent = "Kokoro took too long to start · switching to device speech";
-        updateVoiceExperience("thinking", "Starting your device’s built-in voice…");
-      } else if (result.played || !voiceModeActive || requestId !== kokoroSpeechGeneration) {
-        return;
-      }
-    } catch (error) {
-      if (startTimeoutId !== null) window.clearTimeout(startTimeoutId);
-      console.info("Kokoro speech unavailable; using the browser voice instead.", error);
+    // Wait for inference and playback to finish. A short startup timeout caused
+    // slower devices to abandon Kokoro and fall back to an unrelated system voice.
+    const played = await playKokoroReply(String(reply || ""), voiceId, requestId);
+    if (played || !voiceModeActive || requestId !== kokoroSpeechGeneration) return;
+    throw new Error("The selected voice could not start audio playback.");
+  } catch (error) {
+    console.info("SYNQ.ME selected voice could not play.", error);
+    if (!voiceModeActive) return;
+    assistantIsSpeaking = false;
+    if (elements.voiceStatus) elements.voiceStatus.textContent = "The selected robot voice could not start.";
+    updateVoiceExperience("listening", "I couldn’t start the selected voice. Tap retry to try it again.");
+    if (elements.voiceRetrySpeechButton) {
+      elements.voiceRetrySpeechButton.textContent = "Retry " + selectedCompanionDisplayName() + "’s voice";
+      elements.voiceRetrySpeechButton.hidden = false;
     }
-    if (playbackStarted || !voiceModeActive) {
-      // If Kokoro started speaking, it owns this reply through to completion.
-      return;
-    }
+    if (voiceModeActive) scheduleVoiceListening(500);
   }
-  if (!voiceModeActive) return;
-  speakAssistantReplyWithBrowser(reply);
 }
 
 elements.voiceRetrySpeechButton?.addEventListener("click", () => {
   if (!lastAssistantReplyForSpeech || !voiceModeActive) return;
   elements.voiceRetrySpeechButton.hidden = true;
-  speakAssistantReplyWithBrowser(lastAssistantReplyForSpeech, 1, true);
+  void speakAssistantReply(lastAssistantReplyForSpeech);
 });
 
 elements.voiceModeButton?.addEventListener("click", () => {
