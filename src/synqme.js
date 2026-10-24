@@ -376,6 +376,10 @@ let voiceRestartTimer = null;
 let assistantIsSpeaking = false;
 let currentSpeechUtterance = null;
 let lastAssistantReplyForSpeech = "";
+const KOKORO_MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
+const KOKORO_CACHE_NAME = "transformers-cache";
+const VOICE_MODEL_WAIT_NOTE = " (this can take a few moments...)";
+let kokoroModelCacheDetected = false;
 let kokoroLoadPromise = null;
 let kokoroTTSInstance = null;
 let kokoroLoadFailed = false;
@@ -2371,7 +2375,7 @@ function openVoiceExperience() {
   } else if (kokoroVoiceForProfile()) {
     if (kokoroLoadFailed) kokoroLoadFailed = false;
     if (!kokoroLoadPromise) {
-      renderVoiceModelProgress({ label: "Checking for a saved voice model…", indeterminate: true });
+      renderVoiceModelProgress({ label: "Checking for a saved voice model…" + VOICE_MODEL_WAIT_NOTE, indeterminate: true });
       void loadKokoroTTS().catch((error) => {
         console.info("Kokoro model unavailable; browser speech remains available.", error);
       });
@@ -2696,11 +2700,17 @@ function scheduleVoiceModelProgressHide(delay = 2500) {
 function handleKokoroProgress(info) {
   if (!info || typeof info !== "object") return;
   if (info.status === "initiate") {
-    renderVoiceModelProgress({ label: "Checking for a saved voice model…", indeterminate: true });
+    const label = (kokoroModelCacheDetected
+      ? "Opening saved voice model…"
+      : "Preparing voice for first use…") + VOICE_MODEL_WAIT_NOTE;
+    renderVoiceModelProgress({ label, indeterminate: true });
     return;
   }
   if (info.status === "download") {
-    renderVoiceModelProgress({ label: "Downloading voice model…", indeterminate: true });
+    const label = (kokoroModelCacheDetected
+      ? "Loading voice model and reusing saved files…"
+      : "Downloading voice model for first use…") + VOICE_MODEL_WAIT_NOTE;
+    renderVoiceModelProgress({ label, indeterminate: true });
     return;
   }
   if (info.status === "progress_total" || info.status === "progress") {
@@ -2709,12 +2719,17 @@ function handleKokoroProgress(info) {
     const progress = Number(info.progress);
     const isOverallProgress = info.status === "progress_total";
     const fileName = typeof info.file === "string" ? info.file.split("/").pop() : "";
-    let label = isOverallProgress ? "Downloading voice model…" : "Downloading " + (fileName || "voice model file") + "…";
+    const activityLabel = kokoroModelCacheDetected
+      ? "Loading saved voice model"
+      : "Downloading voice model for first use";
+    let label = (isOverallProgress
+      ? activityLabel
+      : (kokoroModelCacheDetected ? "Loading " : "Downloading ") + (fileName || "voice model file")) + "…" + VOICE_MODEL_WAIT_NOTE;
     if (Number.isFinite(loaded) && Number.isFinite(total) && total > 0) {
       const amount = formatVoiceModelBytes(loaded) + " of " + formatVoiceModelBytes(total);
-      label = isOverallProgress
-        ? "Voice model download · " + amount
-        : "Current file " + (fileName || "download") + " · " + amount;
+      label = (isOverallProgress
+        ? activityLabel + " · " + amount
+        : (kokoroModelCacheDetected ? "Saved/current file " : "Current file ") + (fileName || "model file") + " · " + amount) + VOICE_MODEL_WAIT_NOTE;
     }
     renderVoiceModelProgress({
       label,
@@ -2728,18 +2743,46 @@ async function loadKokoroTTS() {
   if (kokoroTTSInstance) return kokoroTTSInstance;
   if (!kokoroLoadPromise) {
     kokoroLoadFailed = false;
-    renderVoiceModelProgress({ label: "Checking for a saved voice model…", indeterminate: true });
+    renderVoiceModelProgress({ label: "Checking for a saved voice model…" + VOICE_MODEL_WAIT_NOTE, indeterminate: true });
     kokoroLoadPromise = (async () => {
       const [{ KokoroTTS }, { env }] = await Promise.all([
         import("kokoro-js"),
         import("@huggingface/transformers")
       ]);
-      // Keep the model files in the browser's Cache API and reuse the WASM
-      // runtime between app launches instead of fetching them again.
+      // Use the persistent Cache API explicitly for model files. Reuse the
+      // existing "transformers-cache" namespace so previously downloaded
+      // voice weights are preserved across app launches and releases.
       env.useBrowserCache = true;
       env.useWasmCache = true;
-      env.cacheKey = "transformers-cache";
-      const tts = await KokoroTTS.from_pretrained("onnx-community/Kokoro-82M-v1.0-ONNX", {
+      env.cacheKey = KOKORO_CACHE_NAME;
+      try {
+        if (typeof caches !== "undefined") {
+          const voiceCache = await caches.open(KOKORO_CACHE_NAME);
+          env.useCustomCache = true;
+          env.customCache = voiceCache;
+          env.useBrowserCache = false;
+          const requests = await voiceCache.keys();
+          kokoroModelCacheDetected = requests.some((request) =>
+            request.url.includes(KOKORO_MODEL_ID) ||
+            request.url.includes(encodeURIComponent(KOKORO_MODEL_ID))
+          );
+        }
+      } catch (cacheError) {
+        // Fall back to Transformers.js' standard browser cache if a dedicated
+        // Cache API lookup is unavailable in this browser.
+        console.info("SYNQ.ME voice cache lookup unavailable; using standard browser caching.", cacheError);
+        env.useCustomCache = false;
+        env.customCache = null;
+        env.useBrowserCache = true;
+        kokoroModelCacheDetected = false;
+      }
+      // Ask for origin storage persistence before model loading, where supported.
+      try {
+        if (navigator.storage && typeof navigator.storage.persist === "function") {
+          await navigator.storage.persist();
+        }
+      } catch {}
+      const tts = await KokoroTTS.from_pretrained(KOKORO_MODEL_ID, {
         dtype: "q8",
         device: "wasm",
         progress_callback: handleKokoroProgress
