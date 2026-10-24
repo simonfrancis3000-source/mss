@@ -1504,3 +1504,36 @@ body:not(.auth-required):not(.profile-setup-required) {
   }
   .chat-workspace > .composer-foot { order: 3; }
 }
+
+
+/* Conversation readability and a subtle visible transcript scrollbar. */
+.chat-messages {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(173, 183, 198, .55) transparent;
+}
+.chat-messages::-webkit-scrollbar {
+  width: 5px;
+}
+.chat-messages::-webkit-scrollbar-track {
+  background: transparent;
+}
+.chat-messages::-webkit-scrollbar-thumb {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: rgba(173, 183, 198, .48);
+  background-clip: padding-box;
+}
+.chat-messages::-webkit-scrollbar-thumb:hover {
+  background: rgba(139, 154, 176, .68);
+  background-clip: padding-box;
+}
+.chat-messages .message-body p {
+  font-size: 19.5px !important;
+  line-height: 1.5;
+}
+@media (max-width: 560px) {
+  .chat-messages .message-body p {
+    font-size: 18px !important;
+    line-height: 1.5;
+  }
+}
