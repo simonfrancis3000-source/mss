@@ -125,6 +125,15 @@
               <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 10h13M10 4l6 6-6 6"></path></svg>
             </button>
           </form>
+          <div class="voice-model-progress voice-model-progress-main" id="voiceModelProgressMain" hidden>
+            <div class="voice-model-progress-track" id="voiceModelProgressTrackMain" role="progressbar" aria-label="Voice model download progress" aria-valuemin="0" aria-valuemax="100">
+              <span class="voice-model-progress-fill" id="voiceModelProgressFillMain"></span>
+            </div>
+            <div class="voice-model-progress-meta">
+              <span id="voiceModelProgressLabelMain">Preparing voice in the background…</span>
+              <span id="voiceModelProgressPercentMain"></span>
+            </div>
+          </div>
           <div class="composer-foot">
             <span><span class="small-lock"></span> Your SecondSelf is saved to your account</span>
             <span id="voiceStatus" class="voice-status" aria-live="polite">Voice off · Kokoro and browser voices</span>
@@ -390,6 +399,7 @@
         </div>
         <div class="voice-companion-name" id="voiceCompanionName">Your robot</div>
         <p class="voice-experience-status" id="voiceExperienceStatus" role="status" aria-live="polite">Ready to connect</p>
+        <button type="button" class="voice-retry-speech" id="voiceRetrySpeechButton" hidden>Tap to hear Freya’s reply</button>
         <div class="voice-model-progress" id="voiceModelProgress" hidden>
           <div class="voice-model-progress-track" id="voiceModelProgressTrack" role="progressbar" aria-label="Voice model download progress" aria-valuemin="0" aria-valuemax="100">
             <span class="voice-model-progress-fill" id="voiceModelProgressFill"></span>
