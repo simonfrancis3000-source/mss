@@ -2813,7 +2813,7 @@ async function loadKokoroTTS() {
 }
 
 function scheduleKokoroBackgroundPreload(delay = 1400) {
-  if (kokoroTTSInstance || kokoroLoadPromise || kokoroLoadFailed) return;
+  if (!kokoroVoiceForProfile() || kokoroTTSInstance || kokoroLoadPromise || kokoroLoadFailed) return;
   const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
   if (connection && connection.saveData) {
     console.info("SYNQ.ME voice model preload deferred because Data Saver is enabled.");
@@ -2825,6 +2825,13 @@ function scheduleKokoroBackgroundPreload(delay = 1400) {
     if (document.visibilityState === "hidden") {
       scheduleKokoroBackgroundPreload(8000);
       return;
+    }
+    // Best-effort request to reduce the chance the browser evicts the cached
+    // 88 MB model under storage pressure. This never blocks voice loading.
+    if (navigator.storage && typeof navigator.storage.persist === "function") {
+      void navigator.storage.persist().then((persisted) => {
+        if (!persisted) console.info("Browser storage persistence was not granted; cached model files may be evicted by the browser.");
+      }).catch(() => {});
     }
     void loadKokoroTTS().catch((error) => {
       console.info("Kokoro background preload failed; built-in speech remains available.", error);
@@ -3078,7 +3085,7 @@ async function speakAssistantReply(reply) {
       const result = await Promise.race([
         playPromise,
         new Promise((resolve) => {
-          startTimeoutId = window.setTimeout(() => resolve({ kind: "timeout" }), 6000);
+          startTimeoutId = window.setTimeout(() => resolve({ kind: "timeout" }), 2500);
         })
       ]);
       if (startTimeoutId !== null) window.clearTimeout(startTimeoutId);
