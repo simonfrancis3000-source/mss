@@ -765,10 +765,7 @@ function dismissSplash() {
 dismissSplash();
 
 function profileComplete() {
-  return Boolean(
-    state.profile.ownerName && state.profile.ownerName.trim() &&
-    state.profile.robotName && state.profile.robotName.trim()
-  );
+  return Boolean(state.profile.ownerName && state.profile.ownerName.trim());
 }
 
 function updateSettingsMode() {
@@ -777,7 +774,7 @@ function updateSettingsMode() {
   if (elements.settingsTitle) elements.settingsTitle.textContent = setupRequired ? "Set up your SecondSelf" : "Settings";
   if (elements.settingsIntro) {
     elements.settingsIntro.textContent = setupRequired
-      ? "First, add your name and choose a name for your future robot. Complete these essentials before starting your conversation."
+      ? "First, add your name to start. Naming your future robot is entirely optional."
       : "Make SYNQ.ME feel like yours. Your profile, preferences and conversation history are saved to your account.";
   }
   if (elements.profileSetupNotice) elements.profileSetupNotice.hidden = !setupRequired;
@@ -789,7 +786,7 @@ function updateSettingsMode() {
   }
   if (elements.settingsSaveButton) elements.settingsSaveButton.textContent = setupRequired ? "Save profile & continue" : "Save settings";
   if (elements.ownerName) elements.ownerName.required = true;
-  if (elements.robotName) elements.robotName.required = true;
+  if (elements.robotName) elements.robotName.required = false;
 }
 
 function openSettings() {
@@ -850,12 +847,12 @@ elements.settingsForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
   const ownerName = elements.ownerName.value.trim().slice(0, 60);
   const robotName = elements.robotName.value.trim().slice(0, 60);
-  if (!ownerName || !robotName) {
+  if (!ownerName) {
     if (elements.profileSetupNotice) {
-      elements.profileSetupNotice.textContent = "Both your name and your future robot’s name are required before you can start.";
+      elements.profileSetupNotice.textContent = "Your name is required before you can start. A robot name is optional.";
       elements.profileSetupNotice.hidden = false;
     }
-    (!ownerName ? elements.ownerName : elements.robotName).focus();
+    elements.ownerName.focus();
     return;
   }
   state.profile = {
@@ -914,8 +911,7 @@ elements.openTaskFromSettings?.addEventListener("click", () => {
 });
 
 function selectedCompanionDisplayName() {
-  const option = ROBOT_OPTIONS.find((item) => item.id === robotAppearance.robotId) || ROBOT_OPTIONS[0];
-  return (state.profile.robotName || "").trim() || (robotAppearance.customImageData ? "Your Robot" : option.name);
+  return (state.profile.robotName || "").trim() || "Your companion";
 }
 
 function appendMessage(role, content) {
@@ -925,14 +921,14 @@ function appendMessage(role, content) {
   avatar.className = "message-avatar";
   avatar.textContent = role === "user"
     ? (state.profile.ownerName.trim().charAt(0).toUpperCase() || "Y")
-    : (selectedCompanionDisplayName().charAt(0).toUpperCase() || "E");
+    : "S";
   const body = document.createElement("div");
   body.className = "message-body";
   const meta = document.createElement("div");
   meta.className = "message-meta";
   meta.textContent = role === "user"
     ? (state.profile.ownerName.trim().toUpperCase() || "YOU")
-    : (selectedCompanionDisplayName().toUpperCase() + " · SYNQ.ME");
+    : "SYNQ.ME";
   const paragraph = document.createElement("p");
   paragraph.textContent = content;
   body.append(meta, paragraph);
@@ -942,9 +938,11 @@ function appendMessage(role, content) {
 
 function renderMessages() {
   elements.chatMessages.replaceChildren();
-  // Keep the newest exchange at the top; older conversation history flows downward.
-  state.messages.slice(-50).reverse().forEach((message) => appendMessage(message.role, message.content));
-  elements.chatMessages.scrollTop = 0;
+  // Render in conversation order so newer turns naturally appear at the bottom.
+  state.messages.slice(-50).forEach((message) => appendMessage(message.role, message.content));
+  window.requestAnimationFrame(() => {
+    elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
+  });
 }
 
 function classifyPreference(message) {
@@ -1417,11 +1415,9 @@ function renderAll() {
 
   const name = state.profile.ownerName.trim();
   const robotName = state.profile.robotName.trim();
-  const selectedRobotOption = ROBOT_OPTIONS.find((item) => item.id === robotAppearance.robotId) || ROBOT_OPTIONS[0];
-  const selectedRobotLabel = robotAppearance.customImageData ? "Your Robot" : selectedRobotOption.name;
-  const companionName = robotName || selectedRobotLabel;
+  const companionName = robotName || "your companion";
   if (elements.companionName) elements.companionName.textContent = companionName;
-  if (elements.messageInput) elements.messageInput.placeholder = "Tell " + companionName + " how you like things done...";
+  if (elements.messageInput) elements.messageInput.placeholder = "Tell SYNQ.ME how you like things done...";
   if (elements.mobileOwnerTitle) elements.mobileOwnerTitle.textContent = name ? name + "’s SecondSelf" : "Your SecondSelf";
   const count = state.preferences.length;
   const functionsCount = state.functions.length;
@@ -1635,15 +1631,15 @@ function saveRobotAppearance() {
 function renderRobotPicker() {
   if (!elements.robotPicker) return;
   elements.robotPicker.replaceChildren();
-  ROBOT_OPTIONS.forEach((option) => {
+  ROBOT_OPTIONS.forEach((option, index) => {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "robot-picker-item";
     button.dataset.robotId = option.id;
-    button.setAttribute("aria-label", "Choose " + option.name);
+    button.setAttribute("aria-label", "Choose robot image " + (index + 1) + ": " + option.description);
     button.setAttribute("aria-pressed", String(robotAppearance.robotId === option.id && !robotAppearance.customImageData));
-    button.title = option.name + " - " + option.description;
-    button.innerHTML = robotSvgMarkup(option.id) + '<span class="robot-picker-name">' + option.name + '</span>';
+    button.title = option.description;
+    button.innerHTML = robotSvgMarkup(option.id);
     button.addEventListener("click", () => {
       robotAppearance.robotId = option.id;
       robotAppearance.customImageData = "";
@@ -1659,7 +1655,7 @@ function renderRobotPicker() {
     custom.className = "robot-picker-item robot-picker-custom is-selected";
     custom.setAttribute("aria-label", "Your uploaded robot image");
     custom.setAttribute("aria-pressed", "true");
-    custom.innerHTML = '<span class="robot-picker-custom-preview"><img src="' + robotAppearance.customImageData + '" alt="" /></span><span class="robot-picker-name">Yours</span>';
+    custom.innerHTML = '<span class="robot-picker-custom-preview"><img src="' + robotAppearance.customImageData + '" alt="" /></span>';
     custom.addEventListener("click", () => applyRobotAppearance());
     elements.robotPicker.append(custom);
   }
