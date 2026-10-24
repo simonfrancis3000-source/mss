@@ -21,6 +21,8 @@ async function loadModel() {
     }
     postProgress({ status: "initiate", file: "Qwen3-4B model" });
     generator = await pipeline("text-generation", MODEL_ID, {
+      // Pin the model revision so upstream updates do not unexpectedly invalidate the local cache.
+      revision: "21d7994e6b4736786dce45b3eef15dd58304e4b3",
       device: "webgpu",
       dtype: "q4f16",
       progress_callback: (event) => postProgress(event)
