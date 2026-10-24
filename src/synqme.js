@@ -601,6 +601,7 @@ async function contributeSharedKnowledgeFromTurn() {
   if (
     !supabase ||
     !cloudUserId ||
+    cloudMode !== "cloud" ||
     !API_BASE ||
     state.profile.shareAnonymizedLearning !== true ||
     !state.profile.shareLearningConsentAt
