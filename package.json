@@ -7,7 +7,7 @@
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "node --test"
+    "test": "node --test && node --check server/index.js"
   },
   "devDependencies": {
     "vite": "8.3.5"
