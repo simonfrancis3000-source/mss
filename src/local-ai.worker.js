@@ -36,7 +36,7 @@ function postProgress(event) {
 }
 
 function postStatus(label) {
-  try { self.postMessage({ type: "status", label }); } catch {}
+  try { self.postMessage({ type: "status", label, modelId: activeModelId }); } catch {}
 }
 
 function describeLoadError(error) {
