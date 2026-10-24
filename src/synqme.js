@@ -3184,9 +3184,11 @@ function formatModelBytes(value) {
 
 let localAIProgressWatchdogTimer = null;
 let localAILastWorkerMessageAt = 0;
+let localAIProgressWatchdogStalls = 0;
 
 function noteLocalAIWorkerActivity() {
   localAILastWorkerMessageAt = Date.now();
+  localAIProgressWatchdogStalls = 0;
 }
 
 function stopLocalAIProgressWatchdog() {
@@ -3204,13 +3206,24 @@ function startLocalAIProgressWatchdog() {
     }
     const quietFor = Date.now() - localAILastWorkerMessageAt;
     if (quietFor >= 90000) {
+      localAIProgressWatchdogStalls += 1;
+      if (localAIProgressWatchdogStalls >= 4) {
+        const stalledWorker = localAIWorker;
+        try { stalledWorker?.terminate(); } catch {}
+        workerFailure(new Error(
+          "Local model startup stopped making progress for six minutes. The chat has been unlocked; check the connection and send your question again. Any completed model files remain cached."
+        ));
+        return;
+      }
       setLocalAIProgress({
         label: "Waiting for local model download activity",
         progress: null,
         indeterminate: true,
-        detail: "No new download progress has been reported for 90 seconds. The first download can take several minutes; check that this tab can reach huggingface.co."
+        detail: "No new model activity for 90 seconds. The first download can take several minutes; cached files are retained. If activity does not resume, SYNQ.ME will stop the stalled load so you can retry."
       });
-      noteLocalAIWorkerActivity();
+      // Start another idle interval without counting this status update as
+      // genuine worker activity. Real worker messages reset the stall counter.
+      localAILastWorkerMessageAt = Date.now();
     }
   }, 15000);
 }
