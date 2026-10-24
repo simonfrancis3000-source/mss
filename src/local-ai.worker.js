@@ -78,6 +78,10 @@ async function loadModel() {
   if (generator) return generator;
   if (loadingPromise) return loadingPromise;
   loadingPromise = (async () => {
+    // Transformers.js disables local model-file checks by default in browsers.
+    // Cached models with local_files_only=true require this flag to be enabled.
+    env.allowLocalModels = true;
+    env.allowRemoteModels = true;
     env.useBrowserCache = true;
     env.useWasmCache = true;
     env.cacheKey = "transformers-cache";
