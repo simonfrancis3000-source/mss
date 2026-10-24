@@ -505,6 +505,538 @@ async function syncHomeMemoryIndex(messages, { backfill = false } = {}) {
   }
 }
 
+function activePersonaMemories() {
+  return personaMemoryRecords.filter((item) => memoryIsActive(item));
+}
+
+function renderPersonaMemoryLibrary() {
+  if (!elements.personaMemoryList) return;
+  const active = activePersonaMemories();
+  const visible = showArchivedPersonaMemories
+    ? personaMemoryRecords
+    : active;
+  if (elements.personaMemoryCount) {
+    elements.personaMemoryCount.textContent = String(showArchivedPersonaMemories ? visible.length : active.length);
+  }
+  if (elements.toggleArchivedPersonaMemories) {
+    elements.toggleArchivedPersonaMemories.innerHTML = showArchivedPersonaMemories
+      ? 'Hide superseded and forgotten memories <span>↗</span>'
+      : 'Show superseded and forgotten memories <span>↗</span>';
+  }
+  elements.personaMemoryList.replaceChildren();
+
+  if (personaMemoryTableUnavailable) {
+    const p = document.createElement("p");
+    p.className = "persona-memory-empty";
+    p.textContent = "The memory library needs the latest Supabase migration before structured memories can be saved. Your existing chat and preference storage remain available.";
+    elements.personaMemoryList.append(p);
+    if (elements.personaMemoryStatus) elements.personaMemoryStatus.textContent = "Memory library unavailable";
+    return;
+  }
+  if (!visible.length) {
+    const p = document.createElement("p");
+    p.className = "persona-memory-empty";
+    p.textContent = active.length
+      ? "No superseded or forgotten memories to show."
+      : "No structured memories yet. As you share durable preferences, routines and boundaries, AMÏA will save them here.";
+    elements.personaMemoryList.append(p);
+    if (elements.personaMemoryStatus) elements.personaMemoryStatus.textContent = cloudUserId ? "Private to your account" : "Sign in to manage your memories";
+    return;
+  }
+
+  const labels = {
+    user_stated: "From your words",
+    user_confirmed: "Confirmed",
+    inferred_pending_confirmation: "Needs confirmation",
+    conflicting: "Needs your decision",
+    superseded: "Superseded",
+    archived: "Forgotten"
+  };
+  visible.slice(0, 100).forEach((memory) => {
+    const entry = document.createElement("article");
+    entry.className = "persona-memory-entry" +
+      (memory.status === "conflicting" ? " is-conflicting" : "") +
+      (memory.status === "inferred_pending_confirmation" ? " is-inferred" : "");
+    entry.dataset.memoryId = memory.id;
+    const meta = document.createElement("div");
+    meta.className = "persona-memory-meta";
+    const topic = document.createElement("span");
+    topic.className = "persona-memory-topic";
+    topic.textContent = String(memory.topic || "general_household").replace(/_/g, " ");
+    const status = document.createElement("span");
+    status.className = "persona-memory-state" +
+      (memory.status === "conflicting" ? " state-conflicting" : "") +
+      (memory.status === "user_confirmed" ? " state-confirmed" : "") +
+      (memory.status === "inferred_pending_confirmation" ? " state-inferred" : "");
+    status.textContent = labels[memory.status] || memory.status || "Saved";
+    meta.append(topic, status);
+    const statement = document.createElement("p");
+    statement.className = "persona-memory-statement";
+    statement.textContent = memory.statement;
+    entry.append(meta, statement);
+
+    const detail = document.createElement("details");
+    detail.className = "persona-memory-detail";
+    const summary = document.createElement("summary");
+    summary.textContent = "Evidence and conditions";
+    detail.append(summary);
+    const source = document.createElement("p");
+    source.textContent = "Saved wording: " + String(memory.source_message || memory.statement).slice(0, 420);
+    detail.append(source);
+    if (Array.isArray(memory.conditions) && memory.conditions.length) {
+      const heading = document.createElement("p");
+      heading.textContent = "Unresolved details or conditions:";
+      const list = document.createElement("ul");
+      list.className = "persona-memory-conditions";
+      memory.conditions.slice(0, 8).forEach((condition) => {
+        const li = document.createElement("li");
+        li.textContent = String(condition);
+        list.append(li);
+      });
+      detail.append(heading, list);
+    }
+    if (memory.source_timestamp) {
+      const date = document.createElement("p");
+      const parsed = Date.parse(memory.source_timestamp);
+      date.textContent = "Originated " + (Number.isFinite(parsed) ? new Date(parsed).toLocaleDateString() : "in a previous conversation");
+      detail.append(date);
+    }
+    if (memory.status === "conflicting") {
+      const warning = document.createElement("p");
+      warning.textContent = "AMÏA has kept this rule separate from another rule that may disagree. Choose the version to keep before treating either as settled.";
+      detail.append(warning);
+    }
+    entry.append(detail);
+
+    if (personaMemoryEditingId === memory.id) {
+      const editor = document.createElement("textarea");
+      editor.className = "persona-memory-editor";
+      editor.maxLength = 420;
+      editor.value = memory.statement;
+      editor.setAttribute("aria-label", "Edit saved memory");
+      entry.append(editor);
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "persona-memory-actions";
+    if (personaMemoryEditingId === memory.id) {
+      actions.append(
+        createPersonaMemoryButton("save-edit", memory.id, "Save correction", "is-primary"),
+        createPersonaMemoryButton("cancel-edit", memory.id, "Cancel")
+      );
+    } else if (memoryIsActive(memory)) {
+      actions.append(createPersonaMemoryButton("edit", memory.id, "Edit memory"));
+      if (memory.status === "conflicting") actions.append(createPersonaMemoryButton("keep", memory.id, "Keep this version", "is-primary"));
+      actions.append(createPersonaMemoryButton("forget", memory.id, "Forget", "is-danger"));
+    } else {
+      actions.append(createPersonaMemoryButton("forget-forever", memory.id, "Delete permanently", "is-danger"));
+    }
+    entry.append(actions);
+    elements.personaMemoryList.append(entry);
+  });
+  if (elements.personaMemoryStatus) {
+    const activeCount = active.length;
+    const conflictingCount = active.filter((item) => item.status === "conflicting").length;
+    elements.personaMemoryStatus.textContent = activeCount + (activeCount === 1 ? " active memory" : " active memories") +
+      (conflictingCount ? " · " + conflictingCount + (conflictingCount === 1 ? " needs" : " need") + " your decision" : "") +
+      " · private to your account";
+  }
+}
+
+let personaMemoryEditingId = null;
+
+function createPersonaMemoryButton(action, id, label, extraClass = "") {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "persona-memory-action" + (extraClass ? " " + extraClass : "");
+  button.dataset.memoryAction = action;
+  button.dataset.memoryId = id;
+  button.textContent = label;
+  return button;
+}
+
+async function queryPersonaMemoryRecords() {
+  if (!supabase || !cloudUserId || personaMemoryTableUnavailable) return [];
+  const { data, error } = await supabase
+    .from("synqme_persona_memories")
+    .select("*")
+    .eq("user_id", cloudUserId)
+    .order("updated_at", { ascending: false })
+    .limit(500);
+  if (error) throw error;
+  return Array.isArray(data) ? data : [];
+}
+
+async function backfillPersonaMemoriesFromPreferences() {
+  if (!supabase || !cloudUserId || personaMemoryTableUnavailable) return false;
+  const rows = state.preferences
+    .map((preference) => preferenceToPersonaMemory(preference, cloudUserId))
+    .filter(Boolean);
+  if (!rows.length) return true;
+  const knownSourceIds = new Set(personaMemoryRecords.map((item) => item.source_preference_id).filter(Boolean));
+  const knownStatements = new Set(personaMemoryRecords.map((item) => String(item.statement || "").trim().toLowerCase()));
+  const missing = rows.filter((row) =>
+    (!row.source_preference_id || !knownSourceIds.has(row.source_preference_id)) &&
+    !knownStatements.has(String(row.statement).trim().toLowerCase())
+  );
+  if (!missing.length) return true;
+  const { error } = await supabase
+    .from("synqme_persona_memories")
+    .upsert(missing, { onConflict: "user_id,memory_key", ignoreDuplicates: true });
+  if (error) throw error;
+  return true;
+}
+
+async function loadPersonaMemories({ backfillPreferences = false } = {}) {
+  if (!supabase || !cloudUserId || personaMemoryTableUnavailable) {
+    renderPersonaMemoryLibrary();
+    return false;
+  }
+  try {
+    personaMemoryRecords = await queryPersonaMemoryRecords();
+    if (backfillPreferences) {
+      await backfillPersonaMemoriesFromPreferences();
+      personaMemoryRecords = await queryPersonaMemoryRecords();
+    }
+    personaMemoryTableUnavailable = false;
+    renderPersonaMemoryLibrary();
+    return true;
+  } catch (error) {
+    if (isMissingHomeMemoryIndexError(error)) {
+      personaMemoryTableUnavailable = true;
+      if (!personaMemoryWarningShown) {
+        console.info("SYNQ.ME structured persona memory table is unavailable; current preferences remain available.", error);
+        personaMemoryWarningShown = true;
+      }
+    } else {
+      if (elements.personaMemoryStatus) elements.personaMemoryStatus.textContent = "Could not refresh memories. Existing saved memories remain available in this session.";
+      console.info("SYNQ.ME could not load structured persona memories.", error);
+    }
+    renderPersonaMemoryLibrary();
+    return false;
+  }
+}
+
+async function getRelevantPersonaMemories(query) {
+  if (!query || personaMemoryTableUnavailable) return [];
+  let candidates = personaMemoryRecords;
+  if (supabase && cloudUserId && !personaMemoryTableUnavailable) {
+    const keys = buildPersonaMemorySearchKeys(query, [], deriveMemoryTopic(query));
+    if (keys.length) {
+      try {
+        const { data, error } = await supabase
+          .from("synqme_persona_memories")
+          .select("*")
+          .eq("user_id", cloudUserId)
+          .overlaps("search_keys", keys)
+          .in("status", ["user_stated", "user_confirmed", "inferred_pending_confirmation", "conflicting"])
+          .order("updated_at", { ascending: false })
+          .limit(60);
+        if (error) throw error;
+        if (Array.isArray(data) && data.length) {
+          const byId = new Map([...personaMemoryRecords, ...data].map((item) => [item.id || item.memory_key, item]));
+          candidates = [...byId.values()];
+        }
+      } catch (error) {
+        if (isMissingHomeMemoryIndexError(error)) personaMemoryTableUnavailable = true;
+        if (!personaMemoryWarningShown) {
+          console.info("SYNQ.ME structured memory retrieval fell back to the local ranked set.", error);
+          personaMemoryWarningShown = true;
+        }
+      }
+    }
+  }
+  return rankPersonaMemories(query, candidates, { limit: 8 });
+}
+
+function findLinkedPreference(candidate, userMessage) {
+  const possible = state.preferences.filter((item) => item.sourceMessage === userMessage);
+  if (!possible.length) return null;
+  const candidateWords = new Set(buildPersonaMemorySearchKeys(candidate.statement).filter((key) => key.startsWith("word:")));
+  let best = null;
+  let bestScore = 0;
+  for (const preference of possible) {
+    const preferenceWords = new Set(buildPersonaMemorySearchKeys(preference.text).filter((key) => key.startsWith("word:")));
+    if (!candidateWords.size || !preferenceWords.size) continue;
+    const overlap = [...candidateWords].filter((key) => preferenceWords.has(key)).length;
+    const score = overlap / Math.max(1, Math.min(candidateWords.size, preferenceWords.size));
+    if (score > bestScore) {
+      best = preference;
+      bestScore = score;
+    }
+  }
+  return bestScore >= 0.2 ? best : null;
+}
+
+async function updatePersonaMemoryRow(id, patch) {
+  if (!supabase || !cloudUserId || personaMemoryTableUnavailable) throw new Error("Your saved memory library is not available.");
+  const { data, error } = await supabase
+    .from("synqme_persona_memories")
+    .update({ ...patch, user_id: cloudUserId })
+    .eq("user_id", cloudUserId)
+    .eq("id", id)
+    .select("*")
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error("That memory could not be updated. Refresh the library and try again.");
+  personaMemoryRecords = personaMemoryRecords.map((item) => item.id === id ? data : item);
+  renderPersonaMemoryLibrary();
+  return data;
+}
+
+async function processStructuredMemoryTurn(userMessage, userTimestamp, shouldExtract = false) {
+  if (!shouldExtract || !API_BASE || !supabase || !cloudUserId || personaMemoryTableUnavailable || personaMemoryWriteInFlight) return;
+  personaMemoryWriteInFlight = true;
+  if (elements.personaMemoryStatus) elements.personaMemoryStatus.textContent = "Updating your personal memory…";
+  try {
+    const recent = state.messages.slice(0, -1).slice(-8).map((item) => ({ role: item.role, content: item.content }));
+    if (!recent.length || recent[recent.length - 1].role !== "user") return;
+    const existingMemories = activePersonaMemories().slice(0, 20).map((item) => ({
+      memory_key: item.memory_key,
+      topic: item.topic,
+      kind: item.kind,
+      scope_key: item.scope_key,
+      statement: item.statement,
+      status: item.status,
+      conditions: item.conditions
+    }));
+    const response = await fetch(API_BASE + "/api/memory/extract", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: recent, existingMemories })
+    });
+    let data = {};
+    try { data = await response.json(); } catch {}
+    if (!response.ok || String(data.provider || "").toLowerCase() !== "groq") {
+      throw new Error(String(data.error || "Groq memory extraction did not complete."));
+    }
+    const candidates = (Array.isArray(data.memories) ? data.memories : [])
+      .map(cleanPersonaMemoryCandidate).filter(Boolean).slice(0, 5);
+    for (const candidate of candidates) {
+      const target = personaMemoryRecords.find((item) =>
+        (candidate.target_memory_key && item.memory_key === candidate.target_memory_key) ||
+        (candidate.scope_key && item.scope_key === candidate.scope_key && memoryIsActive(item))
+      );
+      if (candidate.relation === "no_change") continue;
+      if (candidate.relation === "confirms" && target) {
+        await updatePersonaMemoryRow(target.id, {
+          status: "user_confirmed",
+          confidence: Math.max(Number(target.confidence) || 0, candidate.confidence),
+          reviewed_at: new Date().toISOString(),
+          relation: "confirms"
+        });
+        continue;
+      }
+      if (candidate.relation === "withdraws") {
+        if (target) await updatePersonaMemoryRow(target.id, {
+          status: "archived",
+          archived_at: new Date().toISOString(),
+          reviewed_at: new Date().toISOString(),
+          relation: "withdraws"
+        });
+        continue;
+      }
+      let status = candidate.status;
+      let supersedesId = null;
+      if (target && candidate.relation === "updates") {
+        supersedesId = target.id;
+        await updatePersonaMemoryRow(target.id, {
+          status: "superseded",
+          archived_at: new Date().toISOString(),
+          reviewed_at: new Date().toISOString(),
+          relation: "updates"
+        });
+        status = "user_stated";
+      } else if (target && candidate.relation === "conflicts") {
+        await updatePersonaMemoryRow(target.id, {
+          status: "conflicting",
+          conflict_group: candidate.scope_key,
+          relation: "conflicts"
+        });
+        status = "conflicting";
+      }
+      const linkedPreference = findLinkedPreference(candidate, userMessage);
+      const memoryKey = linkedPreference
+        ? "preference-" + String(linkedPreference.id)
+        : makePersonaMemoryKey(candidate.statement);
+      const sameRecord = personaMemoryRecords.find((item) =>
+        item.memory_key === memoryKey ||
+        (item.statement?.trim().toLowerCase() === candidate.statement.trim().toLowerCase() && item.scope_key === candidate.scope_key && memoryIsActive(item))
+      );
+      const row = {
+        user_id: cloudUserId,
+        memory_key: sameRecord?.memory_key || memoryKey,
+        source_preference_id: linkedPreference ? String(linkedPreference.id) : sameRecord?.source_preference_id || null,
+        topic: candidate.topic,
+        kind: candidate.kind,
+        scope_key: candidate.scope_key,
+        statement: candidate.statement,
+        status,
+        relation: candidate.relation,
+        confidence: candidate.confidence,
+        conditions: candidate.conditions,
+        attributes: candidate.attributes,
+        search_terms: candidate.search_terms,
+        search_keys: buildPersonaMemorySearchKeys(candidate.statement, candidate.search_terms, candidate.topic),
+        source_message: candidate.statement,
+        source_timestamp: userTimestamp || new Date().toISOString(),
+        source_conversation_key: "main",
+        conflict_group: status === "conflicting" ? candidate.scope_key : null,
+        supersedes_id: supersedesId,
+        archived_at: null,
+        reviewed_at: status === "user_confirmed" ? new Date().toISOString() : null
+      };
+      const { error } = await supabase
+        .from("synqme_persona_memories")
+        .upsert(row, { onConflict: "user_id,memory_key" });
+      if (error) throw error;
+    }
+
+    await backfillPersonaMemoriesFromPreferences();
+    personaMemoryRecords = await queryPersonaMemoryRecords();
+    renderPersonaMemoryLibrary();
+    if (candidates.length && elements.personaMemoryStatus) {
+      elements.personaMemoryStatus.textContent = "Saved " + candidates.length + (candidates.length === 1 ? " memory." : " memories.") + " You can edit or forget them here.";
+    }
+  } catch (error) {
+    console.info("SYNQ.ME could not update structured persona memory this turn.", error);
+    if (elements.personaMemoryStatus) elements.personaMemoryStatus.textContent = "Memory update did not complete. Your conversation was saved and can be retried on a later turn.";
+  } finally {
+    personaMemoryWriteInFlight = false;
+  }
+}
+
+async function handlePersonaMemoryAction(event) {
+  const button = event.target.closest("button[data-memory-action]");
+  if (!button || !elements.personaMemoryList) return;
+  const action = button.dataset.memoryAction;
+  const id = button.dataset.memoryId;
+  const memory = personaMemoryRecords.find((item) => item.id === id);
+  if (!memory) return;
+
+  if (action === "edit") {
+    personaMemoryEditingId = id;
+    renderPersonaMemoryLibrary();
+    elements.personaMemoryList.querySelector("textarea.persona-memory-editor")?.focus();
+    return;
+  }
+  if (action === "cancel-edit") {
+    personaMemoryEditingId = null;
+    renderPersonaMemoryLibrary();
+    return;
+  }
+  if (action === "save-edit") {
+    const editor = elements.personaMemoryList.querySelector('[data-memory-id="' + CSS.escape(id) + '"] textarea.persona-memory-editor');
+    const statement = String(editor?.value || "").trim().replace(/\s+/g, " ").slice(0, 420);
+    if (statement.length < 8) {
+      if (elements.personaMemoryStatus) elements.personaMemoryStatus.textContent = "Please enter a little more detail before saving.";
+      return;
+    }
+    button.disabled = true;
+    try {
+      const topic = deriveMemoryTopic(statement);
+      const kind = deriveMemoryKind(statement);
+      await updatePersonaMemoryRow(id, {
+        statement,
+        topic,
+        kind,
+        scope_key: deriveMemoryScopeKey(statement, topic, kind),
+        search_terms: [],
+        search_keys: buildPersonaMemorySearchKeys(statement, [], topic),
+        status: memory.status === "conflicting" ? "conflicting" : "user_confirmed",
+        confidence: memory.status === "conflicting" ? memory.confidence : 0.98,
+        reviewed_at: new Date().toISOString()
+      });
+      if (memory.source_preference_id) {
+        state.preferences = state.preferences.map((item) => String(item.id) === String(memory.source_preference_id)
+          ? { ...item, text: statement, normalised: statement.toLowerCase(), status: "user_confirmed" }
+          : item);
+        persist();
+        void flushCloudSave();
+      }
+      personaMemoryEditingId = null;
+      renderAll();
+      if (elements.personaMemoryStatus) elements.personaMemoryStatus.textContent = "Memory updated and confirmed.";
+    } catch (error) {
+      if (elements.personaMemoryStatus) elements.personaMemoryStatus.textContent = String(error?.message || "Could not update that memory.");
+    } finally {
+      button.disabled = false;
+    }
+    return;
+  }
+  if (action === "keep") {
+    button.disabled = true;
+    try {
+      const group = memory.conflict_group || memory.scope_key;
+      const siblingIds = personaMemoryRecords.filter((item) => item.id !== id &&
+        item.status === "conflicting" && (item.conflict_group === group || item.scope_key === memory.scope_key)).map((item) => item.id);
+      for (const siblingId of siblingIds) {
+        await updatePersonaMemoryRow(siblingId, {
+          status: "superseded",
+          archived_at: new Date().toISOString(),
+          reviewed_at: new Date().toISOString()
+        });
+      }
+      await updatePersonaMemoryRow(id, {
+        status: "user_confirmed",
+        relation: "confirms",
+        confidence: 0.98,
+        conflict_group: null,
+        reviewed_at: new Date().toISOString(),
+        archived_at: null
+      });
+      if (elements.personaMemoryStatus) elements.personaMemoryStatus.textContent = "Preference confirmed. Conflicting alternatives have been moved to the archived section.";
+    } catch (error) {
+      if (elements.personaMemoryStatus) elements.personaMemoryStatus.textContent = String(error?.message || "Could not resolve that conflict.");
+    } finally {
+      button.disabled = false;
+    }
+    return;
+  }
+  if (action === "forget") {
+    if (!window.confirm("Forget this saved memory? It will stop being used as a structured preference. The original conversation remains in your chat history.")) return;
+    button.disabled = true;
+    try {
+      await updatePersonaMemoryRow(id, {
+        status: "archived",
+        archived_at: new Date().toISOString(),
+        reviewed_at: new Date().toISOString()
+      });
+      if (memory.source_preference_id) {
+        state.preferences = state.preferences.filter((item) => String(item.id) !== String(memory.source_preference_id));
+        const { error } = await supabase.from("synqme_preferences").delete()
+          .eq("user_id", cloudUserId).eq("id", memory.source_preference_id);
+        if (error) throw error;
+        persist();
+        void flushCloudSave();
+      }
+      renderAll();
+      if (elements.personaMemoryStatus) elements.personaMemoryStatus.textContent = "Forgotten. This memory is excluded from structured memory retrieval; the original chat remains in history.";
+    } catch (error) {
+      if (elements.personaMemoryStatus) elements.personaMemoryStatus.textContent = String(error?.message || "Could not forget that memory.");
+    } finally {
+      button.disabled = false;
+    }
+    return;
+  }
+  if (action === "forget-forever") {
+    if (!window.confirm("Permanently delete this archived memory record? This cannot be undone.")) return;
+    button.disabled = true;
+    try {
+      const { error } = await supabase.from("synqme_persona_memories").delete()
+        .eq("user_id", cloudUserId).eq("id", id);
+      if (error) throw error;
+      personaMemoryRecords = personaMemoryRecords.filter((item) => item.id !== id);
+      renderPersonaMemoryLibrary();
+      if (elements.personaMemoryStatus) elements.personaMemoryStatus.textContent = "Archived memory record deleted.";
+    } catch (error) {
+      if (elements.personaMemoryStatus) elements.personaMemoryStatus.textContent = String(error?.message || "Could not delete that record.");
+    } finally {
+      button.disabled = false;
+    }
+  }
+}
+
 async function getHomeMemoryReferences(query) {
   const historicalMessages = state.messages.slice(0, -1);
   const localMatches = rankHomeMemoryCandidates(query, historicalMessages, { limit: 6 });
