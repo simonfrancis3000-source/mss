@@ -1460,3 +1460,36 @@ h1 span { color: #1677f9; }
     font-size: 10px;
   }
 }
+
+/* Ensure the document can scroll to the chat composer in normal app mode. */
+body:not(.auth-required):not(.profile-setup-required) {
+  overflow-y: auto;
+}
+@media (max-width: 800px) {
+  .conversation-panel {
+    overflow: visible;
+  }
+  .chat-workspace {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .chat-workspace > .chat-messages {
+    order: 0;
+    flex: 0 1 auto;
+    height: auto;
+    min-height: 140px;
+    max-height: min(42svh, 320px);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .chat-workspace > .suggestions-wrap { order: 1; }
+  .chat-workspace > .chat-composer {
+    order: 2;
+    position: sticky;
+    bottom: max(8px, env(safe-area-inset-bottom));
+    z-index: 25;
+    flex: 0 0 auto;
+  }
+  .chat-workspace > .composer-foot { order: 3; }
+}
