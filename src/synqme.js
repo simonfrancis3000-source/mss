@@ -530,13 +530,32 @@ async function saveCloudState() {
     if (deleteError) throw deleteError;
   }
 
+  // Read the latest transcript before writing: two browsers can otherwise
+  // replace the same row with stale, device-local snapshots.
+  const { data: existingConversation, error: conversationReadError } = await supabase
+    .from("synqme_conversations")
+    .select("messages,pending_clarification,updated_at")
+    .eq("user_id", cloudUserId)
+    .maybeSingle();
+  if (conversationReadError) throw conversationReadError;
+
+  const cloudMessages = Array.isArray(existingConversation?.messages) ? existingConversation.messages : [];
+  const mergedMessages = mergeConversationMessages(state.messages, cloudMessages);
+  const localMessagesBeforeMerge = JSON.stringify(state.messages);
+  if (JSON.stringify(mergedMessages) !== localMessagesBeforeMerge && !isSending) {
+    state.messages = mergedMessages;
+    persist(false);
+    renderMessages();
+  }
+  const conversationUpdatedAt = new Date().toISOString();
   const { error: conversationError } = await supabase.from("synqme_conversations").upsert({
     user_id: cloudUserId,
-    messages: state.messages.slice(-5000),
-    pending_clarification: state.pendingClarification || null,
-    updated_at: new Date().toISOString()
+    messages: mergedMessages,
+    pending_clarification: state.pendingClarification || existingConversation?.pending_clarification || null,
+    updated_at: conversationUpdatedAt
   }, { onConflict: "user_id" });
   if (conversationError) throw conversationError;
+  cloudConversationUpdatedAt = conversationUpdatedAt;
 
   cloudMode = "cloud";
   renderPreferences();
@@ -781,7 +800,7 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   const [profileResult, preferencesResult, conversationResult] = await Promise.all([
     supabase.from("synqme_profiles").select("*").eq("user_id", cloudUserId).maybeSingle(),
     supabase.from("synqme_preferences").select("id,category,preference_text,normalised_text,preference_status,explicit_facets,unresolved_fields,source_message,created_at,schema_version,clarifications").eq("user_id", cloudUserId).order("created_at", { ascending: false }).limit(24),
-    supabase.from("synqme_conversations").select("messages,pending_clarification").eq("user_id", cloudUserId).maybeSingle()
+    supabase.from("synqme_conversations").select("messages,pending_clarification,updated_at").eq("user_id", cloudUserId).maybeSingle()
   ]);
   if (profileResult.error) throw profileResult.error;
   if (preferencesResult.error) throw preferencesResult.error;
@@ -801,6 +820,7 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
     clarifications: item.clarifications
   }));
   const remoteConversation = conversationResult.data;
+  cloudConversationUpdatedAt = remoteConversation?.updated_at || null;
   state = draftState || initialState();
 
   if (remoteProfile) {
