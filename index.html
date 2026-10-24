@@ -386,14 +386,23 @@
       <div class="voice-experience-content">
         <div class="voice-eyebrow">A MORE PERSONAL CONVERSATION</div>
         <h2 id="voiceExperienceTitle">Talk to your SecondSelf.</h2>
-        <p class="voice-intro-copy">Speak naturally. Your companion is listening.</p>
+        <p class="voice-intro-copy" id="voiceIntroCopy">Speak naturally. Your robot is listening.</p>
         <div class="voice-orb" id="voiceOrb" data-state="idle" aria-hidden="true">
           <span class="voice-orb-ring voice-orb-ring-one"></span>
           <span class="voice-orb-ring voice-orb-ring-two"></span>
-          <span class="voice-orb-core"><img src="https://mysecondself.app/wp-content/uploads/2026/10/MySecondSelf-Dual-Head-Logo.png" alt="" /></span>
+          <span class="voice-orb-core" id="voiceOrbCore"></span>
         </div>
-        <div class="voice-companion-name" id="voiceCompanionName">Your companion</div>
+        <div class="voice-companion-name" id="voiceCompanionName">Your robot</div>
         <p class="voice-experience-status" id="voiceExperienceStatus" role="status" aria-live="polite">Ready to connect</p>
+        <div class="voice-model-progress" id="voiceModelProgress" hidden>
+          <div class="voice-model-progress-track" id="voiceModelProgressTrack" role="progressbar" aria-label="Voice model download progress" aria-valuemin="0" aria-valuemax="100">
+            <span class="voice-model-progress-fill" id="voiceModelProgressFill"></span>
+          </div>
+          <div class="voice-model-progress-meta">
+            <span id="voiceModelProgressLabel">Checking for a saved voice model…</span>
+            <span id="voiceModelProgressPercent"></span>
+          </div>
+        </div>
         <div class="voice-state-caption">LISTENING <span></span> THINKING <span></span> SPEAKING</div>
         <div class="voice-controls">
           <button class="voice-control-secondary" type="button" id="voiceMuteControlButton" aria-label="Mute microphone">
