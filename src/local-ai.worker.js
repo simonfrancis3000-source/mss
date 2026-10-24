@@ -82,7 +82,7 @@ async function loadModel() {
     if (!adapter) {
       throw new Error("WebGPU is present, but no compatible GPU adapter is available. Try a current Chrome or Edge browser on a supported device.");
     }
-    postStatus("Loading local AMÏA model");
+    postStatus(modelCacheDetected ? "Loading cached local AMÏA model" : "Loading local AMÏA model");
     postProgress({ status: "initiate", file: "Qwen2.5 1.5B model" });
     generator = await pipeline("text-generation", MODEL_ID, {
       // Use the published Transformers.js-compatible Qwen2.5 1.5B model and q4f16 WebGPU weights.
