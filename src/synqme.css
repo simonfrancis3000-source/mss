@@ -1737,3 +1737,17 @@ body:not(.auth-required):not(.profile-setup-required) {
     font-size: 9px;
   }
 }
+
+/* Small app build label at the very bottom, including compact/mobile layouts. */
+.app-version {
+  margin-top: 7px;
+  color: #727987;
+  font-family: system-ui, sans-serif;
+  font-size: 8px;
+  font-weight: 400;
+  letter-spacing: .45px;
+  line-height: 1.4;
+  opacity: .72;
+  text-align: right;
+  user-select: none;
+}
