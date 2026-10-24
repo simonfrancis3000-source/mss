@@ -2386,7 +2386,7 @@ function renderVoiceModelProgress({ visible = true, label = "", progress = null,
   const fill = elements.voiceModelProgressFill;
   const hasProgress = Number.isFinite(progress);
   if (track) {
-    track.classList.toggle("is-indeterminate", Boolean(indeterminate || !hasProgress));
+    track.classList.toggle("is-indeterminate", Boolean(indeterminate));
     if (hasProgress) {
       const value = Math.max(0, Math.min(100, Number(progress)));
       track.setAttribute("aria-valuenow", String(Math.round(value)));
@@ -2422,11 +2422,14 @@ function handleKokoroProgress(info) {
     const loaded = Number(info.loaded);
     const total = Number(info.total);
     const progress = Number(info.progress);
-    let label = "Downloading voice model…";
+    const isOverallProgress = info.status === "progress_total";
+    const fileName = typeof info.file === "string" ? info.file.split("/").pop() : "";
+    let label = isOverallProgress ? "Downloading voice model…" : "Downloading " + (fileName || "voice model file") + "…";
     if (Number.isFinite(loaded) && Number.isFinite(total) && total > 0) {
-      label = "Downloading voice model · " + formatVoiceModelBytes(loaded) + " of " + formatVoiceModelBytes(total);
-    } else if (info.file) {
-      label = "Loading " + String(info.file).split("/").pop() + "…";
+      const amount = formatVoiceModelBytes(loaded) + " of " + formatVoiceModelBytes(total);
+      label = isOverallProgress
+        ? "Voice model download · " + amount
+        : "Current file " + (fileName || "download") + " · " + amount;
     }
     renderVoiceModelProgress({
       label,
