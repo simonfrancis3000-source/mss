@@ -1,13 +1,12 @@
 import { env, pipeline, ModelRegistry } from "@huggingface/transformers";
 
-const DESKTOP_MODEL_ID = "onnx-community/Qwen2.5-1.5B-Instruct";
 const COMPACT_MODEL_ID = "onnx-community/SmolLM2-360M-Instruct-ONNX";
 const IS_MOBILE_DEVICE = (() => {
   const ua = String(self.navigator?.userAgent || "");
   const iPadDesktopUA = /Macintosh/i.test(ua) && Number(self.navigator?.maxTouchPoints || 0) > 1;
   return /Android|iPhone|iPad|iPod|Mobile/i.test(ua) || iPadDesktopUA;
 })();
-let forceCpuBackend = IS_MOBILE_DEVICE;
+let forceCpuBackend = true;
 let activeBackend = "";
 let activeModelId = "";
 let generator = null;
@@ -57,24 +56,6 @@ function describeLoadError(error) {
   return fallback && fallback !== "[object Object]"
     ? fallback
     : "The model loader failed without a detailed error. Check browser storage, available memory, and WebGPU support, then refresh and retry.";
-}
-
-async function removeCachedModelFiles(modelId) {
-  try {
-    if (!self.caches) return;
-    const cache = await self.caches.open(env.cacheKey);
-    const requests = await cache.keys();
-    const encodedModelId = encodeURIComponent(modelId);
-    await Promise.all(requests.map((request) => {
-      const url = request.url;
-      if (url.includes(modelId) || url.includes(encodedModelId)) {
-        return cache.delete(request);
-      }
-      return Promise.resolve(false);
-    }));
-  } catch (error) {
-    console.warn("Could not remove obsolete model files from browser cache.", error);
-  }
 }
 
 
@@ -148,7 +129,7 @@ async function loadModel() {
     };
 
     let gpuError = null;
-    if (!IS_MOBILE_DEVICE && !forceCpuBackend && self.navigator?.gpu) {
+    if (!forceCpuBackend && !IS_MOBILE_DEVICE && self.navigator?.gpu) {
       try {
         const adapter = await self.navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
         if (!adapter) throw new Error("No compatible WebGPU adapter was available.");
@@ -252,8 +233,8 @@ self.addEventListener("message", async ({ data }) => {
   generationBusy = true;
   try {
     const model = await loadModel();
-    const historyLimit = IS_MOBILE_DEVICE ? 4 : 8;
-    const replyTokenLimit = IS_MOBILE_DEVICE ? 48 : 96;
+    const historyLimit = IS_MOBILE_DEVICE ? 4 : 6;
+    const replyTokenLimit = IS_MOBILE_DEVICE ? 40 : 64;
     const messages = Array.isArray(data.messages) ? data.messages.filter((item) => item && (item.role === "assistant" || item.role === "user") && typeof item.content === "string").slice(-historyLimit) : [];
     const preferences = Array.isArray(data.preferences) ? data.preferences.slice(IS_MOBILE_DEVICE ? -5 : -10) : [];
     postStatus(activeBackend === "webgpu"
