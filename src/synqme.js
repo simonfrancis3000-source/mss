@@ -148,12 +148,6 @@ const elements = {
   providerLabel: $("#providerLabel"),
   preferredLanguage: $("#preferredLanguage"),
   conversationStatus: $("#conversationStatus"),
-  localAIProgress: $("#localAIProgress"),
-  localAIProgressLabel: $("#localAIProgressLabel"),
-  localAIProgressDetail: $("#localAIProgressDetail"),
-  localAIProgressFill: $("#localAIProgressFill"),
-  localAIProgressTrack: $("#localAIProgressTrack"),
-  localAIProgressPercent: $("#localAIProgressPercent"),
   chatTranscriptShell: $("#chatTranscriptShell"),
   chatMessages: $("#chatMessages"),
   chatScrollbarTrack: $("#chatScrollbarTrack"),
@@ -3130,38 +3124,6 @@ function responseRepeatsUser(reply, userMessage) {
   const replyWords = new Set(replyText.split(" "));
   const overlap = words.filter((word) => replyWords.has(word)).length / words.length;
   return overlap >= 0.78;
-}
-
-function setLocalAIProgress({ label = "", progress = null, visible = true, indeterminate = false, detail = "" } = {}) {
-  if (!elements.localAIProgress) return;
-  const isTerminalLabel = /ready|failed|error|unavailable|not supported|could not/i.test(label);
-  const displayLabel = label && !isTerminalLabel && !label.includes("(this can take a few moments...)")
-    ? label + " (this can take a few moments...)"
-    : label;
-  elements.localAIProgress.hidden = !visible;
-  elements.localAIProgress.classList.toggle("is-error", /error|failed|unavailable|not supported|could not/i.test(displayLabel));
-  if (elements.localAIProgressLabel) elements.localAIProgressLabel.textContent = displayLabel;
-  if (elements.localAIProgressDetail) {
-    elements.localAIProgressDetail.textContent = detail;
-    elements.localAIProgressDetail.hidden = !detail;
-  }
-  const knownProgress = Number.isFinite(progress);
-  const progressValue = knownProgress ? Math.max(0, Math.min(100, progress)) : null;
-  if (elements.localAIProgressFill) {
-    elements.localAIProgressFill.style.width = knownProgress ? progressValue + "%" : (indeterminate ? "28%" : "0%");
-    elements.localAIProgressFill.classList.toggle("is-indeterminate", Boolean(indeterminate && !knownProgress));
-  }
-  if (elements.localAIProgressPercent) {
-    elements.localAIProgressPercent.textContent = knownProgress ? Math.round(progressValue) + "%" : "";
-    elements.localAIProgressPercent.hidden = !knownProgress;
-  }
-  if (elements.localAIProgressTrack) {
-    if (knownProgress) elements.localAIProgressTrack.setAttribute("aria-valuenow", String(Math.round(progressValue)));
-    else elements.localAIProgressTrack.removeAttribute("aria-valuenow");
-    if (displayLabel) elements.localAIProgressTrack.setAttribute("aria-valuetext", [displayLabel, detail].filter(Boolean).join(". "));
-    else elements.localAIProgressTrack.removeAttribute("aria-valuetext");
-  }
-  if (!isSending && elements.conversationStatus && displayLabel) elements.conversationStatus.textContent = displayLabel;
 }
 
 async function requestAIReply(repairMode = false) {
