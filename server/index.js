@@ -1,4 +1,5 @@
 import http from "node:http";
+import { buildHomePersonaSystemPrompt } from "../src/home-persona-reasoning.js";
 
 const PORT = Number.parseInt(process.env.PORT || "10000", 10);
 // SYNQ.ME uses Groq exclusively. No other AI provider is supported.
@@ -567,6 +568,16 @@ const app = http.createServer(async (request, response) => {
       repairMode ? "RETRY: your previous draft was rejected as generic or repetitive. Do not use any canned fallback. Read the latest user message as part of the full conversation and respond to the detail they actually introduced. If they mention getting up at 7 and going to the kitchen for coffee after a question about tidying, recognise they have introduced their morning routine; do not ask them to walk through it generically or repeat the tidying question. Make one natural connection to their stated routine and ask only a useful next question." : ""
     ].join(" ");
 
+    const homePersonaSystemPrompt = buildHomePersonaSystemPrompt({
+      profile,
+      preferences,
+      domesticFunctions,
+      recentMessages: messages,
+      pendingClarification: body?.pendingClarification,
+      repairMode
+    });
+    const combinedSystemPrompt = systemPrompt + "\n\n" + homePersonaSystemPrompt;
+
     const upstream = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -575,7 +586,7 @@ const app = http.createServer(async (request, response) => {
       },
       body: JSON.stringify({
         model: MODEL,
-        messages: [{ role: "system", content: systemPrompt }, ...messages],
+        messages: [{ role: "system", content: combinedSystemPrompt }, ...messages],
         temperature: 0.72,
         reasoning_effort: "low",
         include_reasoning: false,
