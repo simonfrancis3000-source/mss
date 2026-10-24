@@ -4,7 +4,7 @@ const MODEL_ID = "onnx-community/Qwen2.5-1.5B-Instruct";
 let generator = null;
 let loadingPromise = null;
 let generationBusy = false;
-let modelCacheDetected = false;\nlet activeBackend = "webgpu";
+let modelCacheDetected = false;
 
 function postProgress(event) {
   const info = event && typeof event === "object" ? event : {};
