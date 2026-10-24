@@ -228,6 +228,7 @@ const elements = {
   robotName: $("#robotName"),
   robotType: $("#robotType"),
   confirmActions: $("#confirmActions"),
+  shareAnonymizedLearning: $("#shareAnonymizedLearning"),
   functionGrid: $("#functionGrid"),
   functionCount: $("#functionCount"),
   toggleAllFunctions: $("#toggleAllFunctions"),
@@ -260,7 +261,16 @@ const elements = {
 };
 
 function defaultProfile() {
-  return { ownerName: "", robotName: "", robotType: "Humanoid robot", robotVoice: "female", preferredLanguage: "en", confirmActions: false };
+  return {
+    ownerName: "",
+    robotName: "",
+    robotType: "Humanoid robot",
+    robotVoice: "female",
+    preferredLanguage: "en",
+    confirmActions: false,
+    shareAnonymizedLearning: false,
+    shareLearningConsentAt: null
+  };
 }
 
 function initialState() {
@@ -628,6 +638,8 @@ async function saveCloudState() {
     future_robot_voice: snapshot.profile.robotVoice || "female",
     preferred_language: snapshot.profile.preferredLanguage || "en",
     confirm_actions: snapshot.profile.confirmActions,
+    share_anonymized_learning: snapshot.profile.shareAnonymizedLearning === true,
+    share_learning_consent_at: snapshot.profile.shareLearningConsentAt || null,
     domestic_functions: snapshot.functions,
     updated_at: new Date().toISOString()
   };
@@ -800,7 +812,9 @@ async function refreshCloudConversation() {
         robotType: remoteProfile.future_robot_type || "Humanoid robot",
         robotVoice: remoteProfile.future_robot_voice || "female",
         preferredLanguage: remoteProfile.preferred_language || "en",
-        confirmActions: Boolean(remoteProfile.confirm_actions)
+        confirmActions: Boolean(remoteProfile.confirm_actions),
+        shareAnonymizedLearning: Boolean(remoteProfile.share_anonymized_learning),
+        shareLearningConsentAt: remoteProfile.share_learning_consent_at || null
       };
       languageChanged = nextProfile.preferredLanguage !== state.profile.preferredLanguage;
       profileChanged = profileChanged || JSON.stringify(nextProfile) !== JSON.stringify(state.profile);
@@ -1208,7 +1222,9 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
       robotType: remoteProfile.future_robot_type || fallbackProfile.robotType || "Humanoid robot",
       robotVoice: remoteProfile.future_robot_voice || fallbackProfile.robotVoice || "female",
       preferredLanguage: remoteProfile.preferred_language || fallbackProfile.preferredLanguage || "en",
-      confirmActions: Boolean(remoteProfile.confirm_actions)
+      confirmActions: Boolean(remoteProfile.confirm_actions),
+      shareAnonymizedLearning: Boolean(remoteProfile.share_anonymized_learning),
+      shareLearningConsentAt: remoteProfile.share_learning_consent_at || fallbackProfile.shareLearningConsentAt || null
     };
     const remoteFunctions = Array.isArray(remoteProfile.domestic_functions)
       ? remoteProfile.domestic_functions.filter((id) => ACTIVITIES.some((activity) => activity.id === id))
@@ -1374,6 +1390,9 @@ function populateSettingsForm() {
   if (voiceField) voiceField.value = state.profile.robotVoice || "female";
   if (elements.preferredLanguage) elements.preferredLanguage.value = state.profile.preferredLanguage || "en";
   elements.confirmActions.checked = Boolean(state.profile.confirmActions);
+  if (elements.shareAnonymizedLearning) {
+    elements.shareAnonymizedLearning.checked = state.profile.shareAnonymizedLearning === true;
+  }
   elements.functionGrid.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
     checkbox.checked = state.functions.includes(checkbox.value);
   });
@@ -1396,7 +1415,13 @@ elements.settingsForm?.addEventListener("submit", async (event) => {
     robotType: elements.robotType.value || "Humanoid robot",
     robotVoice: document.querySelector("#robotVoice")?.value || "female",
     preferredLanguage: elements.preferredLanguage?.value || "en",
-    confirmActions: Boolean(elements.confirmActions.checked)
+    confirmActions: Boolean(elements.confirmActions.checked),
+    shareAnonymizedLearning: Boolean(elements.shareAnonymizedLearning?.checked),
+    shareLearningConsentAt: elements.shareAnonymizedLearning?.checked
+      ? (state.profile.shareAnonymizedLearning
+          ? state.profile.shareLearningConsentAt
+          : new Date().toISOString())
+      : state.profile.shareLearningConsentAt || null
   };
   localizeWelcomeMessage(state.profile.preferredLanguage);
   persist();
