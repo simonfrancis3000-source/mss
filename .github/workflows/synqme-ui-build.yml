@@ -22,6 +22,7 @@ on:
       - "server/**"
       - "test/**"
       - "docs/**"
+      - "supabase/**"
       - "public/**"
       - "package.json"
       - "package-lock.json"
