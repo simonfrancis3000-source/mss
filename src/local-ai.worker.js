@@ -4,7 +4,7 @@ const MODEL_ID = "onnx-community/Qwen2.5-1.5B-Instruct";
 let generator = null;
 let loadingPromise = null;
 let generationBusy = false;
-let modelCacheDetected = false;
+let modelCacheDetected = false;\nlet activeBackend = "webgpu";
 
 function postProgress(event) {
   const info = event && typeof event === "object" ? event : {};
@@ -75,31 +75,62 @@ async function loadModel() {
     postStatus(hasCachedModelFiles
       ? "Loading cached local AMÏA model"
       : "Preparing local AMÏA model download");
-    if (!self.navigator?.gpu) {
-      throw new Error("This device/browser does not expose WebGPU. Open SYNQ.ME in an up-to-date Chrome or Edge browser on a WebGPU-compatible device.");
-    }
-    const adapter = await self.navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
-    if (!adapter) {
-      throw new Error("WebGPU is present, but no compatible GPU adapter is available. Try a current Chrome or Edge browser on a supported device.");
-    }
-    postStatus(modelCacheDetected ? "Loading cached local AMÏA model" : "Loading local AMÏA model");
-    postProgress({ status: "initiate", file: "Qwen2.5 1.5B model" });
-    generator = await pipeline("text-generation", MODEL_ID, {
-      // Use the published Transformers.js-compatible Qwen2.5 1.5B model and q4f16 WebGPU weights.
-      revision: "main",
-      device: "webgpu",
-      dtype: "q4f16",
-      progress_callback: (event) => postProgress(event)
-    });
+    const tryBackend = async (device) => {
+      const isWebGPU = device === "webgpu";
+      postStatus(isWebGPU
+        ? (modelCacheDetected ? "Loading cached local AMÏA model on GPU" : "Loading local AMÏA model on GPU")
+        : "Switching Freya to compatible CPU inference");
+      generator = await pipeline("text-generation", MODEL_ID, {
+        revision: "main",
+        device,
+        // WebGPU uses fp16-compatible quantisation. WASM uses q4 weights.
+        dtype: isWebGPU ? "q4f16" : "q4",
+        progress_callback: (event) => postProgress(event)
+      });
+      postStatus(isWebGPU ? "Testing local AMÏA GPU inference" : "Testing local AMÏA CPU inference");
+      await generator([{ role: "user", content: "Reply with OK." }], {
+        max_new_tokens: 1,
+        do_sample: false
+      });
+      activeBackend = device;
+      return generator;
+    };
 
-    // Smoke-test the ONNX graph before enabling chat. A failed first inference
-    // should be reported during startup rather than after the user sends a message.
-    // Model weights remain cached when browser storage is available.
-    postStatus("Starting local AMÏA model");
-    await generator([{ role: "user", content: "Reply with OK." }], {
-      max_new_tokens: 1,
-      do_sample: false,
-    });
+    let webgpuError = null;
+    if (self.navigator?.gpu) {
+      try {
+        const adapter = await self.navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
+        if (!adapter) throw new Error("No compatible WebGPU adapter was available.");
+        await tryBackend("webgpu");
+      } catch (error) {
+        webgpuError = error;
+        // A WebGPU mapAsync / invalid Instance failure can leave the GPU
+        // provider unusable for this worker. Do not retry the same GPU path.
+        generator = null;
+        postStatus("GPU inference unavailable. Switching to CPU mode");
+      }
+    } else {
+      webgpuError = new Error("WebGPU is not available in this browser.");
+    }
+
+    if (!generator) {
+      try {
+        // Keep CPU inference bounded so it does not saturate the whole device.
+        try {
+          env.backends.onnx.wasm.numThreads = Math.max(
+            1,
+            Math.min(4, (self.navigator?.hardwareConcurrency || 2) - 1)
+          );
+        } catch {}
+        await tryBackend("wasm");
+      } catch (wasmError) {
+        generator = null;
+        const gpuDetail = webgpuError?.message || String(webgpuError || "GPU inference failed");
+        const cpuDetail = wasmError?.message || String(wasmError || "CPU inference failed");
+        throw new Error("Freya could not start local inference on GPU or CPU. GPU: " + gpuDetail + " CPU: " + cpuDetail);
+      }
+    }
+
     postProgress({ status: "done", file: "Qwen2.5 1.5B model" });
     return generator;
   })().catch((error) => {
