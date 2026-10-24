@@ -2381,7 +2381,7 @@ function updateVoiceModeButton() {
     if (label) label.textContent = voiceModeActive ? "Stop" : "Voice";
   }
   if (elements.voiceStatus && !voiceModeActive && !elements.voiceStatus.dataset.error) {
-    elements.voiceStatus.textContent = "Voice off · Kokoro and browser voices";
+    elements.voiceStatus.textContent = "";
   }
 }
 
