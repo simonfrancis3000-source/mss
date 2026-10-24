@@ -5,6 +5,18 @@ import {
   extractHomeMemoryTopics,
   rankHomeMemoryCandidates
 } from "./home-memory-index.js";
+import {
+  buildPersonaMemorySearchKeys,
+  cleanPersonaMemoryCandidate,
+  deriveMemoryKind,
+  deriveMemoryScopeKey,
+  deriveMemoryTopic,
+  makePersonaMemoryKey,
+  memoryIsActive,
+  preferenceToPersonaMemory,
+  rankPersonaMemories,
+  shouldExtractPersonaMemory
+} from "./persona-memory.js";
 
 const STORAGE_KEY = "synqme-demo-v1";
 const ACCOUNT_DRAFT_KEY = "synqme-pending-account-migration-v1";
@@ -235,6 +247,10 @@ const elements = {
   toggleAllFunctions: $("#toggleAllFunctions"),
   settingsPreferenceCount: $("#settingsPreferenceCount"),
   settingsPreferenceList: $("#settingsPreferenceList"),
+  personaMemoryCount: $("#personaMemoryCount"),
+  personaMemoryStatus: $("#personaMemoryStatus"),
+  personaMemoryList: $("#personaMemoryList"),
+  toggleArchivedPersonaMemories: $("#toggleArchivedPersonaMemories"),
   milestoneCount: $("#milestoneCount"),
   milestoneList: $("#milestoneList"),
   openTaskFromSettings: $("#openTaskFromSettings"),
@@ -432,6 +448,11 @@ let cloudConversationRefreshInFlight = false;
 let homeMemoryIndexUnavailable = false;
 let homeMemoryIndexBackfilledUserId = null;
 let homeMemoryIndexWarningShown = false;
+let personaMemoryRecords = [];
+let personaMemoryTableUnavailable = false;
+let personaMemoryWarningShown = false;
+let personaMemoryWriteInFlight = false;
+let showArchivedPersonaMemories = false;
 let sharedKnowledgeUnavailable = false;
 let sharedKnowledgeWarningShown = false;
 
