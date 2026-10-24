@@ -3241,6 +3241,8 @@ function handleLocalAIWorkerMessage(event) {
   noteLocalAIWorkerActivity();
   if (data.type === "status") {
     const label = String(data.label || "Loading local AMÏA model");
+    if (/switching to CPU mode|generating your reply on CPU/i.test(label)) localAIForceCpu = true;
+    if (/generating your reply on GPU/i.test(label)) localAIForceCpu = false;
     const modelId = String(data.modelId || "");
     const isGenerating = /generating your reply/i.test(label);
     const isCompactModel = modelId.includes("SmolLM2-360M-Instruct-ONNX") ||
