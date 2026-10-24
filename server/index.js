@@ -1,4 +1,5 @@
 import http from "node:http";
+import { inflateSync, inflateRawSync } from "node:zlib";
 
 const PORT = Number.parseInt(process.env.PORT || "10000", 10);
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
@@ -199,6 +200,64 @@ function applianceModelMentioned(latest, context) {
     (APPLIANCE_BRANDS.test(context) && modelLabel && latest.length > 5);
 }
 
+
+function decodePdfLiteral(value) {
+  return String(value || "")
+    .replace(/\\([nrtbf()\\])/g, (_, ch) => ({ n: "\n", r: "\r", t: "\t", b: "\b", f: "\f", "(": "(", ")": ")", "\\": "\\" })[ch] ?? ch)
+    .replace(/\\([0-7]{1,3})/g, (_, octal) => String.fromCharCode(parseInt(octal, 8)))
+    .replace(/\\\r?\n/g, "")
+    .replace(/\u0000/g, "");
+}
+
+function extractPdfReadableText(pdfBuffer) {
+  const raw = pdfBuffer.toString("latin1");
+  const streams = [];
+  let cursor = 0;
+  while (cursor < raw.length) {
+    const streamAt = raw.indexOf("stream", cursor);
+    if (streamAt < 0) break;
+    const dictStart = raw.lastIndexOf("<<", streamAt);
+    const header = dictStart >= 0 ? raw.slice(dictStart, streamAt) : "";
+    let start = streamAt + 6;
+    if (raw.slice(start, start + 2) === "\r\n") start += 2;
+    else if (raw[start] === "\n" || raw[start] === "\r") start += 1;
+    const end = raw.indexOf("endstream", start);
+    if (end < 0) break;
+    let data = pdfBuffer.subarray(start, end);
+    while (data.length && (data[data.length - 1] === 10 || data[data.length - 1] === 13)) data = data.subarray(0, data.length - 1);
+    if (/\/FlateDecode\b/.test(header)) {
+      try { data = inflateSync(data); }
+      catch { try { data = inflateRawSync(data); } catch { cursor = end + 9; continue; } }
+    }
+    const content = data.toString("latin1");
+    if (/\b(?:BT|Tj|TJ|Tf)\b/.test(content)) streams.push(content);
+    cursor = end + 9;
+  }
+
+  const content = streams.join("\n");
+  const fragments = [];
+  const literalTj = /\(((?:\\.|[^\\)])*)\)\s*Tj/g;
+  let match;
+  while ((match = literalTj.exec(content))) fragments.push(decodePdfLiteral(match[1]));
+  const arrayTj = /\[((?:.|\n)*?)\]\s*TJ/g;
+  while ((match = arrayTj.exec(content))) {
+    const literals = match[1].matchAll(/\(((?:\\.|[^\\)])*)\)/g);
+    for (const item of literals) fragments.push(decodePdfLiteral(item[1]));
+  }
+  const hexTj = /<([0-9A-Fa-f]{4,})>\s*Tj/g;
+  while ((match = hexTj.exec(content))) {
+    const hex = match[1];
+    if (hex.length % 4 === 0) {
+      let decoded = "";
+      for (let i = 0; i < hex.length; i += 4) decoded += String.fromCharCode(parseInt(hex.slice(i, i + 4), 16));
+      fragments.push(decoded);
+    } else if (hex.length % 2 === 0) {
+      fragments.push(Buffer.from(hex, "hex").toString("latin1"));
+    }
+  }
+  return fragments.join(" ").replace(/\s+/g, " ").replace(/[^\x09\x0A\x0D\x20-\uFFFF]/g, "").trim();
+}
+
 async function searchApplianceManual(messages) {
   const recent = messages.slice(-10).map((item) => item.content).join("\n");
   const latest = messages[messages.length - 1]?.content || "";
@@ -242,17 +301,31 @@ async function searchApplianceManual(messages) {
     let manualText = "";
     let readUrl = "";
     for (const result of results.slice(0, 4)) {
-      // Fetch readable content only from likely manufacturer domains. Other
-      // search results remain links/snippets and are never fetched server-side.
-      if (!result.official || /\.pdf(?:$|[?#])/i.test(result.url)) continue;
+      // Fetch content only from likely manufacturer domains. Other search
+      // results remain links/snippets and are never fetched server-side.
+      if (!result.official) continue;
       try {
         const pageResponse = await fetch(result.url, {
           headers: { "User-Agent": "Mozilla/5.0 (compatible; SYNQMEManualLookup/1.0)" },
-          signal: AbortSignal.timeout(3500),
+          signal: AbortSignal.timeout(4500),
           redirect: "follow"
         });
         const type = pageResponse.headers.get("content-type") || "";
-        if (!pageResponse.ok || !type.includes("text/html")) continue;
+        if (!pageResponse.ok) continue;
+        if (type.includes("application/pdf") || /\.pdf(?:$|[?#])/i.test(result.url)) {
+          const advertisedLength = Number(pageResponse.headers.get("content-length") || 0);
+          if (advertisedLength > 18 * 1024 * 1024) continue;
+          const bytes = Buffer.from(await pageResponse.arrayBuffer());
+          if (bytes.length > 18 * 1024 * 1024) continue;
+          const extracted = extractPdfReadableText(bytes);
+          if (extracted.length > 500) {
+            manualText = extracted.slice(0, 6500);
+            readUrl = result.url;
+            break;
+          }
+          continue;
+        }
+        if (!type.includes("text/html")) continue;
         const pageHtml = await pageResponse.text();
         const text = htmlToReadableText(pageHtml);
         if (text.length > 500) {
