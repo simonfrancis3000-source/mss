@@ -56,6 +56,7 @@ async function loadModel() {
         );
       }
     } catch {}
+    modelCacheDetected = hasCachedModelFiles;
     postStatus(hasCachedModelFiles
       ? "Loading cached local AMÏA model"
       : "Preparing local AMÏA model download");
