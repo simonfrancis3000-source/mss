@@ -679,7 +679,6 @@ async function refreshCloudConversation() {
     if (localChanged || pendingChanged || profileChanged || preferencesChanged) {
       persist(false);
       renderAll();
-      if (profileChanged && !elements.settingsDialog?.hidden) populateSettingsForm();
     }
 
     // If this device has messages not yet represented in the cloud snapshot,
