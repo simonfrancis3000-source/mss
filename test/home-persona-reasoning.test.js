@@ -41,6 +41,33 @@ test("builds a contextual, proactive home-robot reasoning prompt", () => {
   assert.match(prompt, /do not claim to have seen the home/i);
 });
 
+test("injects structured personal memories and separate task skills into the prompt", () => {
+  const prompt = buildHomePersonaSystemPrompt({
+    personaMemories: [{
+      memory_key: "memory-kitchen-after-breakfast",
+      topic: "kitchen",
+      kind: "routine",
+      scope_key: "kitchen.surface_cleaning.timing",
+      statement: "I prefer the kitchen worktop wiped after breakfast.",
+      status: "user_confirmed",
+      confidence: 0.98,
+      conditions: ["Use only the approved surface spray"],
+      source_message: "I prefer the kitchen worktop wiped after breakfast."
+    }],
+    relevantSkills: [{
+      id: "surface-care",
+      title: "Surface care",
+      steps: ["Identify the surface and use a user-approved cleaning method."]
+    }]
+  });
+  assert.match(prompt, /PERSONAL MEMORY RETRIEVAL/);
+  assert.match(prompt, /I prefer the kitchen worktop wiped after breakfast/);
+  assert.match(prompt, /user_confirmed/);
+  assert.match(prompt, /SKILLS ARE NOT MEMORIES/);
+  assert.match(prompt, /Surface care/);
+  assert.match(prompt, /user-approved cleaning method/);
+});
+
 test("keeps ambiguous instructions labelled as context, not overriding instructions", () => {
   const prompt = buildHomePersonaSystemPrompt({
     preferences: [{
