@@ -46,6 +46,8 @@ async function loadModel() {
     }
     postProgress({ status: "initiate", file: "Qwen3-4B model" });
     generator = await pipeline("text-generation", MODEL_ID, {
+      // Use the model revision whose config explicitly describes the split q4f16 ONNX weights.
+      revision: "38477191e584539313ef6a9c20e1e0ec94ba6ff8",
       device: "webgpu",
       dtype: "q4f16",
       progress_callback: (event) => postProgress(event)
