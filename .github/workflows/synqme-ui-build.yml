@@ -1,0 +1,47 @@
+name: SYNQ.ME UI build
+
+on:
+  push:
+    branches: [feature/synqme-robot-voice-ui]
+    paths:
+      - "index.html"
+      - "src/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/synqme-ui-build.yml"
+  pull_request:
+    branches: [SYNQ.ME]
+    paths:
+      - "index.html"
+      - "src/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/synqme-ui-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Install and build SYNQ.ME
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - name: Verify toolchain
+        run: |
+          node --version
+          npm --version
+      - name: Install dependencies and refresh the npm lockfile
+        run: npm install --no-audit --no-fund
+      - name: Verify a single Transformers.js runtime
+        run: npm ls @huggingface/transformers
+      - name: Build SYNQ.ME
+        run: npm run build

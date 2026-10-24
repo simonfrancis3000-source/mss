@@ -1,8 +1,8 @@
 import { createClient } from "@supabase/supabase-js";
 
 const STORAGE_KEY = "synqme-demo-v1";
+const LOCAL_MODEL_LABEL = "On-device AI";
 const ACCOUNT_DRAFT_KEY = "synqme-pending-account-migration-v1";
-const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
 const AUTH_REDIRECT_URL = (() => {
@@ -68,6 +68,54 @@ const supabase = SUPABASE_URL && SUPABASE_KEY
     })
   : null;
 const WELCOME = "Hi, I’m here to help you build your SecondSelf. Which parts of home life would you like it to understand first?";
+const WELCOME_BY_LANGUAGE = {
+  en: WELCOME,
+  es: "Hola, estoy aquí para ayudarte a crear tu SecondSelf. ¿Qué aspectos de la vida en casa te gustaría que aprendiera primero?",
+  fr: "Bonjour, je suis là pour t’aider à construire ton SecondSelf. Quels aspects de la vie à la maison aimerais-tu que je comprenne en premier ?",
+  it: "Ciao, sono qui per aiutarti a costruire il tuo SecondSelf. Quali aspetti della vita in casa vorresti che imparassi per primi?",
+  pt: "Olá, estou aqui para te ajudar a construir o teu SecondSelf. Que aspetos da vida em casa gostarias que eu aprendesse primeiro?",
+  hi: "नमस्ते, मैं आपका SecondSelf बनाने में मदद करने के लिए यहाँ हूँ। आप चाहेंगे कि मैं घर की दिनचर्या के किन पहलुओं को सबसे पहले समझूँ?",
+  ja: "こんにちは。あなたのSecondSelfづくりをお手伝いします。家での暮らしのどんなことを、まず理解してほしいですか？",
+  zh: "你好，我来帮你建立自己的 SecondSelf。你希望我先了解家庭生活中的哪些方面？"
+};
+const KNOWN_WELCOME_MESSAGES = new Set(Object.values(WELCOME_BY_LANGUAGE));
+function localizeWelcomeMessage(language) {
+  const welcome = WELCOME_BY_LANGUAGE[language] || WELCOME;
+  state.messages = state.messages.map((item) =>
+    item?.role === "assistant" && KNOWN_WELCOME_MESSAGES.has(item.content)
+      ? { ...item, content: welcome }
+      : item
+  );
+}
+
+const ROBOT_APPEARANCE_KEY = "synqme-robot-appearance-v1";
+const OWNER_AVATAR_KEY = "synqme-owner-avatar-v1";
+let ownerAvatarData = (() => {
+  try {
+    const saved = localStorage.getItem(OWNER_AVATAR_KEY);
+    return typeof saved === "string" ? saved : "";
+  } catch {
+    return "";
+  }
+})();
+const ROBOT_OPTIONS = [
+  { id: "elo", name: "ELO", accent: "#58a6ff", description: "Friendly and familiar" },
+  { id: "lumi", name: "LUMI", accent: "#77c8b2", description: "Calm and curious" },
+  { id: "pip", name: "PIP", accent: "#f0b96d", description: "Playful and bright" },
+  { id: "nova", name: "NOVA", accent: "#b3a0ff", description: "Quietly clever" },
+  { id: "miso", name: "MISO", accent: "#f19ac4", description: "Soft and cheerful" }
+];
+let robotAppearance = (() => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(ROBOT_APPEARANCE_KEY) || "{}");
+    return {
+      robotId: ROBOT_OPTIONS.some((item) => item.id === saved.robotId) ? saved.robotId : "elo",
+      customImageData: typeof saved.customImageData === "string" ? saved.customImageData : ""
+    };
+  } catch {
+    return { robotId: "elo", customImageData: "" };
+  }
+})();
 
 const ACTIVITIES = [
   { id: "dishwashing", label: "Dishwashing" },
@@ -96,13 +144,49 @@ const $ = (selector) => document.querySelector(selector);
 const elements = {
   splash: $("#appSplash"),
   providerLabel: $("#providerLabel"),
+  preferredLanguage: $("#preferredLanguage"),
   conversationStatus: $("#conversationStatus"),
+  localAIProgress: $("#localAIProgress"),
+  localAIProgressLabel: $("#localAIProgressLabel"),
+  localAIProgressFill: $("#localAIProgressFill"),
+  localAIProgressTrack: $("#localAIProgressTrack"),
+  chatTranscriptShell: $("#chatTranscriptShell"),
   chatMessages: $("#chatMessages"),
+  chatScrollbarTrack: $("#chatScrollbarTrack"),
+  chatScrollbarThumb: $("#chatScrollbarThumb"),
   chatForm: $("#chatForm"),
   messageInput: $("#messageInput"),
   sendButton: $("#sendButton"),
   voiceModeButton: $("#voiceModeButton"),
   voiceStatus: $("#voiceStatus"),
+  selectedRobotArt: $("#selectedRobotArt"),
+  selectedRobotName: $("#selectedRobotName"),
+  robotPicker: $("#robotPicker"),
+  robotImageInput: $("#robotImageInput"),
+  uploadRobotImageButton: $("#uploadRobotImageButton"),
+  voiceExperience: $("#voiceExperience"),
+  voiceExperienceTitle: $("#voiceExperienceTitle"),
+  voiceIntroCopy: $("#voiceIntroCopy"),
+  voiceOrb: $("#voiceOrb"),
+  voiceOrbCore: $("#voiceOrbCore"),
+  voiceExperienceStatus: $("#voiceExperienceStatus"),
+  voiceCompanionName: $("#voiceCompanionName"),
+  voiceRetrySpeechButton: $("#voiceRetrySpeechButton"),
+  voiceModelProgress: $("#voiceModelProgress"),
+  voiceModelProgressTrack: $("#voiceModelProgressTrack"),
+  voiceModelProgressFill: $("#voiceModelProgressFill"),
+  voiceModelProgressLabel: $("#voiceModelProgressLabel"),
+  voiceModelProgressPercent: $("#voiceModelProgressPercent"),
+  voiceModelProgressMain: $("#voiceModelProgressMain"),
+  voiceModelProgressTrackMain: $("#voiceModelProgressTrackMain"),
+  voiceModelProgressFillMain: $("#voiceModelProgressFillMain"),
+  voiceModelProgressLabelMain: $("#voiceModelProgressLabelMain"),
+  voiceModelProgressPercentMain: $("#voiceModelProgressPercentMain"),
+  voiceMuteButton: $("#voiceMuteButton"),
+  voiceMuteControlButton: $("#voiceMuteControlButton"),
+  voiceMuteControlLabel: $("#voiceMuteControlLabel"),
+  voiceEndButton: $("#voiceEndButton"),
+  voiceChatButton: $("#voiceChatButton"),
   resetDemo: $("#resetDemo"),
   memoryCount: $("#memoryCount"),
   foundationValue: $("#foundationValue"),
@@ -134,6 +218,10 @@ const elements = {
   cancelSettings: $("#cancelSettings"),
   settingsForm: $("#settingsForm"),
   ownerName: $("#ownerName"),
+  ownerAvatarPreview: $("#ownerAvatarPreview"),
+  ownerImageInput: $("#ownerImageInput"),
+  uploadOwnerImageButton: $("#uploadOwnerImageButton"),
+  removeOwnerImageButton: $("#removeOwnerImageButton"),
   robotName: $("#robotName"),
   robotType: $("#robotType"),
   confirmActions: $("#confirmActions"),
@@ -169,7 +257,7 @@ const elements = {
 };
 
 function defaultProfile() {
-  return { ownerName: "", robotName: "", robotType: "Humanoid robot", robotVoice: "female", confirmActions: false };
+  return { ownerName: "", robotName: "", robotType: "Humanoid robot", robotVoice: "female", preferredLanguage: "en", confirmActions: false };
 }
 
 function initialState() {
@@ -180,9 +268,9 @@ function initialState() {
     functions: [],
     pendingClarification: null,
     apiConnected: false,
-    apiProvider: "",
-    apiModel: "",
-    apiConfigured: null,
+    apiProvider: "local",
+    apiModel: LOCAL_MODEL_LABEL,
+    apiConfigured: true,
     apiError: "",
     apiErrorDetail: ""
   };
@@ -243,9 +331,9 @@ function loadState() {
       functions: Array.isArray(saved.functions) ? saved.functions.filter((id) => ACTIVITIES.some((a) => a.id === id)) : [],
       pendingClarification: saved.pendingClarification && typeof saved.pendingClarification === "object" ? saved.pendingClarification : null,
       apiConnected: false,
-      apiProvider: "",
-      apiModel: "",
-      apiConfigured: null,
+      apiProvider: "local",
+      apiModel: LOCAL_MODEL_LABEL,
+      apiConfigured: true,
       apiError: "",
       apiErrorDetail: ""
     };
@@ -256,16 +344,45 @@ function loadState() {
 }
 
 let state = loadState();
+let localAIWorker = null;
+let localAIReady = false;
+let localAILoadPromise = null;
+let localAILoadResolve = null;
+let localAILoadReject = null;
+let localAIRequestSequence = 0;
+const localAIPendingRequests = new Map();
 let isSending = false;
+let sendSequence = 0;
+let lastAIReplyUsedFallback = false;
 const SpeechRecognitionConstructor = window.SpeechRecognition || window.webkitSpeechRecognition || null;
 const speechSynthesisAvailable = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
 let voiceModeActive = false;
+let voiceInputMuted = false;
 let speechRecognition = null;
 let recognitionListening = false;
 let recognitionTranscript = "";
 let voiceRestartTimer = null;
 let assistantIsSpeaking = false;
 let currentSpeechUtterance = null;
+let lastAssistantReplyForSpeech = "";
+let kokoroLoadPromise = null;
+let kokoroTTSInstance = null;
+let kokoroLoadFailed = false;
+let voiceModelProgressTimer = null;
+let kokoroAudioElement = null;
+let kokoroAudioUrl = "";
+let kokoroSpeechGeneration = 0;
+const SPEECH_LOCALES = { en: "en-US", es: "es-ES", fr: "fr-FR", it: "it-IT", pt: "pt-BR", hi: "hi-IN", ja: "ja-JP", zh: "zh-CN" };
+const KOKORO_VOICE_MAP = {
+  en: { female: "af_heart", male: "am_michael" },
+  es: { female: "ef_dora", male: "em_alex" },
+  fr: { female: "ff_siwis", male: "" },
+  it: { female: "if_sara", male: "im_nicola" },
+  pt: { female: "pf_dora", male: "pm_alex" },
+  hi: { female: "hf_alpha", male: "hm_omega" },
+  ja: { female: "jf_alpha", male: "jm_kumo" },
+  zh: { female: "zf_xiaobei", male: "zm_yunjian" }
+};
 let voiceMediaStream = null;
 let voiceAudioContext = null;
 let voiceAnalyser = null;
@@ -287,8 +404,14 @@ let authRecoveryInProgress = Boolean(/type=recovery/i.test(window.location.hash 
 let cloudMode = "local";
 let cloudSaveTimer = null;
 let cloudSaveChain = Promise.resolve();
+let cloudSaveInFlight = false;
+let cloudConversationUpdatedAt = null;
+let cloudConversationChannel = null;
+let cloudConversationRefreshTimer = null;
+let cloudConversationRefreshTimeout = null;
+let cloudConversationRefreshInFlight = false;
 
-function persist() {
+function persist(syncCloud = true) {
   let localSaved = false;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
@@ -302,23 +425,37 @@ function persist() {
   } catch {
     if (elements.memoryFootnote) elements.memoryFootnote.textContent = "Session memory only; browser storage is unavailable";
   }
-  scheduleCloudSave();
+  if (syncCloud) scheduleCloudSave();
   return localSaved;
 }
 
-function scheduleCloudSave() {
+function scheduleCloudSave(delay = 300) {
   if (!supabase || !cloudUserId) return;
   if (cloudSaveTimer) window.clearTimeout(cloudSaveTimer);
   cloudSaveTimer = window.setTimeout(() => {
     cloudSaveTimer = null;
+    if (isSending) {
+      cloudSaveTimer = window.setTimeout(() => {
+        cloudSaveTimer = null;
+        scheduleCloudSave();
+      }, 1000);
+      return;
+    }
     cloudSaveChain = cloudSaveChain
-      .then(() => saveCloudState())
+      .then(async () => {
+        cloudSaveInFlight = true;
+        try {
+          await saveCloudState();
+        } finally {
+          cloudSaveInFlight = false;
+        }
+      })
       .catch((error) => {
         console.info("SYNQ.ME account sync failed.", error);
         cloudMode = "error";
         renderPreferences();
       });
-  }, 300);
+  }, delay);
 }
 
 async function flushCloudSave() {
@@ -326,7 +463,14 @@ async function flushCloudSave() {
   if (cloudSaveTimer) window.clearTimeout(cloudSaveTimer);
   cloudSaveTimer = null;
   cloudSaveChain = cloudSaveChain
-    .then(() => saveCloudState())
+    .then(async () => {
+      cloudSaveInFlight = true;
+      try {
+        await saveCloudState();
+      } finally {
+        cloudSaveInFlight = false;
+      }
+    })
     .catch((error) => {
       console.info("SYNQ.ME account sync failed.", error);
       cloudMode = "error";
@@ -379,6 +523,7 @@ async function saveCloudState() {
     future_robot_name: snapshot.profile.robotName,
     future_robot_type: snapshot.profile.robotType,
     future_robot_voice: snapshot.profile.robotVoice || "female",
+    preferred_language: snapshot.profile.preferredLanguage || "en",
     confirm_actions: snapshot.profile.confirmActions,
     domestic_functions: snapshot.functions,
     updated_at: new Date().toISOString()
@@ -422,17 +567,205 @@ async function saveCloudState() {
     if (deleteError) throw deleteError;
   }
 
+  // Read the latest transcript before writing: two browsers can otherwise
+  // replace the same row with stale, device-local snapshots.
+  const { data: existingConversation, error: conversationReadError } = await supabase
+    .from("synqme_conversations")
+    .select("messages,pending_clarification,updated_at")
+    .eq("user_id", cloudUserId)
+    .maybeSingle();
+  if (conversationReadError) throw conversationReadError;
+
+  const cloudMessages = Array.isArray(existingConversation?.messages) ? existingConversation.messages : [];
+  const mergedMessages = mergeConversationMessages(state.messages, cloudMessages);
+  const localMessagesBeforeMerge = JSON.stringify(state.messages);
+  if (JSON.stringify(mergedMessages) !== localMessagesBeforeMerge && !isSending) {
+    state.messages = mergedMessages;
+    persist(false);
+    renderMessages();
+  }
+  const conversationUpdatedAt = new Date().toISOString();
   const { error: conversationError } = await supabase.from("synqme_conversations").upsert({
     user_id: cloudUserId,
-    messages: state.messages.slice(-5000),
-    pending_clarification: state.pendingClarification || null,
-    updated_at: new Date().toISOString()
+    messages: mergedMessages,
+    pending_clarification: state.pendingClarification || existingConversation?.pending_clarification || null,
+    updated_at: conversationUpdatedAt
   }, { onConflict: "user_id" });
   if (conversationError) throw conversationError;
+  cloudConversationUpdatedAt = conversationUpdatedAt;
 
   cloudMode = "cloud";
   renderPreferences();
 }
+
+function scheduleCloudConversationRefresh(delay = 120) {
+  if (!cloudUserId || !supabase) return;
+  if (cloudConversationRefreshTimeout) window.clearTimeout(cloudConversationRefreshTimeout);
+  cloudConversationRefreshTimeout = window.setTimeout(() => {
+    cloudConversationRefreshTimeout = null;
+    void refreshCloudConversation();
+  }, delay);
+}
+
+async function refreshCloudConversation() {
+  if (
+    !supabase ||
+    !cloudUserId ||
+    cloudMode !== "cloud" ||
+    cloudConversationRefreshInFlight ||
+    cloudSaveInFlight ||
+    isSending ||
+    cloudSaveTimer ||
+    document.visibilityState !== "visible"
+  ) return;
+
+  cloudConversationRefreshInFlight = true;
+  const userIdAtStart = cloudUserId;
+  try {
+    const { data, error } = await supabase
+      .from("synqme_conversations")
+      .select("messages,pending_clarification,updated_at")
+      .eq("user_id", userIdAtStart)
+      .maybeSingle();
+    if (error) throw error;
+    if (userIdAtStart !== cloudUserId || !data) return;
+
+    const remoteUpdatedAt = data.updated_at || null;
+    const remoteTimestamp = remoteUpdatedAt ? Date.parse(remoteUpdatedAt) : NaN;
+    const localTimestamp = cloudConversationUpdatedAt ? Date.parse(cloudConversationUpdatedAt) : NaN;
+    if (
+      remoteUpdatedAt === cloudConversationUpdatedAt ||
+      (Number.isFinite(remoteTimestamp) && Number.isFinite(localTimestamp) && remoteTimestamp === localTimestamp)
+    ) return;
+
+    // Account saves write profile, preferences and conversation together. Read
+    // those records as well so the other browser's whole persona catches up.
+    const [profileResult, preferencesResult] = await Promise.all([
+      supabase.from("synqme_profiles").select("*").eq("user_id", userIdAtStart).maybeSingle(),
+      supabase.from("synqme_preferences")
+        .select("id,category,preference_text,normalised_text,preference_status,explicit_facets,unresolved_fields,source_message,created_at,schema_version,clarifications")
+        .eq("user_id", userIdAtStart)
+        .order("created_at", { ascending: false })
+        .limit(24)
+    ]);
+    if (profileResult.error) throw profileResult.error;
+    if (preferencesResult.error) throw preferencesResult.error;
+    if (userIdAtStart !== cloudUserId) return;
+
+    const remoteMessages = Array.isArray(data.messages) ? data.messages : [];
+    const mergedMessages = mergeConversationMessages(state.messages, remoteMessages);
+    const localChanged = JSON.stringify(mergedMessages) !== JSON.stringify(state.messages);
+    const mergedDiffersFromCloud = JSON.stringify(mergedMessages) !== JSON.stringify(remoteMessages);
+    const pendingChanged = JSON.stringify(state.pendingClarification || null) !== JSON.stringify(data.pending_clarification || null);
+
+    let profileChanged = false;
+    let languageChanged = false;
+    const remoteProfile = profileResult.data;
+    if (remoteProfile) {
+      const nextProfile = {
+        ownerName: remoteProfile.owner_name || "",
+        robotName: remoteProfile.future_robot_name || "",
+        robotType: remoteProfile.future_robot_type || "Humanoid robot",
+        robotVoice: remoteProfile.future_robot_voice || "female",
+        preferredLanguage: remoteProfile.preferred_language || "en",
+        confirmActions: Boolean(remoteProfile.confirm_actions)
+      };
+      languageChanged = nextProfile.preferredLanguage !== state.profile.preferredLanguage;
+      profileChanged = JSON.stringify(nextProfile) !== JSON.stringify(state.profile);
+      if (profileChanged) state.profile = nextProfile;
+      const nextFunctions = Array.isArray(remoteProfile.domestic_functions)
+        ? remoteProfile.domestic_functions.filter((id) => ACTIVITIES.some((activity) => activity.id === id))
+        : [];
+      if (JSON.stringify(nextFunctions) !== JSON.stringify(state.functions)) {
+        state.functions = nextFunctions;
+        profileChanged = true;
+      }
+    }
+
+    const remotePreferenceRows = (preferencesResult.data || []).map((item) => ({
+      id: item.id,
+      text: item.preference_text,
+      category: item.category,
+      normalised: item.normalised_text,
+      preference_status: item.preference_status,
+      explicit_facets: item.explicit_facets,
+      unresolved_fields: item.unresolved_fields,
+      source_message: item.source_message,
+      created_at: item.created_at,
+      clarifications: item.clarifications
+    }));
+    const remotePreferences = mergePreferences(remotePreferenceRows, []);
+    const preferencesChanged = JSON.stringify(remotePreferences) !== JSON.stringify(state.preferences);
+
+    cloudConversationUpdatedAt = remoteUpdatedAt;
+    if (localChanged) state.messages = mergedMessages;
+    if (pendingChanged) state.pendingClarification = data.pending_clarification || null;
+    if (preferencesChanged) state.preferences = remotePreferences;
+    if (languageChanged) localizeWelcomeMessage(state.profile.preferredLanguage || "en");
+
+    if (localChanged || pendingChanged || profileChanged || preferencesChanged) {
+      persist(false);
+      renderAll();
+    }
+
+    // If this device has messages not yet represented in the cloud snapshot,
+    // merge them back after applying the incoming transcript.
+    if (mergedDiffersFromCloud && !isSending) scheduleCloudSave(250);
+  } catch (error) {
+    console.info("SYNQ.ME could not refresh conversation history from the cloud.", error);
+  } finally {
+    cloudConversationRefreshInFlight = false;
+  }
+}
+
+function stopCloudConversationSync() {
+  if (cloudConversationRefreshTimer) window.clearInterval(cloudConversationRefreshTimer);
+  cloudConversationRefreshTimer = null;
+  if (cloudConversationRefreshTimeout) window.clearTimeout(cloudConversationRefreshTimeout);
+  cloudConversationRefreshTimeout = null;
+
+  if (cloudConversationChannel && supabase) {
+    const channel = cloudConversationChannel;
+    cloudConversationChannel = null;
+    void supabase.removeChannel(channel).catch((error) => {
+      console.info("SYNQ.ME conversation sync channel could not be removed cleanly.", error);
+    });
+  }
+  cloudConversationUpdatedAt = null;
+}
+
+function startCloudConversationSync() {
+  if (!supabase || !cloudUserId) return;
+  stopCloudConversationSync();
+  const userIdAtStart = cloudUserId;
+
+  // Realtime delivers immediate updates when the account row changes. A
+  // lightweight foreground poll covers browsers/networks that drop the socket.
+  cloudConversationChannel = supabase
+    .channel("synqme-conversation-sync-" + userIdAtStart)
+    .on("postgres_changes", {
+      event: "*",
+      schema: "public",
+      table: "synqme_conversations",
+      filter: "user_id=eq." + userIdAtStart
+    }, () => scheduleCloudConversationRefresh(150))
+    .subscribe((status) => {
+      if (status === "SUBSCRIBED") scheduleCloudConversationRefresh(100);
+      else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+        console.info("SYNQ.ME live conversation notifications are unavailable; foreground polling remains enabled.");
+      }
+    });
+
+  cloudConversationRefreshTimer = window.setInterval(() => {
+    if (document.visibilityState === "visible") void refreshCloudConversation();
+  }, 5000);
+  scheduleCloudConversationRefresh(250);
+}
+
+window.addEventListener("focus", () => scheduleCloudConversationRefresh(100));
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") scheduleCloudConversationRefresh(100);
+});
 
 function snapshotAppState() {
   return {
@@ -492,10 +825,22 @@ function stateFromSnapshot(snapshot) {
 }
 
 function mergeConversationMessages(...groups) {
-  // Preserve repeated user/assistant messages within each transcript. Only
-  // remove an overlap at the boundary when combining cloud history with a
-  // browser draft for the same account.
+  // Merge device snapshots without duplicating an older transcript that is
+  // already present in a newer one. Repeated messages inside one transcript
+  // are preserved; overlap is considered only between separate snapshots.
   let messages = [];
+  const key = (item) => item.role + "\\n" + item.content;
+  const sequenceIndex = (haystack, needle) => {
+    if (!needle.length || needle.length > haystack.length) return -1;
+    outer: for (let start = 0; start <= haystack.length - needle.length; start++) {
+      for (let offset = 0; offset < needle.length; offset++) {
+        if (key(haystack[start + offset]) !== key(needle[offset])) continue outer;
+      }
+      return start;
+    }
+    return -1;
+  };
+
   for (const group of groups) {
     const incoming = (Array.isArray(group) ? group : [])
       .map(sanitiseConversationMessage)
@@ -506,7 +851,28 @@ function mergeConversationMessages(...groups) {
       messages = incoming;
       continue;
     }
-    const key = (item) => item.role + "\\n" + item.content;
+
+    // If one complete snapshot is contained in the other, keep the superset.
+    if (sequenceIndex(messages, incoming) >= 0) continue;
+    if (sequenceIndex(incoming, messages) >= 0) {
+      messages = incoming;
+      continue;
+    }
+
+    // When both devices share opening history but diverge later, keep both tails
+    // instead of duplicating all of their shared conversation.
+    let commonPrefix = 0;
+    while (
+      commonPrefix < messages.length &&
+      commonPrefix < incoming.length &&
+      key(messages[commonPrefix]) === key(incoming[commonPrefix])
+    ) commonPrefix++;
+    if (commonPrefix > 0) {
+      messages.push(...incoming.slice(commonPrefix));
+      continue;
+    }
+
+    // Handle a suffix of the current transcript overlapping the incoming head.
     let overlap = Math.min(messages.length, incoming.length);
     while (overlap > 0) {
       let matches = true;
@@ -519,7 +885,30 @@ function mergeConversationMessages(...groups) {
       if (matches) break;
       overlap--;
     }
-    messages.push(...incoming.slice(overlap));
+    if (overlap > 0) {
+      messages.push(...incoming.slice(overlap));
+      continue;
+    }
+
+    // Handle an incoming suffix that overlaps the current transcript's head.
+    let prefixOverlap = Math.min(messages.length, incoming.length);
+    while (prefixOverlap > 0) {
+      let matches = true;
+      for (let i = 0; i < prefixOverlap; i++) {
+        if (key(incoming[incoming.length - prefixOverlap + i]) !== key(messages[i])) {
+          matches = false;
+          break;
+        }
+      }
+      if (matches) break;
+      prefixOverlap--;
+    }
+    if (prefixOverlap > 0) {
+      messages = [...incoming.slice(0, incoming.length - prefixOverlap), ...messages];
+      continue;
+    }
+
+    messages.push(...incoming);
   }
   return (messages.length ? messages : [{ role: "assistant", content: WELCOME }]).slice(-5000);
 }
@@ -617,7 +1006,7 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   const [profileResult, preferencesResult, conversationResult] = await Promise.all([
     supabase.from("synqme_profiles").select("*").eq("user_id", cloudUserId).maybeSingle(),
     supabase.from("synqme_preferences").select("id,category,preference_text,normalised_text,preference_status,explicit_facets,unresolved_fields,source_message,created_at,schema_version,clarifications").eq("user_id", cloudUserId).order("created_at", { ascending: false }).limit(24),
-    supabase.from("synqme_conversations").select("messages,pending_clarification").eq("user_id", cloudUserId).maybeSingle()
+    supabase.from("synqme_conversations").select("messages,pending_clarification,updated_at").eq("user_id", cloudUserId).maybeSingle()
   ]);
   if (profileResult.error) throw profileResult.error;
   if (preferencesResult.error) throw preferencesResult.error;
@@ -637,6 +1026,7 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
     clarifications: item.clarifications
   }));
   const remoteConversation = conversationResult.data;
+  cloudConversationUpdatedAt = remoteConversation?.updated_at || null;
   state = draftState || initialState();
 
   if (remoteProfile) {
@@ -645,6 +1035,7 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
       robotName: remoteProfile.future_robot_name || fallbackProfile.robotName || "",
       robotType: remoteProfile.future_robot_type || fallbackProfile.robotType || "Humanoid robot",
       robotVoice: remoteProfile.future_robot_voice || fallbackProfile.robotVoice || "female",
+      preferredLanguage: remoteProfile.preferred_language || fallbackProfile.preferredLanguage || "en",
       confirmActions: Boolean(remoteProfile.confirm_actions)
     };
     const remoteFunctions = Array.isArray(remoteProfile.domestic_functions)
@@ -660,6 +1051,7 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
 
   state.preferences = mergePreferences(remotePreferences, draftState?.preferences || []);
   state.messages = mergeConversationMessages(remoteConversation?.messages || [], draftState?.messages || []);
+  localizeWelcomeMessage(state.profile.preferredLanguage || "en");
   state.pendingClarification = remoteConversation?.pending_clarification || draftState?.pendingClarification || null;
   state.apiConnected = false;
   cloudMode = "syncing";
@@ -679,6 +1071,10 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   renderAll();
   if (!profileComplete()) openSettings();
   else updateSettingsMode();
+  startCloudConversationSync();
+  void ensureLocalAIReady()
+    .then(() => scheduleKokoroBackgroundPreload(1400))
+    .catch((error) => console.info("SYNQ.ME local model warm-up did not complete.", error));
   return true;
 }
 
@@ -730,10 +1126,7 @@ function dismissSplash() {
 dismissSplash();
 
 function profileComplete() {
-  return Boolean(
-    state.profile.ownerName && state.profile.ownerName.trim() &&
-    state.profile.robotName && state.profile.robotName.trim()
-  );
+  return Boolean(state.profile.ownerName && state.profile.ownerName.trim());
 }
 
 function updateSettingsMode() {
@@ -742,7 +1135,7 @@ function updateSettingsMode() {
   if (elements.settingsTitle) elements.settingsTitle.textContent = setupRequired ? "Set up your SecondSelf" : "Settings";
   if (elements.settingsIntro) {
     elements.settingsIntro.textContent = setupRequired
-      ? "First, add your name and choose a name for your future robot. Complete these essentials before starting your conversation."
+      ? "First, add your name to start. Naming your future robot is entirely optional."
       : "Make SYNQ.ME feel like yours. Your profile, preferences and conversation history are saved to your account.";
   }
   if (elements.profileSetupNotice) elements.profileSetupNotice.hidden = !setupRequired;
@@ -754,7 +1147,7 @@ function updateSettingsMode() {
   }
   if (elements.settingsSaveButton) elements.settingsSaveButton.textContent = setupRequired ? "Save profile & continue" : "Save settings";
   if (elements.ownerName) elements.ownerName.required = true;
-  if (elements.robotName) elements.robotName.required = true;
+  if (elements.robotName) elements.robotName.required = false;
 }
 
 function openSettings() {
@@ -806,6 +1199,7 @@ function populateSettingsForm() {
   elements.robotType.value = state.profile.robotType || "Humanoid robot";
   const voiceField = document.querySelector("#robotVoice");
   if (voiceField) voiceField.value = state.profile.robotVoice || "female";
+  if (elements.preferredLanguage) elements.preferredLanguage.value = state.profile.preferredLanguage || "en";
   elements.confirmActions.checked = Boolean(state.profile.confirmActions);
   elements.functionGrid.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
     checkbox.checked = state.functions.includes(checkbox.value);
@@ -815,12 +1209,12 @@ elements.settingsForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
   const ownerName = elements.ownerName.value.trim().slice(0, 60);
   const robotName = elements.robotName.value.trim().slice(0, 60);
-  if (!ownerName || !robotName) {
+  if (!ownerName) {
     if (elements.profileSetupNotice) {
-      elements.profileSetupNotice.textContent = "Both your name and your future robot’s name are required before you can start.";
+      elements.profileSetupNotice.textContent = "Your name is required before you can start. A robot name is optional.";
       elements.profileSetupNotice.hidden = false;
     }
-    (!ownerName ? elements.ownerName : elements.robotName).focus();
+    elements.ownerName.focus();
     return;
   }
   state.profile = {
@@ -828,8 +1222,10 @@ elements.settingsForm?.addEventListener("submit", async (event) => {
     robotName,
     robotType: elements.robotType.value || "Humanoid robot",
     robotVoice: document.querySelector("#robotVoice")?.value || "female",
+    preferredLanguage: elements.preferredLanguage?.value || "en",
     confirmActions: Boolean(elements.confirmActions.checked)
   };
+  localizeWelcomeMessage(state.profile.preferredLanguage);
   persist();
   renderAll();
   const savedToAccount = await flushCloudSave();
@@ -878,21 +1274,129 @@ elements.openTaskFromSettings?.addEventListener("click", () => {
   elements.taskResult.scrollIntoView({ behavior: "smooth", block: "start" });
 });
 
+function selectedCompanionDisplayName() {
+  const configuredName = (state.profile.robotName || "").trim();
+  if (configuredName) return configuredName;
+  if (robotAppearance.customImageData) return "Your robot";
+  return (ROBOT_OPTIONS.find((item) => item.id === robotAppearance.robotId) || ROBOT_OPTIONS[0]).name;
+}
+
+function updateVoiceCompanionLabels() {
+  const companionName = selectedCompanionDisplayName();
+  if (elements.voiceExperienceTitle) elements.voiceExperienceTitle.textContent = "Talk to " + companionName + ".";
+  if (elements.voiceCompanionName) elements.voiceCompanionName.textContent = companionName;
+  if (elements.voiceIntroCopy) elements.voiceIntroCopy.textContent = "Speak naturally. " + companionName + " is listening.";
+}
+
+function renderOwnerAvatarPreview() {
+  if (!elements.ownerAvatarPreview) return;
+  elements.ownerAvatarPreview.replaceChildren();
+  if (ownerAvatarData) {
+    const image = document.createElement("img");
+    image.src = ownerAvatarData;
+    image.alt = "";
+    elements.ownerAvatarPreview.append(image);
+    elements.ownerAvatarPreview.classList.add("has-photo");
+  } else {
+    const initial = (elements.ownerName?.value || state.profile.ownerName || "").trim().charAt(0).toUpperCase() || "Y";
+    const fallback = document.createElement("span");
+    fallback.setAttribute("aria-hidden", "true");
+    fallback.textContent = initial;
+    elements.ownerAvatarPreview.append(fallback);
+    elements.ownerAvatarPreview.classList.remove("has-photo");
+  }
+  if (elements.removeOwnerImageButton) elements.removeOwnerImageButton.hidden = !ownerAvatarData;
+  if (elements.uploadOwnerImageButton) {
+    const label = elements.uploadOwnerImageButton.querySelector("span");
+    if (label) label.textContent = ownerAvatarData ? "Change your photo" : "Upload your photo";
+  }
+}
+
+function saveOwnerAvatar() {
+  try {
+    if (ownerAvatarData) localStorage.setItem(OWNER_AVATAR_KEY, ownerAvatarData);
+    else localStorage.removeItem(OWNER_AVATAR_KEY);
+  } catch {
+    if (elements.voiceStatus) elements.voiceStatus.textContent = "Photo selected for this session only; browser storage is full.";
+  }
+}
+
+function handleOwnerImageUpload(file) {
+  if (!file || !file.type || !file.type.startsWith("image/")) return;
+  if (file.size > 8 * 1024 * 1024) {
+    window.alert("Choose a profile image smaller than 8 MB.");
+    return;
+  }
+  const reader = new FileReader();
+  reader.onerror = () => window.alert("That image could not be opened. Choose another file.");
+  reader.onload = () => {
+    const image = new Image();
+    image.onerror = () => window.alert("That image could not be opened. Choose another file.");
+    image.onload = () => {
+      const maxSide = 512;
+      const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+      const context = canvas.getContext("2d");
+      if (!context) {
+        window.alert("This browser could not process the profile image.");
+        return;
+      }
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      try {
+        ownerAvatarData = canvas.toDataURL("image/jpeg", 0.82);
+        saveOwnerAvatar();
+        renderOwnerAvatarPreview();
+        renderMessages();
+      } catch {
+        window.alert("The profile image could not be processed. Try a smaller image.");
+      }
+    };
+    image.src = String(reader.result || "");
+  };
+  reader.readAsDataURL(file);
+}
+
 function appendMessage(role, content) {
   const article = document.createElement("article");
   article.className = "message " + (role === "user" ? "user-message" : "assistant-message");
   const avatar = document.createElement("div");
   avatar.className = "message-avatar";
-  avatar.textContent = role === "user"
-    ? (state.profile.ownerName.trim().charAt(0).toUpperCase() || "Y")
-    : (state.profile.robotName.trim().charAt(0).toUpperCase() || "E");
+  if (role === "user") {
+    if (ownerAvatarData) {
+      avatar.classList.add("owner-message-avatar");
+      avatar.setAttribute("aria-hidden", "true");
+      const image = document.createElement("img");
+      image.className = "message-owner-image";
+      image.src = ownerAvatarData;
+      image.alt = "";
+      avatar.append(image);
+    } else {
+      avatar.textContent = state.profile.ownerName.trim().charAt(0).toUpperCase() || "Y";
+    }
+  } else {
+    avatar.classList.add("robot-message-avatar");
+    avatar.setAttribute("aria-hidden", "true");
+    if (robotAppearance.customImageData) {
+      const image = document.createElement("img");
+      image.className = "message-robot-image";
+      image.src = robotAppearance.customImageData;
+      image.alt = "";
+      avatar.append(image);
+    } else {
+      avatar.innerHTML = robotSvgMarkup(robotAppearance.robotId);
+    }
+  }
   const body = document.createElement("div");
   body.className = "message-body";
   const meta = document.createElement("div");
   meta.className = "message-meta";
   meta.textContent = role === "user"
     ? (state.profile.ownerName.trim().toUpperCase() || "YOU")
-    : ((state.profile.robotName.trim() || "ELO") + " · SYNQ.ME");
+    : "SYNQ.ME";
   const paragraph = document.createElement("p");
   paragraph.textContent = content;
   body.append(meta, paragraph);
@@ -900,12 +1404,45 @@ function appendMessage(role, content) {
   elements.chatMessages.append(article);
 }
 
+function updateChatScrollbar() {
+  const messages = elements.chatMessages;
+  const shell = elements.chatTranscriptShell;
+  const track = elements.chatScrollbarTrack;
+  const thumb = elements.chatScrollbarThumb;
+  if (!messages || !shell || !track || !thumb) return;
+
+  // Measure the full track even when it was hidden on the previous frame.
+  track.hidden = false;
+  const trackHeight = track.clientHeight || Math.max(0, shell.clientHeight - 20);
+  const viewportHeight = messages.clientHeight;
+  const contentHeight = messages.scrollHeight;
+
+  if (!viewportHeight || !trackHeight || contentHeight <= viewportHeight + 4) {
+    track.hidden = true;
+    return;
+  }
+
+  const thumbHeight = Math.min(trackHeight, Math.max(22, trackHeight * viewportHeight / contentHeight));
+  const maximumTop = Math.max(0, trackHeight - thumbHeight);
+  const maximumScroll = Math.max(1, contentHeight - viewportHeight);
+  const scrollRatio = Math.min(1, Math.max(0, messages.scrollTop / maximumScroll));
+  thumb.style.height = thumbHeight + "px";
+  thumb.style.transform = "translateY(" + (maximumTop * scrollRatio) + "px)";
+  track.hidden = false;
+}
+
 function renderMessages() {
   elements.chatMessages.replaceChildren();
-  // Keep the newest exchange at the top; older conversation history flows downward.
-  state.messages.slice(-50).reverse().forEach((message) => appendMessage(message.role, message.content));
-  elements.chatMessages.scrollTop = 0;
+  // Render in conversation order so newer turns naturally appear at the bottom.
+  state.messages.slice(-50).forEach((message) => appendMessage(message.role, message.content));
+  window.requestAnimationFrame(() => {
+    elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
+    updateChatScrollbar();
+  });
 }
+
+elements.chatMessages?.addEventListener("scroll", updateChatScrollbar, { passive: true });
+window.addEventListener("resize", updateChatScrollbar);
 
 function classifyPreference(message) {
   const text = message.toLowerCase();
@@ -1370,6 +1907,7 @@ function updateDecisionSummary() {
 
 function renderAll() {
   renderMessages();
+  renderOwnerAvatarPreview();
   renderPreferences();
   updateDecisionSummary();
   renderSettingsDetails();
@@ -1377,10 +1915,9 @@ function renderAll() {
 
   const name = state.profile.ownerName.trim();
   const robotName = state.profile.robotName.trim();
-  if (elements.companionName) elements.companionName.textContent = robotName || "ELO";
-  if (elements.messageInput) elements.messageInput.placeholder = robotName
-    ? "Tell " + robotName + " how you like things done..."
-    : "Tell your SecondSelf how you like things done...";
+  const companionName = robotName || "your companion";
+  if (elements.companionName) elements.companionName.textContent = companionName;
+  if (elements.messageInput) elements.messageInput.placeholder = "Tell SYNQ.ME how you like things done...";
   if (elements.mobileOwnerTitle) elements.mobileOwnerTitle.textContent = name ? name + "’s SecondSelf" : "Your SecondSelf";
   const count = state.preferences.length;
   const functionsCount = state.functions.length;
@@ -1394,16 +1931,12 @@ function renderAll() {
   const achieved = MILESTONES.filter(milestoneUnlocked).length;
   const progress = Math.round((achieved / MILESTONES.length) * 100);
   if (elements.mobileProgressValue) elements.mobileProgressValue.textContent = progress + "%";
-  if (state.apiConnected && state.apiProvider) {
-    elements.providerLabel.textContent = state.apiProvider.toUpperCase() + " · " + (state.apiModel || "model") + " · LIVE";
+  if (state.apiConnected) {
+    elements.providerLabel.textContent = "LOCAL AI · ON-DEVICE";
   } else if (state.apiError) {
-    elements.providerLabel.textContent = (state.apiProvider ? state.apiProvider.toUpperCase() : "AI SERVICE") + " · " + state.apiError.toUpperCase().replace(/_/g, " ");
-  } else if (state.apiConfigured === false) {
-    elements.providerLabel.textContent = (state.apiProvider ? state.apiProvider.toUpperCase() : "AI") + " NOT CONFIGURED";
-  } else if (state.apiConfigured === true && state.apiProvider) {
-    elements.providerLabel.textContent = state.apiProvider.toUpperCase() + " · " + (state.apiModel || "model") + " · READY";
+    elements.providerLabel.textContent = "LOCAL AI · MODEL NEEDS ATTENTION";
   } else {
-    elements.providerLabel.textContent = API_BASE ? "CHECKING AI SERVICE" : "SCRIPTED DEMO MODE";
+    elements.providerLabel.textContent = "LOCAL AI · FIRST-TIME SETUP";
   }
   document.title = name ? "SYNQ.ME | " + name + "’s SecondSelf" : "SYNQ.ME | Build Your SecondSelf";
   const intro = $(".conversation-intro p");
@@ -1412,7 +1945,6 @@ function renderAll() {
     : "Tell me what matters to you. I’ll help shape your digital persona, one preference at a time.";
 }
 renderAll();
-void checkAIBackend();
 
 function chooseFallbackQuestion(options) {
   const recentReplies = state.messages
@@ -1551,6 +2083,293 @@ function localReply(message) {
 }
 
 
+
+function robotSvgMarkup(robotId) {
+  const option = ROBOT_OPTIONS.find((item) => item.id === robotId) || ROBOT_OPTIONS[0];
+  const accent = option.accent;
+  const shell = {
+    elo: '<rect x="25" y="25" width="70" height="67" rx="25"/>',
+    lumi: '<path d="M60 20c23 0 39 16 39 39S83 98 60 98 21 82 21 59 37 20 60 20Z"/>',
+    pip: '<path d="M29 35 22 17l20 9h36l20-9-7 18v39c0 13-11 22-31 22S29 87 29 74Z"/>',
+    nova: '<path d="M31 25 60 14l29 11 10 25-7 29-32 15-32-15-7-29Z"/>',
+    miso: '<path d="M28 37 22 14l25 14h26l25-14-6 23v34c0 16-12 25-32 25S28 87 28 71Z"/>'
+  }[robotId] || '<rect x="25" y="25" width="70" height="67" rx="25"/>';
+  const extra = {
+    elo: '<path d="M20 50h6m68 0h6M47 18v-5m26 5v-5" fill="none"/>',
+    lumi: '<path d="M60 10v8m-4-4h8" fill="none"/>',
+    pip: '<circle cx="60" cy="17" r="5"/>',
+    nova: '<circle cx="60" cy="22" r="3"/>',
+    miso: '<path d="M49 18h22" fill="none"/>'
+  }[robotId] || '';
+  const eyes = robotId === "miso"
+    ? '<path d="M42 59q7-9 14 0M64 59q7-9 14 0" fill="none" stroke="' + accent + '" stroke-width="4" stroke-linecap="round"/>'
+    : '<circle cx="44" cy="58" r="5" fill="' + accent + '"/><circle cx="76" cy="58" r="5" fill="' + accent + '"/>';
+  return '<svg class="robot-svg robot-svg-' + robotId + '" viewBox="0 0 120 120" role="img" aria-label="' + option.name + ' robot">' +
+    '<ellipse cx="60" cy="104" rx="31" ry="5" fill="#1d2937" opacity=".08"/>' +
+    '<g stroke="#aab5c3" stroke-width="2.5" stroke-linejoin="round" fill="#fbfcfe">' + shell + extra + '</g>' +
+    '<rect x="33" y="43" width="54" height="34" rx="13" fill="#192432"/>' +
+    eyes +
+    '<path d="M52 68q8 5 16 0" fill="none" stroke="#dce6f2" stroke-width="2" stroke-linecap="round"/>' +
+    '<circle cx="60" cy="86" r="3" fill="' + accent + '"/>' +
+    '<path d="M42 94v5m36-5v5" stroke="' + accent + '" stroke-width="3" stroke-linecap="round"/>' +
+    '</svg>';
+}
+
+function saveRobotAppearance() {
+  try {
+    localStorage.setItem(ROBOT_APPEARANCE_KEY, JSON.stringify(robotAppearance));
+  } catch {
+    if (elements.voiceStatus) elements.voiceStatus.textContent = "Robot image selected for this session only; browser storage is full.";
+  }
+}
+
+function renderRobotPicker() {
+  if (!elements.robotPicker) return;
+  elements.robotPicker.replaceChildren();
+  ROBOT_OPTIONS.forEach((option, index) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "robot-picker-item";
+    button.dataset.robotId = option.id;
+    button.setAttribute("aria-label", "Choose robot image " + (index + 1) + ": " + option.description);
+    button.setAttribute("aria-pressed", String(robotAppearance.robotId === option.id && !robotAppearance.customImageData));
+    button.title = option.description;
+    button.innerHTML = robotSvgMarkup(option.id);
+    button.addEventListener("click", () => {
+      robotAppearance.robotId = option.id;
+      robotAppearance.customImageData = "";
+      saveRobotAppearance();
+      renderRobotPicker();
+      applyRobotAppearance();
+    });
+    elements.robotPicker.append(button);
+  });
+  if (robotAppearance.customImageData) {
+    const custom = document.createElement("button");
+    custom.type = "button";
+    custom.className = "robot-picker-item robot-picker-custom is-selected";
+    custom.setAttribute("aria-label", "Your uploaded robot image");
+    custom.setAttribute("aria-pressed", "true");
+    custom.innerHTML = '<span class="robot-picker-custom-preview"><img src="' + robotAppearance.customImageData + '" alt="" /></span>';
+    custom.addEventListener("click", () => applyRobotAppearance());
+    elements.robotPicker.append(custom);
+  }
+}
+
+function applyRobotAppearance() {
+  if (!elements.selectedRobotArt) return;
+  const option = ROBOT_OPTIONS.find((item) => item.id === robotAppearance.robotId) || ROBOT_OPTIONS[0];
+  elements.selectedRobotArt.replaceChildren();
+  if (elements.voiceOrbCore) {
+    elements.voiceOrbCore.replaceChildren();
+    if (robotAppearance.customImageData) {
+      const voiceImage = document.createElement("img");
+      voiceImage.src = robotAppearance.customImageData;
+      voiceImage.alt = "";
+      voiceImage.className = "voice-robot-image";
+      elements.voiceOrbCore.append(voiceImage);
+    } else {
+      elements.voiceOrbCore.innerHTML = robotSvgMarkup(option.id);
+    }
+  }
+  if (robotAppearance.customImageData) {
+    const image = document.createElement("img");
+    image.src = robotAppearance.customImageData;
+    image.alt = "Your custom robot companion";
+    image.className = "custom-robot-image";
+    elements.selectedRobotArt.append(image);
+    if (elements.selectedRobotName) elements.selectedRobotName.textContent = "YOUR ROBOT";
+  } else {
+    elements.selectedRobotArt.innerHTML = robotSvgMarkup(option.id);
+    if (elements.selectedRobotName) elements.selectedRobotName.textContent = option.name;
+  }
+  if (elements.robotPicker) {
+    elements.robotPicker.querySelectorAll("[data-robot-id]").forEach((button) => {
+      const selected = button.dataset.robotId === robotAppearance.robotId && !robotAppearance.customImageData;
+      button.classList.toggle("is-selected", selected);
+      button.setAttribute("aria-pressed", String(selected));
+    });
+    const customButton = elements.robotPicker.querySelector(".robot-picker-custom");
+    if (customButton) {
+      customButton.classList.toggle("is-selected", Boolean(robotAppearance.customImageData));
+      customButton.setAttribute("aria-pressed", String(Boolean(robotAppearance.customImageData)));
+    }
+  }
+  updateVoiceCompanionLabels();
+  // Keep existing and future assistant avatars in sync with the selected appearance.
+  if (elements.chatMessages) renderMessages();
+}
+
+function updateVoiceExperience(mode, message) {
+  if (elements.voiceOrb) elements.voiceOrb.dataset.state = mode || "idle";
+  if (elements.voiceExperience) {
+    elements.voiceExperience.dataset.state = mode || "idle";
+    elements.voiceExperience.classList.toggle("is-muted", voiceInputMuted);
+  }
+  if (elements.voiceExperienceStatus && message) elements.voiceExperienceStatus.textContent = message;
+  if (elements.voiceMuteButton) {
+    elements.voiceMuteButton.setAttribute("aria-pressed", String(voiceInputMuted));
+    elements.voiceMuteButton.setAttribute("aria-label", voiceInputMuted ? "Unmute microphone" : "Mute microphone");
+    elements.voiceMuteButton.title = voiceInputMuted ? "Unmute microphone" : "Mute microphone";
+  }
+  if (elements.voiceMuteControlButton) {
+    elements.voiceMuteControlButton.setAttribute("aria-label", voiceInputMuted ? "Unmute microphone" : "Mute microphone");
+  }
+  if (elements.voiceMuteControlLabel) elements.voiceMuteControlLabel.textContent = voiceInputMuted ? "Unmute" : "Mute";
+}
+
+function primeBrowserSpeechForSession() {
+  if (!speechSynthesisAvailable) return;
+  try {
+    const synth = window.speechSynthesis;
+    synth.cancel();
+    synth.resume();
+    // A silent utterance inside the user's Voice-button gesture helps unlock
+    // browser speech on stricter mobile browsers before the first AI reply.
+    const primer = new SpeechSynthesisUtterance(" ");
+    primer.volume = 0;
+    primer.rate = 10;
+    primer.onend = () => { try { synth.resume(); } catch {} };
+    synth.speak(primer);
+  } catch (error) {
+    console.info("Browser speech could not be primed; the retry control remains available.", error);
+  }
+}
+
+function openVoiceExperience() {
+  if (!elements.voiceExperience) return;
+  elements.voiceExperience.hidden = false;
+  document.body.classList.add("voice-experience-open");
+  voiceInputMuted = false;
+  updateVoiceCompanionLabels();
+  if (elements.voiceRetrySpeechButton) elements.voiceRetrySpeechButton.hidden = true;
+  if (!SpeechRecognitionConstructor) {
+    updateVoiceExperience("idle", "Voice input is unavailable in this browser. Return to chat or try Chrome.");
+    return;
+  }
+  if (voiceModeActive) return;
+  voiceModeActive = true;
+  voiceInputMuted = false;
+  primeBrowserSpeechForSession();
+  if (kokoroTTSInstance) {
+    renderVoiceModelProgress({ visible: false });
+  } else if (kokoroVoiceForProfile()) {
+    if (kokoroLoadFailed) kokoroLoadFailed = false;
+    if (!kokoroLoadPromise) {
+      renderVoiceModelProgress({ label: "Checking for a saved voice model…", indeterminate: true });
+      void loadKokoroTTS().catch((error) => {
+        console.info("Kokoro model unavailable; browser speech remains available.", error);
+      });
+    } else if (elements.voiceModelProgress) {
+      elements.voiceModelProgress.hidden = false;
+    }
+  } else {
+    renderVoiceModelProgress({ visible: false });
+  }
+  if (elements.voiceStatus) {
+    elements.voiceStatus.dataset.error = "";
+    elements.voiceStatus.textContent = speechSynthesisAvailable
+      ? "Voice on · browser speech services"
+      : "Voice input on · spoken replies may not be supported";
+  }
+  updateVoiceModeButton();
+  updateVoiceExperience("listening", "Connecting to your microphone…");
+  startVoiceListening();
+}
+
+function closeVoiceExperience(statusMessage) {
+  stopVoiceConversation(statusMessage || "Voice conversation stopped.");
+  if (elements.voiceRetrySpeechButton) elements.voiceRetrySpeechButton.hidden = true;
+  voiceInputMuted = false;
+  if (elements.voiceExperience) elements.voiceExperience.hidden = true;
+  document.body.classList.remove("voice-experience-open");
+}
+
+function toggleVoiceInputMute() {
+  if (!voiceModeActive) return;
+  voiceInputMuted = !voiceInputMuted;
+  if (voiceInputMuted) {
+    if (speechRecognition && recognitionListening) {
+      try { speechRecognition.abort(); } catch {}
+    }
+    recognitionListening = false;
+    updateVoiceExperience("muted", "Microphone muted. Your companion can still finish speaking.");
+  } else {
+    updateVoiceExperience("listening", "Microphone on. Speak whenever you are ready.");
+    startVoiceListening();
+  }
+}
+
+function handleRobotImageUpload(file) {
+  if (!file || !file.type || !file.type.startsWith("image/")) return;
+  if (file.size > 8 * 1024 * 1024) {
+    window.alert("Choose an image smaller than 8 MB.");
+    return;
+  }
+  const reader = new FileReader();
+  reader.onerror = () => window.alert("That image could not be opened. Choose another file.");
+  reader.onload = () => {
+    const image = new Image();
+    image.onerror = () => window.alert("That image could not be opened. Choose another file.");
+    image.onload = () => {
+      const maxSide = 640;
+      const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+      const context = canvas.getContext("2d");
+      if (!context) return window.alert("This browser could not process the image.");
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      try {
+        robotAppearance.customImageData = canvas.toDataURL("image/jpeg", 0.84);
+        saveRobotAppearance();
+        renderRobotPicker();
+        applyRobotAppearance();
+      } catch {
+        window.alert("The image could not be saved in this browser. Try a smaller image.");
+      }
+    };
+    image.src = String(reader.result || "");
+  };
+  reader.readAsDataURL(file);
+}
+
+function initialiseRobotAndVoiceControls() {
+  renderRobotPicker();
+  applyRobotAppearance();
+  renderOwnerAvatarPreview();
+  elements.uploadOwnerImageButton?.addEventListener("click", () => elements.ownerImageInput?.click());
+  elements.ownerImageInput?.addEventListener("change", () => {
+    const file = elements.ownerImageInput.files?.[0];
+    handleOwnerImageUpload(file);
+    elements.ownerImageInput.value = "";
+  });
+  elements.removeOwnerImageButton?.addEventListener("click", () => {
+    ownerAvatarData = "";
+    saveOwnerAvatar();
+    renderOwnerAvatarPreview();
+    renderMessages();
+  });
+  elements.ownerName?.addEventListener("input", renderOwnerAvatarPreview);
+  elements.uploadRobotImageButton?.addEventListener("click", () => elements.robotImageInput?.click());
+  elements.robotImageInput?.addEventListener("change", () => {
+    const file = elements.robotImageInput.files?.[0];
+    handleRobotImageUpload(file);
+    elements.robotImageInput.value = "";
+  });
+  elements.voiceMuteButton?.addEventListener("click", toggleVoiceInputMute);
+  elements.voiceMuteControlButton?.addEventListener("click", toggleVoiceInputMute);
+  elements.voiceEndButton?.addEventListener("click", () => closeVoiceExperience("Voice conversation ended."));
+  elements.voiceChatButton?.addEventListener("click", () => closeVoiceExperience("Returned to text chat."));
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && elements.voiceExperience && !elements.voiceExperience.hidden) {
+      closeVoiceExperience("Returned to text chat.");
+    }
+  });
+}
+
 function updateVoiceModeButton() {
   if (elements.voiceModeButton) {
     elements.voiceModeButton.classList.toggle("is-active", voiceModeActive);
@@ -1561,16 +2380,18 @@ function updateVoiceModeButton() {
     if (label) label.textContent = voiceModeActive ? "Stop" : "Voice";
   }
   if (elements.voiceStatus && !voiceModeActive && !elements.voiceStatus.dataset.error) {
-    elements.voiceStatus.textContent = "Voice off · browser speech services";
+    elements.voiceStatus.textContent = "";
   }
 }
 
 function stopVoiceConversation(statusMessage = "Voice conversation stopped.") {
   voiceModeActive = false;
+  voiceInputMuted = false;
+  stopKokoroAudio();
+  updateVoiceExperience("idle", statusMessage);
   if (voiceRestartTimer) window.clearTimeout(voiceRestartTimer);
   voiceRestartTimer = null;
   recognitionTranscript = "";
-  releaseVoiceMedia();
   voiceTranscribing = false;
   if (speechRecognition && recognitionListening) {
     try { speechRecognition.abort(); } catch {}
@@ -1590,7 +2411,7 @@ function stopVoiceConversation(statusMessage = "Voice conversation stopped.") {
 }
 
 function scheduleVoiceListening(delay = 350) {
-  if (!voiceModeActive || isSending || assistantIsSpeaking) return;
+  if (!voiceModeActive || voiceInputMuted || isSending || assistantIsSpeaking) return;
   if (voiceRestartTimer) window.clearTimeout(voiceRestartTimer);
   voiceRestartTimer = window.setTimeout(() => {
     voiceRestartTimer = null;
@@ -1599,215 +2420,17 @@ function scheduleVoiceListening(delay = 350) {
 }
 
 
-function stopVoiceMonitor() {
-  if (voiceMonitorFrame) window.cancelAnimationFrame(voiceMonitorFrame);
-  voiceMonitorFrame = 0;
-}
-
-function releaseVoiceMedia() {
-  stopVoiceMonitor();
-  if (activeMediaRecorder && activeMediaRecorder.state !== "inactive") {
-    const recorder = activeMediaRecorder;
-    recorder.onstop = null;
-    try { recorder.stop(); } catch {}
-  }
-  activeMediaRecorder = null;
-  voiceAudioChunks = [];
-  if (voiceMediaStream) {
-    voiceMediaStream.getTracks().forEach((track) => track.stop());
-    voiceMediaStream = null;
-  }
-  voiceAnalyser = null;
-  voiceAnalysisBuffer = null;
-  if (voiceAudioContext) {
-    const context = voiceAudioContext;
-    voiceAudioContext = null;
-    void context.close().catch(() => {});
-  }
-}
-
-function voiceRecorderAvailable() {
-  return Boolean(
-    API_BASE &&
-    typeof window.MediaRecorder === "function" &&
-    navigator.mediaDevices &&
-    typeof navigator.mediaDevices.getUserMedia === "function" &&
-    (window.AudioContext || window.webkitAudioContext)
-  );
-}
-
-function monitorVoiceSilence() {
-  if (!voiceModeActive || !activeMediaRecorder || activeMediaRecorder.state !== "recording" || !voiceAnalyser || !voiceAnalysisBuffer) {
-    voiceMonitorFrame = 0;
-    return;
-  }
-  voiceAnalyser.getByteTimeDomainData(voiceAnalysisBuffer);
-  let sum = 0;
-  for (let i = 0; i < voiceAnalysisBuffer.length; i++) {
-    const centred = (voiceAnalysisBuffer[i] - 128) / 128;
-    sum += centred * centred;
-  }
-  const rms = Math.sqrt(sum / voiceAnalysisBuffer.length);
-  const now = performance.now();
-  const elapsed = now - voiceRecordingStartedAt;
-  if (rms > 0.045) {
-    voiceSpeechDetected = true;
-    voiceLastSpeechAt = now;
-  }
-  if (voiceSpeechDetected && elapsed > 1400 && now - voiceLastSpeechAt > 1350) {
-    try { activeMediaRecorder.stop(); } catch {}
-    return;
-  }
-  if (!voiceSpeechDetected && elapsed > 12000) {
-    stopVoiceConversation("I didn't hear speech. Tap Voice to try again, or type your message.");
-    return;
-  }
-  if (elapsed > 20000) {
-    try { activeMediaRecorder.stop(); } catch {}
-    return;
-  }
-  voiceMonitorFrame = window.requestAnimationFrame(monitorVoiceSilence);
-}
-
-function startVoiceMonitor() {
-  stopVoiceMonitor();
-  voiceMonitorFrame = window.requestAnimationFrame(monitorVoiceSilence);
-}
-
-function blobToBase64(blob) {
-  return blob.arrayBuffer().then((buffer) => {
-    const bytes = new Uint8Array(buffer);
-    let binary = "";
-    const chunkSize = 0x8000;
-    for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-      binary += String.fromCharCode(...bytes.subarray(offset, Math.min(offset + chunkSize, bytes.length)));
-    }
-    return btoa(binary);
-  });
-}
-
-async function transcribeVoiceRecording(blob) {
-  if (!voiceModeActive || voiceTranscribing) return;
-  if (!blob || blob.size < 1500) {
-    if (elements.voiceStatus) elements.voiceStatus.textContent = "I didn't catch that clearly. Listening again…";
-    scheduleVoiceListening(500);
-    return;
-  }
-  voiceTranscribing = true;
-  if (elements.conversationStatus) elements.conversationStatus.textContent = "Transcribing your speech";
-  if (elements.voiceStatus) elements.voiceStatus.textContent = "Transcribing · Groq Whisper";
-  try {
-    const audioBase64 = await blobToBase64(blob);
-    if (!voiceModeActive) return;
-    const response = await fetch(API_BASE + "/api/transcribe", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ audioBase64, mimeType: blob.type || "audio/mp4" }),
-      signal: AbortSignal.timeout(45_000)
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || "Voice transcription could not complete.");
-    const transcript = String(data.text || "").trim();
-    if (!transcript) throw new Error("I couldn't make out those words. Please try again.");
-    if (elements.voiceStatus) elements.voiceStatus.textContent = "Heard: " + transcript.slice(0, 95);
-    if (elements.messageInput) elements.messageInput.value = "";
-    voiceTranscribing = false;
-    await sendMessage(transcript);
-  } catch (error) {
-    voiceTranscribing = false;
-    if (voiceModeActive) stopVoiceConversation(error?.message || "Voice transcription failed. Please try again or type.");
-  } finally {
-    voiceTranscribing = false;
-  }
-}
-
-async function startMediaRecorderListening() {
-  if (!voiceModeActive || isSending || assistantIsSpeaking || voiceTranscribing || activeMediaRecorder?.state === "recording") return;
-  try {
-    if (!voiceMediaStream) {
-      voiceMediaStream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
-      });
-    }
-    if (!voiceModeActive) {
-      releaseVoiceMedia();
-      return;
-    }
-    if (!voiceAudioContext) {
-      const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
-      voiceAudioContext = new AudioContextConstructor();
-      voiceAnalyser = voiceAudioContext.createAnalyser();
-      voiceAnalyser.fftSize = 1024;
-      voiceAnalysisBuffer = new Uint8Array(voiceAnalyser.fftSize);
-      const source = voiceAudioContext.createMediaStreamSource(voiceMediaStream);
-      source.connect(voiceAnalyser);
-    }
-    if (voiceAudioContext.state === "suspended") await voiceAudioContext.resume();
-    if (!voiceModeActive) return;
-
-    const preferredTypes = [
-      "audio/mp4;codecs=mp4a.40.2",
-      "audio/mp4",
-      "audio/webm;codecs=opus",
-      "audio/webm",
-      "audio/ogg;codecs=opus"
-    ];
-    const supportedType = preferredTypes.find((type) => MediaRecorder.isTypeSupported?.(type));
-    const recorder = supportedType
-      ? new MediaRecorder(voiceMediaStream, { mimeType: supportedType })
-      : new MediaRecorder(voiceMediaStream);
-    activeMediaRecorder = recorder;
-    voiceAudioChunks = [];
-    voiceSpeechDetected = false;
-    voiceLastSpeechAt = 0;
-    voiceRecordingStartedAt = performance.now();
-    recorder.ondataavailable = (event) => {
-      if (event.data?.size) voiceAudioChunks.push(event.data);
-    };
-    recorder.onerror = () => {
-      stopVoiceConversation("The microphone recording failed. Please try again or type your message.");
-    };
-    recorder.onstop = () => {
-      stopVoiceMonitor();
-      const blobType = recorder.mimeType || supportedType || "audio/mp4";
-      const blob = new Blob(voiceAudioChunks, { type: blobType });
-      voiceAudioChunks = [];
-      if (activeMediaRecorder === recorder) activeMediaRecorder = null;
-      if (!voiceModeActive) return;
-      if (!voiceSpeechDetected) {
-        stopVoiceConversation("I didn't hear speech. Tap Voice to try again, or type your message.");
-        return;
-      }
-      void transcribeVoiceRecording(blob);
-    };
-    recorder.start(200);
-    if (elements.conversationStatus) elements.conversationStatus.textContent = "Listening · speak naturally, then pause";
-    if (elements.voiceStatus) {
-      elements.voiceStatus.dataset.error = "";
-      elements.voiceStatus.textContent = "Listening · pauses send your words to Groq Whisper";
-    }
-    startVoiceMonitor();
-  } catch (error) {
-    stopVoiceConversation(
-      error?.name === "NotAllowedError"
-        ? "Microphone access blocked. Allow microphone access in browser settings, then try again."
-        : error?.name === "NotFoundError"
-          ? "No microphone was found. Connect or enable a microphone, then try again."
-          : "Voice recording could not start. Please allow microphone access or type your message."
-    );
-  }
-}
-
 function createSpeechRecognition() {
   if (!SpeechRecognitionConstructor) return null;
   try {
     const recognizer = new SpeechRecognitionConstructor();
-    recognizer.lang = "en-GB";
+    recognizer.lang = ({"en":"en-US","es":"es-ES","fr":"fr-FR","it":"it-IT","pt":"pt-BR","hi":"hi-IN","ja":"ja-JP","zh":"zh-CN"})[state.profile.preferredLanguage || "en"] || "en-US";
     recognizer.continuous = false;
     recognizer.interimResults = true;
     recognizer.maxAlternatives = 1;
     recognizer.onstart = () => {
       recognitionListening = true;
+      updateVoiceExperience("listening", selectedCompanionDisplayName() + " is listening. Speak naturally.");
       if (elements.conversationStatus) elements.conversationStatus.textContent = "Listening · speak naturally";
       if (elements.voiceStatus) {
         elements.voiceStatus.dataset.error = "";
@@ -1855,11 +2478,7 @@ function createSpeechRecognition() {
 }
 
 async function startVoiceListening() {
-  if (!voiceModeActive || isSending || assistantIsSpeaking || voiceTranscribing || recognitionListening) return;
-  if (voiceRecorderAvailable()) {
-    await startMediaRecorderListening();
-    return;
-  }
+  if (!voiceModeActive || voiceInputMuted || isSending || assistantIsSpeaking || voiceTranscribing || recognitionListening) return;
   if (!speechRecognition) speechRecognition = createSpeechRecognition();
   if (!speechRecognition) {
     stopVoiceConversation("Voice input isn't supported by this browser. Try a current version of Chrome or use typing.");
@@ -1878,78 +2497,417 @@ async function startVoiceListening() {
   }
 }
 
-function speakAssistantReply(reply) {
-  if (!voiceModeActive) return;
-  if (!speechSynthesisAvailable) {
-    if (elements.voiceStatus) elements.voiceStatus.textContent = "This browser can hear you but cannot speak replies.";
-    scheduleVoiceListening(500);
+function kokoroVoiceForProfile() {
+  const language = state.profile.preferredLanguage || "en";
+  const gender = state.profile.robotVoice === "male" ? "male" : "female";
+  return KOKORO_VOICE_MAP[language]?.[gender] || "";
+}
+
+function formatVoiceModelBytes(value) {
+  const bytes = Number(value);
+  if (!Number.isFinite(bytes) || bytes < 0) return "";
+  if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + " KB";
+  const megabytes = bytes / (1024 * 1024);
+  return megabytes.toFixed(megabytes >= 20 ? 0 : 1) + " MB";
+}
+
+function renderVoiceModelProgress({ visible = true, label = "", progress = null, indeterminate = false }) {
+  if (voiceModelProgressTimer) {
+    window.clearTimeout(voiceModelProgressTimer);
+    voiceModelProgressTimer = null;
+  }
+  const views = [
+    {
+      container: elements.voiceModelProgress,
+      track: elements.voiceModelProgressTrack,
+      fill: elements.voiceModelProgressFill,
+      label: elements.voiceModelProgressLabel,
+      percent: elements.voiceModelProgressPercent
+    },
+    {
+      container: elements.voiceModelProgressMain,
+      track: elements.voiceModelProgressTrackMain,
+      fill: elements.voiceModelProgressFillMain,
+      label: elements.voiceModelProgressLabelMain,
+      percent: elements.voiceModelProgressPercentMain
+    }
+  ];
+
+  const hasProgress = Number.isFinite(progress);
+  for (const view of views) {
+    if (!view.container) continue;
+    view.container.hidden = !visible;
+    if (label && view.label) view.label.textContent = label;
+    if (!view.track) continue;
+    view.track.classList.toggle("is-indeterminate", Boolean(indeterminate));
+    if (hasProgress) {
+      const value = Math.max(0, Math.min(100, Number(progress)));
+      view.track.setAttribute("aria-valuenow", String(Math.round(value)));
+      if (view.fill) view.fill.style.width = value + "%";
+      if (view.percent) view.percent.textContent = Math.round(value) + "%";
+    } else {
+      view.track.removeAttribute("aria-valuenow");
+      if (view.fill) view.fill.style.width = indeterminate ? "34%" : "0%";
+      if (view.percent) view.percent.textContent = "";
+    }
+  }
+}
+
+function scheduleVoiceModelProgressHide(delay = 2500) {
+  if (voiceModelProgressTimer) window.clearTimeout(voiceModelProgressTimer);
+  voiceModelProgressTimer = window.setTimeout(() => {
+    voiceModelProgressTimer = null;
+    if (elements.voiceModelProgress) elements.voiceModelProgress.hidden = true;
+    if (elements.voiceModelProgressMain) elements.voiceModelProgressMain.hidden = true;
+  }, delay);
+}
+
+function handleKokoroProgress(info) {
+  if (!info || typeof info !== "object") return;
+  if (info.status === "initiate") {
+    renderVoiceModelProgress({ label: "Checking for a saved voice model…", indeterminate: true });
+    return;
+  }
+  if (info.status === "download") {
+    renderVoiceModelProgress({ label: "Downloading voice model…", indeterminate: true });
+    return;
+  }
+  if (info.status === "progress_total" || info.status === "progress") {
+    const loaded = Number(info.loaded);
+    const total = Number(info.total);
+    const progress = Number(info.progress);
+    const isOverallProgress = info.status === "progress_total";
+    const fileName = typeof info.file === "string" ? info.file.split("/").pop() : "";
+    let label = isOverallProgress ? "Downloading voice model…" : "Downloading " + (fileName || "voice model file") + "…";
+    if (Number.isFinite(loaded) && Number.isFinite(total) && total > 0) {
+      const amount = formatVoiceModelBytes(loaded) + " of " + formatVoiceModelBytes(total);
+      label = isOverallProgress
+        ? "Voice model download · " + amount
+        : "Current file " + (fileName || "download") + " · " + amount;
+    }
+    renderVoiceModelProgress({
+      label,
+      progress: Number.isFinite(progress) ? progress : null,
+      indeterminate: !Number.isFinite(progress)
+    });
+  }
+}
+
+async function loadKokoroTTS() {
+  if (kokoroTTSInstance) return kokoroTTSInstance;
+  if (!kokoroLoadPromise) {
+    kokoroLoadFailed = false;
+    renderVoiceModelProgress({ label: "Checking for a saved voice model…", indeterminate: true });
+    kokoroLoadPromise = (async () => {
+      const [{ KokoroTTS }, { env }] = await Promise.all([
+        import("kokoro-js"),
+        import("@huggingface/transformers")
+      ]);
+      // Keep the model files in the browser's Cache API and reuse the WASM
+      // runtime between app launches instead of fetching them again.
+      env.useBrowserCache = true;
+      env.useWasmCache = true;
+      env.cacheKey = "transformers-cache";
+      const tts = await KokoroTTS.from_pretrained("onnx-community/Kokoro-82M-v1.0-ONNX", {
+        dtype: "q8",
+        device: "wasm",
+        progress_callback: handleKokoroProgress
+      });
+      kokoroTTSInstance = tts;
+      renderVoiceModelProgress({ label: "Voice ready on this device", progress: 100 });
+      scheduleVoiceModelProgressHide(2800);
+      return tts;
+    })().catch((error) => {
+      kokoroLoadPromise = null;
+      kokoroTTSInstance = null;
+      kokoroLoadFailed = true;
+      renderVoiceModelProgress({ label: "Voice model unavailable · using built-in speech", progress: null, indeterminate: false });
+      scheduleVoiceModelProgressHide(6000);
+      throw error;
+    });
+  }
+  return kokoroLoadPromise;
+}
+
+function scheduleKokoroBackgroundPreload(delay = 1400) {
+  if (!kokoroVoiceForProfile() || kokoroTTSInstance || kokoroLoadPromise || kokoroLoadFailed) return;
+  const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  if (connection && connection.saveData) {
+    console.info("SYNQ.ME voice model preload deferred because Data Saver is enabled.");
     return;
   }
 
-  window.speechSynthesis.cancel();
+  window.setTimeout(() => {
+    if (kokoroTTSInstance || kokoroLoadPromise || kokoroLoadFailed) return;
+    if (document.visibilityState === "hidden") {
+      scheduleKokoroBackgroundPreload(8000);
+      return;
+    }
+    // Best-effort request to reduce the chance the browser evicts the cached
+    // 88 MB model under storage pressure. This never blocks voice loading.
+    if (navigator.storage && typeof navigator.storage.persist === "function") {
+      void navigator.storage.persist().then((persisted) => {
+        if (!persisted) console.info("Browser storage persistence was not granted; cached model files may be evicted by the browser.");
+      }).catch(() => {});
+    }
+    void loadKokoroTTS().catch((error) => {
+      console.info("Kokoro background preload failed; built-in speech remains available.", error);
+    });
+  }, delay);
+}
+
+function clearKokoroAudio(player = kokoroAudioElement, url = kokoroAudioUrl) {
+  if (player && player === kokoroAudioElement) kokoroAudioElement = null;
+  if (url) {
+    try { URL.revokeObjectURL(url); } catch {}
+    if (url === kokoroAudioUrl) kokoroAudioUrl = "";
+  }
+}
+
+function stopKokoroAudio() {
+  kokoroSpeechGeneration += 1;
+  if (kokoroAudioElement) {
+    const player = kokoroAudioElement;
+    kokoroAudioElement = null;
+    try { player.pause(); player.removeAttribute("src"); player.load(); } catch {}
+  }
+  if (kokoroAudioUrl) {
+    try { URL.revokeObjectURL(kokoroAudioUrl); } catch {}
+    kokoroAudioUrl = "";
+  }
+  assistantIsSpeaking = false;
+}
+
+async function playKokoroReply(reply, voiceId, requestId, onPlaybackStarted = () => {}) {
+  const tts = await loadKokoroTTS();
+  if (!voiceModeActive || requestId !== kokoroSpeechGeneration) return true;
+  const generated = await tts.generate(reply, { voice: voiceId });
+  if (!voiceModeActive || requestId !== kokoroSpeechGeneration) return true;
+  if (!generated || typeof generated.toBlob !== "function") throw new Error("Kokoro returned no playable audio.");
+  const blob = generated.toBlob();
+  const url = URL.createObjectURL(blob);
+  const player = new Audio(url);
+  player.preload = "auto";
+  kokoroAudioElement = player;
+  kokoroAudioUrl = url;
+  return await new Promise((resolve) => {
+    let settled = false;
+    const finish = (ok) => {
+      if (settled) return;
+      settled = true;
+      clearKokoroAudio(player, url);
+      if (!ok) assistantIsSpeaking = false;
+      resolve(ok);
+    };
+    player.onplay = () => {
+      if (requestId !== kokoroSpeechGeneration || !voiceModeActive) {
+        try { player.pause(); } catch {}
+        finish(true);
+        return;
+      }
+      onPlaybackStarted();
+      assistantIsSpeaking = true;
+      const companion = selectedCompanionDisplayName();
+      updateVoiceExperience("speaking", companion + " is speaking.");
+      if (elements.conversationStatus) elements.conversationStatus.textContent = companion + " is speaking";
+      if (elements.voiceStatus) elements.voiceStatus.textContent = "Voice on · Kokoro on-device speech";
+    };
+    player.onended = () => {
+      finish(true);
+      assistantIsSpeaking = false;
+      if (voiceModeActive && !voiceInputMuted) updateVoiceExperience("listening", selectedCompanionDisplayName() + " is listening. Speak naturally.");
+      if (voiceModeActive) scheduleVoiceListening(250);
+    };
+    player.onerror = () => finish(false);
+    player.play().catch(() => finish(false));
+  });
+}
+
+function speakAssistantReplyWithBrowser(reply, retryAttempt = 0, userInitiated = false) {
+  const spokenText = String(reply || "");
+  if (!speechSynthesisAvailable) {
+    if (elements.voiceStatus) elements.voiceStatus.textContent = "Speech output is unavailable in this browser.";
+    updateVoiceExperience("listening", "Your reply is visible in chat. Spoken replies are not supported here.");
+    return;
+  }
+
+  const synth = window.speechSynthesis;
+  // Clear any stale utterance before resetting Chrome/Safari's speech queue.
   currentSpeechUtterance = null;
   assistantIsSpeaking = false;
-  const utterance = new SpeechSynthesisUtterance(String(reply || ""));
-  utterance.lang = "en-GB";
+  try {
+    synth.cancel();
+    synth.resume();
+  } catch (error) {
+    console.info("Browser speech queue reset was not available.", error);
+  }
+
+  const language = state.profile.preferredLanguage || "en";
+  const locale = SPEECH_LOCALES[language] || "en-US";
+  const utterance = new SpeechSynthesisUtterance(spokenText);
+  utterance.lang = locale;
   utterance.rate = 1;
-  utterance.pitch = state.profile.robotVoice === "male" ? 0.92 : 1.04;
-  const voices = window.speechSynthesis.getVoices();
-  const englishVoices = voices.filter((voice) => /^en([_-]|$)/i.test(voice.lang));
+  utterance.pitch = state.profile.robotVoice === "male" ? 0.96 : 1.03;
+  utterance.volume = 1;
+
+  const voices = synth.getVoices();
+  const languageCode = locale.split("-")[0].toLowerCase();
+  const localeVoices = voices.filter((voice) => String(voice.lang || "").toLowerCase().startsWith(languageCode));
   const namePattern = state.profile.robotVoice === "male"
-    ? /(male|daniel|fred|alex|george|oliver|aaron|david)/i
-    : /(female|samantha|victoria|serena|karen|moira|fiona|libby|susan|kate|ava)/i;
-  const preferredVoice = englishVoices.find((voice) => namePattern.test(voice.name));
-  const selectedVoice = preferredVoice || englishVoices.find((voice) => voice.default) || englishVoices[0] || voices[0];
+    ? /(male|daniel|fred|alex|george|oliver|aaron|david|michael|liam|jorge|thomas)/i
+    : /(female|samantha|victoria|serena|karen|moira|fiona|libby|susan|kate|ava|zira|sara|monica)/i;
+  const preferredVoice = localeVoices.find((voice) => namePattern.test(voice.name));
+  const selectedVoice = preferredVoice || localeVoices.find((voice) => voice.default) || localeVoices[0] || voices.find((voice) => voice.default) || voices[0];
   if (selectedVoice) utterance.voice = selectedVoice;
+
+  let didStart = false;
+  let watchdog = null;
+  const clearWatchdog = () => {
+    if (watchdog !== null) {
+      window.clearTimeout(watchdog);
+      watchdog = null;
+    }
+  };
+
+  const reportSpeechFailure = (reason) => {
+    if (currentSpeechUtterance !== utterance) return;
+    clearWatchdog();
+    currentSpeechUtterance = null;
+    assistantIsSpeaking = false;
+    try { synth.cancel(); } catch {}
+
+    console.info("SYNQ.ME browser speech did not complete.", reason);
+    if (retryAttempt < 1 && voiceModeActive) {
+      if (elements.voiceStatus) elements.voiceStatus.textContent = "Restarting your device’s speech service…";
+      window.setTimeout(() => {
+        if (voiceModeActive && lastAssistantReplyForSpeech === spokenText) {
+          speakAssistantReplyWithBrowser(spokenText, retryAttempt + 1);
+        }
+      }, 220);
+      return;
+    }
+
+    if (elements.voiceStatus) elements.voiceStatus.textContent = "Device speech did not start. Your reply is still in chat.";
+    updateVoiceExperience("listening", selectedCompanionDisplayName() + " couldn’t start audio automatically. Your reply is in chat—tap below to hear it.");
+    if (elements.voiceRetrySpeechButton) {
+      elements.voiceRetrySpeechButton.textContent = "Tap to hear " + selectedCompanionDisplayName() + "’s reply";
+      elements.voiceRetrySpeechButton.hidden = false;
+    }
+    if (voiceModeActive) scheduleVoiceListening(500);
+  };
 
   currentSpeechUtterance = utterance;
   assistantIsSpeaking = true;
   utterance.onstart = () => {
     if (currentSpeechUtterance !== utterance) return;
-    if (elements.conversationStatus) elements.conversationStatus.textContent = (state.profile.robotName || "Your SecondSelf") + " is speaking";
-    if (elements.voiceStatus) elements.voiceStatus.textContent = "Voice on · reply spoken aloud";
+    didStart = true;
+    clearWatchdog();
+    if (elements.voiceRetrySpeechButton) elements.voiceRetrySpeechButton.hidden = true;
+    const companion = selectedCompanionDisplayName();
+    updateVoiceExperience("speaking", companion + " is speaking.");
+    if (elements.conversationStatus) elements.conversationStatus.textContent = companion + " is speaking";
+    if (elements.voiceStatus) elements.voiceStatus.textContent = "Voice on · device speech";
   };
   utterance.onend = () => {
     if (currentSpeechUtterance !== utterance) return;
+    clearWatchdog();
     currentSpeechUtterance = null;
     assistantIsSpeaking = false;
+    if (elements.voiceRetrySpeechButton) elements.voiceRetrySpeechButton.hidden = true;
+    if (voiceModeActive && !voiceInputMuted) updateVoiceExperience("listening", selectedCompanionDisplayName() + " is listening. Speak naturally.");
     if (voiceModeActive) scheduleVoiceListening(250);
   };
-  utterance.onerror = () => {
-    if (currentSpeechUtterance !== utterance) return;
-    currentSpeechUtterance = null;
-    assistantIsSpeaking = false;
-    if (voiceModeActive) {
-      if (elements.voiceStatus) elements.voiceStatus.textContent = "Reply is visible in chat · listening again";
-      scheduleVoiceListening(350);
+  utterance.onerror = (event) => {
+    reportSpeechFailure(event?.error || "speech synthesis error");
+  };
+
+  const beginSpeaking = () => {
+    if (currentSpeechUtterance !== utterance || !voiceModeActive) return;
+    try {
+      // resume() is important on browsers that leave speechSynthesis paused
+      // after a cancelled or interrupted utterance.
+      synth.resume();
+      synth.speak(utterance);
+    } catch (error) {
+      reportSpeechFailure(error?.message || "speech synthesis threw an exception");
     }
   };
-  window.speechSynthesis.speak(utterance);
+
+  watchdog = window.setTimeout(() => {
+    if (currentSpeechUtterance === utterance && !didStart) {
+      reportSpeechFailure("speech start timeout");
+    }
+  }, 3200);
+
+  // If the user presses the retry button, speak in the same gesture stack so
+  // browsers with stricter audio policies can unlock their speech service.
+  if (userInitiated) beginSpeaking();
+  else window.setTimeout(beginSpeaking, 80);
 }
 
-elements.voiceModeButton?.addEventListener("click", () => {
-  if (voiceModeActive) {
-    stopVoiceConversation();
+async function speakAssistantReply(reply) {
+  if (!voiceModeActive) return;
+  lastAssistantReplyForSpeech = String(reply || "");
+  if (elements.voiceRetrySpeechButton) elements.voiceRetrySpeechButton.hidden = true;
+
+  const voiceId = kokoroVoiceForProfile();
+  // Use the configured character voice for the full reply. Do not speak with
+  // the browser's generic voice just because Kokoro is still downloading.
+  if (!voiceId) {
+    speakAssistantReplyWithBrowser(reply);
     return;
   }
-  if (!SpeechRecognitionConstructor) {
-    if (elements.voiceStatus) {
-      elements.voiceStatus.dataset.error = "true";
-      elements.voiceStatus.textContent = "Voice input isn't supported here. Try Chrome or use typing.";
+
+  try {
+    if (!kokoroTTSInstance) {
+      const loadPromise = kokoroLoadPromise || loadKokoroTTS();
+      if (elements.voiceStatus) elements.voiceStatus.textContent = "Loading the selected robot voice…";
+      updateVoiceExperience("thinking", "Preparing " + selectedCompanionDisplayName() + "’s voice…");
+      await loadPromise;
     }
-    if (elements.conversationStatus) elements.conversationStatus.textContent = "Voice input isn't supported by this browser";
+    if (!voiceModeActive) return;
+    if (!kokoroTTSInstance) throw new Error("The selected voice model is not ready.");
+
+    if (speechSynthesisAvailable) window.speechSynthesis.cancel();
+    currentSpeechUtterance = null;
+    const requestId = ++kokoroSpeechGeneration;
+    if (elements.voiceStatus) elements.voiceStatus.textContent = "Preparing the selected robot voice…";
+    updateVoiceExperience("thinking", "Preparing " + selectedCompanionDisplayName() + "’s reply…");
+
+    // Wait for inference and playback to finish. A short startup timeout caused
+    // slower devices to abandon Kokoro and fall back to an unrelated system voice.
+    const played = await playKokoroReply(String(reply || ""), voiceId, requestId);
+    if (played || !voiceModeActive || requestId !== kokoroSpeechGeneration) return;
+    throw new Error("The selected voice could not start audio playback.");
+  } catch (error) {
+    console.info("SYNQ.ME selected voice could not play.", error);
+    if (!voiceModeActive) return;
+    assistantIsSpeaking = false;
+    if (elements.voiceStatus) elements.voiceStatus.textContent = "The selected robot voice could not start.";
+    updateVoiceExperience("listening", "I couldn’t start the selected voice. Tap retry to try it again.");
+    if (elements.voiceRetrySpeechButton) {
+      elements.voiceRetrySpeechButton.textContent = "Retry " + selectedCompanionDisplayName() + "’s voice";
+      elements.voiceRetrySpeechButton.hidden = false;
+    }
+    if (voiceModeActive) scheduleVoiceListening(500);
+  }
+}
+
+elements.voiceRetrySpeechButton?.addEventListener("click", () => {
+  if (!lastAssistantReplyForSpeech || !voiceModeActive) return;
+  elements.voiceRetrySpeechButton.hidden = true;
+  void speakAssistantReply(lastAssistantReplyForSpeech);
+});
+
+elements.voiceModeButton?.addEventListener("click", () => {
+  if (voiceModeActive && elements.voiceExperience && !elements.voiceExperience.hidden) {
+    closeVoiceExperience("Voice conversation stopped.");
     return;
   }
-  voiceModeActive = true;
-  if (elements.voiceStatus) {
-    elements.voiceStatus.dataset.error = "";
-    elements.voiceStatus.textContent = speechSynthesisAvailable
-      ? "Voice on · say a sentence at a time"
-      : "Voice input on · spoken replies may not be supported";
-  }
-  updateVoiceModeButton();
-  startVoiceListening();
+  openVoiceExperience();
 });
+
+initialiseRobotAndVoiceControls();
 
 
 function isClarificationRequest(message) {
@@ -2003,93 +2961,233 @@ function responseRepeatsUser(reply, userMessage) {
   return overlap >= 0.78;
 }
 
-async function requestAIReply(repairMode = false) {
-  if (!API_BASE) return null;
-  if (!state.apiProvider) await checkAIBackend();
-  if (state.apiProvider !== "groq") {
-    state.apiConnected = false;
-    state.apiError = "groq-only policy";
-    state.apiErrorDetail = state.apiProvider
-      ? "AI request blocked: SYNQ.ME is configured for Groq only, but the connected backend reported a different provider. Redeploy the Groq-only backend."
-      : "AI request blocked because the backend provider could not be verified as Groq. Redeploy or restore the Groq-only backend.";
-    elements.providerLabel.textContent = "GROQ ONLY · BACKEND CHECK REQUIRED";
-    return null;
+function setLocalAIProgress({ label = "", progress = null, visible = true, indeterminate = false } = {}) {
+  if (!elements.localAIProgress) return;
+  elements.localAIProgress.hidden = !visible;
+  if (elements.localAIProgressLabel) elements.localAIProgressLabel.textContent = label;
+  const knownProgress = Number.isFinite(progress);
+  if (elements.localAIProgressFill) {
+    elements.localAIProgressFill.style.width = knownProgress ? Math.max(0, Math.min(100, progress)) + "%" : (indeterminate ? "18%" : "0%");
+    elements.localAIProgressFill.classList.toggle("is-indeterminate", Boolean(indeterminate && !knownProgress));
   }
+  if (elements.localAIProgressTrack) {
+    if (knownProgress) elements.localAIProgressTrack.setAttribute("aria-valuenow", String(Math.round(progress)));
+    else elements.localAIProgressTrack.removeAttribute("aria-valuenow");
+    if (label) elements.localAIProgressTrack.setAttribute("aria-valuetext", label);
+    else elements.localAIProgressTrack.removeAttribute("aria-valuetext");
+  }
+  if (!isSending && elements.conversationStatus && label) elements.conversationStatus.textContent = label;
+}
+
+function rejectPendingLocalAIRequests(error) {
+  for (const [id, pending] of localAIPendingRequests.entries()) {
+    pending.reject(error);
+    localAIPendingRequests.delete(id);
+  }
+}
+
+function handleLocalAIWorkerMessage(event) {
+  const data = event.data || {};
+  if (data.type === "status") {
+    setLocalAIProgress({
+      label: String(data.label || "Loading local AMÏA model"),
+      progress: null,
+      indeterminate: true
+    });
+    return;
+  }
+  if (data.type === "progress") {
+    const progress = Number.isFinite(data.progress) ? data.progress : null;
+    const label = data.status === "done"
+      ? "Starting local AMÏA model"
+      : data.cached
+        ? "Loading local AMÏA model"
+        : data.status === "initiate"
+          ? "Preparing local AMÏA model download"
+          : "Downloading local AMÏA model";
+    setLocalAIProgress({
+      label,
+      progress,
+      indeterminate: progress === null
+    });
+    return;
+  }
+  if (data.type === "ready") {
+    localAIReady = true;
+    state.apiProvider = "local";
+    state.apiModel = LOCAL_MODEL_LABEL;
+    state.apiConfigured = true;
+    state.apiConnected = true;
+    state.apiError = "";
+    state.apiErrorDetail = "";
+    setLocalAIProgress({ label: "Local AI ready", progress: 100 });
+    if (localAILoadResolve) localAILoadResolve();
+    localAILoadResolve = null;
+    localAILoadReject = null;
+    renderAll();
+    window.setTimeout(() => setLocalAIProgress({ visible: false }), 6000);
+    return;
+  }
+  if (data.type === "load-error") {
+    const error = new Error(String(data.message || "The local model could not be loaded."));
+    localAIReady = false;
+    state.apiConnected = false;
+    state.apiConfigured = true;
+    state.apiProvider = "local";
+    state.apiModel = LOCAL_MODEL_LABEL;
+    state.apiError = "local model unavailable";
+    state.apiErrorDetail = error.message;
+    setLocalAIProgress({ label: error.message, progress: null, indeterminate: false });
+    if (localAILoadReject) localAILoadReject(error);
+    localAILoadResolve = null;
+    localAILoadReject = null;
+    renderAll();
+    return;
+  }
+  if (data.type === "reply" || data.type === "reply-error") {
+    const pending = localAIPendingRequests.get(data.id);
+    if (!pending) return;
+    localAIPendingRequests.delete(data.id);
+    if (data.type === "reply-error") pending.reject(new Error(String(data.message || "Local generation failed.")));
+    else pending.resolve(String(data.text || ""));
+  }
+}
+
+function workerFailure(error) {
+  const message = error?.message || "The local AI worker stopped unexpectedly.";
+  localAIReady = false;
+  localAIWorker = null;
+  localAILoadPromise = null;
+  state.apiConnected = false;
+  state.apiError = "local model unavailable";
+  state.apiErrorDetail = message;
+  setLocalAIProgress({ label: message });
+  if (localAILoadReject) localAILoadReject(new Error(message));
+  localAILoadResolve = null;
+  localAILoadReject = null;
+  rejectPendingLocalAIRequests(new Error(message));
+  renderAll();
+}
+
+function ensureLocalAIReady() {
+  if (localAIReady) return Promise.resolve();
+  if (localAILoadPromise) return localAILoadPromise;
+  state.apiProvider = "local";
+  state.apiModel = LOCAL_MODEL_LABEL;
+  state.apiError = "";
+  state.apiErrorDetail = "";
+  setLocalAIProgress({ label: "Checking local AMÏA model cache", progress: null, indeterminate: true });
+  localAILoadPromise = new Promise((resolve, reject) => {
+    localAILoadResolve = resolve;
+    localAILoadReject = reject;
+    (async () => {
+      try {
+        // Ask for persistent origin storage before starting a large model load.
+        // Browsers may decline; Cache API caching still remains enabled.
+        try { await navigator.storage?.persist?.(); } catch {}
+        if (!localAIWorker) {
+          localAIWorker = new Worker(new URL("./local-ai.worker.js", import.meta.url), { type: "module" });
+          localAIWorker.addEventListener("message", handleLocalAIWorkerMessage);
+          localAIWorker.addEventListener("error", (error) => workerFailure(error));
+          localAIWorker.addEventListener("messageerror", () => workerFailure(new Error("Local AI worker returned an unreadable message.")));
+        }
+        localAIWorker.postMessage({ type: "load" });
+      } catch (error) {
+        reject(error);
+      }
+    })();
+  }).catch((error) => {
+    localAILoadPromise = null;
+    localAIReady = false;
+    state.apiConnected = false;
+    state.apiProvider = "local";
+    state.apiModel = LOCAL_MODEL_LABEL;
+    state.apiError = "local model unavailable";
+    state.apiErrorDetail = String(error?.message || "The local model could not be loaded.");
+    setLocalAIProgress({ label: state.apiErrorDetail });
+    renderAll();
+    throw error;
+  });
+  return localAILoadPromise;
+}
+
+function runLocalAIRequest(payload) {
+  const id = ++localAIRequestSequence;
+  return new Promise((resolve, reject) => {
+    localAIPendingRequests.set(id, { resolve, reject });
+    try {
+      localAIWorker.postMessage({ ...payload, id });
+    } catch (error) {
+      localAIPendingRequests.delete(id);
+      reject(error);
+    }
+  });
+}
+
+async function requestAIReply(repairMode = false) {
+  if (!repairMode) lastAIReplyUsedFallback = false;
+  state.apiProvider = "local";
+  state.apiModel = LOCAL_MODEL_LABEL;
+  state.apiError = "";
   state.apiErrorDetail = "";
   try {
-    const response = await fetch(API_BASE + "/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        messages: state.messages.slice(-20).map((message) => ({ role: message.role, content: message.content })),
-        preferences: state.preferences.map((preference) => {
-          const extracted = preferenceExtraction(preference);
-          return {
-            category: preference.category || classifyPreference(preference.text),
-            text: preference.text,
-            epistemicStatus: preference.status || "user_stated",
-            explicitFields: extracted.explicitFields,
-            unresolvedFields: extracted.unresolvedFields
-          };
-        }),
-        profile: {
-          ownerName: state.profile.ownerName,
-          robotName: state.profile.robotName,
-          robotType: state.profile.robotType,
-          robotVoice: state.profile.robotVoice || "female",
-          askBeforeActions: state.profile.confirmActions
-        },
-        domesticFunctions: state.functions.map((id) => ACTIVITIES.find((activity) => activity.id === id)?.label).filter(Boolean),
-        repairMode
-      })
+    await ensureLocalAIReady();
+    if (elements.conversationStatus) elements.conversationStatus.textContent = "Your companion is thinking…";
+    const messages = state.messages.slice(-18).map((message) => ({ role: message.role, content: message.content }));
+    const preferences = state.preferences.map((preference) => {
+      const extracted = preferenceExtraction(preference);
+      return {
+        category: preference.category || classifyPreference(preference.text),
+        text: preference.text,
+        epistemicStatus: preference.status || "user_stated",
+        explicitFields: extracted.explicitFields,
+        unresolvedFields: extracted.unresolvedFields
+      };
     });
-    let data = {};
-    try { data = await response.json(); } catch {}
-    const responseProvider = typeof data.provider === "string" ? data.provider.toLowerCase() : state.apiProvider;
-    if (responseProvider && responseProvider !== "groq") {
-      throw new Error("SYNQ.ME is configured for Groq only. The backend response was rejected because its provider did not match the Groq-only policy. Redeploy the Groq-only backend.");
-    }
-    if (data.provider) state.apiProvider = responseProvider;
-    if (data.model) state.apiModel = String(data.model);
-    if (!response.ok) {
-      state.apiConfigured = true;
-      let errorMessage = String(data.error || ("AI endpoint returned " + response.status));
-      // Older backend deployments may mislabel Groq 429 errors.
-      if (responseProvider === "groq" && /gemini/i.test(errorMessage)) {
-        errorMessage = "Groq has reached a usage limit or rate limit. Check your Groq usage and limits, then try again.";
-      }
-      const apiError = new Error(errorMessage);
-      apiError.apiStatus = response.status;
-      apiError.upstreamStatus = Number.isInteger(data.upstreamStatus) ? data.upstreamStatus : null;
-      apiError.errorCode = typeof data.errorCode === "string" ? data.errorCode : "";
-      throw apiError;
-    }
-    const reply = typeof data.reply === "string" ? data.reply : typeof data.message === "string" ? data.message : "";
-    if (!reply.trim()) throw new Error("AI endpoint returned no reply text");
+    const reply = await runLocalAIRequest({
+      type: "generate",
+      messages,
+      preferences,
+      profile: {
+        ownerName: state.profile.ownerName,
+        robotName: state.profile.robotName,
+        robotType: state.profile.robotType,
+        robotVoice: state.profile.robotVoice || "female",
+        preferredLanguage: state.profile.preferredLanguage || "en",
+        askBeforeActions: state.profile.confirmActions
+      },
+      domesticFunctions: state.functions.map((id) => ACTIVITIES.find((activity) => activity.id === id)?.label).filter(Boolean),
+      repairMode
+    });
+    if (!reply.trim()) throw new Error("The local model returned an empty reply.");
     state.apiConnected = true;
     state.apiConfigured = true;
     state.apiError = "";
     state.apiErrorDetail = "";
-    elements.providerLabel.textContent = (state.apiProvider || "AI").toUpperCase() + " · " + (state.apiModel || "model") + " · LIVE";
-
-    // If the server had to use a canned fallback, ask the configured model once
-    // more with explicit repair instructions before showing anything to the user.
-    if (data.usedFallback && !repairMode) return await requestAIReply(true);
-    if (data.responseNeedsReview) return "__SYNQME_UNHELPFUL_AI_RESPONSE__";
+    elements.providerLabel.textContent = "LOCAL AI · ON-DEVICE";
+    lastAIReplyUsedFallback = false;
     return reply.trim();
   } catch (error) {
-    console.info("SYNQ.ME AI request failed; no scripted question will be substituted.", error);
+    console.info("SYNQ.ME local Qwen generation failed.", error);
     state.apiConnected = false;
-    state.apiError = responseErrorLabel(error);
-    state.apiErrorDetail = Number.isInteger(error?.apiStatus)
-      ? "The AI service returned HTTP " + error.apiStatus +
-        (Number.isInteger(error?.upstreamStatus) ? " (Groq upstream HTTP " + error.upstreamStatus + ")" : "") +
-        ": " + String(error?.message || "Request failed").slice(0, 260) +
-        (error?.errorCode ? " [reference " + error.errorCode + "]" : "")
-      : "";
-    elements.providerLabel.textContent = (state.apiProvider ? state.apiProvider.toUpperCase() : "AI SERVICE") + " · " + state.apiError.toUpperCase().replace(/_/g, " ");
+    state.apiError = "local model unavailable";
+    state.apiErrorDetail = String(error?.message || "Local generation failed. Check WebGPU support and available memory.");
+    elements.providerLabel.textContent = "LOCAL AI · MODEL NEEDS ATTENTION";
     return null;
   }
+}
+
+function localizedAIUnavailable(language) {
+  const messages = {
+    es: "Ahora mismo no he podido generar una respuesta. Prefiero no inventar una; inténtalo de nuevo dentro de un momento.",
+    fr: "Je n’ai pas pu générer de réponse pour le moment. Je préfère ne pas deviner ; réessaie dans un instant.",
+    it: "Al momento non riesco a generare una risposta. Preferisco non inventare; riprova tra poco.",
+    pt: "Não consegui gerar uma resposta agora. Prefiro não inventar; tenta novamente daqui a pouco.",
+    hi: "मैं अभी जवाब तैयार नहीं कर पाया हूँ। अनुमान लगाने के बजाय, कृपया थोड़ी देर बाद फिर कोशिश करें।",
+    ja: "今は返答を生成できませんでした。推測で答えず、少し時間をおいてもう一度試してください。",
+    zh: "我现在暂时无法生成回复。我不想凭猜测回答，请稍后再试一次。"
+  };
+  return messages[language] || "I can’t generate a reply right now. Please try again shortly.";
 }
 
 function responseErrorLabel(error) {
@@ -2101,32 +3199,6 @@ function responseErrorLabel(error) {
   if (/503|not configured|api key/.test(message)) return "not configured";
   if (/failed to fetch|network|cors|timeout|aborted/.test(message)) return "connection failed";
   return "request failed";
-}
-
-async function checkAIBackend() {
-  if (!API_BASE) return;
-  try {
-    const response = await fetch(API_BASE + "/health", { cache: "no-store" });
-    if (!response.ok) throw new Error("Health check returned " + response.status);
-    const data = await response.json();
-    state.apiProvider = typeof data.provider === "string" ? data.provider.toLowerCase() : "";
-    state.apiModel = typeof data.model === "string" ? data.model : "";
-    state.apiConfigured = Boolean(data.configured);
-    state.apiError = "";
-    if (!state.apiConnected) {
-      renderAll();
-      elements.conversationStatus.textContent = state.apiConfigured
-        ? state.apiProvider.toUpperCase() + " · " + (state.apiModel || "model") + " ready"
-        : state.apiProvider.toUpperCase() + " is not configured";
-    }
-  } catch (error) {
-    state.apiError = "health check unavailable";
-    if (!state.apiConnected) {
-      renderAll();
-      elements.conversationStatus.textContent = "AI provider status could not be verified";
-    }
-    console.info("SYNQ.ME could not verify backend provider settings.", error);
-  }
 }
 
 async function sendMessage(rawText) {
@@ -2143,10 +3215,12 @@ async function sendMessage(rawText) {
   const message = rawText.trim();
   if (!message || isSending) return;
   const clarificationRequest = isClarificationRequest(message);
+  const turnId = ++sendSequence;
   isSending = true;
+  if (voiceModeActive) updateVoiceExperience("thinking", "AMÏA is thinking…");
   elements.sendButton.disabled = true;
   elements.messageInput.disabled = true;
-  elements.conversationStatus.textContent = "ELO is thinking";
+  elements.conversationStatus.textContent = (state.profile.robotName || "Your robot").trim() + " is thinking";
   state.messages.push({ role: "user", content: message });
   const previousAssistantMessage = state.messages.length > 1 && state.messages[state.messages.length - 2]?.role === "assistant"
     ? state.messages[state.messages.length - 2].content
@@ -2167,56 +3241,57 @@ async function sendMessage(rawText) {
   persist();
   renderAll();
 
-  const sentToAIThisTurn = !clarificationRequest && !answeredPendingClarification && Boolean(API_BASE);
-  // A clarification answer must be handled against the pending question, not
-  // sent back to the general-purpose chat model where it can lose context.
-  let reply = clarificationRequest
-    ? clarificationHelpReply(previousAssistantMessage, previousUserMessage)
-    : answeredPendingClarification
-      ? replyToResolvedClarification(message, pendingBeforeAnswer)
-      : await requestAIReply();
-  if (!answeredPendingClarification && !clarificationRequest) {
-    const replyNeedsRepair = (value) => !value ||
-      responseRepeatsUser(value, message) ||
-      responseRepeatsRecentAssistant(value) ||
-      /I've captured this preference for your browser-based SecondSelf|I've added it to your local digital persona|That's useful context for your SecondSelf|Let's make that preference more precise|What detail would matter most to get right|What matters most to you when getting that right|Which laundry detail matters most to you: sorting, washing and drying, or how clothes are put away|Can you walk me through how that usually happens at home/i.test(value);
-    if (replyNeedsRepair(reply) && API_BASE && state.apiConnected) {
-      const retriedReply = await requestAIReply(true);
-      if (retriedReply && retriedReply !== "__SYNQME_UNHELPFUL_AI_RESPONSE__" && !replyNeedsRepair(retriedReply)) {
-        reply = retriedReply;
-      } else {
-        reply = "I’m having trouble making a useful connection from that answer, and I don’t want to give you another canned question. I’ve understood the detail you shared; please try once more, or tell me which part of your routine you’d like to explore.";
-      }
-    } else if (!reply && API_BASE) {
-      reply = state.apiErrorDetail || "I can’t reach the AI conversation service right now, so I haven’t substituted a scripted answer. Please try again shortly.";
-    } else if (!reply) {
-      reply = localReply(message);
-    } else if (reply === "__SYNQME_UNHELPFUL_AI_RESPONSE__") {
-      reply = "I’m having trouble making a useful connection from that answer, and I don’t want to give you another canned question. I’ve understood the detail you shared; please try once more, or tell me which part of your routine you’d like to explore.";
-    } else if (replyNeedsRepair(reply) && !API_BASE) {
-      reply = localReply(message);
+  const sentToAIThisTurn = true;
+  let reply = await requestAIReply();
+  const replyNeedsRepair = (value) => !value ||
+    responseRepeatsUser(value, message) ||
+    responseRepeatsRecentAssistant(value) ||
+    /I've captured this preference for your browser-based SecondSelf|I've added it to your local digital persona|That's useful context for your SecondSelf|Let's make that preference more precise|What detail would matter most to get right|What matters most to you when getting that right|Which laundry detail matters most to you: sorting, washing and drying, or how clothes are put away|Can you walk me through how that usually happens at home/i.test(value);
+  if (replyNeedsRepair(reply) && state.apiConnected && !lastAIReplyUsedFallback) {
+    const retriedReply = await requestAIReply(true);
+    if (retriedReply && retriedReply !== "__SYNQME_UNHELPFUL_AI_RESPONSE__" && !replyNeedsRepair(retriedReply)) {
+      reply = retriedReply;
+    } else {
+      reply = (state.profile.preferredLanguage || "en") === "en"
+        ? "I’m having trouble making a useful connection from that answer. I’ve understood the detail you shared; please try once more, or tell me which part of your routine you’d like to explore."
+        : localizedAIUnavailable(state.profile.preferredLanguage);
     }
+  } else if (!reply) {
+    reply = state.apiErrorDetail || localizedAIUnavailable(state.profile.preferredLanguage || "en");
+  } else if (reply === "__SYNQME_UNHELPFUL_AI_RESPONSE__") {
+    reply = (state.profile.preferredLanguage || "en") === "en"
+      ? "I’m having trouble making a useful connection from that answer. I’ve understood the detail you shared; please try once more, or tell me which part of your routine you’d like to explore."
+      : localizedAIUnavailable(state.profile.preferredLanguage);
   }
   state.messages.push({ role: "assistant", content: reply });
   state.pendingClarification = detectPendingClarification(message, reply);
   state.messages = state.messages.slice(-5000);
   persist();
   renderAll();
-  const conversationSaved = await flushCloudSave();
-  renderAll();
-  const responseProviderLabel = (state.apiProvider ? state.apiProvider.toUpperCase() : "AI") + " · " + (state.apiModel || "model");
-  elements.conversationStatus.textContent = conversationSaved
-    ? (sentToAIThisTurn && state.apiConnected
-        ? responseProviderLabel + " response · saved to account"
-        : state.apiError && sentToAIThisTurn
-          ? responseProviderLabel + " unavailable · no scripted reply"
-          : "Reply saved to account")
-    : "Reply received · account sync needs attention";
+
+  // The reply is already visible. Release the composer immediately instead of
+  // keeping the UI in a thinking state while Supabase finishes syncing.
   isSending = false;
   elements.sendButton.disabled = false;
   elements.messageInput.disabled = false;
+  const responseProviderLabel = (state.apiProvider ? state.apiProvider.toUpperCase() : "AI") + " · " + (state.apiModel || "model");
+  elements.conversationStatus.textContent = sentToAIThisTurn && state.apiConnected
+    ? responseProviderLabel + " · reply received · saving to account…"
+    : "Reply received · saving to account…";
   if (voiceModeActive) speakAssistantReply(reply);
   else elements.messageInput.focus();
+
+  void flushCloudSave().then((conversationSaved) => {
+    // An older save must not overwrite the status for a newer user turn.
+    if (turnId !== sendSequence || isSending) return;
+    elements.conversationStatus.textContent = conversationSaved
+      ? (sentToAIThisTurn && state.apiConnected
+          ? responseProviderLabel + " response · saved to account"
+          : state.apiError && sentToAIThisTurn
+            ? (state.apiErrorDetail || responseProviderLabel + " unavailable · no scripted reply")
+            : "Reply saved to account")
+      : "Reply received · account sync needs attention";
+  });
 }
 
 elements.chatForm.addEventListener("submit", (event) => {
@@ -2537,6 +3612,7 @@ elements.signOutButton?.addEventListener("click", async () => {
     if (error) throw error;
     if (cloudSaveTimer) window.clearTimeout(cloudSaveTimer);
     cloudSaveTimer = null;
+    stopCloudConversationSync();
     cloudUserId = null;
     cloudUserEmail = "";
     cloudMode = "local";
