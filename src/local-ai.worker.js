@@ -1,6 +1,6 @@
 import { env, pipeline } from "@huggingface/transformers";
 
-const MODEL_ID = "onnx-community/Llama-3.2-1B-Instruct-q4f16";
+const MODEL_ID = "onnx-community/Qwen2.5-1.5B-Instruct";
 let generator = null;
 let loadingPromise = null;
 let generationBusy = false;
@@ -69,9 +69,9 @@ async function loadModel() {
       throw new Error("WebGPU is present, but no compatible GPU adapter is available. Try a current Chrome or Edge browser on a supported device.");
     }
     postStatus("Loading local AMÏA model");
-    postProgress({ status: "initiate", file: "Llama 3.2 1B model" });
+    postProgress({ status: "initiate", file: "Qwen2.5 1.5B model" });
     generator = await pipeline("text-generation", MODEL_ID, {
-      // Use the published Transformers.js-compatible Llama 3.2 1B model and q4f16 WebGPU weights.
+      // Use the published Transformers.js-compatible Qwen2.5 1.5B model and q4f16 WebGPU weights.
       revision: "main",
       device: "webgpu",
       dtype: "q4f16",
@@ -86,7 +86,7 @@ async function loadModel() {
       max_new_tokens: 1,
       do_sample: false,
     });
-    postProgress({ status: "done", file: "Llama 3.2 1B model" });
+    postProgress({ status: "done", file: "Qwen2.5 1.5B model" });
     return generator;
   })().catch((error) => {
     loadingPromise = null;
@@ -139,7 +139,7 @@ self.addEventListener("message", async ({ data }) => {
       await loadModel();
       self.postMessage({ type: "ready" });
     } catch (error) {
-      console.error("SYNQ.ME Llama 3.2 1B model loading failed.", error);
+      console.error("SYNQ.ME Qwen2.5 1.5B model loading failed.", error);
       self.postMessage({ type: "load-error", message: describeLoadError(error) });
     }
     return;
