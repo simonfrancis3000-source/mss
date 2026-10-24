@@ -2135,7 +2135,14 @@ async function transcribeVoiceRecording(blob) {
       signal: AbortSignal.timeout(45_000)
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || "Voice transcription could not complete.");
+    if (!response.ok) {
+      const details = [];
+      if (Number.isInteger(data.upstreamStatus)) details.push("Groq HTTP " + data.upstreamStatus);
+      if (typeof data.detail === "string" && data.detail.trim()) details.push(data.detail.trim().slice(0, 180));
+      if (typeof data.errorCode === "string" && data.errorCode) details.push("ref " + data.errorCode);
+      const errorMessage = String(data.error || "Groq voice transcription could not complete.");
+      throw new Error(details.length ? errorMessage + " (" + details.join(" · ") + ")" : errorMessage);
+    }
     const transcript = String(data.text || "").trim();
     if (!transcript) throw new Error("I couldn't make out those words. Please try again.");
     if (elements.voiceStatus) elements.voiceStatus.textContent = "Heard: " + transcript.slice(0, 95);
