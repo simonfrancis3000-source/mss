@@ -69,6 +69,26 @@ const supabase = SUPABASE_URL && SUPABASE_KEY
   : null;
 const WELCOME = "Hi, I’m here to help you build your SecondSelf. Which parts of home life would you like it to understand first?";
 
+const ROBOT_APPEARANCE_KEY = "synqme-robot-appearance-v1";
+const ROBOT_OPTIONS = [
+  { id: "elo", name: "ELO", accent: "#58a6ff", description: "Friendly and familiar" },
+  { id: "lumi", name: "LUMI", accent: "#77c8b2", description: "Calm and curious" },
+  { id: "pip", name: "PIP", accent: "#f0b96d", description: "Playful and bright" },
+  { id: "nova", name: "NOVA", accent: "#b3a0ff", description: "Quietly clever" },
+  { id: "miso", name: "MISO", accent: "#f19ac4", description: "Soft and cheerful" }
+];
+let robotAppearance = (() => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(ROBOT_APPEARANCE_KEY) || "{}");
+    return {
+      robotId: ROBOT_OPTIONS.some((item) => item.id === saved.robotId) ? saved.robotId : "elo",
+      customImageData: typeof saved.customImageData === "string" ? saved.customImageData : ""
+    };
+  } catch {
+    return { robotId: "elo", customImageData: "" };
+  }
+})();
+
 const ACTIVITIES = [
   { id: "dishwashing", label: "Dishwashing" },
   { id: "vacuuming", label: "Vacuuming & floors" },
@@ -103,6 +123,20 @@ const elements = {
   sendButton: $("#sendButton"),
   voiceModeButton: $("#voiceModeButton"),
   voiceStatus: $("#voiceStatus"),
+  selectedRobotArt: $("#selectedRobotArt"),
+  selectedRobotName: $("#selectedRobotName"),
+  robotPicker: $("#robotPicker"),
+  robotImageInput: $("#robotImageInput"),
+  uploadRobotImageButton: $("#uploadRobotImageButton"),
+  voiceExperience: $("#voiceExperience"),
+  voiceOrb: $("#voiceOrb"),
+  voiceExperienceStatus: $("#voiceExperienceStatus"),
+  voiceCompanionName: $("#voiceCompanionName"),
+  voiceMuteButton: $("#voiceMuteButton"),
+  voiceMuteControlButton: $("#voiceMuteControlButton"),
+  voiceMuteControlLabel: $("#voiceMuteControlLabel"),
+  voiceEndButton: $("#voiceEndButton"),
+  voiceChatButton: $("#voiceChatButton"),
   resetDemo: $("#resetDemo"),
   memoryCount: $("#memoryCount"),
   foundationValue: $("#foundationValue"),
@@ -260,6 +294,7 @@ let isSending = false;
 const SpeechRecognitionConstructor = window.SpeechRecognition || window.webkitSpeechRecognition || null;
 const speechSynthesisAvailable = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
 let voiceModeActive = false;
+let voiceInputMuted = false;
 let speechRecognition = null;
 let recognitionListening = false;
 let recognitionTranscript = "";
@@ -1551,6 +1586,235 @@ function localReply(message) {
 }
 
 
+
+function robotSvgMarkup(robotId) {
+  const option = ROBOT_OPTIONS.find((item) => item.id === robotId) || ROBOT_OPTIONS[0];
+  const accent = option.accent;
+  const shell = {
+    elo: '<rect x="25" y="25" width="70" height="67" rx="25"/>',
+    lumi: '<path d="M60 20c23 0 39 16 39 39S83 98 60 98 21 82 21 59 37 20 60 20Z"/>',
+    pip: '<path d="M29 35 22 17l20 9h36l20-9-7 18v39c0 13-11 22-31 22S29 87 29 74Z"/>',
+    nova: '<path d="M31 25 60 14l29 11 10 25-7 29-32 15-32-15-7-29Z"/>',
+    miso: '<path d="M28 37 22 14l25 14h26l25-14-6 23v34c0 16-12 25-32 25S28 87 28 71Z"/>'
+  }[robotId] || '<rect x="25" y="25" width="70" height="67" rx="25"/>';
+  const extra = {
+    elo: '<path d="M20 50h6m68 0h6M47 18v-5m26 5v-5" fill="none"/>',
+    lumi: '<path d="M60 10v8m-4-4h8" fill="none"/>',
+    pip: '<circle cx="60" cy="17" r="5"/>',
+    nova: '<circle cx="60" cy="22" r="3"/>',
+    miso: '<path d="M49 18h22" fill="none"/>'
+  }[robotId] || '';
+  const eyes = robotId === "miso"
+    ? '<path d="M42 59q7-9 14 0M64 59q7-9 14 0" fill="none" stroke="' + accent + '" stroke-width="4" stroke-linecap="round"/>'
+    : '<circle cx="44" cy="58" r="5" fill="' + accent + '"/><circle cx="76" cy="58" r="5" fill="' + accent + '"/>';
+  return '<svg class="robot-svg robot-svg-' + robotId + '" viewBox="0 0 120 120" role="img" aria-label="' + option.name + ' robot">' +
+    '<ellipse cx="60" cy="104" rx="31" ry="5" fill="#1d2937" opacity=".08"/>' +
+    '<g stroke="#aab5c3" stroke-width="2.5" stroke-linejoin="round" fill="#fbfcfe">' + shell + extra + '</g>' +
+    '<rect x="33" y="43" width="54" height="34" rx="13" fill="#192432"/>' +
+    eyes +
+    '<path d="M52 68q8 5 16 0" fill="none" stroke="#dce6f2" stroke-width="2" stroke-linecap="round"/>' +
+    '<circle cx="60" cy="86" r="3" fill="' + accent + '"/>' +
+    '<path d="M42 94v5m36-5v5" stroke="' + accent + '" stroke-width="3" stroke-linecap="round"/>' +
+    '</svg>';
+}
+
+function saveRobotAppearance() {
+  try {
+    localStorage.setItem(ROBOT_APPEARANCE_KEY, JSON.stringify(robotAppearance));
+  } catch {
+    if (elements.voiceStatus) elements.voiceStatus.textContent = "Robot image selected for this session only; browser storage is full.";
+  }
+}
+
+function renderRobotPicker() {
+  if (!elements.robotPicker) return;
+  elements.robotPicker.replaceChildren();
+  ROBOT_OPTIONS.forEach((option) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "robot-picker-item";
+    button.dataset.robotId = option.id;
+    button.setAttribute("aria-label", "Choose " + option.name);
+    button.setAttribute("aria-pressed", String(robotAppearance.robotId === option.id && !robotAppearance.customImageData));
+    button.title = option.name + " - " + option.description;
+    button.innerHTML = robotSvgMarkup(option.id) + '<span class="robot-picker-name">' + option.name + '</span>';
+    button.addEventListener("click", () => {
+      robotAppearance.robotId = option.id;
+      robotAppearance.customImageData = "";
+      saveRobotAppearance();
+      renderRobotPicker();
+      applyRobotAppearance();
+    });
+    elements.robotPicker.append(button);
+  });
+  if (robotAppearance.customImageData) {
+    const custom = document.createElement("button");
+    custom.type = "button";
+    custom.className = "robot-picker-item robot-picker-custom is-selected";
+    custom.setAttribute("aria-label", "Your uploaded robot image");
+    custom.setAttribute("aria-pressed", "true");
+    custom.innerHTML = '<span class="robot-picker-custom-preview"><img src="' + robotAppearance.customImageData + '" alt="" /></span><span class="robot-picker-name">Yours</span>';
+    custom.addEventListener("click", () => applyRobotAppearance());
+    elements.robotPicker.append(custom);
+  }
+}
+
+function applyRobotAppearance() {
+  if (!elements.selectedRobotArt) return;
+  const option = ROBOT_OPTIONS.find((item) => item.id === robotAppearance.robotId) || ROBOT_OPTIONS[0];
+  elements.selectedRobotArt.replaceChildren();
+  if (robotAppearance.customImageData) {
+    const image = document.createElement("img");
+    image.src = robotAppearance.customImageData;
+    image.alt = "Your custom robot companion";
+    image.className = "custom-robot-image";
+    elements.selectedRobotArt.append(image);
+    if (elements.selectedRobotName) elements.selectedRobotName.textContent = "YOUR ROBOT";
+  } else {
+    elements.selectedRobotArt.innerHTML = robotSvgMarkup(option.id);
+    if (elements.selectedRobotName) elements.selectedRobotName.textContent = option.name;
+  }
+  if (elements.robotPicker) {
+    elements.robotPicker.querySelectorAll("[data-robot-id]").forEach((button) => {
+      const selected = button.dataset.robotId === robotAppearance.robotId && !robotAppearance.customImageData;
+      button.classList.toggle("is-selected", selected);
+      button.setAttribute("aria-pressed", String(selected));
+    });
+    const customButton = elements.robotPicker.querySelector(".robot-picker-custom");
+    if (customButton) {
+      customButton.classList.toggle("is-selected", Boolean(robotAppearance.customImageData));
+      customButton.setAttribute("aria-pressed", String(Boolean(robotAppearance.customImageData)));
+    }
+  }
+  if (elements.voiceCompanionName) {
+    elements.voiceCompanionName.textContent = (state.profile.robotName || "").trim() || (robotAppearance.customImageData ? "YOUR ROBOT" : option.name);
+  }
+}
+
+function updateVoiceExperience(mode, message) {
+  if (elements.voiceOrb) elements.voiceOrb.dataset.state = mode || "idle";
+  if (elements.voiceExperience) {
+    elements.voiceExperience.dataset.state = mode || "idle";
+    elements.voiceExperience.classList.toggle("is-muted", voiceInputMuted);
+  }
+  if (elements.voiceExperienceStatus && message) elements.voiceExperienceStatus.textContent = message;
+  if (elements.voiceMuteButton) {
+    elements.voiceMuteButton.setAttribute("aria-pressed", String(voiceInputMuted));
+    elements.voiceMuteButton.setAttribute("aria-label", voiceInputMuted ? "Unmute microphone" : "Mute microphone");
+    elements.voiceMuteButton.title = voiceInputMuted ? "Unmute microphone" : "Mute microphone";
+  }
+  if (elements.voiceMuteControlButton) {
+    elements.voiceMuteControlButton.setAttribute("aria-label", voiceInputMuted ? "Unmute microphone" : "Mute microphone");
+  }
+  if (elements.voiceMuteControlLabel) elements.voiceMuteControlLabel.textContent = voiceInputMuted ? "Unmute" : "Mute";
+}
+
+function openVoiceExperience() {
+  if (!elements.voiceExperience) return;
+  elements.voiceExperience.hidden = false;
+  document.body.classList.add("voice-experience-open");
+  voiceInputMuted = false;
+  if (elements.voiceCompanionName) {
+    const selected = ROBOT_OPTIONS.find((item) => item.id === robotAppearance.robotId) || ROBOT_OPTIONS[0];
+    elements.voiceCompanionName.textContent = (state.profile.robotName || "").trim() || (robotAppearance.customImageData ? "YOUR ROBOT" : selected.name);
+  }
+  if (!SpeechRecognitionConstructor && !voiceRecorderAvailable()) {
+    updateVoiceExperience("idle", "Voice input is unavailable in this browser. Return to chat or try Chrome.");
+    return;
+  }
+  if (voiceModeActive) return;
+  voiceModeActive = true;
+  voiceInputMuted = false;
+  if (elements.voiceStatus) {
+    elements.voiceStatus.dataset.error = "";
+    elements.voiceStatus.textContent = speechSynthesisAvailable
+      ? "Voice on · browser speech services"
+      : "Voice input on · spoken replies may not be supported";
+  }
+  updateVoiceModeButton();
+  updateVoiceExperience("listening", "Connecting to your microphone…");
+  startVoiceListening();
+}
+
+function closeVoiceExperience(statusMessage) {
+  stopVoiceConversation(statusMessage || "Voice conversation stopped.");
+  voiceInputMuted = false;
+  if (elements.voiceExperience) elements.voiceExperience.hidden = true;
+  document.body.classList.remove("voice-experience-open");
+}
+
+function toggleVoiceInputMute() {
+  if (!voiceModeActive) return;
+  voiceInputMuted = !voiceInputMuted;
+  if (voiceInputMuted) {
+    if (speechRecognition && recognitionListening) {
+      try { speechRecognition.abort(); } catch {}
+    }
+    recognitionListening = false;
+    releaseVoiceMedia();
+    updateVoiceExperience("muted", "Microphone muted. Your companion can still finish speaking.");
+  } else {
+    updateVoiceExperience("listening", "Microphone on. Speak whenever you are ready.");
+    startVoiceListening();
+  }
+}
+
+function handleRobotImageUpload(file) {
+  if (!file || !file.type || !file.type.startsWith("image/")) return;
+  if (file.size > 8 * 1024 * 1024) {
+    window.alert("Choose an image smaller than 8 MB.");
+    return;
+  }
+  const reader = new FileReader();
+  reader.onerror = () => window.alert("That image could not be opened. Choose another file.");
+  reader.onload = () => {
+    const image = new Image();
+    image.onerror = () => window.alert("That image could not be opened. Choose another file.");
+    image.onload = () => {
+      const maxSide = 640;
+      const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+      const context = canvas.getContext("2d");
+      if (!context) return window.alert("This browser could not process the image.");
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      try {
+        robotAppearance.customImageData = canvas.toDataURL("image/jpeg", 0.84);
+        saveRobotAppearance();
+        renderRobotPicker();
+        applyRobotAppearance();
+      } catch {
+        window.alert("The image could not be saved in this browser. Try a smaller image.");
+      }
+    };
+    image.src = String(reader.result || "");
+  };
+  reader.readAsDataURL(file);
+}
+
+function initialiseRobotAndVoiceControls() {
+  renderRobotPicker();
+  applyRobotAppearance();
+  elements.uploadRobotImageButton?.addEventListener("click", () => elements.robotImageInput?.click());
+  elements.robotImageInput?.addEventListener("change", () => {
+    const file = elements.robotImageInput.files?.[0];
+    handleRobotImageUpload(file);
+    elements.robotImageInput.value = "";
+  });
+  elements.voiceMuteButton?.addEventListener("click", toggleVoiceInputMute);
+  elements.voiceMuteControlButton?.addEventListener("click", toggleVoiceInputMute);
+  elements.voiceEndButton?.addEventListener("click", () => closeVoiceExperience("Voice conversation ended."));
+  elements.voiceChatButton?.addEventListener("click", () => closeVoiceExperience("Returned to text chat."));
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && elements.voiceExperience && !elements.voiceExperience.hidden) {
+      closeVoiceExperience("Returned to text chat.");
+    }
+  });
+}
+
 function updateVoiceModeButton() {
   if (elements.voiceModeButton) {
     elements.voiceModeButton.classList.toggle("is-active", voiceModeActive);
@@ -1567,6 +1831,8 @@ function updateVoiceModeButton() {
 
 function stopVoiceConversation(statusMessage = "Voice conversation stopped.") {
   voiceModeActive = false;
+  voiceInputMuted = false;
+  updateVoiceExperience("idle", statusMessage);
   if (voiceRestartTimer) window.clearTimeout(voiceRestartTimer);
   voiceRestartTimer = null;
   recognitionTranscript = "";
@@ -1590,7 +1856,7 @@ function stopVoiceConversation(statusMessage = "Voice conversation stopped.") {
 }
 
 function scheduleVoiceListening(delay = 350) {
-  if (!voiceModeActive || isSending || assistantIsSpeaking) return;
+  if (!voiceModeActive || voiceInputMuted || isSending || assistantIsSpeaking) return;
   if (voiceRestartTimer) window.clearTimeout(voiceRestartTimer);
   voiceRestartTimer = window.setTimeout(() => {
     voiceRestartTimer = null;
@@ -1808,6 +2074,7 @@ function createSpeechRecognition() {
     recognizer.maxAlternatives = 1;
     recognizer.onstart = () => {
       recognitionListening = true;
+      updateVoiceExperience("listening", "Listening. Speak naturally.");
       if (elements.conversationStatus) elements.conversationStatus.textContent = "Listening · speak naturally";
       if (elements.voiceStatus) {
         elements.voiceStatus.dataset.error = "";
@@ -1855,7 +2122,7 @@ function createSpeechRecognition() {
 }
 
 async function startVoiceListening() {
-  if (!voiceModeActive || isSending || assistantIsSpeaking || voiceTranscribing || recognitionListening) return;
+  if (!voiceModeActive || voiceInputMuted || isSending || assistantIsSpeaking || voiceTranscribing || recognitionListening) return;
   if (voiceRecorderAvailable()) {
     await startMediaRecorderListening();
     return;
@@ -1882,6 +2149,7 @@ function speakAssistantReply(reply) {
   if (!voiceModeActive) return;
   if (!speechSynthesisAvailable) {
     if (elements.voiceStatus) elements.voiceStatus.textContent = "This browser can hear you but cannot speak replies.";
+    updateVoiceExperience("listening", "Your reply is visible in chat. Speak again when ready.");
     scheduleVoiceListening(500);
     return;
   }
@@ -1906,6 +2174,7 @@ function speakAssistantReply(reply) {
   assistantIsSpeaking = true;
   utterance.onstart = () => {
     if (currentSpeechUtterance !== utterance) return;
+    updateVoiceExperience("speaking", (state.profile.robotName || "Your SecondSelf") + " is speaking.");
     if (elements.conversationStatus) elements.conversationStatus.textContent = (state.profile.robotName || "Your SecondSelf") + " is speaking";
     if (elements.voiceStatus) elements.voiceStatus.textContent = "Voice on · reply spoken aloud";
   };
@@ -1913,6 +2182,7 @@ function speakAssistantReply(reply) {
     if (currentSpeechUtterance !== utterance) return;
     currentSpeechUtterance = null;
     assistantIsSpeaking = false;
+    if (voiceModeActive && !voiceInputMuted) updateVoiceExperience("listening", "Listening. Your turn to speak.");
     if (voiceModeActive) scheduleVoiceListening(250);
   };
   utterance.onerror = () => {
@@ -1928,28 +2198,14 @@ function speakAssistantReply(reply) {
 }
 
 elements.voiceModeButton?.addEventListener("click", () => {
-  if (voiceModeActive) {
-    stopVoiceConversation();
+  if (voiceModeActive && elements.voiceExperience && !elements.voiceExperience.hidden) {
+    closeVoiceExperience("Voice conversation stopped.");
     return;
   }
-  if (!SpeechRecognitionConstructor) {
-    if (elements.voiceStatus) {
-      elements.voiceStatus.dataset.error = "true";
-      elements.voiceStatus.textContent = "Voice input isn't supported here. Try Chrome or use typing.";
-    }
-    if (elements.conversationStatus) elements.conversationStatus.textContent = "Voice input isn't supported by this browser";
-    return;
-  }
-  voiceModeActive = true;
-  if (elements.voiceStatus) {
-    elements.voiceStatus.dataset.error = "";
-    elements.voiceStatus.textContent = speechSynthesisAvailable
-      ? "Voice on · say a sentence at a time"
-      : "Voice input on · spoken replies may not be supported";
-  }
-  updateVoiceModeButton();
-  startVoiceListening();
+  openVoiceExperience();
 });
+
+initialiseRobotAndVoiceControls();
 
 
 function isClarificationRequest(message) {
@@ -2125,6 +2381,7 @@ async function sendMessage(rawText) {
   if (!message || isSending) return;
   const clarificationRequest = isClarificationRequest(message);
   isSending = true;
+  if (voiceModeActive) updateVoiceExperience("thinking", "AMÏA is thinking…");
   elements.sendButton.disabled = true;
   elements.messageInput.disabled = true;
   elements.conversationStatus.textContent = "ELO is thinking";
