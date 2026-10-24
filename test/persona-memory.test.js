@@ -155,7 +155,7 @@ test("semantic similarity improves ranking without overriding active status filt
       vector_score: 0.99
     }
   ];
-  const ranked = rankPersonaMemories("How should a delicate countertop finish be cleaned?", memories, { limit: 5 });
+  const ranked = rankPersonaMemories("What approach protects a lacquered coating from scratches?", memories, { limit: 5 });
   assert.equal(ranked[0].id, "semantic");
   assert.ok(!ranked.some((memory) => memory.id === "archived-semantic"));
 });
