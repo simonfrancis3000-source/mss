@@ -292,7 +292,14 @@ async function searchApplianceManual(messages) {
       const snippetMatch = block.match(/class=["'][^"']*result__snippet[^"']*["'][^>]*>([\s\S]*?)<\/(?:a|td|div)>/i);
       const snippet = snippetMatch ? htmlToReadableText(snippetMatch[1]).slice(0, 420) : "";
       const host = new URL(url).hostname.toLowerCase();
-      const official = /bosch-home|siemens-home|neff-home|miele|samsung|lg\.com|whirlpool|beko|aeg|electrolux|hotpoint|indesit|candy-home|hoover|haier|hisense|dyson|irobot|smeg|zanussi|panasonic|philips|delonghi|sageappliances|breville/i.test(host);
+      const officialDomains = [
+        "bosch-home.com", "bosch-home.co.uk", "siemens-home.bsh-group.com", "neff-home.com",
+        "miele.com", "samsung.com", "lg.com", "whirlpool.com", "beko.com", "aeg.com",
+        "electrolux.com", "hotpoint.co.uk", "indesit.co.uk", "candy-home.com", "hoover.com",
+        "haier.com", "hisense.com", "dyson.com", "irobot.com", "smeg.com", "zanussi.com",
+        "panasonic.com", "philips.com", "delonghi.com", "sageappliances.com", "breville.com"
+      ];
+      const official = officialDomains.some((domain) => host === domain || host.endsWith("." + domain));
       results.push({ title, url, snippet, official });
     }
     results.sort((a, b) => Number(b.official) - Number(a.official));
