@@ -363,6 +363,17 @@
           <div class="settings-subhead"><span>YOUR LEARNED PREFERENCES</span><span id="settingsPreferenceCount">0</span></div>
           <div id="settingsPreferenceList"><p class="settings-empty">As you chat with ELO, your preferences will appear here.</p></div>
         </div>
+        <section class="persona-memory-library settings-preferences" aria-labelledby="personaMemoryTitle">
+          <div class="settings-subhead">
+            <span id="personaMemoryTitle">YOUR MEMORY LIBRARY</span>
+            <span id="personaMemoryCount">0</span>
+          </div>
+          <p class="settings-section-copy">These are the personal memories AMÏA can retrieve across conversations. Review or correct them, or remove a saved memory when it no longer applies. Conflicting memories are kept separate until you decide which rule is right.</p>
+          <p class="persona-memory-status" id="personaMemoryStatus" role="status" aria-live="polite">Loading your saved memories…</p>
+          <div id="personaMemoryList"><p class="settings-empty">Your saved memories will appear here as they are learned.</p></div>
+          <button type="button" class="settings-task-link" id="toggleArchivedPersonaMemories">Show superseded and forgotten memories <span>↗</span></button>
+          <p class="settings-note">Removing a saved memory stops it being used as a structured preference. The original conversation remains in your chat history unless you remove that conversation separately.</p>
+        </section>
         <div class="settings-milestones">
           <div class="settings-subhead"><span>PERSONA MILESTONES</span><span id="milestoneCount">0 OF 5</span></div>
           <p class="settings-section-copy">Small steps that show your SecondSelf taking shape. Rewards are profile achievements, not payments or robot capabilities.</p>
