@@ -90,6 +90,8 @@ function localizeWelcomeMessage(language) {
 
 const ROBOT_APPEARANCE_KEY = "synqme-robot-appearance-v1";
 const OWNER_AVATAR_KEY = "synqme-owner-avatar-v1";
+let ownerAvatarNeedsCloudSync = false;
+let ownerAvatarRevision = 0;
 let ownerAvatarData = (() => {
   try {
     const saved = localStorage.getItem(OWNER_AVATAR_KEY);
@@ -148,6 +150,7 @@ const elements = {
   conversationStatus: $("#conversationStatus"),
   localAIProgress: $("#localAIProgress"),
   localAIProgressLabel: $("#localAIProgressLabel"),
+  localAIProgressDetail: $("#localAIProgressDetail"),
   localAIProgressFill: $("#localAIProgressFill"),
   localAIProgressTrack: $("#localAIProgressTrack"),
   chatTranscriptShell: $("#chatTranscriptShell"),
@@ -262,7 +265,7 @@ function defaultProfile() {
 
 function initialState() {
   return {
-    messages: [{ role: "assistant", content: WELCOME }],
+    messages: [{ role: "assistant", content: WELCOME, timestamp: new Date().toISOString() }],
     preferences: [],
     profile: defaultProfile(),
     functions: [],
@@ -293,15 +296,23 @@ function cleanPreference(input, metadata = {}) {
   };
 }
 
+function normaliseMessageTimestamp(item) {
+  const candidate = item?.timestamp || item?.createdAt || item?.created_at || null;
+  if (!candidate) return null;
+  const milliseconds = Date.parse(candidate);
+  return Number.isFinite(milliseconds) ? new Date(milliseconds).toISOString() : null;
+}
+
 function sanitiseConversationMessage(item) {
   if (!item || (item.role !== "assistant" && item.role !== "user") || typeof item.content !== "string") return null;
+  const timestamp = normaliseMessageTimestamp(item);
   if (item.role === "assistant" && /what matters most to you when getting that right\?|what detail would matter most to get right\?|let'?s make that preference more precise/i.test(item.content)) {
-    return { role: "assistant", content: "Let’s focus on one practical detail at a time." };
+    return { role: "assistant", content: "Let’s focus on one practical detail at a time.", timestamp };
   }
   if (item.role === "assistant" && /I've captured this preference for your browser-based SecondSelf|I've added it to your local digital persona|That's useful context for your SecondSelf/i.test(item.content)) {
-    return { role: "assistant", content: "Let’s focus on one practical detail at a time." };
+    return { role: "assistant", content: "Let’s focus on one practical detail at a time.", timestamp };
   }
-  return { role: item.role, content: item.content };
+  return { role: item.role, content: item.content, timestamp };
 }
 
 function loadState() {
@@ -517,7 +528,10 @@ async function saveCloudState() {
     })
   };
 
-  const { error: profileError } = await supabase.from("synqme_profiles").upsert({
+  const avatarRevisionAtSave = ownerAvatarRevision;
+  const avatarDataAtSave = ownerAvatarData;
+  const includeAvatarSync = ownerAvatarNeedsCloudSync;
+  const profileRecord = {
     user_id: cloudUserId,
     owner_name: snapshot.profile.ownerName,
     future_robot_name: snapshot.profile.robotName,
@@ -527,8 +541,21 @@ async function saveCloudState() {
     confirm_actions: snapshot.profile.confirmActions,
     domestic_functions: snapshot.functions,
     updated_at: new Date().toISOString()
-  }, { onConflict: "user_id" });
+  };
+  if (includeAvatarSync) {
+    profileRecord.owner_avatar_data = avatarDataAtSave || null;
+    profileRecord.owner_avatar_synced = true;
+  }
+  const { error: profileError } = await supabase.from("synqme_profiles").upsert(
+    profileRecord,
+    { onConflict: "user_id" }
+  );
   if (profileError) throw profileError;
+  if (includeAvatarSync && avatarRevisionAtSave === ownerAvatarRevision) {
+    ownerAvatarNeedsCloudSync = false;
+  } else if (includeAvatarSync) {
+    scheduleCloudSave(0);
+  }
 
   const desired = snapshot.preferences.map((item) => ({
     user_id: cloudUserId,
@@ -662,6 +689,19 @@ async function refreshCloudConversation() {
     let languageChanged = false;
     const remoteProfile = profileResult.data;
     if (remoteProfile) {
+      if (remoteProfile.owner_avatar_synced) {
+        const remoteAvatar = typeof remoteProfile.owner_avatar_data === "string" ? remoteProfile.owner_avatar_data : "";
+        if (remoteAvatar !== ownerAvatarData) {
+          ownerAvatarData = remoteAvatar;
+          saveOwnerAvatar();
+          renderOwnerAvatarPreview();
+          renderMessages();
+          profileChanged = true;
+        }
+        ownerAvatarNeedsCloudSync = false;
+      } else if (ownerAvatarData) {
+        ownerAvatarNeedsCloudSync = true;
+      }
       const nextProfile = {
         ownerName: remoteProfile.owner_name || "",
         robotName: remoteProfile.future_robot_name || "",
@@ -809,7 +849,7 @@ function stateFromSnapshot(snapshot) {
         .map(sanitiseConversationMessage)
         .filter(Boolean)
     : [];
-  base.messages = messages.length ? messages : [{ role: "assistant", content: WELCOME }];
+  base.messages = messages.length ? messages : [{ role: "assistant", content: WELCOME, timestamp: new Date().toISOString() }];
   base.preferences = Array.isArray(snapshot.preferences)
     ? snapshot.preferences.slice(0, 24).map((item) => typeof item === "string" ? cleanPreference(item) : cleanPreference(item?.text, item)).filter(Boolean)
     : [];
@@ -840,12 +880,27 @@ function mergeConversationMessages(...groups) {
     }
     return -1;
   };
+  const fillMissingTimestamps = (target, source, targetStart, sourceStart, count) => {
+    for (let offset = 0; offset < count; offset++) {
+      const targetIndex = targetStart + offset;
+      const sourceIndex = sourceStart + offset;
+      if (
+        target[targetIndex] &&
+        source[sourceIndex] &&
+        key(target[targetIndex]) === key(source[sourceIndex]) &&
+        !target[targetIndex].timestamp &&
+        source[sourceIndex].timestamp
+      ) {
+        target[targetIndex] = { ...target[targetIndex], timestamp: source[sourceIndex].timestamp };
+      }
+    }
+  };
 
   for (const group of groups) {
     const incoming = (Array.isArray(group) ? group : [])
       .map(sanitiseConversationMessage)
       .filter((item) => item && item.content.trim())
-      .map((item) => ({ role: item.role, content: item.content.trim() }));
+      .map((item) => ({ role: item.role, content: item.content.trim(), timestamp: normaliseMessageTimestamp(item) }));
     if (!incoming.length) continue;
     if (!messages.length) {
       messages = incoming;
@@ -853,8 +908,14 @@ function mergeConversationMessages(...groups) {
     }
 
     // If one complete snapshot is contained in the other, keep the superset.
-    if (sequenceIndex(messages, incoming) >= 0) continue;
-    if (sequenceIndex(incoming, messages) >= 0) {
+    const incomingInMessages = sequenceIndex(messages, incoming);
+    if (incomingInMessages >= 0) {
+      fillMissingTimestamps(messages, incoming, incomingInMessages, 0, incoming.length);
+      continue;
+    }
+    const messagesInIncoming = sequenceIndex(incoming, messages);
+    if (messagesInIncoming >= 0) {
+      fillMissingTimestamps(incoming, messages, messagesInIncoming, 0, messages.length);
       messages = incoming;
       continue;
     }
@@ -868,6 +929,7 @@ function mergeConversationMessages(...groups) {
       key(messages[commonPrefix]) === key(incoming[commonPrefix])
     ) commonPrefix++;
     if (commonPrefix > 0) {
+      fillMissingTimestamps(messages, incoming, 0, 0, commonPrefix);
       messages.push(...incoming.slice(commonPrefix));
       continue;
     }
@@ -886,6 +948,7 @@ function mergeConversationMessages(...groups) {
       overlap--;
     }
     if (overlap > 0) {
+      fillMissingTimestamps(messages, incoming, messages.length - overlap, 0, overlap);
       messages.push(...incoming.slice(overlap));
       continue;
     }
@@ -904,13 +967,14 @@ function mergeConversationMessages(...groups) {
       prefixOverlap--;
     }
     if (prefixOverlap > 0) {
+      fillMissingTimestamps(messages, incoming, 0, incoming.length - prefixOverlap, prefixOverlap);
       messages = [...incoming.slice(0, incoming.length - prefixOverlap), ...messages];
       continue;
     }
 
     messages.push(...incoming);
   }
-  return (messages.length ? messages : [{ role: "assistant", content: WELCOME }]).slice(-5000);
+  return (messages.length ? messages : [{ role: "assistant", content: WELCOME, timestamp: new Date().toISOString() }]).slice(-5000);
 }
 
 function mergePreferences(remoteItems, draftItems) {
@@ -1013,6 +1077,19 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   if (conversationResult.error) throw conversationResult.error;
 
   const remoteProfile = profileResult.data;
+  if (remoteProfile?.owner_avatar_synced) {
+    ownerAvatarData = typeof remoteProfile.owner_avatar_data === "string" ? remoteProfile.owner_avatar_data : "";
+    ownerAvatarNeedsCloudSync = false;
+    saveOwnerAvatar();
+  } else if (typeof remoteProfile?.owner_avatar_data === "string" && remoteProfile.owner_avatar_data.startsWith("data:image/")) {
+    ownerAvatarData = remoteProfile.owner_avatar_data;
+    ownerAvatarNeedsCloudSync = true;
+    saveOwnerAvatar();
+  } else {
+    // Before the first cloud sync, do not erase a photo that already exists in this browser.
+    ownerAvatarNeedsCloudSync = Boolean(ownerAvatarData);
+  }
+  renderOwnerAvatarPreview();
   const remotePreferences = (preferencesResult.data || []).map((item) => ({
     id: item.id,
     text: item.preference_text,
@@ -1348,9 +1425,25 @@ function handleOwnerImageUpload(file) {
       context.drawImage(image, 0, 0, canvas.width, canvas.height);
       try {
         ownerAvatarData = canvas.toDataURL("image/jpeg", 0.82);
+        ownerAvatarNeedsCloudSync = true;
+        ownerAvatarRevision += 1;
         saveOwnerAvatar();
         renderOwnerAvatarPreview();
         renderMessages();
+        persist(false);
+        scheduleCloudSave(0);
+        if (elements.voiceStatus) {
+          elements.voiceStatus.textContent = cloudUserId
+            ? "Photo selected · synchronising across devices…"
+            : "Photo saved in this browser. Sign in to sync it across devices.";
+        }
+        if (cloudUserId) {
+          void flushCloudSave().then((saved) => {
+            if (elements.voiceStatus) elements.voiceStatus.textContent = saved
+              ? "Photo synced across devices."
+              : "Photo saved here; cloud sync needs attention.";
+          });
+        }
       } catch {
         window.alert("The profile image could not be processed. Try a smaller image.");
       }
@@ -1360,7 +1453,17 @@ function handleOwnerImageUpload(file) {
   reader.readAsDataURL(file);
 }
 
-function appendMessage(role, content) {
+function formatMessageTimestamp(value) {
+  if (!value) return "Date and time not recorded";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "Date and time not recorded";
+  return new Intl.DateTimeFormat(undefined, {
+    day: "numeric", month: "short", year: "numeric",
+    hour: "2-digit", minute: "2-digit"
+  }).format(date);
+}
+
+function appendMessage(role, content, timestamp = null) {
   const article = document.createElement("article");
   article.className = "message " + (role === "user" ? "user-message" : "assistant-message");
   const avatar = document.createElement("div");
@@ -1399,7 +1502,13 @@ function appendMessage(role, content) {
     : "SYNQ.ME";
   const paragraph = document.createElement("p");
   paragraph.textContent = content;
-  body.append(meta, paragraph);
+  const timestampLabel = document.createElement("time");
+  timestampLabel.className = "message-timestamp";
+  const safeTimestamp = normaliseMessageTimestamp({ timestamp });
+  if (safeTimestamp) timestampLabel.dateTime = safeTimestamp;
+  else timestampLabel.classList.add("timestamp-unavailable");
+  timestampLabel.textContent = formatMessageTimestamp(safeTimestamp);
+  body.append(meta, paragraph, timestampLabel);
   article.append(avatar, body);
   elements.chatMessages.append(article);
 }
@@ -1434,7 +1543,7 @@ function updateChatScrollbar() {
 function renderMessages() {
   elements.chatMessages.replaceChildren();
   // Render in conversation order so newer turns naturally appear at the bottom.
-  state.messages.slice(-50).forEach((message) => appendMessage(message.role, message.content));
+  state.messages.slice(-50).forEach((message) => appendMessage(message.role, message.content, message.timestamp));
   window.requestAnimationFrame(() => {
     elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
     updateChatScrollbar();
@@ -2348,9 +2457,25 @@ function initialiseRobotAndVoiceControls() {
   });
   elements.removeOwnerImageButton?.addEventListener("click", () => {
     ownerAvatarData = "";
+    ownerAvatarNeedsCloudSync = true;
+    ownerAvatarRevision += 1;
     saveOwnerAvatar();
     renderOwnerAvatarPreview();
     renderMessages();
+    persist(false);
+    scheduleCloudSave(0);
+    if (elements.voiceStatus) {
+      elements.voiceStatus.textContent = cloudUserId
+        ? "Photo removal · synchronising across devices…"
+        : "Photo removed from this browser. Sign in to sync the change.";
+    }
+    if (cloudUserId) {
+      void flushCloudSave().then((saved) => {
+        if (elements.voiceStatus) elements.voiceStatus.textContent = saved
+          ? "Photo removal synced across devices."
+          : "Photo removed here; cloud sync needs attention.";
+      });
+    }
   });
   elements.ownerName?.addEventListener("input", renderOwnerAvatarPreview);
   elements.uploadRobotImageButton?.addEventListener("click", () => elements.robotImageInput?.click());
@@ -2961,22 +3086,68 @@ function responseRepeatsUser(reply, userMessage) {
   return overlap >= 0.78;
 }
 
-function setLocalAIProgress({ label = "", progress = null, visible = true, indeterminate = false } = {}) {
+function setLocalAIProgress({ label = "", progress = null, visible = true, indeterminate = false, detail = "" } = {}) {
   if (!elements.localAIProgress) return;
   elements.localAIProgress.hidden = !visible;
+  elements.localAIProgress.classList.toggle("is-error", /error|failed|unavailable|not supported|could not/i.test(label));
   if (elements.localAIProgressLabel) elements.localAIProgressLabel.textContent = label;
+  if (elements.localAIProgressDetail) {
+    elements.localAIProgressDetail.textContent = detail;
+    elements.localAIProgressDetail.hidden = !detail;
+  }
   const knownProgress = Number.isFinite(progress);
   if (elements.localAIProgressFill) {
-    elements.localAIProgressFill.style.width = knownProgress ? Math.max(0, Math.min(100, progress)) + "%" : (indeterminate ? "18%" : "0%");
+    elements.localAIProgressFill.style.width = knownProgress ? Math.max(0, Math.min(100, progress)) + "%" : (indeterminate ? "28%" : "0%");
     elements.localAIProgressFill.classList.toggle("is-indeterminate", Boolean(indeterminate && !knownProgress));
   }
   if (elements.localAIProgressTrack) {
     if (knownProgress) elements.localAIProgressTrack.setAttribute("aria-valuenow", String(Math.round(progress)));
     else elements.localAIProgressTrack.removeAttribute("aria-valuenow");
-    if (label) elements.localAIProgressTrack.setAttribute("aria-valuetext", label);
+    if (label) elements.localAIProgressTrack.setAttribute("aria-valuetext", [label, detail].filter(Boolean).join(". "));
     else elements.localAIProgressTrack.removeAttribute("aria-valuetext");
   }
   if (!isSending && elements.conversationStatus && label) elements.conversationStatus.textContent = label;
+}
+
+function formatModelBytes(value) {
+  if (!Number.isFinite(value) || value < 0) return "";
+  if (value >= 1024 * 1024 * 1024) return (value / (1024 * 1024 * 1024)).toFixed(2) + " GB";
+  if (value >= 1024 * 1024) return Math.round(value / (1024 * 1024)) + " MB";
+  if (value >= 1024) return Math.round(value / 1024) + " KB";
+  return Math.round(value) + " B";
+}
+
+let localAIProgressWatchdogTimer = null;
+let localAILastWorkerMessageAt = 0;
+
+function noteLocalAIWorkerActivity() {
+  localAILastWorkerMessageAt = Date.now();
+}
+
+function stopLocalAIProgressWatchdog() {
+  if (localAIProgressWatchdogTimer) window.clearInterval(localAIProgressWatchdogTimer);
+  localAIProgressWatchdogTimer = null;
+}
+
+function startLocalAIProgressWatchdog() {
+  stopLocalAIProgressWatchdog();
+  noteLocalAIWorkerActivity();
+  localAIProgressWatchdogTimer = window.setInterval(() => {
+    if (localAIReady || !localAILoadPromise) {
+      stopLocalAIProgressWatchdog();
+      return;
+    }
+    const quietFor = Date.now() - localAILastWorkerMessageAt;
+    if (quietFor >= 90000) {
+      setLocalAIProgress({
+        label: "Waiting for local model download activity",
+        progress: null,
+        indeterminate: true,
+        detail: "No new download progress has been reported for 90 seconds. The first download can take several minutes; check that this tab can reach huggingface.co."
+      });
+      noteLocalAIWorkerActivity();
+    }
+  }, 15000);
 }
 
 function rejectPendingLocalAIRequests(error) {
@@ -2988,28 +3159,45 @@ function rejectPendingLocalAIRequests(error) {
 
 function handleLocalAIWorkerMessage(event) {
   const data = event.data || {};
+  noteLocalAIWorkerActivity();
   if (data.type === "status") {
+    const label = String(data.label || "Loading local AMÏA model");
     setLocalAIProgress({
-      label: String(data.label || "Loading local AMÏA model"),
+      label,
       progress: null,
-      indeterminate: true
+      indeterminate: true,
+      detail: /cached/i.test(label)
+        ? "Opening saved model files on this device…"
+        : "First-time setup downloads about 1.2 GB of model weights. Keep this tab open."
     });
     return;
   }
   if (data.type === "progress") {
-    const progress = Number.isFinite(data.progress) ? data.progress : null;
-    const label = data.status === "done"
-      ? "Starting local AMÏA model"
-      : data.cached
-        ? "Loading local AMÏA model"
-        : data.status === "initiate"
-          ? "Preparing local AMÏA model download"
-          : "Downloading local AMÏA model";
-    setLocalAIProgress({
-      label,
-      progress,
-      indeterminate: progress === null
-    });
+    const aggregate = data.status === "progress_total" && Number.isFinite(data.progress);
+    const progress = aggregate ? data.progress : null;
+    let label;
+    let detail = "";
+    if (data.status === "done" || data.status === "ready") {
+      label = "Starting local AMÏA model";
+      detail = "Model files are loaded. Preparing the first on-device response…";
+    } else if (data.status === "initiate") {
+      label = "Preparing local AMÏA model download";
+      detail = "First-time setup downloads about 1.2 GB of model weights.";
+    } else if (aggregate) {
+      label = "Downloading local AMÏA model";
+      detail = Number.isFinite(data.loaded) && Number.isFinite(data.total) && data.total > 0
+        ? formatModelBytes(data.loaded) + " of " + formatModelBytes(data.total) + " downloaded"
+        : "Model download is in progress. Keep this tab open.";
+    } else if (data.status === "progress" || data.status === "download") {
+      label = data.cached ? "Loading cached local AMÏA model" : "Downloading local AMÏA model";
+      detail = data.file && Number.isFinite(data.loaded) && Number.isFinite(data.total) && data.total > 0
+        ? data.file + " · " + formatModelBytes(data.loaded) + " of " + formatModelBytes(data.total)
+        : "Receiving model files. The bar continues moving while the browser prepares them.";
+    } else {
+      label = data.cached ? "Loading cached local AMÏA model" : "Preparing local AMÏA model";
+      detail = data.file ? "Preparing " + data.file : "Preparing local model files…";
+    }
+    setLocalAIProgress({ label, progress, indeterminate: progress === null, detail });
     return;
   }
   if (data.type === "ready") {
@@ -3020,7 +3208,8 @@ function handleLocalAIWorkerMessage(event) {
     state.apiConnected = true;
     state.apiError = "";
     state.apiErrorDetail = "";
-    setLocalAIProgress({ label: "Local AI ready", progress: 100 });
+    stopLocalAIProgressWatchdog();
+    setLocalAIProgress({ label: "Local AI ready", progress: 100, detail: "AMÏA is ready on this device." });
     if (localAILoadResolve) localAILoadResolve();
     localAILoadResolve = null;
     localAILoadReject = null;
@@ -3029,6 +3218,7 @@ function handleLocalAIWorkerMessage(event) {
     return;
   }
   if (data.type === "load-error") {
+    stopLocalAIProgressWatchdog();
     const error = new Error(String(data.message || "The local model could not be loaded."));
     localAIReady = false;
     state.apiConnected = false;
@@ -3037,7 +3227,7 @@ function handleLocalAIWorkerMessage(event) {
     state.apiModel = LOCAL_MODEL_LABEL;
     state.apiError = "local model unavailable";
     state.apiErrorDetail = error.message;
-    setLocalAIProgress({ label: error.message, progress: null, indeterminate: false });
+    setLocalAIProgress({ label: error.message, progress: null, indeterminate: false, detail: "Model startup failed. Check WebGPU support, memory, and the browser's network requests, then refresh to retry." });
     if (localAILoadReject) localAILoadReject(error);
     localAILoadResolve = null;
     localAILoadReject = null;
@@ -3054,6 +3244,7 @@ function handleLocalAIWorkerMessage(event) {
 }
 
 function workerFailure(error) {
+  stopLocalAIProgressWatchdog();
   const message = error?.message || "The local AI worker stopped unexpectedly.";
   localAIReady = false;
   localAIWorker = null;
@@ -3061,7 +3252,7 @@ function workerFailure(error) {
   state.apiConnected = false;
   state.apiError = "local model unavailable";
   state.apiErrorDetail = message;
-  setLocalAIProgress({ label: message });
+  setLocalAIProgress({ label: message, detail: "The local model worker stopped. Refresh the page to start it again." });
   if (localAILoadReject) localAILoadReject(new Error(message));
   localAILoadResolve = null;
   localAILoadReject = null;
@@ -3076,7 +3267,7 @@ function ensureLocalAIReady() {
   state.apiModel = LOCAL_MODEL_LABEL;
   state.apiError = "";
   state.apiErrorDetail = "";
-  setLocalAIProgress({ label: "Checking local AMÏA model cache", progress: null, indeterminate: true });
+  setLocalAIProgress({ label: "Checking local AMÏA model cache", progress: null, indeterminate: true, detail: "Checking this device's saved model files…" });
   localAILoadPromise = new Promise((resolve, reject) => {
     localAILoadResolve = resolve;
     localAILoadReject = reject;
@@ -3085,6 +3276,7 @@ function ensureLocalAIReady() {
         // Ask for persistent origin storage before starting a large model load.
         // Browsers may decline; Cache API caching still remains enabled.
         try { await navigator.storage?.persist?.(); } catch {}
+        startLocalAIProgressWatchdog();
         if (!localAIWorker) {
           localAIWorker = new Worker(new URL("./local-ai.worker.js", import.meta.url), { type: "module" });
           localAIWorker.addEventListener("message", handleLocalAIWorkerMessage);
@@ -3098,13 +3290,14 @@ function ensureLocalAIReady() {
     })();
   }).catch((error) => {
     localAILoadPromise = null;
+    stopLocalAIProgressWatchdog();
     localAIReady = false;
     state.apiConnected = false;
     state.apiProvider = "local";
     state.apiModel = LOCAL_MODEL_LABEL;
     state.apiError = "local model unavailable";
     state.apiErrorDetail = String(error?.message || "The local model could not be loaded.");
-    setLocalAIProgress({ label: state.apiErrorDetail });
+    setLocalAIProgress({ label: state.apiErrorDetail, detail: "Model startup failed before chat could generate a reply. Refresh to retry after checking WebGPU and network access." });
     renderAll();
     throw error;
   });
@@ -3221,7 +3414,7 @@ async function sendMessage(rawText) {
   elements.sendButton.disabled = true;
   elements.messageInput.disabled = true;
   elements.conversationStatus.textContent = (state.profile.robotName || "Your robot").trim() + " is thinking";
-  state.messages.push({ role: "user", content: message });
+  state.messages.push({ role: "user", content: message, timestamp: new Date().toISOString() });
   const previousAssistantMessage = state.messages.length > 1 && state.messages[state.messages.length - 2]?.role === "assistant"
     ? state.messages[state.messages.length - 2].content
     : "";
@@ -3263,7 +3456,7 @@ async function sendMessage(rawText) {
       ? "I’m having trouble making a useful connection from that answer. I’ve understood the detail you shared; please try once more, or tell me which part of your routine you’d like to explore."
       : localizedAIUnavailable(state.profile.preferredLanguage);
   }
-  state.messages.push({ role: "assistant", content: reply });
+  state.messages.push({ role: "assistant", content: reply, timestamp: new Date().toISOString() });
   state.pendingClarification = detectPendingClarification(message, reply);
   state.messages = state.messages.slice(-5000);
   persist();
