@@ -1590,3 +1590,34 @@ body:not(.auth-required):not(.profile-setup-required) {
     padding-right: 16px;
   }
 }
+
+
+/* Surface background voice-model preparation in the main chat and voice view. */
+.voice-model-progress-main {
+  width: auto;
+  max-width: none;
+  margin: 3px 14px 0;
+  padding: 0 2px;
+}
+.voice-model-progress-main .voice-model-progress-meta {
+  font-size: 10px;
+}
+.voice-retry-speech {
+  margin: 9px 0 0;
+  padding: 8px 13px;
+  border: 1px solid #dce6f5;
+  border-radius: 999px;
+  background: #fff;
+  color: #2569b6;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.voice-retry-speech[hidden] {
+  display: none !important;
+}
+.voice-retry-speech:hover {
+  background: #f2f7ff;
+  border-color: #bcd4f6;
+}
