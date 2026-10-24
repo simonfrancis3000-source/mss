@@ -17,7 +17,7 @@ const MODEL = !configuredGroqModel || configuredGroqModel === "openai/gpt-oss-20
   : configuredGroqModel;
 const GROQ_EMBEDDING_MODEL = String(process.env.GROQ_EMBEDDING_MODEL || "nomic-embed-text-v1_5").trim();
 const EXPECTED_EMBEDDING_DIMENSIONS = 768;
-const REASONING_EFFORT = process.env.GROQ_REASONING_EFFORT || "high";
+const REASONING_EFFORT = "low"; // Short conversational turns must leave tokens for the visible reply.
 // Render deployments need CORS to work even when FRONTEND_ORIGIN has not
 // been populated. Keep the known SYNQ.ME origins as safe defaults and allow
 // additional exact origins through FRONTEND_ORIGIN (comma-separated).
@@ -668,22 +668,22 @@ const app = http.createServer(async (request, response) => {
 
     try {
       const body = await readJson(request);
-      const messages = cleanMessages(body?.messages).slice(-8);
+      const messages = cleanMessages(body?.messages).slice(-4);
       if (!messages.length || messages[messages.length - 1].role !== "user") {
         return json(response, 400, { error: "A latest user message is required.", provider: "groq" }, headers || {});
       }
       const allowedTopics = [...MEMORY_TOPICS];
       const existingMemories = (Array.isArray(body?.existingMemories) ? body.existingMemories : [])
-        .slice(0, 20)
+        .slice(0, 8)
         .filter((item) => item && typeof item === "object" && typeof item.statement === "string")
         .map((item) => ({
           memory_key: String(item.memory_key || "").slice(0, 180),
           topic: allowedTopics.includes(item.topic) ? item.topic : "general_household",
           kind: String(item.kind || "preference").slice(0, 40),
           scope_key: String(item.scope_key || "").slice(0, 120),
-          statement: String(item.statement || "").slice(0, 420),
+          statement: String(item.statement || "").slice(0, 300),
           status: String(item.status || "user_stated").slice(0, 40),
-          conditions: Array.isArray(item.conditions) ? item.conditions.slice(0, 6).map((v) => String(v).slice(0, 140)) : []
+          conditions: Array.isArray(item.conditions) ? item.conditions.slice(0, 4).map((v) => String(v).slice(0, 100)) : []
         }));
 
       const extractionPrompt = [
@@ -714,7 +714,7 @@ const app = http.createServer(async (request, response) => {
           temperature: 0.1,
           reasoning_effort: "low",
           include_reasoning: false,
-          max_completion_tokens: 1800,
+          max_completion_tokens: 700,
           response_format: { type: "json_object" },
           stream: false
         }),
