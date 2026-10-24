@@ -12,8 +12,18 @@ This is a Groq inference and conversation-orchestration improvement. It does **n
 - server/index.js adds those instructions to its existing Freya system prompt **on the server**, then calls Groq. The browser's system messages are filtered out by the server, so the prompt must remain server-owned.
 - The existing user message history, profile, preference records, selected domestic interests, pending clarification, and repair-mode flag are passed into the prompt builder.
 - Groq remains the sole model provider. The default is openai/gpt-oss-120b, with high reasoning effort; GROQ_REASONING_EFFORT can override the effort. A legacy GROQ_MODEL=openai/gpt-oss-20b value is upgraded to the 120B default, while another explicitly configured model is preserved.
-- public/sw.js uses shell cache synqme-shell-v33; the change does not deliberately delete stored voice/model caches.
-- test/home-persona-reasoning.test.js covers prompt content, persona context, recently asked questions, and malformed/missing input. npm test is part of the GitHub Actions build workflow.
+- public/sw.js uses shell cache synqme-shell-v34; the change does not deliberately delete stored voice/model caches.
+- test/home-persona-reasoning.test.js covers prompt content, persona context, recently asked questions, and malformed/missing input. test/home-memory-index.test.js covers topic synonyms, short-answer context, stable message keys and relevance ranking. npm test is part of the GitHub Actions build workflow.
+
+## Conversation persistence and searchable memory
+
+- The current UI is a single rolling conversation, not a multi-thread chat archive. It stores up to 5,000 transcript messages in browser localStorage and the per-user `synqme_conversations` Supabase row; preference records are maintained separately and capped at 24.
+- Before this change, the model received only the latest 20 transcript messages (each message is capped at 1,200 characters in the API request). Older preferences could still be saved but fall outside the immediate conversational context.
+- `src/home-memory-index.js` builds topic and keyword keys for room/task concepts (for example, kitchen, bathroom, vacuum/hoover, laundry, pets, supplies and privacy). It propagates keys from an adjacent assistant question so short replies such as “twice a day” can be retrieved with the topic that prompted them.
+- Each user's messages are archived in `public.synqme_memory_index` with row-level security, searchable topic/keyword arrays, a GIN index, timestamp and source key. On account load, SYNQ.ME backfills the retained transcript once; subsequent saves index the newest two messages. A new user message is queued for account save before the model response, and relevant archived references are retrieved by indexed keyword/topic overlap and sent to the server as bounded historical context.
+- Retrieval is a deterministic keyword/topic index, not semantic vector search. It is intentionally small and quick, and can fall back to the current browser transcript when the database index is unavailable. It does not claim to understand every paraphrase; the topic aliases can be expanded using real conversation examples.
+- **Deployment prerequisite:** apply `supabase/migrations/20261024193000_add_synqme_home_memory_index.sql` in the Supabase project. Until that migration is applied, local transcript search still works, but cross-retention account-level archive retrieval is disabled. The migration can backfill only messages still present in the retained transcript at rollout time; any earlier content already trimmed away cannot be reconstructed from this app's current data.
+- The current product has one primary conversation stream. The archive includes a `conversation_key` so future multi-chat threads can be separated, but the UI does not yet create or switch among separate conversation IDs.
 
 ## Reasoning principles translated from the Dropbox Veyra / Inca Labs material
 
