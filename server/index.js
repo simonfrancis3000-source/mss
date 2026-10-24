@@ -764,6 +764,29 @@ const app = http.createServer(async (request, response) => {
     const domesticFunctions = cleanFunctions(body?.domesticFunctions);
     const memoryReferences = cleanMemoryReferences(body?.memoryReferences);
     const sharedKnowledgeReferences = cleanSharedKnowledgeReferences(body?.sharedKnowledgeReferences);
+    const personaMemories = (Array.isArray(body?.personaMemories) ? body.personaMemories : [])
+      .slice(0, 10)
+      .filter((item) => item && typeof item === "object" &&
+        typeof item.statement === "string" &&
+        !["archived", "superseded"].includes(item.status))
+      .map((item) => ({
+        memory_key: String(item.memory_key || "").slice(0, 180),
+        topic: MEMORY_TOPICS.has(item.topic) ? item.topic : "general_household",
+        kind: String(item.kind || "preference").slice(0, 32),
+        scope_key: String(item.scope_key || "").slice(0, 120),
+        statement: String(item.statement || "").trim().slice(0, 420),
+        status: String(item.status || "user_stated").slice(0, 40),
+        confidence: Number.isFinite(Number(item.confidence)) ? Math.max(0, Math.min(1, Number(item.confidence))) : null,
+        conditions: Array.isArray(item.conditions) ? item.conditions.slice(0, 8).map((v) => String(v).slice(0, 180)) : [],
+        source_message: String(item.source_message || "").slice(0, 420),
+        source_timestamp: String(item.source_timestamp || "").slice(0, 48),
+        conflict_group: String(item.conflict_group || "").slice(0, 120)
+      })).filter((item) => item.statement);
+    const latestForSkillSelection = messages[messages.length - 1]?.content || "";
+    const previousForSkillSelection = messages.length > 1 && messages[messages.length - 2]?.role === "assistant"
+      ? messages[messages.length - 2].content
+      : "";
+    const relevantSkills = selectHouseholdSkills(latestForSkillSelection + " " + previousForSkillSelection, { limit: 2 });
 
     if (!messages.length || messages[messages.length - 1].role !== "user") {
       return json(response, 400, { error: "At least one user message is required." }, headers || {});
@@ -821,6 +844,8 @@ const app = http.createServer(async (request, response) => {
       domesticFunctions,
       recentMessages: messages,
       pendingClarification: body?.pendingClarification,
+      personaMemories,
+      relevantSkills,
       repairMode
     });
     const memoryContext = memoryReferences.length
