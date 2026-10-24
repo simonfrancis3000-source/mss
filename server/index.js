@@ -125,7 +125,7 @@ function cleanMemoryReferences(input) {
     content: typeof item?.content === "string" ? item.content.trim().slice(0, 900) : "",
     timestamp: typeof item?.timestamp === "string" ? item.timestamp.slice(0, 50) : "",
     topics: Array.isArray(item?.topics)
-      ? [...new Set(item.topics.filter((topic) => typeof topic === "string" && allowedTopics.has(topic))].values()].slice(0, 8)
+      ? [...new Set(item.topics.filter((topic) => typeof topic === "string" && allowedTopics.has(topic)))].slice(0, 8)
       : []
   })).filter((item) => item.content);
 }
