@@ -431,6 +431,8 @@ let cloudConversationRefreshInFlight = false;
 let homeMemoryIndexUnavailable = false;
 let homeMemoryIndexBackfilledUserId = null;
 let homeMemoryIndexWarningShown = false;
+let sharedKnowledgeUnavailable = false;
+let sharedKnowledgeWarningShown = false;
 
 function isMissingHomeMemoryIndexError(error) {
   const message = String(error?.message || error?.details || error?.code || "");
@@ -518,6 +520,145 @@ async function getHomeMemoryReferences(query) {
       homeMemoryIndexWarningShown = true;
     }
     return localMatches;
+  }
+}
+
+
+
+const SHARED_KNOWLEDGE_COLUMNS = "id,category,prompt_pattern,answer_pattern,general_principle,context_tags,key_terms,applicability,limitations,quality_score,evidence_count";
+
+async function getSharedKnowledgeReferences(query) {
+  if (!supabase || !cloudUserId || sharedKnowledgeUnavailable) return [];
+  const tags = extractHomeMemoryTopics(query).slice(0, 12);
+  const terms = extractHomeMemoryKeys(query)
+    .filter((key) => key.startsWith("word:"))
+    .map((key) => key.slice(5))
+    .slice(0, 24);
+  if (!tags.length && !terms.length) return [];
+
+  try {
+    const requests = [];
+    if (tags.length) {
+      requests.push(supabase
+        .from("synqme_shared_knowledge")
+        .select(SHARED_KNOWLEDGE_COLUMNS)
+        .eq("status", "approved")
+        .overlaps("context_tags", tags)
+        .order("quality_score", { ascending: false })
+        .limit(8));
+    }
+    if (terms.length) {
+      requests.push(supabase
+        .from("synqme_shared_knowledge")
+        .select(SHARED_KNOWLEDGE_COLUMNS)
+        .eq("status", "approved")
+        .overlaps("key_terms", terms)
+        .order("quality_score", { ascending: false })
+        .limit(8));
+    }
+
+    const results = await Promise.all(requests);
+    const byId = new Map();
+    for (const result of results) {
+      if (result.error) throw result.error;
+      for (const item of result.data || []) {
+        if (!byId.has(item.id)) byId.set(item.id, item);
+      }
+    }
+    const scored = [...byId.values()].map((item) => {
+      const itemTags = Array.isArray(item.context_tags) ? item.context_tags : [];
+      const itemTerms = Array.isArray(item.key_terms) ? item.key_terms : [];
+      const tagHits = tags.filter((tag) => itemTags.includes(tag)).length;
+      const termHits = terms.filter((term) => itemTerms.includes(term)).length;
+      return {
+        item,
+        score: tagHits * 5 + termHits + Number(item.quality_score || 0) * 2 + Math.min(Number(item.evidence_count || 0), 10) * 0.1
+      };
+    }).sort((a, b) => b.score - a.score);
+
+    return scored.slice(0, 6).map(({ item }) => ({
+      category: item.category,
+      prompt_pattern: item.prompt_pattern,
+      answer_pattern: item.answer_pattern,
+      general_principle: item.general_principle,
+      context_tags: (item.context_tags || []).slice(0, 8),
+      applicability: item.applicability || {},
+      limitations: (item.limitations || []).slice(0, 5),
+      quality_score: Number(item.quality_score || 0),
+      evidence_count: Number(item.evidence_count || 0)
+    }));
+  } catch (error) {
+    if (isMissingHomeMemoryIndexError(error)) sharedKnowledgeUnavailable = true;
+    if (!sharedKnowledgeWarningShown) {
+      console.info("SYNQ.ME shared knowledge lookup is unavailable; continuing with private persona memory.", String(error?.code || error?.message || "unknown error").slice(0, 120));
+      sharedKnowledgeWarningShown = true;
+    }
+    return [];
+  }
+}
+
+async function contributeSharedKnowledgeFromTurn() {
+  if (
+    !supabase ||
+    !cloudUserId ||
+    !API_BASE ||
+    state.profile.shareAnonymizedLearning !== true ||
+    !state.profile.shareLearningConsentAt
+  ) return false;
+
+  const messages = state.messages.slice(-6)
+    .filter((item) => item && (item.role === "user" || item.role === "assistant") && typeof item.content === "string")
+    .map((item) => ({ role: item.role, content: item.content.slice(0, 1000) }));
+  if (!messages.some((item) => item.role === "user") || messages[messages.length - 1]?.role !== "assistant") return false;
+
+  try {
+    const response = await fetch(API_BASE + "/api/knowledge/extract", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages })
+    });
+    if (!response.ok) return false;
+    const payload = await response.json();
+    const candidate = payload?.candidate;
+    if (!candidate || candidate.eligible !== true || !candidate.fingerprint) return false;
+
+    const { error } = await supabase.from("synqme_knowledge_candidates").insert({
+      user_id: cloudUserId,
+      category: candidate.category,
+      prompt_pattern: candidate.prompt_pattern,
+      answer_pattern: candidate.answer_pattern,
+      general_principle: candidate.general_principle,
+      context_tags: candidate.context_tags,
+      key_terms: candidate.key_terms,
+      applicability: candidate.applicability,
+      limitations: candidate.limitations,
+      fingerprint: candidate.fingerprint,
+      redaction_version: "v1",
+      consent_at: state.profile.shareLearningConsentAt,
+      status: "pending_review"
+    });
+    if (error && error.code !== "23505") throw error;
+    return true;
+  } catch (error) {
+    // Never log the extracted text or raw conversation in the client console.
+    console.info("SYNQ.ME shared learning contribution was not saved.", String(error?.code || error?.message || "unknown error").slice(0, 120));
+    return false;
+  }
+}
+
+async function deletePendingSharedKnowledgeCandidates() {
+  if (!supabase || !cloudUserId) return false;
+  try {
+    const { error } = await supabase
+      .from("synqme_knowledge_candidates")
+      .delete()
+      .eq("user_id", cloudUserId)
+      .eq("status", "pending_review");
+    if (error) throw error;
+    return true;
+  } catch (error) {
+    console.info("SYNQ.ME could not remove pending shared-learning contributions.", String(error?.code || error?.message || "unknown error").slice(0, 120));
+    return false;
   }
 }
 
@@ -1175,6 +1316,8 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   homeMemoryIndexUnavailable = false;
   homeMemoryIndexBackfilledUserId = null;
   homeMemoryIndexWarningShown = false;
+  sharedKnowledgeUnavailable = false;
+  sharedKnowledgeWarningShown = false;
 
   const [profileResult, preferencesResult, conversationResult] = await Promise.all([
     supabase.from("synqme_profiles").select("*").eq("user_id", cloudUserId).maybeSingle(),
@@ -1399,6 +1542,7 @@ function populateSettingsForm() {
 }
 elements.settingsForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
+  const wasSharingAnonymizedLearning = state.profile.shareAnonymizedLearning === true;
   const ownerName = elements.ownerName.value.trim().slice(0, 60);
   const robotName = elements.robotName.value.trim().slice(0, 60);
   if (!ownerName) {
@@ -1427,6 +1571,9 @@ elements.settingsForm?.addEventListener("submit", async (event) => {
   persist();
   renderAll();
   const savedToAccount = await flushCloudSave();
+  if (wasSharingAnonymizedLearning && state.profile.shareAnonymizedLearning !== true) {
+    await deletePendingSharedKnowledgeCandidates();
+  }
   updateSettingsMode();
   closeSettings();
   elements.conversationStatus.textContent = savedToAccount
@@ -3290,7 +3437,11 @@ async function requestAIReply(repairMode = false) {
       role: message.role,
       content: message.content
     }));
-    const memoryReferences = await getHomeMemoryReferences(state.messages[state.messages.length - 1]?.content || "");
+    const currentUserText = state.messages[state.messages.length - 1]?.content || "";
+    const [memoryReferences, sharedKnowledgeReferences] = await Promise.all([
+      getHomeMemoryReferences(currentUserText),
+      getSharedKnowledgeReferences(currentUserText)
+    ]);
     const response = await fetch(API_BASE + "/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -3308,6 +3459,7 @@ async function requestAIReply(repairMode = false) {
         domesticFunctions,
         pendingClarification: state.pendingClarification,
         memoryReferences: memoryReferences.map(({ role, content, timestamp, topics }) => ({ role, content, timestamp, topics })),
+        sharedKnowledgeReferences,
         repairMode
       })
     });
@@ -3477,6 +3629,9 @@ async function sendMessage(rawText) {
   }
   state.messages.push({ role: "assistant", content: reply, timestamp: new Date().toISOString() });
   state.pendingClarification = detectPendingClarification(message, reply);
+  if (state.profile.shareAnonymizedLearning === true) {
+    void contributeSharedKnowledgeFromTurn();
+  }
   state.messages = state.messages.slice(-5000);
   persist();
   renderAll();
