@@ -1934,11 +1934,11 @@ function renderAll() {
   const progress = Math.round((achieved / MILESTONES.length) * 100);
   if (elements.mobileProgressValue) elements.mobileProgressValue.textContent = progress + "%";
   if (state.apiConnected) {
-    elements.providerLabel.textContent = "LOCAL · QWEN3-4B · ON-DEVICE";
+    elements.providerLabel.textContent = "LOCAL AI · ON-DEVICE";
   } else if (state.apiError) {
     elements.providerLabel.textContent = "LOCAL AI · MODEL NEEDS ATTENTION";
   } else {
-    elements.providerLabel.textContent = "LOCAL AI · QWEN3-4B · FIRST-TIME SETUP";
+    elements.providerLabel.textContent = "LOCAL AI · FIRST-TIME SETUP";
   }
   document.title = name ? "SYNQ.ME | " + name + "’s SecondSelf" : "SYNQ.ME | Build Your SecondSelf";
   const intro = $(".conversation-intro p");
@@ -3146,7 +3146,7 @@ async function requestAIReply(repairMode = false) {
     state.apiConfigured = true;
     state.apiError = "";
     state.apiErrorDetail = "";
-    elements.providerLabel.textContent = "LOCAL · QWEN3-4B · ON-DEVICE";
+    elements.providerLabel.textContent = "LOCAL AI · ON-DEVICE";
     lastAIReplyUsedFallback = false;
     return reply.trim();
   } catch (error) {
