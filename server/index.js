@@ -3,31 +3,12 @@ import http from "node:http";
 const PORT = Number.parseInt(process.env.PORT || "10000", 10);
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
 const GROQ_API_KEY = process.env.GROQ_API_KEY || "";
-const XAI_API_KEY = process.env.XAI_API_KEY || process.env.GROK_API_KEY || "";
 const REQUESTED_PROVIDER = String(process.env.AI_PROVIDER || "").trim().toLowerCase();
-// Grok (xAI), Gemini and Groq are different providers. Respect an explicit
-// AI_PROVIDER first; otherwise prefer a configured xAI key over legacy Gemini.
-const PROVIDER = ["xai", "grok"].includes(REQUESTED_PROVIDER)
-  ? "xai"
-  : REQUESTED_PROVIDER === "gemini"
-    ? "gemini"
-    : REQUESTED_PROVIDER === "groq"
-      ? "groq"
-      : XAI_API_KEY
-        ? "xai"
-        : GEMINI_API_KEY
-          ? "gemini"
-          : "groq";
-const API_KEY = PROVIDER === "xai"
-  ? XAI_API_KEY
-  : PROVIDER === "gemini"
-    ? GEMINI_API_KEY
-    : GROQ_API_KEY;
-const MODEL = PROVIDER === "xai"
-  ? (process.env.XAI_MODEL || process.env.GROK_MODEL || "grok-4.7")
-  : PROVIDER === "gemini"
-    ? (process.env.GEMINI_MODEL || "gemini-3.8-flash")
-    : (process.env.GROQ_MODEL || "openai/gpt-oss-20b");
+const PROVIDER = REQUESTED_PROVIDER === "gemini" || (!REQUESTED_PROVIDER && GEMINI_API_KEY) ? "gemini" : "groq";
+const API_KEY = PROVIDER === "gemini" ? GEMINI_API_KEY : GROQ_API_KEY;
+const MODEL = PROVIDER === "gemini"
+  ? (process.env.GEMINI_MODEL || "gemini-3.8-flash")
+  : (process.env.GROQ_MODEL || "openai/gpt-oss-20b");
 // Render deployments need CORS to work even when FRONTEND_ORIGIN has not
 // been populated. Keep the known SYNQ.ME origins as safe defaults and allow
 // additional exact origins through FRONTEND_ORIGIN (comma-separated).
@@ -357,7 +338,7 @@ const app = http.createServer(async (request, response) => {
       provider: PROVIDER,
       configured: Boolean(API_KEY),
       model: MODEL,
-      diagnosticsVersion: "multi-provider-errors-v2"
+      diagnosticsVersion: "gemini-upstream-errors-v1"
     }, headers || {});
   }
 
@@ -418,7 +399,7 @@ const app = http.createServer(async (request, response) => {
     return json(response, 403, { error: "Origin not allowed." });
   }
   if (!API_KEY) {
-    const requiredKey = PROVIDER === "xai" ? "XAI_API_KEY" : PROVIDER === "gemini" ? "GEMINI_API_KEY" : "GROQ_API_KEY";
+    const requiredKey = PROVIDER === "gemini" ? "GEMINI_API_KEY" : "GROQ_API_KEY";
     return json(response, 503, { error: "AI is not configured. Add " + requiredKey + " to the Render backend environment." }, headers || {});
   }
   if (limitReached(request)) {
@@ -492,7 +473,7 @@ const app = http.createServer(async (request, response) => {
           }),
           signal: AbortSignal.timeout(30_000)
         })
-      : await fetch(PROVIDER === "xai" ? "https://api.x.ai/v1/chat/completions" : "https://api.groq.com/openai/v1/chat/completions", {
+      : await fetch("https://api.groq.com/openai/v1/chat/completions", {
           method: "POST",
           headers: {
             "Authorization": "Bearer " + API_KEY,
@@ -502,10 +483,10 @@ const app = http.createServer(async (request, response) => {
             model: MODEL,
             messages: [{ role: "system", content: systemPrompt }, ...messages],
             temperature: 0.72,
-            ...(PROVIDER === "xai" ? { max_tokens: 400 } : { max_completion_tokens: 400 }),
+            max_completion_tokens: 400,
             stream: false
           }),
-          signal: AbortSignal.timeout(60_000)
+          signal: AbortSignal.timeout(30_000)
         });
 
     if (!upstream.ok) {
@@ -523,23 +504,20 @@ const app = http.createServer(async (request, response) => {
       });
 
       let friendly;
-      const providerLabel = PROVIDER === "xai" ? "Grok" : PROVIDER === "gemini" ? "Gemini" : "Groq";
       if (upstream.status === 429) {
-        friendly = providerLabel + " has reached a usage or rate limit. Check the provider console and billing, then try again.";
+        friendly = "Gemini has reached a usage limit or rate limit. Check your Gemini quota and billing, then try again.";
       } else if (PROVIDER === "gemini" && [401, 403].includes(upstream.status)) {
-        friendly = "Gemini rejected the API key or project access. Check the key and Gemini API permissions.";
-      } else if (PROVIDER === "xai" && [401, 403].includes(upstream.status)) {
-        friendly = "Grok rejected the xAI API key or access. Check XAI_API_KEY and the xAI console permissions/billing.";
-      } else if (PROVIDER === "groq" && [401, 403].includes(upstream.status)) {
-        friendly = "Groq rejected the API key or access. Check GROQ_API_KEY and your Groq console.";
-      } else if (upstream.status === 404) {
-        friendly = providerLabel + " could not find the configured model. Check the model environment variable and model access.";
-      } else if (upstream.status === 400) {
-        friendly = providerLabel + " rejected the request. Check the Render API logs for the provider error detail.";
-      } else if (upstream.status >= 500) {
-        friendly = providerLabel + " is temporarily returning a server error. Check Render logs and retry shortly.";
+        friendly = "Gemini rejected the API key or project access. Check that the key is valid, unrestricted for this server, and has Gemini API access enabled.";
+      } else if (PROVIDER === "gemini" && upstream.status === 404) {
+        friendly = "Gemini could not find the configured model. Check GEMINI_MODEL and the model access available to this API key.";
+      } else if (PROVIDER === "gemini" && upstream.status === 400) {
+        friendly = "Gemini rejected the request. The Render API logs contain the provider error code and diagnostic detail.";
+      } else if (PROVIDER === "gemini" && upstream.status >= 500) {
+        friendly = "Gemini is temporarily returning a server error. Check Render logs and retry shortly.";
+      } else if (PROVIDER === "gemini") {
+        friendly = "Gemini could not complete the reply. Check the API key, model access, quota and the provider error in Render logs.";
       } else {
-        friendly = providerLabel + " could not complete the reply. Check the API key, model access, quota and provider logs.";
+        friendly = "The AI service could not complete the reply. Check the provider error in Render logs and try again.";
       }
       return json(response, upstream.status === 429 ? 429 : 502, {
         error: friendly,
@@ -590,7 +568,9 @@ const app = http.createServer(async (request, response) => {
       message: String(error?.message || "Unknown server error").slice(0, 300)
     });
     return json(response, 502, {
-      error: "The SYNQ.ME backend could not complete the request to " + (PROVIDER === "xai" ? "Grok" : PROVIDER === "gemini" ? "Gemini" : "Groq") + ". Check the backend logs for the diagnostic error.",
+      error: PROVIDER === "gemini"
+        ? "The SYNQ.ME backend could not complete the request to Gemini. Check the backend logs for the diagnostic error."
+        : "The SYNQ.ME backend could not complete the request to the AI provider. Check the backend logs for the diagnostic error.",
       provider: PROVIDER
     }, headers || {});
   }
@@ -600,6 +580,6 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log("SYNQ.ME API listening on port " + PORT);
   console.log("AI provider: " + PROVIDER);
   console.log("Model: " + MODEL);
-  console.log("AI API key configured for " + PROVIDER + ": " + Boolean(API_KEY));
+  console.log("AI API key configured: " + Boolean(API_KEY));
   console.log("Gemini transcription configured: " + Boolean(GEMINI_API_KEY));
 });
