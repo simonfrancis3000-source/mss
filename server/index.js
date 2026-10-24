@@ -31,7 +31,9 @@ const ALLOWED_ORIGINS = new Set([
 ].map((value) => value.trim().replace(/\/+$/, "")).filter(Boolean));
 
 const requestHistory = new Map();
+const knowledgeRequestHistory = new Map();
 const MAX_REQUESTS_PER_MINUTE = 12;
+const MAX_KNOWLEDGE_EXTRACTIONS_PER_MINUTE = 6;
 const MAX_BODY_BYTES = 48 * 1024;
 const MAX_AUDIO_BODY_BYTES = 8 * 1024 * 1024;
 const SUPPORTED_CONVERSATION_LANGUAGES = new Set(["en", "es", "fr", "it", "pt", "hi", "ja", "zh"]);
@@ -89,17 +91,17 @@ async function readJson(request, maxBytes = MAX_BODY_BYTES) {
   }
 }
 
-function limitReached(request) {
+function limitReached(request, history = requestHistory, maxRequests = MAX_REQUESTS_PER_MINUTE) {
   const forwarded = request.headers["x-forwarded-for"];
   const ip = typeof forwarded === "string" ? forwarded.split(",")[0].trim() : "unknown";
   const now = Date.now();
-  const current = requestHistory.get(ip);
+  const current = history.get(ip);
   if (!current || now - current.start > 60_000) {
-    requestHistory.set(ip, { start: now, count: 1 });
+    history.set(ip, { start: now, count: 1 });
     return false;
   }
   current.count += 1;
-  return current.count > MAX_REQUESTS_PER_MINUTE;
+  return current.count > maxRequests;
 }
 
 function cleanMessages(input) {
@@ -556,7 +558,9 @@ const app = http.createServer(async (request, response) => {
   if (request.method === "POST" && url.pathname === "/api/knowledge/extract") {
     if (origin && headers === null) return json(response, 403, { error: "Origin not allowed." });
     if (!API_KEY) return json(response, 503, { error: "AI knowledge extraction is not configured." }, headers || {});
-    if (limitReached(request)) return json(response, 429, { error: "Too many requests. Wait a minute, then try again." }, headers || {});
+    if (limitReached(request, knowledgeRequestHistory, MAX_KNOWLEDGE_EXTRACTIONS_PER_MINUTE)) {
+      return json(response, 429, { error: "Shared-learning extraction limit reached. Your conversation is unaffected." }, headers || {});
+    }
 
     try {
       const body = await readJson(request);
