@@ -2506,7 +2506,7 @@ async function sendMessage(rawText) {
   if (voiceModeActive) updateVoiceExperience("thinking", "AMÏA is thinking…");
   elements.sendButton.disabled = true;
   elements.messageInput.disabled = true;
-  elements.conversationStatus.textContent = "ELO is thinking";
+  elements.conversationStatus.textContent = (state.profile.robotName || "Your robot").trim() + " is thinking";
   state.messages.push({ role: "user", content: message });
   const previousAssistantMessage = state.messages.length > 1 && state.messages[state.messages.length - 2]?.role === "assistant"
     ? state.messages[state.messages.length - 2].content
