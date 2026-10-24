@@ -32,7 +32,6 @@ test("validates model extraction output and rejects sensitive credentials", () =
     scope_key: "kitchen.counter.item_placement",
     relation: "new",
     confidence: 0.94,
-    conditions: ["Only move items after explicit permission"],
     attributes: { room: "kitchen", ask_first: true, door_code: "123456" },
     conditions: ["Only move items after explicit permission", "My home address is 42 Example Street"],
     search_terms: ["countertop", "personal items", "put away", "email address: user@example.com"]
@@ -113,7 +112,6 @@ test("backfills legacy preferences as structured, user-owned records", () => {
   assert.equal(row.user_id, "user-123");
   assert.equal(row.source_preference_id, "pref-1");
   assert.equal(row.status, "user_confirmed");
-  assert.equal(row.source_message, row.statement);
   assert.deepEqual(row.conditions, ["approved spray"]);
   assert.equal(row.attributes.home_address, undefined);
   assert.equal(row.source_message, row.statement);
