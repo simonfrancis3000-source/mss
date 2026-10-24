@@ -2362,7 +2362,7 @@ function stopKokoroAudio() {
   assistantIsSpeaking = false;
 }
 
-async function playKokoroReply(reply, voiceId, requestId) {
+async function playKokoroReply(reply, voiceId, requestId, onPlaybackStarted = () => {}) {
   const tts = await loadKokoroTTS();
   if (!voiceModeActive || requestId !== kokoroSpeechGeneration) return true;
   const generated = await tts.generate(reply, { voice: voiceId });
@@ -2384,6 +2384,7 @@ async function playKokoroReply(reply, voiceId, requestId) {
       resolve(ok);
     };
     player.onplay = () => {
+      onPlaybackStarted();
       if (requestId !== kokoroSpeechGeneration || !voiceModeActive) {
         try { player.pause(); } catch {}
         finish(true);
@@ -2470,11 +2471,46 @@ async function speakAssistantReply(reply) {
     const requestId = ++kokoroSpeechGeneration;
     if (elements.voiceStatus) elements.voiceStatus.textContent = "Preparing Kokoro voice · first use downloads the model";
     updateVoiceExperience("thinking", "Preparing voice on this device…");
+
+    // Do not leave the conversation waiting indefinitely for a model download,
+    // model initialisation, or speech generation. If Kokoro has not started
+    // audio in six seconds, use the browser voice for this reply; Kokoro may
+    // finish loading in the background and be ready on a later turn.
+    let startTimeoutId = null;
+    let playbackStarted = false;
     try {
-      const played = await playKokoroReply(String(reply || ""), voiceId, requestId);
-      if (played || !voiceModeActive || requestId !== kokoroSpeechGeneration) return;
+      const playPromise = playKokoroReply(String(reply || ""), voiceId, requestId, () => {
+        playbackStarted = true;
+        if (startTimeoutId !== null) {
+          window.clearTimeout(startTimeoutId);
+          startTimeoutId = null;
+        }
+      }).then((played) => ({ kind: "finished", played }));
+
+      const result = await Promise.race([
+        playPromise,
+        new Promise((resolve) => {
+          startTimeoutId = window.setTimeout(() => resolve({ kind: "timeout" }), 6000);
+        })
+      ]);
+      if (startTimeoutId !== null) window.clearTimeout(startTimeoutId);
+
+      if (result.kind === "timeout") {
+        // Invalidate any in-flight Kokoro work so it cannot start audio after
+        // the browser fallback has begun.
+        stopKokoroAudio();
+        if (elements.voiceStatus) elements.voiceStatus.textContent = "Voice on · using browser speech while Kokoro loads";
+        updateVoiceExperience("thinking", "Using your device’s built-in voice…");
+      } else if (result.played || !voiceModeActive || requestId !== kokoroSpeechGeneration) {
+        return;
+      }
     } catch (error) {
+      if (startTimeoutId !== null) window.clearTimeout(startTimeoutId);
       console.info("Kokoro speech unavailable; using the browser voice instead.", error);
+    }
+    if (playbackStarted || !voiceModeActive) {
+      // If Kokoro started speaking, it owns this reply through to completion.
+      return;
     }
   }
   if (!voiceModeActive) return;
