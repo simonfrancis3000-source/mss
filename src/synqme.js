@@ -3230,6 +3230,7 @@ function startLocalAIProgressWatchdog() {
 
 function rejectPendingLocalAIRequests(error) {
   for (const [id, pending] of localAIPendingRequests.entries()) {
+    if (pending.timeoutId) window.clearTimeout(pending.timeoutId);
     pending.reject(error);
     localAIPendingRequests.delete(id);
   }
@@ -3355,6 +3356,7 @@ function handleLocalAIWorkerMessage(event) {
   if (data.type === "reply" || data.type === "reply-error") {
     const pending = localAIPendingRequests.get(data.id);
     if (!pending) return;
+    if (pending.timeoutId) window.clearTimeout(pending.timeoutId);
     localAIPendingRequests.delete(data.id);
     if (data.type === "reply-error") {
       const message = String(data.message || "Local generation failed.");
@@ -3482,10 +3484,33 @@ function ensureLocalAIReady() {
 function runLocalAIRequest(payload) {
   const id = ++localAIRequestSequence;
   return new Promise((resolve, reject) => {
-    localAIPendingRequests.set(id, { resolve, reject, payload });
+    const timeoutId = window.setTimeout(() => {
+      const pending = localAIPendingRequests.get(id);
+      if (!pending) return;
+      localAIPendingRequests.delete(id);
+
+      // A worker that has stopped answering cannot be reused safely. Terminate
+      // it, but leave the browser model cache untouched for the next attempt.
+      const stalledWorker = localAIWorker;
+      localAIWorker = null;
+      localAIReady = false;
+      localAILoadPromise = null;
+      localAILoadResolve = null;
+      localAILoadReject = null;
+      try { stalledWorker?.terminate(); } catch {}
+      stopLocalAIProgressWatchdog();
+      state.apiConnected = false;
+      state.apiError = "local inference timed out";
+      state.apiErrorDetail = "Freya did not finish generating a reply within three minutes. The saved model files have been kept. Send the question again to restart local inference.";
+      pending.reject(new Error(state.apiErrorDetail));
+      renderAll();
+    }, 180000);
+
+    localAIPendingRequests.set(id, { resolve, reject, payload, timeoutId });
     try {
       localAIWorker.postMessage({ ...payload, id });
     } catch (error) {
+      window.clearTimeout(timeoutId);
       localAIPendingRequests.delete(id);
       reject(error);
     }
