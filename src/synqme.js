@@ -919,9 +919,21 @@ function appendMessage(role, content) {
   article.className = "message " + (role === "user" ? "user-message" : "assistant-message");
   const avatar = document.createElement("div");
   avatar.className = "message-avatar";
-  avatar.textContent = role === "user"
-    ? (state.profile.ownerName.trim().charAt(0).toUpperCase() || "Y")
-    : "S";
+  if (role === "user") {
+    avatar.textContent = state.profile.ownerName.trim().charAt(0).toUpperCase() || "Y";
+  } else {
+    avatar.classList.add("robot-message-avatar");
+    avatar.setAttribute("aria-hidden", "true");
+    if (robotAppearance.customImageData) {
+      const image = document.createElement("img");
+      image.className = "message-robot-image";
+      image.src = robotAppearance.customImageData;
+      image.alt = "";
+      avatar.append(image);
+    } else {
+      avatar.innerHTML = robotSvgMarkup(robotAppearance.robotId);
+    }
+  }
   const body = document.createElement("div");
   body.className = "message-body";
   const meta = document.createElement("div");
@@ -1689,6 +1701,8 @@ function applyRobotAppearance() {
     }
   }
   if (elements.voiceCompanionName) elements.voiceCompanionName.textContent = selectedCompanionDisplayName();
+  // Keep existing and future assistant avatars in sync with the selected appearance.
+  if (elements.chatMessages) renderMessages();
 }
 
 function updateVoiceExperience(mode, message) {
