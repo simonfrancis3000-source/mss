@@ -33,14 +33,18 @@ test("validates model extraction output and rejects sensitive credentials", () =
     relation: "new",
     confidence: 0.94,
     conditions: ["Only move items after explicit permission"],
-    attributes: { room: "kitchen", ask_first: true },
-    search_terms: ["countertop", "personal items", "put away"]
+    attributes: { room: "kitchen", ask_first: true, door_code: "123456" },
+    conditions: ["Only move items after explicit permission", "My home address is 42 Example Street"],
+    search_terms: ["countertop", "personal items", "put away", "email address: user@example.com"]
   });
   assert.ok(candidate);
   assert.equal(candidate.status, "user_stated");
   assert.equal(candidate.topic, "kitchen");
   assert.equal(candidate.kind, "boundary");
   assert.equal(candidate.confidence, 0.94);
+  assert.equal(candidate.attributes.door_code, undefined);
+  assert.equal(candidate.conditions.length, 1);
+  assert.ok(!candidate.search_terms.some((term) => /email address/i.test(term)));
   assert.equal(cleanPersonaMemoryCandidate({ statement: "My door code is 12345678", topic: "safety_and_access" }), null);
   assert.equal(cleanPersonaMemoryCandidate(null), null);
 });
@@ -101,7 +105,7 @@ test("backfills legacy preferences as structured, user-owned records", () => {
     category: "Surface cleaning",
     status: "user_confirmed",
     unresolvedFields: ["approved spray"],
-    explicitFacets: { room: "kitchen" },
+    explicitFacets: { room: "kitchen", home_address: "42 Example Street" },
     sourceMessage: "I prefer the kitchen worktop wiped after breakfast.",
     recordedAt: "2026-10-23T09:00:00Z"
   }, "user-123");
@@ -111,6 +115,8 @@ test("backfills legacy preferences as structured, user-owned records", () => {
   assert.equal(row.status, "user_confirmed");
   assert.equal(row.source_message, row.statement);
   assert.deepEqual(row.conditions, ["approved spray"]);
+  assert.equal(row.attributes.home_address, undefined);
+  assert.equal(row.source_message, row.statement);
 });
 
 test("only preference-like turns trigger extraction, rather than ordinary questions", () => {
@@ -118,6 +124,7 @@ test("only preference-like turns trigger extraction, rather than ordinary questi
   assert.equal(shouldExtractPersonaMemory("I prefer cleaning the kitchen after breakfast."), true);
   assert.equal(shouldExtractPersonaMemory("Could you remember that I never want my desk items moved?"), true);
   assert.equal(shouldExtractPersonaMemory("What's my door code?"), false);
+  assert.equal(shouldExtractPersonaMemory("I prefer the kitchen clean after breakfast, and my phone is 555-123.", true), false);
   assert.equal(shouldExtractPersonaMemory("A saved preference was just added.", true), true);
 });
 
