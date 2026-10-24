@@ -2295,7 +2295,6 @@ function toggleVoiceInputMute() {
       try { speechRecognition.abort(); } catch {}
     }
     recognitionListening = false;
-    releaseVoiceMedia();
     updateVoiceExperience("muted", "Microphone muted. Your companion can still finish speaking.");
   } else {
     updateVoiceExperience("listening", "Microphone on. Speak whenever you are ready.");
@@ -3064,6 +3063,7 @@ function ensureLocalAIReady() {
   state.apiModel = LOCAL_MODEL_LABEL;
   state.apiError = "";
   state.apiErrorDetail = "";
+  try { Promise.resolve(navigator.storage?.persist?.()).catch(() => {}); } catch {}
   setLocalAIProgress({ label: "Starting local AI · first setup downloads approximately 2.8 GB", progress: null, indeterminate: true });
   localAILoadPromise = new Promise((resolve, reject) => {
     localAILoadResolve = resolve;
