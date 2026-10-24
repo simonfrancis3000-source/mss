@@ -812,6 +812,21 @@ async function updatePersonaMemoryRow(id, patch) {
   return data;
 }
 
+async function setLinkedPreferenceStatus(preferenceId, status) {
+  if (!preferenceId) return;
+  let changed = false;
+  state.preferences = state.preferences.map((item) => {
+    if (String(item.id) !== String(preferenceId)) return item;
+    changed = true;
+    return { ...item, status, preference_status: status };
+  });
+  if (!changed) return;
+  persist();
+  const saved = await flushCloudSave();
+  renderAll();
+  if (!saved) throw new Error("The associated preference status could not be confirmed as saved.");
+}
+
 async function processStructuredMemoryTurn(userMessage, userTimestamp, shouldExtract = false) {
   if (!shouldExtract || !API_BASE || !supabase || !cloudUserId || personaMemoryTableUnavailable || personaMemoryWriteInFlight) return;
   personaMemoryWriteInFlight = true;
@@ -874,6 +889,7 @@ async function processStructuredMemoryTurn(userMessage, userTimestamp, shouldExt
           reviewed_at: new Date().toISOString(),
           relation: "updates"
         });
+        await setLinkedPreferenceStatus(target.source_preference_id, "superseded");
         status = "user_stated";
       } else if (target && candidate.relation === "conflicts") {
         await updatePersonaMemoryRow(target.id, {
@@ -999,11 +1015,13 @@ async function handlePersonaMemoryAction(event) {
       const siblingIds = personaMemoryRecords.filter((item) => item.id !== id &&
         item.status === "conflicting" && (item.conflict_group === group || item.scope_key === memory.scope_key)).map((item) => item.id);
       for (const siblingId of siblingIds) {
+        const sibling = personaMemoryRecords.find((item) => item.id === siblingId);
         await updatePersonaMemoryRow(siblingId, {
           status: "superseded",
           archived_at: new Date().toISOString(),
           reviewed_at: new Date().toISOString()
         });
+        await setLinkedPreferenceStatus(sibling?.source_preference_id, "superseded");
       }
       await updatePersonaMemoryRow(id, {
         status: "user_confirmed",
@@ -1013,6 +1031,7 @@ async function handlePersonaMemoryAction(event) {
         reviewed_at: new Date().toISOString(),
         archived_at: null
       });
+      await setLinkedPreferenceStatus(memory.source_preference_id, "user_confirmed");
       if (elements.personaMemoryStatus) elements.personaMemoryStatus.textContent = "Preference confirmed. Conflicting alternatives have been moved to the archived section.";
     } catch (error) {
       if (elements.personaMemoryStatus) elements.personaMemoryStatus.textContent = String(error?.message || "Could not resolve that conflict.");
