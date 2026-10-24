@@ -1,12 +1,16 @@
 import { env, pipeline } from "@huggingface/transformers";
 
-const MODEL_ID = "onnx-community/Qwen3-4B-ONNX";
+const MODEL_ID = "onnx-community/Qwen3-1.7B-ONNX";
 let generator = null;
 let loadingPromise = null;
 let generationBusy = false;
 
 function postProgress(event) {
   try { self.postMessage({ type: "progress", ...event }); } catch {}
+}
+
+function postStatus(label) {
+  try { self.postMessage({ type: "status", label }); } catch {}
 }
 
 function describeLoadError(error) {
@@ -44,15 +48,26 @@ async function loadModel() {
     if (!adapter) {
       throw new Error("WebGPU is present, but no compatible GPU adapter is available. Try a current Chrome or Edge browser on a supported device.");
     }
-    postProgress({ status: "initiate", file: "Qwen3-4B model" });
+    postStatus("Loading local AMÏA model");
+    postProgress({ status: "initiate", file: "Qwen3-1.7B model" });
     generator = await pipeline("text-generation", MODEL_ID, {
-      // Use the model revision whose config explicitly describes the split q4f16 ONNX weights.
-      revision: "38477191e584539313ef6a9c20e1e0ec94ba6ff8",
+      // Use the published Transformers.js-compatible Qwen3-1.7B model and q4f16 WebGPU weights.
+      revision: "main",
       device: "webgpu",
       dtype: "q4f16",
       progress_callback: (event) => postProgress(event)
     });
-    postProgress({ status: "done", file: "Qwen3-4B model" });
+
+    // Smoke-test the ONNX graph before enabling chat. A failed first inference
+    // should be reported during startup rather than after the user sends a message.
+    // Model weights remain cached when browser storage is available.
+    postStatus("Starting local AMÏA model");
+    await generator([{ role: "user", content: "Reply with OK." }], {
+      max_new_tokens: 1,
+      do_sample: false,
+      chat_template_kwargs: { enable_thinking: false }
+    });
+    postProgress({ status: "done", file: "Qwen3-1.7B model" });
     return generator;
   })().catch((error) => {
     loadingPromise = null;
