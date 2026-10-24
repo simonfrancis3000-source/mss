@@ -161,6 +161,7 @@ const elements = {
   robotImageInput: $("#robotImageInput"),
   uploadRobotImageButton: $("#uploadRobotImageButton"),
   voiceExperience: $("#voiceExperience"),
+  voiceExperienceTitle: $("#voiceExperienceTitle"),
   voiceIntroCopy: $("#voiceIntroCopy"),
   voiceOrb: $("#voiceOrb"),
   voiceOrbCore: $("#voiceOrbCore"),
@@ -1259,6 +1260,13 @@ function selectedCompanionDisplayName() {
   return (ROBOT_OPTIONS.find((item) => item.id === robotAppearance.robotId) || ROBOT_OPTIONS[0]).name;
 }
 
+function updateVoiceCompanionLabels() {
+  const companionName = selectedCompanionDisplayName();
+  if (elements.voiceExperienceTitle) elements.voiceExperienceTitle.textContent = "Talk to " + companionName + ".";
+  if (elements.voiceCompanionName) elements.voiceCompanionName.textContent = companionName;
+  if (elements.voiceIntroCopy) elements.voiceIntroCopy.textContent = "Speak naturally. " + companionName + " is listening.";
+}
+
 function renderOwnerAvatarPreview() {
   if (!elements.ownerAvatarPreview) return;
   elements.ownerAvatarPreview.replaceChildren();
@@ -2171,8 +2179,7 @@ function applyRobotAppearance() {
       customButton.setAttribute("aria-pressed", String(Boolean(robotAppearance.customImageData)));
     }
   }
-  if (elements.voiceCompanionName) elements.voiceCompanionName.textContent = selectedCompanionDisplayName();
-  if (elements.voiceIntroCopy) elements.voiceIntroCopy.textContent = "Speak naturally. " + selectedCompanionDisplayName() + " is listening.";
+  updateVoiceCompanionLabels();
   // Keep existing and future assistant avatars in sync with the selected appearance.
   if (elements.chatMessages) renderMessages();
 }
@@ -2200,8 +2207,7 @@ function openVoiceExperience() {
   elements.voiceExperience.hidden = false;
   document.body.classList.add("voice-experience-open");
   voiceInputMuted = false;
-  if (elements.voiceCompanionName) elements.voiceCompanionName.textContent = selectedCompanionDisplayName();
-  if (elements.voiceIntroCopy) elements.voiceIntroCopy.textContent = "Speak naturally. " + selectedCompanionDisplayName() + " is listening.";
+  updateVoiceCompanionLabels();
   if (!SpeechRecognitionConstructor && !voiceRecorderAvailable()) {
     updateVoiceExperience("idle", "Voice input is unavailable in this browser. Return to chat or try Chrome.");
     return;
