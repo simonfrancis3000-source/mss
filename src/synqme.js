@@ -167,11 +167,17 @@ const elements = {
   voiceOrbCore: $("#voiceOrbCore"),
   voiceExperienceStatus: $("#voiceExperienceStatus"),
   voiceCompanionName: $("#voiceCompanionName"),
+  voiceRetrySpeechButton: $("#voiceRetrySpeechButton"),
   voiceModelProgress: $("#voiceModelProgress"),
   voiceModelProgressTrack: $("#voiceModelProgressTrack"),
   voiceModelProgressFill: $("#voiceModelProgressFill"),
   voiceModelProgressLabel: $("#voiceModelProgressLabel"),
   voiceModelProgressPercent: $("#voiceModelProgressPercent"),
+  voiceModelProgressMain: $("#voiceModelProgressMain"),
+  voiceModelProgressTrackMain: $("#voiceModelProgressTrackMain"),
+  voiceModelProgressFillMain: $("#voiceModelProgressFillMain"),
+  voiceModelProgressLabelMain: $("#voiceModelProgressLabelMain"),
+  voiceModelProgressPercentMain: $("#voiceModelProgressPercentMain"),
   voiceMuteButton: $("#voiceMuteButton"),
   voiceMuteControlButton: $("#voiceMuteControlButton"),
   voiceMuteControlLabel: $("#voiceMuteControlLabel"),
@@ -347,6 +353,7 @@ let recognitionTranscript = "";
 let voiceRestartTimer = null;
 let assistantIsSpeaking = false;
 let currentSpeechUtterance = null;
+let lastAssistantReplyForSpeech = "";
 let kokoroLoadPromise = null;
 let kokoroTTSInstance = null;
 let kokoroLoadFailed = false;
@@ -1054,6 +1061,7 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   if (!profileComplete()) openSettings();
   else updateSettingsMode();
   startCloudConversationSync();
+  scheduleKokoroBackgroundPreload(1400);
   return true;
 }
 
@@ -2688,27 +2696,43 @@ function formatVoiceModelBytes(value) {
 }
 
 function renderVoiceModelProgress({ visible = true, label = "", progress = null, indeterminate = false }) {
-  if (!elements.voiceModelProgress) return;
   if (voiceModelProgressTimer) {
     window.clearTimeout(voiceModelProgressTimer);
     voiceModelProgressTimer = null;
   }
-  elements.voiceModelProgress.hidden = !visible;
-  if (label && elements.voiceModelProgressLabel) elements.voiceModelProgressLabel.textContent = label;
-  const track = elements.voiceModelProgressTrack;
-  const fill = elements.voiceModelProgressFill;
+  const views = [
+    {
+      container: elements.voiceModelProgress,
+      track: elements.voiceModelProgressTrack,
+      fill: elements.voiceModelProgressFill,
+      label: elements.voiceModelProgressLabel,
+      percent: elements.voiceModelProgressPercent
+    },
+    {
+      container: elements.voiceModelProgressMain,
+      track: elements.voiceModelProgressTrackMain,
+      fill: elements.voiceModelProgressFillMain,
+      label: elements.voiceModelProgressLabelMain,
+      percent: elements.voiceModelProgressPercentMain
+    }
+  ];
+
   const hasProgress = Number.isFinite(progress);
-  if (track) {
-    track.classList.toggle("is-indeterminate", Boolean(indeterminate));
+  for (const view of views) {
+    if (!view.container) continue;
+    view.container.hidden = !visible;
+    if (label && view.label) view.label.textContent = label;
+    if (!view.track) continue;
+    view.track.classList.toggle("is-indeterminate", Boolean(indeterminate));
     if (hasProgress) {
       const value = Math.max(0, Math.min(100, Number(progress)));
-      track.setAttribute("aria-valuenow", String(Math.round(value)));
-      if (fill) fill.style.width = value + "%";
-      if (elements.voiceModelProgressPercent) elements.voiceModelProgressPercent.textContent = Math.round(value) + "%";
+      view.track.setAttribute("aria-valuenow", String(Math.round(value)));
+      if (view.fill) view.fill.style.width = value + "%";
+      if (view.percent) view.percent.textContent = Math.round(value) + "%";
     } else {
-      track.removeAttribute("aria-valuenow");
-      if (fill) fill.style.width = indeterminate ? "34%" : "0%";
-      if (elements.voiceModelProgressPercent) elements.voiceModelProgressPercent.textContent = "";
+      view.track.removeAttribute("aria-valuenow");
+      if (view.fill) view.fill.style.width = indeterminate ? "34%" : "0%";
+      if (view.percent) view.percent.textContent = "";
     }
   }
 }
@@ -2718,6 +2742,7 @@ function scheduleVoiceModelProgressHide(delay = 2500) {
   voiceModelProgressTimer = window.setTimeout(() => {
     voiceModelProgressTimer = null;
     if (elements.voiceModelProgress) elements.voiceModelProgress.hidden = true;
+    if (elements.voiceModelProgressMain) elements.voiceModelProgressMain.hidden = true;
   }, delay);
 }
 
@@ -2758,7 +2783,14 @@ async function loadKokoroTTS() {
     kokoroLoadFailed = false;
     renderVoiceModelProgress({ label: "Checking for a saved voice model…", indeterminate: true });
     kokoroLoadPromise = (async () => {
-      const { KokoroTTS } = await import("kokoro-js");
+      const [{ KokoroTTS }, { env }] = await Promise.all([
+        import("kokoro-js"),
+        import("@huggingface/transformers")
+      ]);
+      // Keep the model files in the browser's Cache API and reuse the WASM
+      // runtime between app launches instead of fetching them again.
+      env.useBrowserCache = true;
+      env.useWasmCache = true;
       const tts = await KokoroTTS.from_pretrained("onnx-community/Kokoro-82M-v1.0-ONNX", {
         dtype: "q8",
         device: "wasm",
@@ -2778,6 +2810,26 @@ async function loadKokoroTTS() {
     });
   }
   return kokoroLoadPromise;
+}
+
+function scheduleKokoroBackgroundPreload(delay = 1400) {
+  if (kokoroTTSInstance || kokoroLoadPromise || kokoroLoadFailed) return;
+  const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  if (connection && connection.saveData) {
+    console.info("SYNQ.ME voice model preload deferred because Data Saver is enabled.");
+    return;
+  }
+
+  window.setTimeout(() => {
+    if (kokoroTTSInstance || kokoroLoadPromise || kokoroLoadFailed) return;
+    if (document.visibilityState === "hidden") {
+      scheduleKokoroBackgroundPreload(8000);
+      return;
+    }
+    void loadKokoroTTS().catch((error) => {
+      console.info("Kokoro background preload failed; built-in speech remains available.", error);
+    });
+  }, delay);
 }
 
 function clearKokoroAudio(player = kokoroAudioElement, url = kokoroAudioUrl) {
@@ -2904,6 +2956,8 @@ function speakAssistantReplyWithBrowser(reply) {
 
 async function speakAssistantReply(reply) {
   if (!voiceModeActive) return;
+  lastAssistantReplyForSpeech = String(reply || "");
+  if (elements.voiceRetrySpeechButton) elements.voiceRetrySpeechButton.hidden = true;
   const voiceId = kokoroVoiceForProfile();
 
   // The browser voice answers immediately while the optional on-device model
@@ -2983,6 +3037,12 @@ async function speakAssistantReply(reply) {
   if (!voiceModeActive) return;
   speakAssistantReplyWithBrowser(reply);
 }
+
+elements.voiceRetrySpeechButton?.addEventListener("click", () => {
+  if (!lastAssistantReplyForSpeech || !voiceModeActive) return;
+  elements.voiceRetrySpeechButton.hidden = true;
+  speakAssistantReplyWithBrowser(lastAssistantReplyForSpeech, 1, true);
+});
 
 elements.voiceModeButton?.addEventListener("click", () => {
   if (voiceModeActive && elements.voiceExperience && !elements.voiceExperience.hidden) {
