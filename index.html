@@ -96,41 +96,24 @@
             <div class="panel-status"><span class="status-dot"></span><span id="conversationStatus">Ready to talk</span></div>
           </div>
 
-          <div class="conversation-intro">
-            <div class="elo-avatar" aria-hidden="true">
-              <svg viewBox="0 0 48 48" role="img">
-                <rect x="7" y="10" width="34" height="28" rx="11"></rect>
-                <path d="M13 20h22M16 28h5m6 0h5"></path>
-                <circle cx="17" cy="23" r="2"></circle>
-                <circle cx="31" cy="23" r="2"></circle>
-              </svg>
-            </div>
-            <div>
-              <div class="intro-title">Meet <span id="companionName">ELO</span> <span class="intro-badge">SYNQ.ME GUIDE</span></div>
-              <p>Tell me what matters to you. I’ll help shape your digital persona, one preference at a time.</p>
-            </div>
-          </div>
-
-          <div class="chat-messages" id="chatMessages" role="log" aria-live="polite" aria-relevant="additions text">
-            <article class="message assistant-message">
-              <div class="message-avatar">E</div>
-              <div class="message-body">
-                <div class="message-meta">ELO <span>·</span> SYNQ.ME</div>
-                <p>Hi, I’m ELO, your SYNQ.ME guide. Let’s start building your SecondSelf. Which parts of home life would you like it to understand first?</p>
+          <div class="chat-stage">
+            <div class="chat-workspace">
+              <div class="chat-transcript-shell" id="chatTranscriptShell">
+                <div class="chat-messages" id="chatMessages" role="log" aria-live="polite" aria-relevant="additions text">
+                  <article class="message assistant-message">
+                    <div class="message-avatar">E</div>
+                    <div class="message-body">
+                      <div class="message-meta">SYNQ.ME</div>
+                      <p>Hi, I’m your SYNQ.ME guide. Let’s start building your SecondSelf. Which parts of home life would you like it to understand first?</p>
+                    </div>
+                  </article>
+                </div>
+                <div class="chat-scrollbar-track" id="chatScrollbarTrack" aria-hidden="true" hidden>
+                  <span class="chat-scrollbar-thumb" id="chatScrollbarThumb"></span>
+                </div>
               </div>
-            </article>
-          </div>
 
-          <div class="suggestions-wrap">
-            <div class="suggestion-label">CHOOSE A STARTING POINT</div>
-            <div class="suggestion-chips">
-              <button type="button" class="suggestion-chip" data-prompt="I want my SecondSelf to understand how I like the kitchen to be kept.">Kitchen routines</button>
-              <button type="button" class="suggestion-chip" data-prompt="I want my SecondSelf to understand how I like laundry and clothing handled.">Laundry</button>
-              <button type="button" class="suggestion-chip" data-prompt="I want my SecondSelf to understand how I like floors and rooms cleaned.">Cleaning & tidying</button>
-            </div>
-          </div>
-
-          <form class="chat-composer" id="chatForm">
+              <form class="chat-composer" id="chatForm">
             <label class="sr-only" for="messageInput">Tell SYNQ.ME a preference</label>
             <textarea id="messageInput" name="message" rows="2" maxlength="1200" placeholder="Tell your SecondSelf how you like things done..." required></textarea>
             <button class="voice-mode-button" id="voiceModeButton" type="button" aria-pressed="false" aria-label="Start voice conversation" title="Start a spoken conversation">
@@ -142,10 +125,21 @@
               <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 10h13M10 4l6 6-6 6"></path></svg>
             </button>
           </form>
+          <div class="voice-model-progress voice-model-progress-main" id="voiceModelProgressMain" hidden>
+            <div class="voice-model-progress-track" id="voiceModelProgressTrackMain" role="progressbar" aria-label="Voice model download progress" aria-valuemin="0" aria-valuemax="100">
+              <span class="voice-model-progress-fill" id="voiceModelProgressFillMain"></span>
+            </div>
+            <div class="voice-model-progress-meta">
+              <span id="voiceModelProgressLabelMain">Preparing voice in the background…</span>
+              <span id="voiceModelProgressPercentMain"></span>
+            </div>
+          </div>
           <div class="composer-foot">
             <span><span class="small-lock"></span> Your SecondSelf is saved to your account</span>
-            <span id="voiceStatus" class="voice-status" aria-live="polite">Voice off · browser speech services</span>
+            <span id="voiceStatus" class="voice-status" aria-live="polite">Voice off · Kokoro and browser voices</span>
             <button type="button" id="resetDemo" class="text-button">Reset demo</button>
+          </div>
+            </div>
           </div>
         </section>
 
@@ -255,11 +249,45 @@
           <button type="button" class="settings-close" id="closeSettings" aria-label="Close settings">×</button>
         </div>
         <form id="settingsForm" class="settings-form">
-          <label for="ownerName">Your name</label>
-          <input id="ownerName" name="ownerName" maxlength="60" autocomplete="given-name" placeholder="What should your companion call you?" required />
-          <label for="robotName">Name your future robot (your choice)</label>
-          <input id="robotName" name="robotName" maxlength="60" placeholder="Choose a name for your future robot" required />
-          <p class="field-help">The name you choose here will be used for your SYNQ.ME companion. You can change it later.</p>
+          <div class="owner-identity-row">
+            <div class="owner-avatar-preview" id="ownerAvatarPreview" aria-label="Your profile image preview">
+              <span aria-hidden="true">Y</span>
+            </div>
+            <div class="owner-identity-fields">
+              <label for="ownerName">Your name</label>
+              <input id="ownerName" name="ownerName" maxlength="60" autocomplete="given-name" placeholder="What should your companion call you?" required />
+              <input class="sr-only" type="file" id="ownerImageInput" accept="image/*" aria-label="Upload your profile image" />
+              <div class="owner-avatar-actions">
+                <button type="button" class="owner-image-button" id="uploadOwnerImageButton">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h3l1.5-2h7L17 7.5h3v11H4z"/><circle cx="12" cy="13" r="3.2"/></svg>
+                  <span>Upload your photo</span>
+                </button>
+                <button type="button" class="text-button owner-image-remove" id="removeOwnerImageButton" hidden>Remove</button>
+              </div>
+              <p class="field-help">Shown beside your messages. Your photo stays in this browser.</p>
+            </div>
+          </div>
+          <label for="robotName">Robot name (optional)</label>
+          <input id="robotName" name="robotName" maxlength="60" placeholder="Optional — you can name it later" />
+          <p class="field-help">You can leave this blank. Your robot image does not need a name to use SYNQ.ME.</p>
+
+          <section class="settings-section robot-appearance-settings" aria-labelledby="robotAppearanceTitle">
+            <div class="settings-subhead" id="robotAppearanceTitle"><span>ROBOT APPEARANCE</span><span>OPTIONAL</span></div>
+            <p class="settings-section-copy">Choose the image shown beside SYNQ.ME replies, or upload your own. You can change this at any time.</p>
+            <div class="robot-settings-preview">
+              <div class="robot-art" id="selectedRobotArt" aria-hidden="true"></div>
+              <span>Selected companion image</span>
+            </div>
+            <div class="robot-picker-heading">CHOOSE AN IMAGE</div>
+            <div class="robot-picker robot-settings-picker" id="robotPicker" role="group" aria-label="Choose from five robot images"></div>
+            <input class="sr-only" type="file" id="robotImageInput" accept="image/*" aria-label="Upload your own robot image" />
+            <button class="robot-upload-button" type="button" id="uploadRobotImageButton">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m-4 4 4-4 4 4M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg>
+              <span>Upload your image</span>
+            </button>
+            <p class="robot-upload-note">Your image stays in this browser.</p>
+          </section>
+
           <label for="robotType">Robot you may want to personalise in the future</label>
           <select id="robotType" name="robotType">
             <option value="Humanoid robot" selected>Humanoid robot</option>
@@ -267,12 +295,24 @@
             <option value="Robot vacuum">Robot vacuum</option>
             <option value="Other compatible robot">Other compatible robot</option>
           </select>
-          <label for="robotVoice">Preferred voice when voice conversations are enabled</label>
+          <label for="robotVoice">Voice style</label>
           <select id="robotVoice" name="robotVoice">
             <option value="female" selected>Female voice</option>
             <option value="male">Male voice</option>
           </select>
-          <p class="field-help">Voice replies use an available voice on your device. Speech recognition may send audio to your browser’s speech service; support and processing vary by browser.</p>
+          <label for="preferredLanguage">Conversation language</label>
+          <select id="preferredLanguage" name="preferredLanguage">
+            <option value="en">English (US)</option>
+            <option value="es">Spanish</option>
+            <option value="fr">French</option>
+            <option value="it">Italian</option>
+            <option value="pt">Portuguese (Brazil)</option>
+            <option value="hi">Hindi</option>
+            <option value="ja">Japanese</option>
+            <option value="zh">Chinese (Mandarin)</option>
+          </select>
+          <p class="field-help">SYNQ.ME will reply and save the conversation in your chosen language. The female/male setting selects the voice; English uses an American accent. Kokoro speaks on this device after its first download. For languages or devices without a matching Kokoro voice, SYNQ.ME uses your browser's voice when available.</p>
+          <p class="field-help">Voice input uses your browser's speech recognition when supported. On browsers without it, the existing server transcription service is used.</p>
           <label class="settings-toggle" for="confirmActions">
             <span><strong>Ask me before actions</strong><small>Record this as a personal preference for future task plans.</small></span>
             <input type="checkbox" id="confirmActions" name="confirmActions" />
@@ -337,5 +377,51 @@
         </nav>
       </footer>
     </main>
+    <section class="voice-experience" id="voiceExperience" role="dialog" aria-modal="true" aria-labelledby="voiceExperienceTitle" hidden>
+      <div class="voice-experience-topbar">
+        <button class="voice-back-button" type="button" id="voiceChatButton" aria-label="Return to text chat">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6M9 12h11"/></svg>
+          <span>Chat</span>
+        </button>
+        <div class="voice-topbar-label">MYSECONDSELF <span>VOICE</span></div>
+        <button class="voice-icon-button" type="button" id="voiceMuteButton" aria-pressed="false" aria-label="Mute microphone" title="Mute microphone">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"></rect><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3m-4 0h8"></path></svg>
+        </button>
+      </div>
+      <div class="voice-experience-content">
+        <div class="voice-eyebrow">A MORE PERSONAL CONVERSATION</div>
+        <h2 id="voiceExperienceTitle">Talk to your robot.</h2>
+        <p class="voice-intro-copy" id="voiceIntroCopy">Speak naturally. Your robot is listening.</p>
+        <div class="voice-orb" id="voiceOrb" data-state="idle" aria-hidden="true">
+          <span class="voice-orb-ring voice-orb-ring-one"></span>
+          <span class="voice-orb-ring voice-orb-ring-two"></span>
+          <span class="voice-orb-core" id="voiceOrbCore"></span>
+        </div>
+        <div class="voice-companion-name" id="voiceCompanionName">Your robot</div>
+        <p class="voice-experience-status" id="voiceExperienceStatus" role="status" aria-live="polite">Ready to connect</p>
+        <button type="button" class="voice-retry-speech" id="voiceRetrySpeechButton" hidden>Tap to hear Freya’s reply</button>
+        <div class="voice-model-progress" id="voiceModelProgress" hidden>
+          <div class="voice-model-progress-track" id="voiceModelProgressTrack" role="progressbar" aria-label="Voice model download progress" aria-valuemin="0" aria-valuemax="100">
+            <span class="voice-model-progress-fill" id="voiceModelProgressFill"></span>
+          </div>
+          <div class="voice-model-progress-meta">
+            <span id="voiceModelProgressLabel">Checking for a saved voice model…</span>
+            <span id="voiceModelProgressPercent"></span>
+          </div>
+        </div>
+        <div class="voice-state-caption">LISTENING <span></span> THINKING <span></span> SPEAKING</div>
+        <div class="voice-controls">
+          <button class="voice-control-secondary" type="button" id="voiceMuteControlButton" aria-label="Mute microphone">
+            <span class="voice-control-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"></rect><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3m-4 0h8"></path></svg></span>
+            <span id="voiceMuteControlLabel">Mute</span>
+          </button>
+          <button class="voice-control-end" type="button" id="voiceEndButton" aria-label="End voice conversation">
+            <span class="voice-control-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14c4.5-4 11.5-4 16 0l-2.5 3.5-3.2-1.7v-2.2a6.6 6.6 0 0 0-4.6 0v2.2l-3.2 1.7Z"></path></svg></span>
+            <span>End</span>
+          </button>
+        </div>
+        <p class="voice-privacy-note">Microphone access is used for this conversation. Browser voice quality varies by device.</p>
+      </div>
+    </section>
   </body>
 </html>
