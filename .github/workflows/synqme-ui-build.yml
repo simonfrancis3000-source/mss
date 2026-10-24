@@ -6,6 +6,9 @@ on:
     paths:
       - "index.html"
       - "src/**"
+      - "server/**"
+      - "test/**"
+      - "docs/**"
       - "public/**"
       - "package.json"
       - "package-lock.json"
@@ -15,6 +18,9 @@ on:
     paths:
       - "index.html"
       - "src/**"
+      - "server/**"
+      - "test/**"
+      - "docs/**"
       - "public/**"
       - "package.json"
       - "package-lock.json"
