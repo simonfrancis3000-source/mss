@@ -149,7 +149,6 @@ const elements = {
   localAIProgress: $("#localAIProgress"),
   localAIProgressLabel: $("#localAIProgressLabel"),
   localAIProgressFill: $("#localAIProgressFill"),
-  localAIProgressPercent: $("#localAIProgressPercent"),
   localAIProgressTrack: $("#localAIProgressTrack"),
   chatTranscriptShell: $("#chatTranscriptShell"),
   chatMessages: $("#chatMessages"),
@@ -2967,7 +2966,6 @@ function setLocalAIProgress({ label = "", progress = null, visible = true, indet
   elements.localAIProgress.hidden = !visible;
   if (elements.localAIProgressLabel) elements.localAIProgressLabel.textContent = label;
   const knownProgress = Number.isFinite(progress);
-  if (elements.localAIProgressPercent) elements.localAIProgressPercent.textContent = knownProgress ? Math.round(progress) + "%" : "";
   if (elements.localAIProgressFill) {
     elements.localAIProgressFill.style.width = knownProgress ? Math.max(0, Math.min(100, progress)) + "%" : (indeterminate ? "18%" : "0%");
     elements.localAIProgressFill.classList.toggle("is-indeterminate", Boolean(indeterminate && !knownProgress));
@@ -2975,6 +2973,8 @@ function setLocalAIProgress({ label = "", progress = null, visible = true, indet
   if (elements.localAIProgressTrack) {
     if (knownProgress) elements.localAIProgressTrack.setAttribute("aria-valuenow", String(Math.round(progress)));
     else elements.localAIProgressTrack.removeAttribute("aria-valuenow");
+    if (label) elements.localAIProgressTrack.setAttribute("aria-valuetext", label);
+    else elements.localAIProgressTrack.removeAttribute("aria-valuetext");
   }
   if (!isSending && elements.conversationStatus && label) elements.conversationStatus.textContent = label;
 }
@@ -2988,12 +2988,23 @@ function rejectPendingLocalAIRequests(error) {
 
 function handleLocalAIWorkerMessage(event) {
   const data = event.data || {};
-  if (data.type === "progress") {
-    const percent = Number.isFinite(data.progress) ? data.progress : 0;
+  if (data.type === "status") {
     setLocalAIProgress({
-      label: "Downloading local AMÏA model",
-      progress: percent,
-      indeterminate: false
+      label: String(data.label || "Loading local AMÏA model"),
+      progress: null,
+      indeterminate: true
+    });
+    return;
+  }
+  if (data.type === "progress") {
+    const progress = Number.isFinite(data.progress) ? data.progress : null;
+    const label = data.status === "initiate"
+      ? "Preparing local AMÏA model files"
+      : "Loading local AMÏA model";
+    setLocalAIProgress({
+      label,
+      progress,
+      indeterminate: progress === null
     });
     return;
   }
@@ -3062,7 +3073,7 @@ function ensureLocalAIReady() {
   state.apiError = "";
   state.apiErrorDetail = "";
   try { Promise.resolve(navigator.storage?.persist?.()).catch(() => {}); } catch {}
-  setLocalAIProgress({ label: "Downloading local AMÏA model", progress: 0, indeterminate: false });
+  setLocalAIProgress({ label: "Checking local AMÏA model cache", progress: null, indeterminate: true });
   localAILoadPromise = new Promise((resolve, reject) => {
     localAILoadResolve = resolve;
     localAILoadReject = reject;
