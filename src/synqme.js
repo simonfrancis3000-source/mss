@@ -1868,6 +1868,11 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   const fallbackFunctions = draftState?.functions || [];
   cloudUserId = user.id;
   cloudUserEmail = user.email;
+  personaMemoryRecords = [];
+  personaMemoryTableUnavailable = false;
+  personaMemoryWarningShown = false;
+  personaMemoryWriteInFlight = false;
+  showArchivedPersonaMemories = false;
   homeMemoryIndexUnavailable = false;
   homeMemoryIndexBackfilledUserId = null;
   homeMemoryIndexWarningShown = false;
@@ -1952,6 +1957,7 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   // Backfill the retained transcript once per account session; subsequent turns
   // write only their newest two messages, while the archive preserves older rows.
   await syncHomeMemoryIndex(state.messages, { backfill: true });
+  await loadPersonaMemories({ backfillPreferences: true });
   if (draft) {
     try { localStorage.removeItem(ACCOUNT_DRAFT_KEY); } catch {}
   }
@@ -2073,6 +2079,13 @@ function closeSettings() {
 }
 elements.openSettings?.addEventListener("click", openSettings);
 elements.openPersonaFromSummary?.addEventListener("click", openSettings);
+elements.personaMemoryList?.addEventListener("click", (event) => {
+  void handlePersonaMemoryAction(event);
+});
+elements.toggleArchivedPersonaMemories?.addEventListener("click", () => {
+  showArchivedPersonaMemories = !showArchivedPersonaMemories;
+  renderPersonaMemoryLibrary();
+});
 elements.settingsBackdrop?.addEventListener("click", closeSettings);
 elements.closeSettings?.addEventListener("click", closeSettings);
 elements.cancelSettings?.addEventListener("click", closeSettings);
@@ -4568,6 +4581,13 @@ elements.signOutButton?.addEventListener("click", async () => {
     cloudUserId = null;
     cloudUserEmail = "";
     cloudMode = "local";
+    personaMemoryRecords = [];
+    personaMemoryTableUnavailable = false;
+    personaMemoryWarningShown = false;
+    personaMemoryWriteInFlight = false;
+    showArchivedPersonaMemories = false;
+    personaMemoryEditingId = null;
+    renderPersonaMemoryLibrary();
     homeMemoryIndexBackfilledUserId = null;
     homeMemoryIndexUnavailable = false;
     homeMemoryIndexWarningShown = false;
