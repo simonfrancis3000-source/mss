@@ -100,9 +100,13 @@
             <div class="local-ai-progress-meta">
               <span id="localAIProgressLabel">Downloading local AMÏA model</span>
             </div>
-            <div class="local-ai-progress-track" id="localAIProgressTrack" role="progressbar" aria-label="Local AMÏA model download progress" aria-valuemin="0" aria-valuemax="100">
-              <span class="local-ai-progress-fill" id="localAIProgressFill"></span>
+            <div class="local-ai-progress-row">
+              <div class="local-ai-progress-track" id="localAIProgressTrack" role="progressbar" aria-label="Local AMÏA model download progress" aria-valuemin="0" aria-valuemax="100">
+                <span class="local-ai-progress-fill" id="localAIProgressFill"></span>
+              </div>
+              <span class="local-ai-progress-percent" id="localAIProgressPercent" hidden aria-label="Download percentage"></span>
             </div>
+            <div class="local-ai-progress-detail" id="localAIProgressDetail" hidden></div>
           </div>
 
           <div class="chat-stage">
