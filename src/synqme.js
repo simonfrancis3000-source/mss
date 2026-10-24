@@ -3227,7 +3227,10 @@ function handleLocalAIWorkerMessage(event) {
   noteLocalAIWorkerActivity();
   if (data.type === "status") {
     const label = String(data.label || "Loading local AMÏA model");
-    const isCompactModel = String(data.modelId || "").includes("Qwen2.5-0.5B-Instruct") || /compact/i.test(label);
+    const modelId = String(data.modelId || "");
+    const isMobileModel = modelId.includes("SmolLM2-360M-Instruct-ONNX");
+    const isCompactModel = modelId.includes("Qwen2.5-0.5B-Instruct") || isMobileModel || /compact/i.test(label);
+    const modelSize = isMobileModel ? "about 386 MB" : "about 786 MB";
     setLocalAIProgress({
       label,
       progress: null,
@@ -3235,13 +3238,15 @@ function handleLocalAIWorkerMessage(event) {
       detail: /cached/i.test(label)
         ? "Opening saved model files on this device…"
         : isCompactModel
-          ? "First-time compact model download is about 786 MB. Cached files should be reused on later visits."
+          ? "First-time compact model download is " + modelSize + ". Cached files should be reused on later visits."
           : "First-time desktop setup downloads about 1.22 GB of model weights. Keep this tab open."
     });
     return;
   }
   if (data.type === "progress") {
-    const isCompactModel = String(data.modelId || "").includes("Qwen2.5-0.5B-Instruct");
+    const modelId = String(data.modelId || "");
+    const isMobileModel = modelId.includes("SmolLM2-360M-Instruct-ONNX");
+    const isCompactModel = modelId.includes("Qwen2.5-0.5B-Instruct") || isMobileModel;
     const aggregate = data.status === "progress_total" && Number.isFinite(data.progress);
     const perFileProgress = data.status === "progress" && Number.isFinite(data.progress);
     const progress = aggregate || perFileProgress ? data.progress : null;
@@ -3252,7 +3257,11 @@ function handleLocalAIWorkerMessage(event) {
       detail = "Model files are loaded. Preparing the first on-device response…";
     } else if (data.status === "initiate") {
       label = isCompactModel ? "Preparing compact local AMÏA model download" : "Preparing local AMÏA model download";
-      detail = isCompactModel ? "First-time compact model download is about 786 MB." : "First-time desktop model download is about 1.22 GB.";
+      detail = isMobileModel
+        ? "First-time mobile model download is about 386 MB."
+        : isCompactModel
+          ? "First-time compact model download is about 786 MB."
+          : "First-time desktop model download is about 1.22 GB.";
     } else if (aggregate) {
       label = isCompactModel ? "Downloading compact local AMÏA model" : "Downloading local AMÏA model";
       detail = Number.isFinite(data.loaded) && Number.isFinite(data.total) && data.total > 0
