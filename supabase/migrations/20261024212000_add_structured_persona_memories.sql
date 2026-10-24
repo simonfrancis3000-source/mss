@@ -44,6 +44,10 @@ CREATE INDEX IF NOT EXISTS synqme_persona_memories_user_topic_status_idx
 CREATE INDEX IF NOT EXISTS synqme_persona_memories_scope_idx
   ON public.synqme_persona_memories (user_id, scope_key, status);
 
+CREATE INDEX IF NOT EXISTS synqme_persona_memories_supersedes_idx
+  ON public.synqme_persona_memories (supersedes_id)
+  WHERE supersedes_id IS NOT NULL;
+
 CREATE INDEX IF NOT EXISTS synqme_persona_memories_search_keys_gin
   ON public.synqme_persona_memories USING gin (search_keys);
 
@@ -86,7 +90,7 @@ BEGIN
   ) THEN
     CREATE POLICY "Users can read their own persona memories"
       ON public.synqme_persona_memories FOR SELECT TO authenticated
-      USING (auth.uid() = user_id);
+      USING ((select auth.uid()) = user_id);
   END IF;
 
   IF NOT EXISTS (
@@ -96,7 +100,7 @@ BEGIN
   ) THEN
     CREATE POLICY "Users can create their own persona memories"
       ON public.synqme_persona_memories FOR INSERT TO authenticated
-      WITH CHECK (auth.uid() = user_id);
+      WITH CHECK ((select auth.uid()) = user_id);
   END IF;
 
   IF NOT EXISTS (
@@ -107,7 +111,7 @@ BEGIN
     CREATE POLICY "Users can update their own persona memories"
       ON public.synqme_persona_memories FOR UPDATE TO authenticated
       USING (auth.uid() = user_id)
-      WITH CHECK (auth.uid() = user_id);
+      WITH CHECK ((select auth.uid()) = user_id);
   END IF;
 
   IF NOT EXISTS (
@@ -117,7 +121,7 @@ BEGIN
   ) THEN
     CREATE POLICY "Users can delete their own persona memories"
       ON public.synqme_persona_memories FOR DELETE TO authenticated
-      USING (auth.uid() = user_id);
+      USING ((select auth.uid()) = user_id);
   END IF;
 END
 $persona_memory_policy$;
