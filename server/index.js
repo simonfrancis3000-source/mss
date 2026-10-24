@@ -2,14 +2,12 @@ import http from "node:http";
 import { inflateSync, inflateRawSync } from "node:zlib";
 
 const PORT = Number.parseInt(process.env.PORT || "10000", 10);
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
+// SYNQ.ME uses Groq exclusively. Do not switch providers because a
+// stale Gemini environment variable happens to exist on the Render service.
 const GROQ_API_KEY = process.env.GROQ_API_KEY || "";
-const REQUESTED_PROVIDER = String(process.env.AI_PROVIDER || "").trim().toLowerCase();
-const PROVIDER = REQUESTED_PROVIDER === "gemini" || (!REQUESTED_PROVIDER && GEMINI_API_KEY) ? "gemini" : "groq";
-const API_KEY = PROVIDER === "gemini" ? GEMINI_API_KEY : GROQ_API_KEY;
-const MODEL = PROVIDER === "gemini"
-  ? (process.env.GEMINI_MODEL || "gemini-3.8-flash")
-  : (process.env.GROQ_MODEL || "openai/gpt-oss-20b");
+const PROVIDER = "groq";
+const API_KEY = GROQ_API_KEY;
+const MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-20b";
 // Render deployments need CORS to work even when FRONTEND_ORIGIN has not
 // been populated. Keep the known SYNQ.ME origins as safe defaults and allow
 // additional exact origins through FRONTEND_ORIGIN (comma-separated).
@@ -862,7 +860,7 @@ const app = http.createServer(async (request, response) => {
 
       let friendly;
       if (upstream.status === 429) {
-        friendly = "Gemini has reached a usage limit or rate limit. Check your Gemini quota and billing, then try again.";
+        friendly = "Groq has reached a usage limit or rate limit. Check your Groq usage and limits, then try again.";
       } else if (PROVIDER === "gemini" && [401, 403].includes(upstream.status)) {
         friendly = "Gemini rejected the API key or project access. Check that the key is valid, unrestricted for this server, and has Gemini API access enabled.";
       } else if (PROVIDER === "gemini" && upstream.status === 404) {
