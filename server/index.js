@@ -502,7 +502,7 @@ const app = http.createServer(async (request, response) => {
             model: MODEL,
             messages: [{ role: "system", content: systemPrompt }, ...messages],
             temperature: 0.72,
-            max_tokens: 400,
+            ...(PROVIDER === "xai" ? { max_tokens: 400 } : { max_completion_tokens: 400 }),
             stream: false
           }),
           signal: AbortSignal.timeout(60_000)
