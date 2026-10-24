@@ -1,5 +1,4 @@
 import { createClient } from "@supabase/supabase-js";
-import { buildHomePersonaSystemPrompt } from "./home-persona-reasoning.js";
 
 const STORAGE_KEY = "synqme-demo-v1";
 const ACCOUNT_DRAFT_KEY = "synqme-pending-account-migration-v1";
@@ -3156,17 +3155,6 @@ async function requestAIReply(repairMode = false) {
     const domesticFunctions = state.functions
       .map((id) => ACTIVITIES.find((activity) => activity.id === id)?.label)
       .filter(Boolean);
-    const systemPrompt = buildHomePersonaSystemPrompt({
-      profile: {
-        ...state.profile,
-        askBeforeActions: state.profile.confirmActions
-      },
-      preferences,
-      domesticFunctions,
-      recentMessages: state.messages.slice(-18),
-      pendingClarification: state.pendingClarification,
-      repairMode
-    });
     const conversationMessages = state.messages.slice(-20).map((message) => ({
       role: message.role,
       content: message.content
@@ -3175,10 +3163,7 @@ async function requestAIReply(repairMode = false) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        messages: [
-          { role: "system", content: systemPrompt },
-          ...conversationMessages
-        ],
+        messages: conversationMessages,
         preferences,
         profile: {
           ownerName: state.profile.ownerName,
@@ -3189,6 +3174,7 @@ async function requestAIReply(repairMode = false) {
           askBeforeActions: state.profile.confirmActions
         },
         domesticFunctions,
+        pendingClarification: state.pendingClarification,
         repairMode
       })
     });
