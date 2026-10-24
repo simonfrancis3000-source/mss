@@ -92,7 +92,6 @@ async function loadModel() {
         max_new_tokens: 1,
         do_sample: false
       });
-      activeBackend = device;
       return generator;
     };
 
