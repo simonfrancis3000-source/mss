@@ -1,6 +1,16 @@
 import { env, pipeline } from "@huggingface/transformers";
 
-const MODEL_ID = "onnx-community/Qwen2.5-1.5B-Instruct";
+const DESKTOP_MODEL_ID = "onnx-community/Qwen2.5-1.5B-Instruct";
+const COMPACT_MODEL_ID = "onnx-community/Qwen2.5-0.5B-Instruct";
+const IS_MOBILE_DEVICE = (() => {
+  const nav = self.navigator || {};
+  const ua = String(nav.userAgent || "");
+  const iPadDesktopUA = /Macintosh/i.test(ua) && Number(nav.maxTouchPoints || 0) > 1;
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(ua) || iPadDesktopUA;
+})();
+let forceCpuBackend = IS_MOBILE_DEVICE;
+let activeBackend = "";
+let activeModelId = "";
 let generator = null;
 let loadingPromise = null;
 let generationBusy = false;
@@ -14,6 +24,7 @@ function postProgress(event) {
     self.postMessage({
       type: "progress",
       cached: modelCacheDetected,
+      modelId: activeModelId,
       status: String(info.status || ""),
       file: typeof info.file === "string" ? info.file : "",
       aggregate,
@@ -25,7 +36,7 @@ function postProgress(event) {
 }
 
 function postStatus(label) {
-  try { self.postMessage({ type: "status", label }); } catch {}
+  try { self.postMessage({ type: "status", label, modelId: activeModelId }); } catch {}
 }
 
 function describeLoadError(error) {
@@ -49,6 +60,39 @@ function describeLoadError(error) {
     : "The model loader failed without a detailed error. Check browser storage, available memory, and WebGPU support, then refresh and retry.";
 }
 
+async function hasCachedModelFiles(modelId, dtype) {
+  try {
+    if (!self.caches || !env.useBrowserCache) return false;
+    const cache = await self.caches.open(env.cacheKey);
+    const requests = await cache.keys();
+    const encodedModelId = encodeURIComponent(modelId);
+    const weightName = dtype === "q4f16" ? "model_q4f16.onnx" : "model_q4.onnx";
+    return requests.some((request) => {
+      const url = request.url;
+      const matchesModel = url.includes(modelId) || url.includes(encodedModelId);
+      const matchesWeights = url.includes(weightName);
+      return matchesModel && matchesWeights;
+    });
+  } catch {
+    return false;
+  }
+}
+
+function isUnusableReply(text) {
+  const value = String(text || "").trim();
+  if (value.length < 2) return true;
+
+  // Reject obvious tokenizer/GPU corruption rather than showing symbol soup.
+  const suspicious = value.match(/[#$%*+|<>_\[\]{}@^~]/g) || [];
+  const slashCount = (value.match(/\//g) || []).length;
+  const suspiciousCount = suspicious.length + slashCount;
+  const suspiciousRatio = suspiciousCount / Math.max(1, value.length);
+  const invalidRuns = /[#$%*+|<>_\[\]{}@^~]{4,}/.test(value) || /\/{4,}/.test(value);
+  const letters = value.match(/\p{L}/gu) || [];
+  return invalidRuns || (suspiciousCount >= 8 && suspiciousRatio > 0.08) ||
+    (value.length > 20 && letters.length / value.length < 0.22);
+}
+
 async function loadModel() {
   if (generator) return generator;
   if (loadingPromise) return loadingPromise;
@@ -56,51 +100,83 @@ async function loadModel() {
     env.useBrowserCache = true;
     env.useWasmCache = true;
     env.cacheKey = "transformers-cache";
-
-    // Ask the browser to keep this origin's cache where supported. Cache API
-    // is separate from the service-worker shell cache, which must not delete it.
     try { await self.navigator.storage?.persist?.(); } catch {}
-    let hasCachedModelFiles = false;
-    try {
-      if (self.caches && env.useBrowserCache) {
-        const cache = await self.caches.open(env.cacheKey);
-        const requests = await cache.keys();
-        const encodedModelId = encodeURIComponent(MODEL_ID);
-        hasCachedModelFiles = requests.some((request) =>
-          request.url.includes(MODEL_ID) || request.url.includes(encodedModelId)
-        );
-      }
-    } catch {}
-    modelCacheDetected = hasCachedModelFiles;
-    postStatus(hasCachedModelFiles
-      ? "Loading cached local AMÏA model"
-      : "Preparing local AMÏA model download");
-    if (!self.navigator?.gpu) {
-      throw new Error("This device/browser does not expose WebGPU. Open SYNQ.ME in an up-to-date Chrome or Edge browser on a WebGPU-compatible device.");
-    }
-    const adapter = await self.navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
-    if (!adapter) {
-      throw new Error("WebGPU is present, but no compatible GPU adapter is available. Try a current Chrome or Edge browser on a supported device.");
-    }
-    postStatus(modelCacheDetected ? "Loading cached local AMÏA model" : "Loading local AMÏA model");
-    postProgress({ status: "initiate", file: "Qwen2.5 1.5B model" });
-    generator = await pipeline("text-generation", MODEL_ID, {
-      // Use the published Transformers.js-compatible Qwen2.5 1.5B model and q4f16 WebGPU weights.
-      revision: "main",
-      device: "webgpu",
-      dtype: "q4f16",
-      progress_callback: (event) => postProgress(event)
-    });
 
-    // Smoke-test the ONNX graph before enabling chat. A failed first inference
-    // should be reported during startup rather than after the user sends a message.
-    // Model weights remain cached when browser storage is available.
-    postStatus("Starting local AMÏA model");
-    await generator([{ role: "user", content: "Reply with OK." }], {
-      max_new_tokens: 1,
-      do_sample: false,
-    });
-    postProgress({ status: "done", file: "Qwen2.5 1.5B model" });
+    // Mobile browsers can evict origin storage when a single model is larger
+    // than their practical quota. Use the compact 0.5B model on mobile and
+    // skip WebGPU there: the 1.5B q4f16 file is 1.22 GB.
+    const preferredModelId = (IS_MOBILE_DEVICE || forceCpuBackend)
+      ? COMPACT_MODEL_ID
+      : DESKTOP_MODEL_ID;
+    const preferredDtype = (IS_MOBILE_DEVICE || forceCpuBackend) ? "q4" : "q4f16";
+    modelCacheDetected = await hasCachedModelFiles(preferredModelId, preferredDtype);
+    postStatus(modelCacheDetected
+      ? (IS_MOBILE_DEVICE ? "Loading cached compact local AMÏA model" : "Loading cached local AMÏA model")
+      : (IS_MOBILE_DEVICE ? "Preparing compact local AMÏA model for mobile" : "Preparing local AMÏA model"));
+
+    const tryBackend = async (device, modelId, dtype) => {
+      activeBackend = "";
+      activeModelId = modelId;
+      modelCacheDetected = await hasCachedModelFiles(modelId, dtype);
+      postStatus(device === "webgpu"
+        ? (modelCacheDetected ? "Loading cached local AMÏA model on GPU" : "Loading local AMÏA model on GPU")
+        : (modelId === COMPACT_MODEL_ID
+          ? (modelCacheDetected ? "Loading cached compact local AMÏA model" : "Loading compact local AMÏA model")
+          : "Switching local AMÏA to CPU inference"));
+      generator = await pipeline("text-generation", modelId, {
+        revision: "main",
+        device,
+        dtype,
+        progress_callback: (event) => postProgress(event)
+      });
+      postStatus(device === "webgpu" ? "Testing local AMÏA GPU inference" : "Testing local AMÏA CPU inference");
+      const smoke = await generator([{ role: "user", content: "Reply with OK." }], {
+        max_new_tokens: 2,
+        do_sample: false
+      });
+      if (isUnusableReply(extractReply(smoke))) {
+        throw new Error("The local model failed its response-quality check.");
+      }
+      activeBackend = device;
+      activeModelId = modelId;
+      return generator;
+    };
+
+    let webgpuError = null;
+    if (!IS_MOBILE_DEVICE && !forceCpuBackend && self.navigator?.gpu) {
+      try {
+        const adapter = await self.navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
+        if (!adapter) throw new Error("No compatible WebGPU adapter was available.");
+        await tryBackend("webgpu", DESKTOP_MODEL_ID, "q4f16");
+      } catch (error) {
+        webgpuError = error;
+        generator = null;
+        forceCpuBackend = true;
+        postStatus("GPU inference unavailable. Switching to compact CPU mode");
+      }
+    } else if (!IS_MOBILE_DEVICE && !forceCpuBackend) {
+      webgpuError = new Error("WebGPU is not available in this browser.");
+      forceCpuBackend = true;
+    }
+
+    if (!generator) {
+      try {
+        try {
+          env.backends.onnx.wasm.numThreads = Math.max(
+            1,
+            Math.min(4, (self.navigator?.hardwareConcurrency || 2) - 1)
+          );
+        } catch {}
+        await tryBackend("wasm", COMPACT_MODEL_ID, "q4");
+      } catch (wasmError) {
+        generator = null;
+        const gpuDetail = webgpuError?.message || String(webgpuError || "GPU inference was skipped");
+        const cpuDetail = wasmError?.message || String(wasmError || "CPU inference failed");
+        throw new Error("Freya could not start local inference. GPU: " + gpuDetail + " CPU: " + cpuDetail);
+      }
+    }
+
+    postProgress({ status: "done", file: activeModelId || COMPACT_MODEL_ID });
     return generator;
   })().catch((error) => {
     loadingPromise = null;
@@ -149,6 +225,7 @@ function extractReply(output) {
 self.addEventListener("message", async ({ data }) => {
   if (!data || typeof data !== "object") return;
   if (data.type === "load") {
+    if (data.forceCpu === true) forceCpuBackend = true;
     try {
       await loadModel();
       self.postMessage({ type: "ready" });
@@ -176,6 +253,12 @@ self.addEventListener("message", async ({ data }) => {
     });
     const reply = extractReply(result);
     if (!reply) throw new Error("The local model returned no usable text. Please try again.");
+    if (isUnusableReply(reply)) {
+      if (activeBackend === "webgpu") {
+        throw new Error("WebGPU returned corrupted text output. Restart on CPU mode and retry.");
+      }
+      throw new Error("The local model returned malformed text instead of a readable reply. Try sending the question again.");
+    }
     self.postMessage({ type: "reply", id: data.id, text: reply });
   } catch (error) {
     self.postMessage({ type: "reply-error", id: data.id, message: String(error?.message || "Local generation failed.") });
