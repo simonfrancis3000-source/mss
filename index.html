@@ -244,8 +244,24 @@
           <button type="button" class="settings-close" id="closeSettings" aria-label="Close settings">×</button>
         </div>
         <form id="settingsForm" class="settings-form">
-          <label for="ownerName">Your name</label>
-          <input id="ownerName" name="ownerName" maxlength="60" autocomplete="given-name" placeholder="What should your companion call you?" required />
+          <div class="owner-identity-row">
+            <div class="owner-avatar-preview" id="ownerAvatarPreview" aria-label="Your profile image preview">
+              <span aria-hidden="true">Y</span>
+            </div>
+            <div class="owner-identity-fields">
+              <label for="ownerName">Your name</label>
+              <input id="ownerName" name="ownerName" maxlength="60" autocomplete="given-name" placeholder="What should your companion call you?" required />
+              <input class="sr-only" type="file" id="ownerImageInput" accept="image/*" aria-label="Upload your profile image" />
+              <div class="owner-avatar-actions">
+                <button type="button" class="owner-image-button" id="uploadOwnerImageButton">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h3l1.5-2h7L17 7.5h3v11H4z"/><circle cx="12" cy="13" r="3.2"/></svg>
+                  <span>Upload your photo</span>
+                </button>
+                <button type="button" class="text-button owner-image-remove" id="removeOwnerImageButton" hidden>Remove</button>
+              </div>
+              <p class="field-help">Shown beside your messages. Your photo stays in this browser.</p>
+            </div>
+          </div>
           <label for="robotName">Robot name (optional)</label>
           <input id="robotName" name="robotName" maxlength="60" placeholder="Optional — you can name it later" />
           <p class="field-help">You can leave this blank. Your robot image does not need a name to use SYNQ.ME.</p>
