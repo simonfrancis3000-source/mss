@@ -1510,7 +1510,7 @@ function appendMessage(role, content, timestamp = null) {
   meta.className = "message-meta";
   meta.textContent = role === "user"
     ? (state.profile.ownerName.trim().toUpperCase() || "YOU")
-    : "SYNQ.ME";
+    : selectedCompanionDisplayName();
   const paragraph = document.createElement("p");
   paragraph.textContent = content;
   const timestampLabel = document.createElement("time");
