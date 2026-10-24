@@ -1,0 +1,20 @@
+name: Runner diagnostic
+
+on:
+  push:
+    branches: [feature/synqme-robot-voice-ui]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  runner-check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Confirm a runner can execute steps
+        run: |
+          echo "GitHub-hosted runner acquired successfully."
+          uname -a
+          node --version
