@@ -364,52 +364,136 @@ const app = http.createServer(async (request, response) => {
 
   if (request.method === "POST" && url.pathname === "/api/transcribe") {
     if (origin && headers === null) return json(response, 403, { error: "Origin not allowed." });
-    if (!GEMINI_API_KEY) {
-      return json(response, 503, { error: "Voice transcription is not configured. Add GEMINI_API_KEY to the Render backend environment." }, headers || {});
+
+    // Voice transcription must use the same Groq provider family as chat.
+    // The API key stays server-side; audio never goes directly from the browser to Groq.
+    if (!GROQ_API_KEY) {
+      return json(response, 503, {
+        error: "Groq voice transcription is not configured. Add GROQ_API_KEY to the Render API environment.",
+        provider: "groq"
+      }, headers || {});
     }
     if (limitReached(request)) {
-      return json(response, 429, { error: "Too many requests. Wait a minute, then try again." }, headers || {});
+      return json(response, 429, { error: "Too many voice requests. Wait a minute, then try again.", provider: "groq" }, headers || {});
     }
+
     try {
       const body = await readJson(request, MAX_AUDIO_BODY_BYTES);
-      const audioBase64 = typeof body?.audioBase64 === "string" ? body.audioBase64.replace(/^data:[^,]+,/, "") : "";
-      const suppliedMime = typeof body?.mimeType === "string" ? body.mimeType.split(";")[0].trim().toLowerCase() : "";
-      const transcriptionLanguage = SUPPORTED_CONVERSATION_LANGUAGES.has(body?.language) ? body.language : "en";
-      const transcriptionLanguageName = CONVERSATION_LANGUAGE_NAMES[transcriptionLanguage] || "English (US)";
+      const audioBase64 = typeof body?.audioBase64 === "string"
+        ? body.audioBase64.replace(/^data:[^,]+,/, "")
+        : "";
+      const suppliedMime = typeof body?.mimeType === "string"
+        ? body.mimeType.split(";")[0].trim().toLowerCase()
+        : "";
       const mimeType = suppliedMime === "audio/x-wav" ? "audio/wav" : suppliedMime;
-      const allowedMimeTypes = new Set(["audio/webm", "audio/mp4", "audio/m4a", "audio/wav", "audio/mpeg", "audio/mp3", "audio/aac", "audio/ogg", "audio/flac", "audio/opus"]);
+      const allowedMimeTypes = new Set([
+        "audio/webm", "audio/mp4", "audio/m4a", "audio/wav", "audio/mpeg",
+        "audio/mp3", "audio/aac", "audio/ogg", "audio/flac", "audio/opus"
+      ]);
       if (!audioBase64 || !allowedMimeTypes.has(mimeType) || audioBase64.length > 7_500_000) {
-        return json(response, 400, { error: "Unsupported or oversized audio recording. Please try a shorter recording." }, headers || {});
+        return json(response, 400, {
+          error: "Unsupported or oversized audio recording. Please try a shorter recording.",
+          provider: "groq"
+        }, headers || {});
       }
-      const upstream = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(process.env.GEMINI_MODEL || "gemini-3.8-flash") + ":generateContent", {
+
+      const language = SUPPORTED_CONVERSATION_LANGUAGES.has(body?.language) ? body.language : "en";
+      const model = process.env.GROQ_TRANSCRIPTION_MODEL || "whisper-large-v3-turbo";
+      const extension = ({
+        "audio/webm": "webm",
+        "audio/mp4": "mp4",
+        "audio/m4a": "m4a",
+        "audio/wav": "wav",
+        "audio/mpeg": "mp3",
+        "audio/mp3": "mp3",
+        "audio/aac": "aac",
+        "audio/ogg": "ogg",
+        "audio/flac": "flac",
+        "audio/opus": "opus"
+      })[mimeType] || "webm";
+
+      // Groq's Whisper endpoint accepts multipart/form-data.
+      // Node's FormData adds the multipart boundary automatically.
+      const audioBytes = Buffer.from(audioBase64, "base64");
+      const form = new FormData();
+      form.append("file", new Blob([audioBytes], { type: mimeType }), "synqme-recording." + extension);
+      form.append("model", model);
+      form.append("language", language);
+      form.append("response_format", "json");
+      form.append("temperature", "0");
+
+      const upstream = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-goog-api-key": GEMINI_API_KEY },
-        body: JSON.stringify({
-          contents: [{
-            role: "user",
-            parts: [
-              { text: "Transcribe the spoken words in this audio exactly as the speaker said them. The expected language is " + transcriptionLanguageName + ". Keep the transcript in that language and writing system. Do not translate it. Return only the transcription, with no commentary, no quotation marks, and no guesses if speech is not intelligible." },
-              { inlineData: { mimeType, data: audioBase64 } }
-            ]
-          }],
-          generationConfig: { temperature: 0, maxOutputTokens: 300 }
-        }),
+        headers: { "Authorization": "Bearer " + GROQ_API_KEY },
+        body: form,
         signal: AbortSignal.timeout(45_000)
       });
+
       if (!upstream.ok) {
-        const status = upstream.status === 429 ? 429 : 502;
-        console.error("Gemini transcription failed", { status: upstream.status });
-        return json(response, status, { error: upstream.status === 429 ? "Gemini's current free quota is busy. Wait a moment and try again." : "The voice transcription service could not process that recording." }, headers || {});
+        const errorCode = "groq-transcription-" + Date.now().toString(36);
+        let providerDetail = "";
+        try {
+          const payload = await upstream.json();
+          providerDetail = String(payload?.error?.message || payload?.message || "").slice(0, 220);
+        } catch {}
+        console.error("Groq transcription failed", {
+          status: upstream.status,
+          model,
+          language,
+          errorCode,
+          detail: providerDetail
+        });
+
+        let friendly;
+        if (upstream.status === 429) {
+          friendly = "Groq voice transcription has reached a rate or usage limit. Check your Groq usage and try again shortly.";
+        } else if (upstream.status === 401 || upstream.status === 403) {
+          friendly = "Groq rejected the transcription API key or access. Check GROQ_API_KEY and that speech-to-text is available for the project.";
+        } else if (upstream.status === 400 || upstream.status === 413) {
+          friendly = "Groq could not accept this audio recording. Try recording a shorter sentence and check microphone permissions.";
+        } else if (upstream.status === 404) {
+          friendly = "Groq could not find the configured transcription model. Check GROQ_TRANSCRIPTION_MODEL.";
+        } else {
+          friendly = "Groq could not transcribe that recording. Try again, or type your message instead.";
+        }
+
+        return json(response, upstream.status === 429 ? 429 : 502, {
+          error: friendly,
+          provider: "groq",
+          model,
+          upstreamStatus: upstream.status,
+          errorCode,
+          detail: providerDetail || undefined
+        }, headers || {});
       }
+
       const result = await upstream.json();
-      const transcript = (result?.candidates?.[0]?.content?.parts || []).map((part) => typeof part.text === "string" ? part.text : "").join("").trim();
-      if (!transcript) return json(response, 422, { error: "I couldn't make out the recording. Please try again or type your message." }, headers || {});
-      return json(response, 200, { text: transcript, model: process.env.GEMINI_MODEL || "gemini-3.8-flash" }, headers || {});
+      const transcript = typeof result?.text === "string" ? result.text.trim() : "";
+      if (!transcript) {
+        return json(response, 422, {
+          error: "Groq did not detect any clear speech in that recording. Please try again or type your message.",
+          provider: "groq",
+          model
+        }, headers || {});
+      }
+      return json(response, 200, { text: transcript, model, provider: "groq", language }, headers || {});
     } catch (error) {
       const status = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
-      if (status === 400 || status === 413) return json(response, status, { error: error.message }, headers || {});
-      console.error("SYNQ.ME transcription handler error", error?.name || "Error");
-      return json(response, 500, { error: "Voice transcription failed. You can try again or type your message." }, headers || {});
+      if (status === 400 || status === 413) return json(response, status, {
+        error: error.message,
+        provider: "groq"
+      }, headers || {});
+      const errorCode = "groq-transcription-" + Date.now().toString(36);
+      console.error("SYNQ.ME Groq transcription handler error", {
+        name: error?.name || "Error",
+        message: String(error?.message || "Unknown server error").slice(0, 220),
+        errorCode
+      });
+      return json(response, 500, {
+        error: "The Groq voice transcription request failed before it could be completed. Try again, or type your message instead.",
+        provider: "groq",
+        errorCode
+      }, headers || {});
     }
   }
 
