@@ -3227,14 +3227,15 @@ function handleLocalAIWorkerMessage(event) {
   noteLocalAIWorkerActivity();
   if (data.type === "status") {
     const label = String(data.label || "Loading local AMÏA model");
+    const isCompactModel = String(data.modelId || "").includes("Qwen2.5-0.5B-Instruct") || /compact/i.test(label);
     setLocalAIProgress({
       label,
       progress: null,
       indeterminate: true,
       detail: /cached/i.test(label)
         ? "Opening saved model files on this device…"
-        : /compact/i.test(label)
-          ? "First-time setup uses the compact mobile model (about 786 MB). Keep this tab open; cached files should be reused on later visits."
+        : isCompactModel
+          ? "First-time compact model download is about 786 MB. Cached files should be reused on later visits."
           : "First-time desktop setup downloads about 1.22 GB of model weights. Keep this tab open."
     });
     return;
