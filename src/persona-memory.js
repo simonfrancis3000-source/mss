@@ -22,7 +22,8 @@ const STOP_WORDS = new Set([
   "that","the","their","them","then","there","these","they","this","those","what","when",
   "where","which","who","why","will","with","would","you","your","yours"
 ]);
-const SENSITIVE_MEMORY_PATTERN = /\b(?:password|passcode|pin code|access code|door code|alarm code|api key|secret key|social security|passport number|credit card|bank account|political party|religious affiliation|sexual orientation|medical diagnosis|immigration status|exact home address)\b/i;
+const SENSITIVE_MEMORY_PATTERN = /\b(?:password|passcode|pin code|access code|door code|alarm code|api key|secret key|social security|passport number|credit card|bank account|political party|religious affiliation|sexual orientation|medical diagnosis|immigration status|exact home address|home address|street address|my address|email address|phone number|phone is|ssn)\b/i;
+const SENSITIVE_ATTRIBUTE_PATTERN = /password|passcode|pin|access|alarm|credential|secret|token|address|email|phone|bank|credit|medical|health|politic|religion|sexual|immigration|passport|government.?id|ssn/i;
 
 export function normaliseMemoryText(value) {
   return String(value || "").toLocaleLowerCase()
@@ -104,14 +105,23 @@ export function cleanPersonaMemoryCandidate(input) {
     ? Math.max(0, Math.min(1, Number(input.confidence)))
     : 0.75;
   const attributes = input.attributes && typeof input.attributes === "object" && !Array.isArray(input.attributes)
-    ? Object.fromEntries(Object.entries(input.attributes).slice(0, 12).map(([key, value]) => [
-        String(key).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48),
-        typeof value === "string" || typeof value === "number" || typeof value === "boolean" || value === null
-          ? value
-          : Array.isArray(value) ? value.filter((v) => ["string","number","boolean"].includes(typeof v)).slice(0, 8)
-          : undefined
-      ]).filter(([key, value]) => key && value !== undefined))
+    ? Object.fromEntries(Object.entries(input.attributes)
+        .filter(([key, value]) => !SENSITIVE_ATTRIBUTE_PATTERN.test(String(key)) &&
+          !(typeof value === "string" && SENSITIVE_MEMORY_PATTERN.test(value)))
+        .slice(0, 12)
+        .map(([key, value]) => [
+          String(key).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48),
+          typeof value === "string" || typeof value === "number" || typeof value === "boolean" || value === null
+            ? value
+            : Array.isArray(value) ? value.filter((v) => ["string", "number", "boolean"].includes(typeof v) &&
+              !(typeof v === "string" && SENSITIVE_MEMORY_PATTERN.test(v))).slice(0, 8)
+            : undefined
+        ]).filter(([key, value]) => key && value !== undefined))
     : {};
+  const conditions = cleanStringList(input.conditions, 8, 180)
+    .filter((condition) => !SENSITIVE_MEMORY_PATTERN.test(condition));
+  const searchTerms = cleanStringList(input.search_terms, 16, 80)
+    .filter((term) => !SENSITIVE_MEMORY_PATTERN.test(term));
   const status = MEMORY_STATUSES.has(input.status) && ["user_stated","user_confirmed","inferred_pending_confirmation"].includes(input.status)
     ? input.status
     : "user_stated";
@@ -125,16 +135,16 @@ export function cleanPersonaMemoryCandidate(input) {
     target_memory_key: typeof input.target_memory_key === "string" ? input.target_memory_key.trim().slice(0, 180) : "",
     confidence,
     status,
-    conditions: cleanStringList(input.conditions, 8, 180),
+    conditions,
     attributes,
-    search_terms: cleanStringList(input.search_terms, 16, 80)
+    search_terms: searchTerms
   };
 }
 
 export function shouldExtractPersonaMemory(message, preferenceWasAdded = false) {
-  if (preferenceWasAdded) return true;
   const text = String(message || "").trim();
   if (text.length < 8 || text.length > 1600 || SENSITIVE_MEMORY_PATTERN.test(text)) return false;
+  if (preferenceWasAdded) return true;
   return /\b(i prefer|i like|i dislike|i hate|i usually|i always|i never|i want|i need|i would rather|my routine|our routine|please (?:always|never)|make sure|remember that|don't move|do not move|never move|ask me before|check with me before|keep .* (?:clear|closed|open|separate|where)|after breakfast|before breakfast|every morning|every evening|twice a day|once a week|from now on|instead of|no longer|actually,?)\b/i.test(text);
 }
 
@@ -173,7 +183,7 @@ export function rankPersonaMemories(query, memories, { limit = 8 } = {}) {
 export function preferenceToPersonaMemory(preference, userId) {
   if (!preference || typeof preference.text !== "string" || !preference.text.trim() || !userId) return null;
   const statement = preference.text.trim().slice(0, 420);
-  if (SENSITIVE_MEMORY_PATTERN.test(statement)) return null;
+  if (statement.length < 8 || SENSITIVE_MEMORY_PATTERN.test(statement)) return null;
   const topic = deriveMemoryTopic(statement, preference.category);
   const kind = deriveMemoryKind(statement);
   const id = String(preference.id || makePersonaMemoryKey(statement)).slice(0, 180);
@@ -193,7 +203,8 @@ export function preferenceToPersonaMemory(preference, userId) {
     attributes: preference.explicitFacets && typeof preference.explicitFacets === "object" ? preference.explicitFacets : {},
     search_terms: [],
     search_keys: buildPersonaMemorySearchKeys(statement, [], topic),
-    source_message: String(preference.sourceMessage || statement).slice(0, 1600),
+    // Keep a concise memory statement here, not a duplicate of the full raw chat turn.
+    source_message: statement,
     source_timestamp: preference.recordedAt || new Date().toISOString(),
     source_conversation_key: "main",
     archived_at: null
