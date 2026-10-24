@@ -719,7 +719,7 @@ async function backfillPersonaMemoryEmbeddings({ limit = 16 } = {}) {
       .eq("user_id", cloudUserId)
       .is("embedding", null)
       .in("status", activeStatuses)
-      .order("updated_at", { ascending: true })
+      .order("updated_at", { ascending: false })
       .limit(Math.max(1, Math.min(32, limit)));
     if (error) throw error;
     const rows = Array.isArray(data) ? data : [];
@@ -826,8 +826,7 @@ async function getRelevantPersonaMemories(query) {
           .limit(80);
         if (keyError) throw keyError;
 
-        // Hybrid retrieval: topic/synonym keys first, then PostgreSQL full-text
-        // search recovers relevant memories whose wording differs from the query.
+        // Combine lexical topic/keyword matches with PostgreSQL full-text search.
         let textData = [];
         try {
           const { data, error } = await supabase
@@ -844,16 +843,58 @@ async function getRelevantPersonaMemories(query) {
           if (error) throw error;
           textData = Array.isArray(data) ? data : [];
         } catch (textError) {
-          // A search-parser issue must not disable the working topic/key path.
           if (!personaMemoryWarningShown) {
             console.info("SYNQ.ME full-text memory search fell back to topic and keyword matches.", textError);
             personaMemoryWarningShown = true;
           }
         }
 
+        // Semantic search is an additional ranking signal, never a replacement
+        // for the explainable topic/keyword/full-text paths above.
+        let semanticData = [];
+        if (!personaEmbeddingUnavailable && API_BASE) {
+          const vectors = await requestPersonaEmbeddings([String(query).slice(0, 1800)], "query");
+          const queryVector = vectors?.[0];
+          const literal = embeddingVectorLiteral(queryVector);
+          if (literal) {
+            try {
+              const { data: matches, error: vectorError } = await supabase.rpc(
+                "match_synqme_persona_memories",
+                { query_embedding: literal, match_count: 12 }
+              );
+              if (vectorError) throw vectorError;
+              const scoreById = new Map((Array.isArray(matches) ? matches : [])
+                .filter((item) => item && typeof item.id === "string" && Number.isFinite(Number(item.score)))
+                .map((item) => [item.id, Number(item.score)]));
+              const ids = [...scoreById.keys()];
+              if (ids.length) {
+                const { data, error } = await supabase
+                  .from("synqme_persona_memories")
+                  .select(PERSONA_MEMORY_SELECT_COLUMNS)
+                  .eq("user_id", cloudUserId)
+                  .in("status", activeStatuses)
+                  .in("id", ids);
+                if (error) throw error;
+                semanticData = (Array.isArray(data) ? data : []).map((item) => ({
+                  ...item,
+                  vector_score: scoreById.get(item.id) || 0
+                }));
+              }
+            } catch (vectorError) {
+              personaEmbeddingUnavailable = true;
+              if (!personaEmbeddingWarningShown) {
+                console.info("SYNQ.ME semantic retrieval is unavailable; using topic, keyword and full-text ranking.", vectorError);
+                personaEmbeddingWarningShown = true;
+              }
+            }
+          }
+        }
+
         const byId = new Map();
-        for (const item of [...personaMemoryRecords, ...(keyData || []), ...textData]) {
-          if (item && item.id) byId.set(item.id, item);
+        for (const item of [...personaMemoryRecords, ...(keyData || []), ...textData, ...semanticData]) {
+          if (!item || !item.id) continue;
+          const previous = byId.get(item.id);
+          byId.set(item.id, previous ? { ...previous, ...item } : item);
         }
         candidates = [...byId.values()];
       } catch (error) {
@@ -1029,6 +1070,7 @@ async function processStructuredMemoryTurn(userMessage, userTimestamp, shouldExt
 
     await backfillPersonaMemoriesFromPreferences();
     personaMemoryRecords = await queryPersonaMemoryRecords();
+    void backfillPersonaMemoryEmbeddings({ limit: 16 });
     renderPersonaMemoryLibrary();
     if (candidates.length && elements.personaMemoryStatus) {
       elements.personaMemoryStatus.textContent = "Saved " + candidates.length + (candidates.length === 1 ? " memory." : " memories.") + " You can edit or forget them here.";
