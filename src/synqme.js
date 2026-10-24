@@ -158,9 +158,16 @@ const elements = {
   robotImageInput: $("#robotImageInput"),
   uploadRobotImageButton: $("#uploadRobotImageButton"),
   voiceExperience: $("#voiceExperience"),
+  voiceIntroCopy: $("#voiceIntroCopy"),
   voiceOrb: $("#voiceOrb"),
+  voiceOrbCore: $("#voiceOrbCore"),
   voiceExperienceStatus: $("#voiceExperienceStatus"),
   voiceCompanionName: $("#voiceCompanionName"),
+  voiceModelProgress: $("#voiceModelProgress"),
+  voiceModelProgressTrack: $("#voiceModelProgressTrack"),
+  voiceModelProgressFill: $("#voiceModelProgressFill"),
+  voiceModelProgressLabel: $("#voiceModelProgressLabel"),
+  voiceModelProgressPercent: $("#voiceModelProgressPercent"),
   voiceMuteButton: $("#voiceMuteButton"),
   voiceMuteControlButton: $("#voiceMuteControlButton"),
   voiceMuteControlLabel: $("#voiceMuteControlLabel"),
@@ -337,6 +344,9 @@ let voiceRestartTimer = null;
 let assistantIsSpeaking = false;
 let currentSpeechUtterance = null;
 let kokoroLoadPromise = null;
+let kokoroTTSInstance = null;
+let kokoroLoadFailed = false;
+let voiceModelProgressTimer = null;
 let kokoroAudioElement = null;
 let kokoroAudioUrl = "";
 let kokoroSpeechGeneration = 0;
@@ -967,7 +977,10 @@ elements.openTaskFromSettings?.addEventListener("click", () => {
 });
 
 function selectedCompanionDisplayName() {
-  return (state.profile.robotName || "").trim() || "Your companion";
+  const configuredName = (state.profile.robotName || "").trim();
+  if (configuredName) return configuredName;
+  if (robotAppearance.customImageData) return "Your robot";
+  return (ROBOT_OPTIONS.find((item) => item.id === robotAppearance.robotId) || ROBOT_OPTIONS[0]).name;
 }
 
 function renderOwnerAvatarPreview() {
@@ -1816,6 +1829,18 @@ function applyRobotAppearance() {
   if (!elements.selectedRobotArt) return;
   const option = ROBOT_OPTIONS.find((item) => item.id === robotAppearance.robotId) || ROBOT_OPTIONS[0];
   elements.selectedRobotArt.replaceChildren();
+  if (elements.voiceOrbCore) {
+    elements.voiceOrbCore.replaceChildren();
+    if (robotAppearance.customImageData) {
+      const voiceImage = document.createElement("img");
+      voiceImage.src = robotAppearance.customImageData;
+      voiceImage.alt = "";
+      voiceImage.className = "voice-robot-image";
+      elements.voiceOrbCore.append(voiceImage);
+    } else {
+      elements.voiceOrbCore.innerHTML = robotSvgMarkup(option.id);
+    }
+  }
   if (robotAppearance.customImageData) {
     const image = document.createElement("img");
     image.src = robotAppearance.customImageData;
@@ -1840,6 +1865,7 @@ function applyRobotAppearance() {
     }
   }
   if (elements.voiceCompanionName) elements.voiceCompanionName.textContent = selectedCompanionDisplayName();
+  if (elements.voiceIntroCopy) elements.voiceIntroCopy.textContent = "Speak naturally. " + selectedCompanionDisplayName() + " is listening.";
   // Keep existing and future assistant avatars in sync with the selected appearance.
   if (elements.chatMessages) renderMessages();
 }
@@ -1868,6 +1894,7 @@ function openVoiceExperience() {
   document.body.classList.add("voice-experience-open");
   voiceInputMuted = false;
   if (elements.voiceCompanionName) elements.voiceCompanionName.textContent = selectedCompanionDisplayName();
+  if (elements.voiceIntroCopy) elements.voiceIntroCopy.textContent = "Speak naturally. " + selectedCompanionDisplayName() + " is listening.";
   if (!SpeechRecognitionConstructor && !voiceRecorderAvailable()) {
     updateVoiceExperience("idle", "Voice input is unavailable in this browser. Return to chat or try Chrome.");
     return;
@@ -1875,6 +1902,21 @@ function openVoiceExperience() {
   if (voiceModeActive) return;
   voiceModeActive = true;
   voiceInputMuted = false;
+  if (kokoroTTSInstance) {
+    renderVoiceModelProgress({ visible: false });
+  } else if (kokoroVoiceForProfile()) {
+    if (kokoroLoadFailed) kokoroLoadFailed = false;
+    if (!kokoroLoadPromise) {
+      renderVoiceModelProgress({ label: "Checking for a saved voice model…", indeterminate: true });
+      void loadKokoroTTS().catch((error) => {
+        console.info("Kokoro model unavailable; browser speech remains available.", error);
+      });
+    } else if (elements.voiceModelProgress) {
+      elements.voiceModelProgress.hidden = false;
+    }
+  } else {
+    renderVoiceModelProgress({ visible: false });
+  }
   if (elements.voiceStatus) {
     elements.voiceStatus.dataset.error = "";
     elements.voiceStatus.textContent = speechSynthesisAvailable
@@ -2219,11 +2261,11 @@ async function startMediaRecorderListening() {
       void transcribeVoiceRecording(blob);
     };
     recorder.start(200);
-    updateVoiceExperience("listening", "Listening. Speak naturally.");
+    updateVoiceExperience("listening", selectedCompanionDisplayName() + " is listening. Speak naturally.");
     if (elements.conversationStatus) elements.conversationStatus.textContent = "Listening · speak naturally, then pause";
     if (elements.voiceStatus) {
       elements.voiceStatus.dataset.error = "";
-      elements.voiceStatus.textContent = "Listening · pauses send your words to Google Gemini";
+      elements.voiceStatus.textContent = "Listening · pauses send your words to Groq Whisper";
     }
     startVoiceMonitor();
   } catch (error) {
@@ -2247,7 +2289,7 @@ function createSpeechRecognition() {
     recognizer.maxAlternatives = 1;
     recognizer.onstart = () => {
       recognitionListening = true;
-      updateVoiceExperience("listening", "Listening. Speak naturally.");
+      updateVoiceExperience("listening", selectedCompanionDisplayName() + " is listening. Speak naturally.");
       if (elements.conversationStatus) elements.conversationStatus.textContent = "Listening · speak naturally";
       if (elements.voiceStatus) {
         elements.voiceStatus.dataset.error = "";
@@ -2324,16 +2366,98 @@ function kokoroVoiceForProfile() {
   return KOKORO_VOICE_MAP[language]?.[gender] || "";
 }
 
+function formatVoiceModelBytes(value) {
+  const bytes = Number(value);
+  if (!Number.isFinite(bytes) || bytes < 0) return "";
+  if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + " KB";
+  const megabytes = bytes / (1024 * 1024);
+  return megabytes.toFixed(megabytes >= 20 ? 0 : 1) + " MB";
+}
+
+function renderVoiceModelProgress({ visible = true, label = "", progress = null, indeterminate = false }) {
+  if (!elements.voiceModelProgress) return;
+  if (voiceModelProgressTimer) {
+    window.clearTimeout(voiceModelProgressTimer);
+    voiceModelProgressTimer = null;
+  }
+  elements.voiceModelProgress.hidden = !visible;
+  if (label && elements.voiceModelProgressLabel) elements.voiceModelProgressLabel.textContent = label;
+  const track = elements.voiceModelProgressTrack;
+  const fill = elements.voiceModelProgressFill;
+  const hasProgress = Number.isFinite(progress);
+  if (track) {
+    track.classList.toggle("is-indeterminate", Boolean(indeterminate || !hasProgress));
+    if (hasProgress) {
+      const value = Math.max(0, Math.min(100, Number(progress)));
+      track.setAttribute("aria-valuenow", String(Math.round(value)));
+      if (fill) fill.style.width = value + "%";
+      if (elements.voiceModelProgressPercent) elements.voiceModelProgressPercent.textContent = Math.round(value) + "%";
+    } else {
+      track.removeAttribute("aria-valuenow");
+      if (fill) fill.style.width = indeterminate ? "34%" : "0%";
+      if (elements.voiceModelProgressPercent) elements.voiceModelProgressPercent.textContent = "";
+    }
+  }
+}
+
+function scheduleVoiceModelProgressHide(delay = 2500) {
+  if (voiceModelProgressTimer) window.clearTimeout(voiceModelProgressTimer);
+  voiceModelProgressTimer = window.setTimeout(() => {
+    voiceModelProgressTimer = null;
+    if (elements.voiceModelProgress) elements.voiceModelProgress.hidden = true;
+  }, delay);
+}
+
+function handleKokoroProgress(info) {
+  if (!info || typeof info !== "object") return;
+  if (info.status === "initiate") {
+    renderVoiceModelProgress({ label: "Checking for a saved voice model…", indeterminate: true });
+    return;
+  }
+  if (info.status === "download") {
+    renderVoiceModelProgress({ label: "Downloading voice model…", indeterminate: true });
+    return;
+  }
+  if (info.status === "progress_total" || info.status === "progress") {
+    const loaded = Number(info.loaded);
+    const total = Number(info.total);
+    const progress = Number(info.progress);
+    let label = "Downloading voice model…";
+    if (Number.isFinite(loaded) && Number.isFinite(total) && total > 0) {
+      label = "Downloading voice model · " + formatVoiceModelBytes(loaded) + " of " + formatVoiceModelBytes(total);
+    } else if (info.file) {
+      label = "Loading " + String(info.file).split("/").pop() + "…";
+    }
+    renderVoiceModelProgress({
+      label,
+      progress: Number.isFinite(progress) ? progress : null,
+      indeterminate: !Number.isFinite(progress)
+    });
+  }
+}
+
 async function loadKokoroTTS() {
+  if (kokoroTTSInstance) return kokoroTTSInstance;
   if (!kokoroLoadPromise) {
+    kokoroLoadFailed = false;
+    renderVoiceModelProgress({ label: "Checking for a saved voice model…", indeterminate: true });
     kokoroLoadPromise = (async () => {
       const { KokoroTTS } = await import("kokoro-js");
-      return KokoroTTS.from_pretrained("onnx-community/Kokoro-82M-v1.0-ONNX", {
+      const tts = await KokoroTTS.from_pretrained("onnx-community/Kokoro-82M-v1.0-ONNX", {
         dtype: "q8",
-        device: "wasm"
+        device: "wasm",
+        progress_callback: handleKokoroProgress
       });
+      kokoroTTSInstance = tts;
+      renderVoiceModelProgress({ label: "Voice ready on this device", progress: 100 });
+      scheduleVoiceModelProgressHide(2800);
+      return tts;
     })().catch((error) => {
       kokoroLoadPromise = null;
+      kokoroTTSInstance = null;
+      kokoroLoadFailed = true;
+      renderVoiceModelProgress({ label: "Voice model unavailable · using built-in speech", progress: null, indeterminate: false });
+      scheduleVoiceModelProgressHide(6000);
       throw error;
     });
   }
@@ -2465,17 +2589,44 @@ function speakAssistantReplyWithBrowser(reply) {
 async function speakAssistantReply(reply) {
   if (!voiceModeActive) return;
   const voiceId = kokoroVoiceForProfile();
-  if (voiceId) {
-    if (speechSynthesisAvailable) window.speechSynthesis.cancel();
-    currentSpeechUtterance = null;
-    const requestId = ++kokoroSpeechGeneration;
-    if (elements.voiceStatus) elements.voiceStatus.textContent = "Preparing Kokoro voice · first use downloads the model";
-    updateVoiceExperience("thinking", "Preparing voice on this device…");
 
-    // Do not leave the conversation waiting indefinitely for a model download,
-    // model initialisation, or speech generation. If Kokoro has not started
-    // audio in six seconds, use the browser voice for this reply; Kokoro may
-    // finish loading in the background and be ready on a later turn.
+  // The browser voice answers immediately while the optional on-device model
+  // downloads. Once Kokoro is ready, later replies can use its selected voice.
+  if (voiceId && !kokoroTTSInstance) {
+    let loadPromise = kokoroLoadPromise;
+    if (!loadPromise && !kokoroLoadFailed) {
+      loadPromise = loadKokoroTTS().catch((error) => {
+        console.info("Kokoro model unavailable; using the browser voice instead.", error);
+        return null;
+      });
+    }
+    if (speechSynthesisAvailable) {
+      if (elements.voiceStatus) elements.voiceStatus.textContent = loadPromise
+        ? "Voice on · built-in speech while the voice model loads"
+        : "Voice on · browser speech";
+      speakAssistantReplyWithBrowser(reply);
+      return;
+    }
+    if (loadPromise) {
+      try { await loadPromise; } catch {}
+    }
+  }
+
+  if (!voiceModeActive) return;
+  if (!voiceId || !kokoroTTSInstance) {
+    speakAssistantReplyWithBrowser(reply);
+    return;
+  }
+
+  if (speechSynthesisAvailable) window.speechSynthesis.cancel();
+  currentSpeechUtterance = null;
+  {
+    const requestId = ++kokoroSpeechGeneration;
+    if (elements.voiceStatus) elements.voiceStatus.textContent = "Preparing Kokoro speech";
+    updateVoiceExperience("thinking", "Preparing " + selectedCompanionDisplayName() + "’s reply…");
+
+    // Model downloading no longer blocks replies. Keep a short safety timeout
+    // for slow on-device speech generation and fall back to browser speech.
     let startTimeoutId = null;
     let playbackStarted = false;
     try {
