@@ -42,7 +42,7 @@ function summarisePreference(item) {
 function collectRecentQuestions(messages) {
   const seen = new Set();
   const questions = [];
-  for (const item of [...safeList(messages, 18)].reverse()) {
+  for (const item of (Array.isArray(messages) ? messages.slice(-18) : []).reverse()) {
     if (item?.role !== "assistant") continue;
     const text = safeText(item.content, 700);
     if (!text || !text.includes("?")) continue;
