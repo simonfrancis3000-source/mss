@@ -3074,22 +3074,26 @@ function ensureLocalAIReady() {
   state.apiModel = LOCAL_MODEL_LABEL;
   state.apiError = "";
   state.apiErrorDetail = "";
-  try { Promise.resolve(navigator.storage?.persist?.()).catch(() => {}); } catch {}
   setLocalAIProgress({ label: "Checking local AMÏA model cache", progress: null, indeterminate: true });
   localAILoadPromise = new Promise((resolve, reject) => {
     localAILoadResolve = resolve;
     localAILoadReject = reject;
-    try {
-      if (!localAIWorker) {
-        localAIWorker = new Worker(new URL("./local-ai.worker.js", import.meta.url), { type: "module" });
-        localAIWorker.addEventListener("message", handleLocalAIWorkerMessage);
-        localAIWorker.addEventListener("error", (error) => workerFailure(error));
-        localAIWorker.addEventListener("messageerror", () => workerFailure(new Error("Local AI worker returned an unreadable message.")));
+    (async () => {
+      try {
+        // Ask for persistent origin storage before starting a large model load.
+        // Browsers may decline; Cache API caching still remains enabled.
+        try { await navigator.storage?.persist?.(); } catch {}
+        if (!localAIWorker) {
+          localAIWorker = new Worker(new URL("./local-ai.worker.js", import.meta.url), { type: "module" });
+          localAIWorker.addEventListener("message", handleLocalAIWorkerMessage);
+          localAIWorker.addEventListener("error", (error) => workerFailure(error));
+          localAIWorker.addEventListener("messageerror", () => workerFailure(new Error("Local AI worker returned an unreadable message.")));
+        }
+        localAIWorker.postMessage({ type: "load" });
+      } catch (error) {
+        reject(error);
       }
-      localAIWorker.postMessage({ type: "load" });
-    } catch (error) {
-      reject(error);
-    }
+    })();
   }).catch((error) => {
     localAILoadPromise = null;
     localAIReady = false;
