@@ -2,7 +2,12 @@ import { env, pipeline, ModelRegistry } from "@huggingface/transformers";
 
 const DESKTOP_MODEL_ID = "onnx-community/Qwen2.5-1.5B-Instruct";
 const COMPACT_MODEL_ID = "onnx-community/SmolLM2-360M-Instruct-ONNX";
-let forceCpuBackend = true;
+const IS_MOBILE_DEVICE = (() => {
+  const ua = String(self.navigator?.userAgent || "");
+  const iPadDesktopUA = /Macintosh/i.test(ua) && Number(self.navigator?.maxTouchPoints || 0) > 1;
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(ua) || iPadDesktopUA;
+})();
+let forceCpuBackend = IS_MOBILE_DEVICE;
 let activeBackend = "";
 let activeModelId = "";
 let generator = null;
@@ -97,16 +102,12 @@ async function loadModel() {
     env.cacheKey = "transformers-cache";
     try { await self.navigator.storage?.persist?.(); } catch {}
 
-    // Use one compact CPU model on every device. The previous 1.5B WebGPU
-    // path produced invalid output and a 1.14 GB download on mobile. A single
-    // 386 MB model also avoids repeatedly switching between model caches.
+    // Keep one small quantised model across devices to avoid a second download.
     await removeCachedModelFiles(DESKTOP_MODEL_ID);
     const modelId = COMPACT_MODEL_ID;
     const dtype = "q4";
     activeModelId = modelId;
-    activeBackend = "wasm";
-    // Use Transformers.js' own cache registry so the decision matches
-    // the exact pipeline and quantisation rather than guessing from one URL.
+
     try {
       modelCacheDetected = await ModelRegistry.is_pipeline_cached(
         "text-generation",
@@ -114,33 +115,27 @@ async function loadModel() {
         { dtype }
       );
     } catch (cacheCheckError) {
-      // A partial cache is not a complete cache. Allow Transformers.js to
-      // retrieve any missing config/tokenizer/runtime files and save them.
-      console.warn("Could not verify the complete model cache; allowing normal cache-aware loading.", cacheCheckError);
+      // If cache verification fails, let Transformers.js manage its normal cache.
+      console.warn("Could not verify the model cache; using cache-aware loading.", cacheCheckError);
       modelCacheDetected = false;
     }
+
     postStatus(modelCacheDetected
       ? "Loading cached compact local AMÏA model"
       : "Preparing compact local AMÏA model");
 
-    try {
-      try {
-        env.backends.onnx.wasm.numThreads = Math.max(
-          1,
-          Math.min(4, (self.navigator?.hardwareConcurrency || 2) - 1)
-        );
-      } catch {}
-
+    const tryBackend = async (device) => {
+      activeBackend = device;
       generator = await pipeline("text-generation", modelId, {
         revision: "main",
-        device: "wasm",
+        device,
         dtype,
-        // Once all required files are in cache, disallow remote fallbacks.
-        // This prevents a cache miss from silently becoming a large re-download.
         local_files_only: modelCacheDetected,
         progress_callback: (event) => postProgress(event)
       });
-      postStatus("Testing compact local AMÏA model");
+      postStatus(device === "webgpu"
+        ? "Testing compact local AMÏA on GPU"
+        : "Testing compact local AMÏA on CPU");
       const smoke = await generator([{ role: "user", content: "Reply with OK." }], {
         max_new_tokens: 2,
         do_sample: false
@@ -148,10 +143,45 @@ async function loadModel() {
       if (isUnusableReply(extractReply(smoke))) {
         throw new Error("The local model failed its response-quality check.");
       }
-    } catch (error) {
-      generator = null;
-      const detail = error?.message || String(error || "Unknown model startup error");
-      throw new Error("Freya could not start the compact local model: " + detail);
+      return generator;
+    };
+
+    let gpuError = null;
+    if (!IS_MOBILE_DEVICE && !forceCpuBackend && self.navigator?.gpu) {
+      try {
+        const adapter = await self.navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
+        if (!adapter) throw new Error("No compatible WebGPU adapter was available.");
+        // Use the already-downloaded Q4 model on desktop as well. This avoids
+        // fetching a separate q4f16 weights file just to accelerate inference.
+        await tryBackend("webgpu");
+      } catch (error) {
+        gpuError = error;
+        generator = null;
+        activeBackend = "wasm";
+        forceCpuBackend = true;
+        postStatus("GPU inference failed. Switching to CPU mode");
+      }
+    } else if (!IS_MOBILE_DEVICE && !forceCpuBackend) {
+      gpuError = new Error("WebGPU is unavailable in this browser.");
+      forceCpuBackend = true;
+    }
+
+    if (!generator) {
+      try {
+        // Multi-threaded WASM requires cross-origin isolation in some browsers.
+        // Use a single thread when the app is not cross-origin isolated to avoid
+        // a worker/runtime that starts but never returns tokens.
+        const canUseWasmThreads = Boolean(self.crossOriginIsolated);
+        env.backends.onnx.wasm.numThreads = canUseWasmThreads
+          ? Math.max(1, Math.min(4, (self.navigator?.hardwareConcurrency || 2) - 1))
+          : 1;
+        await tryBackend("wasm");
+      } catch (wasmError) {
+        generator = null;
+        const gpuDetail = gpuError?.message || "GPU inference was skipped on this device";
+        const cpuDetail = wasmError?.message || String(wasmError || "CPU inference failed");
+        throw new Error("Freya could not start local inference. GPU: " + gpuDetail + " CPU: " + cpuDetail);
+      }
     }
 
     postProgress({ status: "done", file: modelId });
@@ -221,13 +251,15 @@ self.addEventListener("message", async ({ data }) => {
   generationBusy = true;
   try {
     const model = await loadModel();
-    const messages = Array.isArray(data.messages) ? data.messages.filter((item) => item && (item.role === "assistant" || item.role === "user") && typeof item.content === "string").slice(-18) : [];
-    const result = await model([{ role: "system", content: makeSystemPrompt(data) }, ...messages], {
-      max_new_tokens: 220,
-      do_sample: true,
-      temperature: 0.65,
-      top_p: 0.85,
-      repetition_penalty: 1.12,
+    const messages = Array.isArray(data.messages) ? data.messages.filter((item) => item && (item.role === "assistant" || item.role === "user") && typeof item.content === "string").slice(-8) : [];
+    const preferences = Array.isArray(data.preferences) ? data.preferences.slice(-10) : [];
+    postStatus(activeBackend === "webgpu"
+      ? "Freya is generating your reply on GPU"
+      : "Freya is generating your reply on CPU");
+    const result = await model([{ role: "system", content: makeSystemPrompt({ ...data, preferences }) }, ...messages], {
+      max_new_tokens: 96,
+      do_sample: false,
+      repetition_penalty: 1.08,
     });
     const reply = extractReply(result);
     if (!reply) throw new Error("The local model returned no usable text. Please try again.");
