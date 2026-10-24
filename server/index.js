@@ -857,7 +857,17 @@ const app = http.createServer(async (request, response) => {
   try {
     const body = await readJson(request);
     const repairMode = body?.repairMode === true;
-    const messages = cleanMessages(body?.messages);
+    const normalizedMessages = cleanMessages(body?.messages).slice(-10);
+    const messages = normalizedMessages.map((item, index) => {
+      const charLimit = index === normalizedMessages.length - 1 ? 1200 : 650;
+      if (item.content.length <= charLimit) return item;
+      const headChars = Math.floor(charLimit * 0.62);
+      const tailChars = Math.floor(charLimit * 0.30);
+      return {
+        role: item.role,
+        content: item.content.slice(0, headChars) + " [...trimmed...] " + item.content.slice(-tailChars)
+      };
+    });
     const preferences = cleanPreferences(body?.preferences);
     const profile = cleanProfile(body?.profile);
     const responseLanguage = CONVERSATION_LANGUAGE_NAMES[profile.preferredLanguage] || "English (US)";
@@ -974,12 +984,14 @@ const app = http.createServer(async (request, response) => {
         friendly = "Groq rejected the API key or project access. Check GROQ_API_KEY and your Groq project permissions.";
       } else if (upstream.status === 404) {
         friendly = "Groq could not find the configured model. Check GROQ_MODEL and model access for this API key.";
+      } else if (upstream.status === 413 && /tokens per minute|\\bTPM\\b|request too large/i.test(upstreamDetail)) {
+        friendly = "This turn exceeds Groq's current token budget. SYNQ.ME has shortened old conversation context; start a new chat if the problem continues.";
       } else if (upstream.status >= 500) {
         friendly = "Groq is temporarily returning a server error. Check Render logs and retry shortly.";
       } else {
         friendly = "Groq could not complete the reply. Check the provider error in Render logs and try again.";
       }
-      return json(response, upstream.status === 429 ? 429 : 502, {
+      return json(response, upstream.status === 429 ? 429 : (upstream.status === 413 ? 413 : 502), {
         error: friendly,
         errorCode,
         provider: PROVIDER,
