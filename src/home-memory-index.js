@@ -124,12 +124,13 @@ export function rankHomeMemoryCandidates(query, messages, { limit = 6 } = {}) {
   const prepared = messages.map((message, index) => {
     const ownContent = typeof message?.content === "string" ? message.content.trim() : "";
     const precomputedKeys = message?.search_keys || message?.searchKeys;
+    const neighbourMessages = [messages[index - 1], message, messages[index + 1]].filter(Boolean);
     const candidateKeys = new Set(Array.isArray(precomputedKeys) && precomputedKeys.length
       ? precomputedKeys
-      : extractHomeMemoryKeys(ownContent));
+      : neighbourMessages.flatMap((neighbour) => extractHomeMemoryKeys(neighbour?.content)));
     const candidateTopics = new Set([
       ...(Array.isArray(message?.topics) ? message.topics : []),
-      ...extractHomeMemoryTopics(ownContent)
+      ...neighbourMessages.flatMap((neighbour) => extractHomeMemoryTopics(neighbour?.content))
     ]);
     let topicHits = 0;
     let wordHits = 0;
@@ -158,10 +159,11 @@ export function rankHomeMemoryCandidates(query, messages, { limit = 6 } = {}) {
     const signature = item.role + "\n" + normaliseText(item.content);
     if (!unique.has(signature)) unique.set(signature, item);
   }
-  return [...unique.values()].slice(0, Math.max(1, Math.min(12, limit))).map(({ role, content, timestamp, topics }) => ({
+  return [...unique.values()].slice(0, Math.max(1, Math.min(12, limit))).map(({ role, content, timestamp, topics, search_keys }) => ({
     role,
     content,
     timestamp,
-    topics: topics.slice(0, 8)
+    topics: topics.slice(0, 8),
+    search_keys
   }));
 }
