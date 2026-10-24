@@ -111,7 +111,9 @@
             </div>
           </div>
 
-          <div class="chat-messages" id="chatMessages" role="log" aria-live="polite" aria-relevant="additions text">
+          <div class="chat-stage">
+            <div class="chat-workspace">
+              <div class="chat-messages" id="chatMessages" role="log" aria-live="polite" aria-relevant="additions text">
             <article class="message assistant-message">
               <div class="message-avatar">E</div>
               <div class="message-body">
@@ -146,6 +148,23 @@
             <span><span class="small-lock"></span> Your SecondSelf is saved to your account</span>
             <span id="voiceStatus" class="voice-status" aria-live="polite">Voice off · browser speech services</span>
             <button type="button" id="resetDemo" class="text-button">Reset demo</button>
+          </div>
+            </div>
+            <aside class="robot-companion" aria-label="Choose your robot companion">
+              <div class="robot-companion-preview">
+                <div class="robot-art" id="selectedRobotArt" aria-hidden="true"></div>
+                <div class="robot-card-name" id="selectedRobotName">ELO</div>
+                <div class="robot-card-caption">YOUR FUTURE COMPANION</div>
+              </div>
+              <div class="robot-picker-heading">CHOOSE YOUR ROBOT</div>
+              <div class="robot-picker" id="robotPicker" role="group" aria-label="Five robot companions"></div>
+              <input class="sr-only" type="file" id="robotImageInput" accept="image/*" aria-label="Upload your own robot image" />
+              <button class="robot-upload-button" type="button" id="uploadRobotImageButton">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m-4 4 4-4 4 4M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg>
+                <span>Upload your image</span>
+              </button>
+              <p class="robot-upload-note">Your image stays in this browser.</p>
+            </aside>
           </div>
         </section>
 
@@ -337,5 +356,41 @@
         </nav>
       </footer>
     </main>
+    <section class="voice-experience" id="voiceExperience" role="dialog" aria-modal="true" aria-labelledby="voiceExperienceTitle" hidden>
+      <div class="voice-experience-topbar">
+        <button class="voice-back-button" type="button" id="voiceChatButton" aria-label="Return to text chat">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6M9 12h11"/></svg>
+          <span>Chat</span>
+        </button>
+        <div class="voice-topbar-label">MYSECONDSELF <span>VOICE</span></div>
+        <button class="voice-icon-button" type="button" id="voiceMuteButton" aria-pressed="false" aria-label="Mute microphone" title="Mute microphone">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"></rect><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3m-4 0h8"></path></svg>
+        </button>
+      </div>
+      <div class="voice-experience-content">
+        <div class="voice-eyebrow">A MORE PERSONAL CONVERSATION</div>
+        <h2 id="voiceExperienceTitle">Talk to your SecondSelf.</h2>
+        <p class="voice-intro-copy">Speak naturally. Your companion is listening.</p>
+        <div class="voice-orb" id="voiceOrb" data-state="idle" aria-hidden="true">
+          <span class="voice-orb-ring voice-orb-ring-one"></span>
+          <span class="voice-orb-ring voice-orb-ring-two"></span>
+          <span class="voice-orb-core"><img src="https://mysecondself.app/wp-content/uploads/2026/10/MySecondSelf-Dual-Head-Logo.png" alt="" /></span>
+        </div>
+        <div class="voice-companion-name" id="voiceCompanionName">ELO</div>
+        <p class="voice-experience-status" id="voiceExperienceStatus" role="status" aria-live="polite">Ready to connect</p>
+        <div class="voice-state-caption">LISTENING <span></span> THINKING <span></span> SPEAKING</div>
+        <div class="voice-controls">
+          <button class="voice-control-secondary" type="button" id="voiceMuteControlButton" aria-label="Mute microphone">
+            <span class="voice-control-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"></rect><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3m-4 0h8"></path></svg></span>
+            <span id="voiceMuteControlLabel">Mute</span>
+          </button>
+          <button class="voice-control-end" type="button" id="voiceEndButton" aria-label="End voice conversation">
+            <span class="voice-control-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14c4.5-4 11.5-4 16 0l-2.5 3.5-3.2-1.7v-2.2a6.6 6.6 0 0 0-4.6 0v2.2l-3.2 1.7Z"></path></svg></span>
+            <span>End</span>
+          </button>
+        </div>
+        <p class="voice-privacy-note">Microphone access is used for this conversation. Browser voice quality varies by device.</p>
+      </div>
+    </section>
   </body>
 </html>
