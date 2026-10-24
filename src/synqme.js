@@ -2791,6 +2791,7 @@ async function loadKokoroTTS() {
       // runtime between app launches instead of fetching them again.
       env.useBrowserCache = true;
       env.useWasmCache = true;
+      env.cacheKey = "transformers-cache";
       const tts = await KokoroTTS.from_pretrained("onnx-community/Kokoro-82M-v1.0-ONNX", {
         dtype: "q8",
         device: "wasm",
