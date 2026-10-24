@@ -1,6 +1,6 @@
 import { env, pipeline } from "@huggingface/transformers";
 
-const MODEL_ID = "onnx-community/Qwen3-1.7B-ONNX";
+const MODEL_ID = "onnx-community/Llama-3.2-1B-Instruct-q4f16";
 let generator = null;
 let loadingPromise = null;
 let generationBusy = false;
@@ -68,9 +68,9 @@ async function loadModel() {
       throw new Error("WebGPU is present, but no compatible GPU adapter is available. Try a current Chrome or Edge browser on a supported device.");
     }
     postStatus("Loading local AMÏA model");
-    postProgress({ status: "initiate", file: "Qwen3-1.7B model" });
+    postProgress({ status: "initiate", file: "Llama 3.2 1B model" });
     generator = await pipeline("text-generation", MODEL_ID, {
-      // Use the published Transformers.js-compatible Qwen3-1.7B model and q4f16 WebGPU weights.
+      // Use the published Transformers.js-compatible Llama 3.2 1B model and q4f16 WebGPU weights.
       revision: "main",
       device: "webgpu",
       dtype: "q4f16",
@@ -84,9 +84,8 @@ async function loadModel() {
     await generator([{ role: "user", content: "Reply with OK." }], {
       max_new_tokens: 1,
       do_sample: false,
-      chat_template_kwargs: { enable_thinking: false }
     });
-    postProgress({ status: "done", file: "Qwen3-1.7B model" });
+    postProgress({ status: "done", file: "Llama 3.2 1B model" });
     return generator;
   })().catch((error) => {
     loadingPromise = null;
@@ -139,7 +138,7 @@ self.addEventListener("message", async ({ data }) => {
       await loadModel();
       self.postMessage({ type: "ready" });
     } catch (error) {
-      console.error("SYNQ.ME Qwen3-4B model loading failed.", error);
+      console.error("SYNQ.ME Llama 3.2 1B model loading failed.", error);
       self.postMessage({ type: "load-error", message: describeLoadError(error) });
     }
     return;
@@ -159,7 +158,6 @@ self.addEventListener("message", async ({ data }) => {
       temperature: 0.65,
       top_p: 0.85,
       repetition_penalty: 1.12,
-      chat_template_kwargs: { enable_thinking: false }
     });
     const reply = extractReply(result);
     if (!reply) throw new Error("The local model returned no usable text. Please try again.");
