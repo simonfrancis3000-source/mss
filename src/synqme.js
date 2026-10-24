@@ -4154,7 +4154,8 @@ async function sendMessage(rawText) {
   elements.sendButton.disabled = true;
   elements.messageInput.disabled = true;
   elements.conversationStatus.textContent = "Sending to Groq…";
-  state.messages.push({ role: "user", content: message, timestamp: new Date().toISOString() });
+  const userMessageTimestamp = new Date().toISOString();
+  state.messages.push({ role: "user", content: message, timestamp: userMessageTimestamp });
   const previousAssistantMessage = state.messages.length > 1 && state.messages[state.messages.length - 2]?.role === "assistant"
     ? state.messages[state.messages.length - 2].content
     : "";
@@ -4170,7 +4171,11 @@ async function sendMessage(rawText) {
   if (!state.pendingClarification && inferredPending) state.pendingClarification = inferredPending;
   const pendingBeforeAnswer = state.pendingClarification ? { ...state.pendingClarification } : null;
   const answeredPendingClarification = resolvePendingClarification(message);
+  const preferenceIdsBeforeTurn = new Set(state.preferences.map((item) => String(item.id)));
   if (!answeredPendingClarification && !clarificationRequest) savePreference(message);
+  const preferenceWasAdded = state.preferences.some((item) => !preferenceIdsBeforeTurn.has(String(item.id)));
+  const shouldExtractStructuredMemory = shouldExtractPersonaMemory(message, preferenceWasAdded) ||
+    Boolean(answeredPendingClarification && message.length >= 4);
   persist();
   renderAll();
   // Persist the user's message before waiting for the model so a closed tab or
@@ -4202,6 +4207,7 @@ async function sendMessage(rawText) {
   }
   state.messages.push({ role: "assistant", content: reply, timestamp: new Date().toISOString() });
   state.pendingClarification = detectPendingClarification(message, reply);
+  void processStructuredMemoryTurn(message, userMessageTimestamp, shouldExtractStructuredMemory);
   if (state.profile.shareAnonymizedLearning === true) {
     void contributeSharedKnowledgeFromTurn();
   }
