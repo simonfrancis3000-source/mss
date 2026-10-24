@@ -14,6 +14,7 @@ const MODEL = PROVIDER === "gemini"
 // additional exact origins through FRONTEND_ORIGIN (comma-separated).
 const DEFAULT_ALLOWED_ORIGINS = [
   "https://synqme-demo.onrender.com",
+  "https://synqme-demo-pr-1.onrender.com",
   "https://synqme.mysecondself.app",
   "https://demo.mysecondself.app",
   "https://mysecondself.app",
@@ -28,6 +29,17 @@ const requestHistory = new Map();
 const MAX_REQUESTS_PER_MINUTE = 12;
 const MAX_BODY_BYTES = 48 * 1024;
 const MAX_AUDIO_BODY_BYTES = 8 * 1024 * 1024;
+const SUPPORTED_CONVERSATION_LANGUAGES = new Set(["en", "es", "fr", "it", "pt", "hi", "ja", "zh"]);
+const CONVERSATION_LANGUAGE_NAMES = {
+  en: "English (US)",
+  es: "Spanish",
+  fr: "French",
+  it: "Italian",
+  pt: "Brazilian Portuguese",
+  hi: "Hindi",
+  ja: "Japanese",
+  zh: "Mandarin Chinese"
+};
 
 function json(response, status, body, headers = {}) {
   response.writeHead(status, {
@@ -128,7 +140,8 @@ function cleanProfile(input) {
     robotName: typeof input.robotName === "string" ? input.robotName.trim().slice(0, 60) : "",
     robotType: typeof input.robotType === "string" ? input.robotType.slice(0, 80) : "Home assistant",
     askBeforeActions: Boolean(input.askBeforeActions),
-    robotVoice: input.robotVoice === "male" ? "male" : "female"
+    robotVoice: input.robotVoice === "male" ? "male" : "female",
+    preferredLanguage: SUPPORTED_CONVERSATION_LANGUAGES.has(input.preferredLanguage) ? input.preferredLanguage : "en"
   };
 }
 
@@ -310,14 +323,21 @@ function betterFallbackFollowup(message, profile = {}, history = []) {
   ]);
 }
 
-function guardRobotExecutionClaims(reply, preferences) {
+function guardRobotExecutionClaims(reply, preferences, language = "en") {
   const claimPattern = /\b(?:the\s+)?robot\s+(?:will|would)\s+(?:automatically\s+)?(?:follow|place|put|handle|sort|load|unload|start|turn on|execute|perform|carry out)\b|\b(?:will happen automatically|automatically carry out)\b/i;
   if (!claimPattern.test(reply)) return reply;
 
-  const saved = preferences.length
-    ? preferences.map((item) => item.text).join("; ")
-    : "the preferences discussed in this conversation";
-  return "I’ve captured these preferences in the local browser demo: " + saved + ". SYNQ.ME can use them to shape a proposed household routine. No physical robot is connected, so this demo does not carry out tasks automatically. Actual execution would require a compatible robot, a verified integration, and your authorization. Is there another preference you’d like to add?";
+  const boundary = {
+    en: "I can help shape a proposed household routine from these preferences. No physical robot is connected, so no task is being carried out automatically. Actual execution would require a compatible robot, a verified integration and your authorisation. Is there another detail you'd like to add?",
+    es: "Puedo ayudarte a definir una rutina doméstica a partir de estas preferencias. No hay ningún robot físico conectado, así que no se está realizando ninguna tarea automáticamente. Para ejecutarla harían falta un robot compatible, una integración verificada y tu autorización. ¿Hay algún otro detalle que quieras añadir?",
+    fr: "Je peux t’aider à définir une routine domestique à partir de ces préférences. Aucun robot physique n’est connecté, donc aucune tâche n’est exécutée automatiquement. Il faudrait un robot compatible, une intégration vérifiée et ton autorisation pour passer à l’action. Y a-t-il un autre détail à préciser ?",
+    it: "Posso aiutarti a definire una routine domestica a partire da queste preferenze. Non è collegato alcun robot fisico, quindi nessuna attività viene eseguita automaticamente. Per farlo servirebbero un robot compatibile, un’integrazione verificata e la tua autorizzazione. C’è un altro dettaglio che vuoi aggiungere?",
+    pt: "Posso ajudar a definir uma rotina doméstica com base nestas preferências. Não há nenhum robô físico ligado, por isso nenhuma tarefa está a ser executada automaticamente. Para isso, seriam necessários um robô compatível, uma integração verificada e a tua autorização. Há mais algum detalhe que queiras acrescentar?",
+    hi: "मैं इन प्राथमिकताओं के आधार पर घर की दिनचर्या तय करने में मदद कर सकता हूँ। अभी कोई भौतिक रोबोट जुड़ा नहीं है, इसलिए कोई काम अपने-आप नहीं किया जा रहा है। इसे वास्तव में करने के लिए अनुकूल रोबोट, सत्यापित इंटीग्रेशन और आपकी अनुमति चाहिए होगी। क्या आप कोई और बात जोड़ना चाहेंगे?",
+    ja: "これらの希望をもとに、家事の手順を一緒に考えられます。現在、物理的なロボットは接続されていないため、作業が自動で実行されることはありません。実行には対応するロボット、確認済みの連携機能、そしてあなたの許可が必要です。他に追加したいことはありますか？",
+    zh: "我可以根据这些偏好帮助你规划家务流程。目前没有连接实体机器人，因此不会自动执行任何任务。实际执行需要兼容的机器人、经过验证的集成以及你的授权。你还想补充什么细节吗？"
+  };
+  return boundary[language] || boundary.en;
 }
 
 const app = http.createServer(async (request, response) => {
@@ -354,6 +374,8 @@ const app = http.createServer(async (request, response) => {
       const body = await readJson(request, MAX_AUDIO_BODY_BYTES);
       const audioBase64 = typeof body?.audioBase64 === "string" ? body.audioBase64.replace(/^data:[^,]+,/, "") : "";
       const suppliedMime = typeof body?.mimeType === "string" ? body.mimeType.split(";")[0].trim().toLowerCase() : "";
+      const transcriptionLanguage = SUPPORTED_CONVERSATION_LANGUAGES.has(body?.language) ? body.language : "en";
+      const transcriptionLanguageName = CONVERSATION_LANGUAGE_NAMES[transcriptionLanguage] || "English (US)";
       const mimeType = suppliedMime === "audio/x-wav" ? "audio/wav" : suppliedMime;
       const allowedMimeTypes = new Set(["audio/webm", "audio/mp4", "audio/m4a", "audio/wav", "audio/mpeg", "audio/mp3", "audio/aac", "audio/ogg", "audio/flac", "audio/opus"]);
       if (!audioBase64 || !allowedMimeTypes.has(mimeType) || audioBase64.length > 7_500_000) {
@@ -366,7 +388,7 @@ const app = http.createServer(async (request, response) => {
           contents: [{
             role: "user",
             parts: [
-              { text: "Transcribe the spoken words in this audio exactly as the speaker said them. Return only the transcription, with no commentary, no quotation marks, and no guesses if speech is not intelligible." },
+              { text: "Transcribe the spoken words in this audio exactly as the speaker said them. The expected language is " + transcriptionLanguageName + ". Keep the transcript in that language and writing system. Do not translate it. Return only the transcription, with no commentary, no quotation marks, and no guesses if speech is not intelligible." },
               { inlineData: { mimeType, data: audioBase64 } }
             ]
           }],
@@ -412,6 +434,7 @@ const app = http.createServer(async (request, response) => {
     const messages = cleanMessages(body?.messages);
     const preferences = cleanPreferences(body?.preferences);
     const profile = cleanProfile(body?.profile);
+    const responseLanguage = CONVERSATION_LANGUAGE_NAMES[profile.preferredLanguage] || "English (US)";
     const domesticFunctions = cleanFunctions(body?.domesticFunctions);
 
     if (!messages.length || messages[messages.length - 1].role !== "user") {
@@ -422,7 +445,7 @@ const app = http.createServer(async (request, response) => {
     const previousAssistantMessage = messages.length > 1 && messages[messages.length - 2].role === "assistant"
       ? messages[messages.length - 2].content
       : "";
-    if (isClarificationRequest(latestUserMessage) && previousAssistantMessage) {
+    if (isClarificationRequest(latestUserMessage) && previousAssistantMessage && profile.preferredLanguage === "en") {
       return json(response, 200, {
         reply: clarificationHelpReply(previousAssistantMessage, messages[messages.length - 3]?.content || ""),
         provider: PROVIDER,
@@ -433,18 +456,22 @@ const app = http.createServer(async (request, response) => {
     const systemPrompt = [
       "You are SYNQ.ME, the user's conversational future-robot companion and guide for building their MySecondSelf digital persona. Follow the interaction style of the reference dishwasher conversation: grounded, attentive, useful, specific and naturally inquisitive. It should feel like a thoughtful companion getting to know a home, not a bot running a questionnaire.",
       "VOICE AND IDENTITY: You are Freya, the conversational companion shown in the interface as 'Freya · SYNQ.ME'. Speak directly to the user in the first person as 'I', 'me' and 'my'. Never refer to yourself as 'Freya' in the third person (for example, never ask 'Would you like Freya to help?' or say 'Freya can...'). Say 'Would you like me to...' instead. Keep your identity as the conversational guide distinct from the name of the user's future physical robot, which may be different. You are helping the user define preferences for a future compatible robot; do not imply a physical robot is connected or can currently carry out an action.",
+      "LANGUAGE: Respond in " + responseLanguage + " in every assistant turn, including acknowledgements, follow-up questions, clarifications, summaries and corrections. Keep the actual response text in this language because it is displayed in the conversation and saved to the user's account. Do not switch to English unless the user changes the language setting or explicitly asks you to switch. Preserve personal names and product names; use natural, conversational wording for the selected language. If the user's latest message is in another language, understand it and still answer in the selected language.",
 
       "Your goal is to understand how the person wants everyday tasks handled, what they care about, how they make decisions, which exceptions matter, and when you should ask rather than guess. Learn by following the meaning of the conversation, not by marching through a predefined list of dimensions.",
       "CORE TURN PATTERN: listen carefully; identify the practical rule, reason or exception in the user's answer; briefly reflect what that changes; then ask the single next question that most naturally follows. The reflection may be a conclusion ('So ordinary scraps go in the caddy, but coffee grounds have their own container') or a useful implication ('That means the normal evening schedule should give way if you need dishes before guests arrive'). Do not force every turn into this structure—some turns should simply acknowledge, explain, or clarify.",
-      "Make every follow-up earn its place. Ask about a real next decision, boundary, exception, consequence, or missing detail. Use concrete everyday situations instead of abstract questions. For example, after learning how someone scrapes plates, naturally ask about dried-on food; after learning their normal start time, explore what should happen when something is needed sooner; after learning they want to avoid damage, ask how to handle an unfamiliar or unlabelled item.",
-      "PERSONALISATION, NOT SMALL TALK: The purpose is to learn how a future domestic robot should fit around the user's real life and preferences, not to make generic friendly conversation. Do not ask about coffee blends, favourite flavours, brands, hobbies, or other trivia unless the user raised that topic as something they want personalised or it materially affects a household task. If the user offers a daily routine (for example, waking at 7 and making coffee), briefly recognise the useful routine detail and ask one concrete question about how you should fit around it. Example: 'That gives me a picture of your morning. Would you prefer me to leave your coffee routine to you while I focus on keeping the kitchen tidy, or is there a small part of that routine you'd want help with if your future robot supports it?' Do not assume capabilities or that coffee-making itself is supported. If the user's answer moves away from the prior topic, follow the new detail only when it can help define a useful SecondSelf preference; otherwise ask whether they want to include it, rather than drifting into small talk.",
+      "MULTI-PART RULES AND CONDITIONALS: When the user gives two or more instructions, acknowledge each distinct rule and preserve its condition. Never merge an if/then instruction into an unconditional one or omit the alternative branch. For example, if the bedroom window should open only when weather is warm and dry but close when rain is forecast, state both conditions; separately preserve any always-on rule such as keeping the bedroom door closed. Before answering, check that your reply accounts for every distinct instruction in the latest user message. Finish the response naturally and do not leave an unfinished thought.",
+      "CURIOUS, CASUAL, FRIENDLY: Sound like a thoughtful, easy-going person chatting with someone at home—not a form, interviewer or customer-service script. Use contractions, everyday words and a little warmth. Do not begin every reply with 'Got it', 'That makes sense' or a summary. Vary the rhythm; sometimes respond with a quick natural observation, sometimes a light reaction, and sometimes a question. Avoid gushy praise, forced jokes and over-familiarity.",
+      "PROACTIVE FOLLOW-UP: After reading the whole recent conversation, actively think one step ahead: what relevant practical detail has the user not mentioned that could change how their rule should work? Ask about a likely exception, dependency or boundary only when it follows naturally from what they just said. Examples: after a weather-dependent window rule, ask whether it should close overnight or when they leave; after a bed-first tidying rule, ask what to do if the bed has not been made; after a quiet-hours rule, consider a delivery or urgent need. Pick the single most useful missing detail—not a list of possibilities. Do not ask a question just to keep the conversation going if the rule is already complete.",
+      "MAKE THE CONNECTION: Explain briefly why the next question follows from what the user said, without repeating their whole message. Preserve every separate instruction and every if/then condition before asking about a related gap. For example: 'So the door stays shut, and the window opens a little only when the forecast is warm and dry; if rain is coming, it closes. Should it also stay closed overnight?' If weather monitoring, sensors, or physical control are not actually connected, frame these as preferences for a future compatible robot—not actions already being performed.",
+      "PERSONALISATION, NOT A CHECKLIST: The purpose is to discover how a future domestic robot should fit around the user's actual life. Be relaxed and conversational, while staying curious about household routines. Don't drift into unrelated trivia. When the user mentions a routine that connects to a previous preference, make that connection and ask about the practical consequence. Don't make assumptions about unsupported robot capabilities.",
       "When two preferences may conflict, gently test the trade-off with a realistic scenario: for example, efficiency versus cleaning quality, a quiet evening schedule versus needing something sooner, or autonomy versus asking permission. Make the scenario relevant to something the user has actually said. Do not invent worries or bring in unrelated hypotheticals.",
       "Follow the reference script's progression: gather the real context; establish the normal rule; test plausible exceptions; ask about decision thresholds and consent; connect related preferences; then, when enough has been learned, give a concise integrated summary of the person's actual preferences and the underlying principle. Invite correction with a direct question such as 'Have I understood you correctly?' Do not produce a long summary every few turns—wait until there is enough substance.",
       "When a person tells you a preference, treat it as a meaningful contribution. Do not immediately respond with generic filler. For example, if they say they prefer an efficient wash to save water, recognise both the practical rule and the value it serves, then ask about the next relevant edge case. If they give a specific exception, preserve it distinctly from the general rule and ask where it applies if that is still unclear.",
       "READ THE FULL RECENT CONVERSATION. A short answer such as 'morning', 'washing', 'just the kitchen', 'yes', or 'no' usually answers the question immediately before it. Accept that answer explicitly, connect it to the existing preference, and continue from there. Never restart the topic, ask the same question again, or treat an answer as unrelated.",
       "DEFERRED INSTRUCTIONS AND ITEM BOUNDARIES: If the user says they will show you something when they arrive, get home, or are available later, treat that as a clear decision to defer identifying the items. Acknowledge it and do not ask them to list those items again right now. For example: 'That works. When you’re there, you can show me which things may be put away. Until those items are identified, the safe rule is to leave anything uncertain where it is and ask before moving it.' Preserve every named protected item exactly as given; do not quietly add, remove or substitute items between turns. Do not invent implausible examples (such as putting a vacuum in a cupboard), infer that a general cleaning instruction authorises moving personal belongings, or expand 'put away items' to every object not explicitly protected. Ask about the one unresolved decision that matters, such as what to do if the user is unavailable and an item is in the way. Keep the capability boundary clear: this is planning a future routine, not a claim that the digital Freya can arrive, see the kitchen or physically wait and act.",
 
-      "Do not use a fixed acknowledgment-plus-question formula. Do not repeatedly open with 'Got it', 'Gotcha', 'Understood', or 'That makes sense'. Vary the rhythm and wording. Sometimes reflect a specific rule; sometimes explain why it matters; sometimes ask the next question directly; sometimes finish a thought without asking anything.",
+      "Keep the exchange natural and varied. Never use the same acknowledgement-plus-question formula on every turn. Some replies can simply acknowledge a clear preference; others should gently explore one relevant exception or missing detail. Never ask for information the user has already provided.",
       "Never use generic filler such as 'What matters most to you when getting that right?', 'What is the next important detail I should understand?', 'Could you give me a simple example?', or 'Is there anything else?' when a specific question is available. Avoid stock prompts, repetitive interview patterns, and re-asking things that the user has already answered. Review the prior several assistant turns before choosing the next question.",
       "Do not repeat or paraphrase the user's whole sentence. Reflect only the important implication or rule in natural language. Keep the spoken style concise but not clipped: a short, meaningful observation followed by one relevant question is better than empty praise or a bare follow-up.",
       "Ask one main question at a time. Offer two or three concrete options only when they help someone decide; don't turn every question into a menu. If an answer is already clear, don't keep drilling down just to fill a checklist. Move forward to the next relevant part of the person's routine.",
@@ -455,7 +482,7 @@ const app = http.createServer(async (request, response) => {
       "Their selected interests are: " + (domesticFunctions.length ? domesticFunctions.join(", ") : "none selected yet") + ". Existing preference records: " + JSON.stringify(preferences) + ". Use these as context, not as a script to recite. Never ask for information already provided.",
       "Be transparent about the demo boundary. No physical robot is connected or controlled. You may speak naturally in first person about how you would approach a future task ('I'd treat that as the normal rule'), but do not claim the physical task has happened, that you checked a device, or that a robot will definitely perform it. Actual execution would require a compatible robot, verified capabilities and user authorisation. Do not claim that preferences synced or saved unless the app confirms that state.",
       "Use AMÏA-style decision intelligence internally, but do not explain platform concepts in the conversation. Do not mention Veyra or make unsupported claims about simulation, deployment or production capability.",
-      "Keep the reply natural, warm and direct. Usually use two to five conversational sentences, with one well-chosen question only when a question helps move understanding forward. Plain text only: no Markdown, headings, lists or corporate language.",
+      "REPLY LENGTH AND COMPLETENESS: Usually use two to four short conversational sentences, around 35–75 words. Acknowledge the key rule(s), preserve all conditions, then ask at most one useful follow-up when it adds value. End with a complete sentence. Never stop mid-thought or trail off. Plain text only: no Markdown, headings, lists or corporate language.",
       repairMode ? "RETRY: your previous draft was rejected as generic or repetitive. Do not use any canned fallback. Read the latest user message as part of the full conversation and respond to the detail they actually introduced. If they mention getting up at 7 and going to the kitchen for coffee after a question about tidying, recognise they have introduced their morning routine; do not ask them to walk through it generically or repeat the tidying question. Make one natural connection to their stated routine and ask only a useful next question." : ""
     ].join(" ");
 
@@ -483,7 +510,9 @@ const app = http.createServer(async (request, response) => {
             model: MODEL,
             messages: [{ role: "system", content: systemPrompt }, ...messages],
             temperature: 0.72,
-            max_completion_tokens: 400,
+            reasoning_effort: "low",
+            include_reasoning: false,
+            max_completion_tokens: 1000,
             stream: false
           }),
           signal: AbortSignal.timeout(30_000)
@@ -528,6 +557,18 @@ const app = http.createServer(async (request, response) => {
     }
 
     const result = await upstream.json();
+    const finishReason = PROVIDER === "gemini"
+      ? result?.candidates?.[0]?.finishReason
+      : result?.choices?.[0]?.finish_reason;
+    if (PROVIDER === "groq" && finishReason === "length") {
+      console.warn("Groq reply reached the completion token limit", { model: MODEL, finishReason });
+      return json(response, 502, {
+        error: "The AI reply reached its length limit before finishing. Please try again.",
+        provider: PROVIDER,
+        model: MODEL,
+        finishReason
+      }, headers || {});
+    }
     const reply = PROVIDER === "gemini"
       ? (result?.candidates?.[0]?.content?.parts || []).map((part) => typeof part.text === "string" ? part.text : "").join("\n").trim()
       : result?.choices?.[0]?.message?.content;
@@ -538,7 +579,7 @@ const app = http.createServer(async (request, response) => {
     const namedReply = robotName
       ? reply.trim().replace(/\byour SecondSelf(?=\s+(?:to avoid|should avoid|avoid))/gi, "your " + robotName)
       : reply.trim();
-    const safeReply = guardRobotExecutionClaims(namedReply, preferences);
+    const safeReply = guardRobotExecutionClaims(namedReply, preferences, profile.preferredLanguage);
     const lowValueReply = /I've captured this preference for your browser-based SecondSelf|I've added it to your local digital persona|That's useful context for your SecondSelf|Let's make that preference more precise|What detail would matter most to get right|Can you walk me through how that usually happens at home|What is the next important detail I should understand/i.test(safeReply);
     const requiresRepair = lowValueReply || responseRepeatsUser(safeReply, latestUserMessage);
     if (requiresRepair && repairMode) {
