@@ -1,8 +1,9 @@
 import { createClient } from "@supabase/supabase-js";
 
 const STORAGE_KEY = "synqme-demo-v1";
+const LOCAL_MODEL_ID = "onnx-community/Qwen3-4B-ONNX";
+const LOCAL_MODEL_LABEL = "Qwen3-4B · on-device";
 const ACCOUNT_DRAFT_KEY = "synqme-pending-account-migration-v1";
-const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
 const AUTH_REDIRECT_URL = (() => {
@@ -146,6 +147,11 @@ const elements = {
   providerLabel: $("#providerLabel"),
   preferredLanguage: $("#preferredLanguage"),
   conversationStatus: $("#conversationStatus"),
+  localAIProgress: $("#localAIProgress"),
+  localAIProgressLabel: $("#localAIProgressLabel"),
+  localAIProgressFill: $("#localAIProgressFill"),
+  localAIProgressPercent: $("#localAIProgressPercent"),
+  localAIProgressTrack: $("#localAIProgressTrack"),
   chatTranscriptShell: $("#chatTranscriptShell"),
   chatMessages: $("#chatMessages"),
   chatScrollbarTrack: $("#chatScrollbarTrack"),
@@ -264,9 +270,9 @@ function initialState() {
     functions: [],
     pendingClarification: null,
     apiConnected: false,
-    apiProvider: "",
-    apiModel: "",
-    apiConfigured: null,
+    apiProvider: "local",
+    apiModel: LOCAL_MODEL_LABEL,
+    apiConfigured: true,
     apiError: "",
     apiErrorDetail: ""
   };
@@ -340,6 +346,13 @@ function loadState() {
 }
 
 let state = loadState();
+let localAIWorker = null;
+let localAIReady = false;
+let localAILoadPromise = null;
+let localAILoadResolve = null;
+let localAILoadReject = null;
+let localAIRequestSequence = 0;
+const localAIPendingRequests = new Map();
 let isSending = false;
 let sendSequence = 0;
 let lastAIReplyUsedFallback = false;
@@ -1061,7 +1074,9 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   if (!profileComplete()) openSettings();
   else updateSettingsMode();
   startCloudConversationSync();
-  scheduleKokoroBackgroundPreload(1400);
+  void ensureLocalAIReady()
+    .then(() => scheduleKokoroBackgroundPreload(1400))
+    .catch((error) => console.info("SYNQ.ME local model warm-up did not complete.", error));
   return true;
 }
 
@@ -1918,16 +1933,12 @@ function renderAll() {
   const achieved = MILESTONES.filter(milestoneUnlocked).length;
   const progress = Math.round((achieved / MILESTONES.length) * 100);
   if (elements.mobileProgressValue) elements.mobileProgressValue.textContent = progress + "%";
-  if (state.apiConnected && state.apiProvider) {
-    elements.providerLabel.textContent = state.apiProvider.toUpperCase() + " · " + (state.apiModel || "model") + " · LIVE";
+  if (state.apiConnected) {
+    elements.providerLabel.textContent = "LOCAL · QWEN3-4B · ON-DEVICE";
   } else if (state.apiError) {
-    elements.providerLabel.textContent = (state.apiProvider ? state.apiProvider.toUpperCase() : "AI SERVICE") + " · " + state.apiError.toUpperCase().replace(/_/g, " ");
-  } else if (state.apiConfigured === false) {
-    elements.providerLabel.textContent = (state.apiProvider ? state.apiProvider.toUpperCase() : "AI") + " NOT CONFIGURED";
-  } else if (state.apiConfigured === true && state.apiProvider) {
-    elements.providerLabel.textContent = state.apiProvider.toUpperCase() + " · " + (state.apiModel || "model") + " · READY";
+    elements.providerLabel.textContent = "LOCAL AI · MODEL NEEDS ATTENTION";
   } else {
-    elements.providerLabel.textContent = API_BASE ? "CHECKING AI SERVICE" : "SCRIPTED DEMO MODE";
+    elements.providerLabel.textContent = "LOCAL AI · QWEN3-4B · FIRST-TIME SETUP";
   }
   document.title = name ? "SYNQ.ME | " + name + "’s SecondSelf" : "SYNQ.ME | Build Your SecondSelf";
   const intro = $(".conversation-intro p");
@@ -1936,7 +1947,6 @@ function renderAll() {
     : "Tell me what matters to you. I’ll help shape your digital persona, one preference at a time.";
 }
 renderAll();
-void checkAIBackend();
 
 function chooseFallbackQuestion(options) {
   const recentReplies = state.messages
@@ -2235,7 +2245,7 @@ function openVoiceExperience() {
   voiceInputMuted = false;
   updateVoiceCompanionLabels();
   if (elements.voiceRetrySpeechButton) elements.voiceRetrySpeechButton.hidden = true;
-  if (!SpeechRecognitionConstructor && !voiceRecorderAvailable()) {
+  if (!SpeechRecognitionConstructor) {
     updateVoiceExperience("idle", "Voice input is unavailable in this browser. Return to chat or try Chrome.");
     return;
   }
@@ -2385,7 +2395,6 @@ function stopVoiceConversation(statusMessage = "Voice conversation stopped.") {
   if (voiceRestartTimer) window.clearTimeout(voiceRestartTimer);
   voiceRestartTimer = null;
   recognitionTranscript = "";
-  releaseVoiceMedia();
   voiceTranscribing = false;
   if (speechRecognition && recognitionListening) {
     try { speechRecognition.abort(); } catch {}
@@ -2413,213 +2422,6 @@ function scheduleVoiceListening(delay = 350) {
   }, delay);
 }
 
-
-function stopVoiceMonitor() {
-  if (voiceMonitorFrame) window.cancelAnimationFrame(voiceMonitorFrame);
-  voiceMonitorFrame = 0;
-}
-
-function releaseVoiceMedia() {
-  stopVoiceMonitor();
-  if (activeMediaRecorder && activeMediaRecorder.state !== "inactive") {
-    const recorder = activeMediaRecorder;
-    recorder.onstop = null;
-    try { recorder.stop(); } catch {}
-  }
-  activeMediaRecorder = null;
-  voiceAudioChunks = [];
-  if (voiceMediaStream) {
-    voiceMediaStream.getTracks().forEach((track) => track.stop());
-    voiceMediaStream = null;
-  }
-  voiceAnalyser = null;
-  voiceAnalysisBuffer = null;
-  if (voiceAudioContext) {
-    const context = voiceAudioContext;
-    voiceAudioContext = null;
-    void context.close().catch(() => {});
-  }
-}
-
-function voiceRecorderAvailable() {
-  return Boolean(
-    API_BASE &&
-    typeof window.MediaRecorder === "function" &&
-    navigator.mediaDevices &&
-    typeof navigator.mediaDevices.getUserMedia === "function" &&
-    (window.AudioContext || window.webkitAudioContext)
-  );
-}
-
-function monitorVoiceSilence() {
-  if (!voiceModeActive || !activeMediaRecorder || activeMediaRecorder.state !== "recording" || !voiceAnalyser || !voiceAnalysisBuffer) {
-    voiceMonitorFrame = 0;
-    return;
-  }
-  voiceAnalyser.getByteTimeDomainData(voiceAnalysisBuffer);
-  let sum = 0;
-  for (let i = 0; i < voiceAnalysisBuffer.length; i++) {
-    const centred = (voiceAnalysisBuffer[i] - 128) / 128;
-    sum += centred * centred;
-  }
-  const rms = Math.sqrt(sum / voiceAnalysisBuffer.length);
-  const now = performance.now();
-  const elapsed = now - voiceRecordingStartedAt;
-  if (rms > 0.045) {
-    voiceSpeechDetected = true;
-    voiceLastSpeechAt = now;
-  }
-  if (voiceSpeechDetected && elapsed > 1400 && now - voiceLastSpeechAt > 1350) {
-    try { activeMediaRecorder.stop(); } catch {}
-    return;
-  }
-  if (!voiceSpeechDetected && elapsed > 12000) {
-    stopVoiceConversation("I didn't hear speech. Tap Voice to try again, or type your message.");
-    return;
-  }
-  if (elapsed > 20000) {
-    try { activeMediaRecorder.stop(); } catch {}
-    return;
-  }
-  voiceMonitorFrame = window.requestAnimationFrame(monitorVoiceSilence);
-}
-
-function startVoiceMonitor() {
-  stopVoiceMonitor();
-  voiceMonitorFrame = window.requestAnimationFrame(monitorVoiceSilence);
-}
-
-function blobToBase64(blob) {
-  return blob.arrayBuffer().then((buffer) => {
-    const bytes = new Uint8Array(buffer);
-    let binary = "";
-    const chunkSize = 0x8000;
-    for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-      binary += String.fromCharCode(...bytes.subarray(offset, Math.min(offset + chunkSize, bytes.length)));
-    }
-    return btoa(binary);
-  });
-}
-
-async function transcribeVoiceRecording(blob) {
-  if (!voiceModeActive || voiceTranscribing) return;
-  if (!blob || blob.size < 1500) {
-    if (elements.voiceStatus) elements.voiceStatus.textContent = "I didn't catch that clearly. Listening again…";
-    scheduleVoiceListening(500);
-    return;
-  }
-  voiceTranscribing = true;
-  if (elements.conversationStatus) elements.conversationStatus.textContent = "Transcribing your speech";
-  if (elements.voiceStatus) elements.voiceStatus.textContent = "Transcribing your speech…";
-  try {
-    const audioBase64 = await blobToBase64(blob);
-    if (!voiceModeActive) return;
-    const response = await fetch(API_BASE + "/api/transcribe", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ audioBase64, mimeType: blob.type || "audio/mp4", language: state.profile.preferredLanguage || "en" }),
-      signal: AbortSignal.timeout(45_000)
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      const details = [];
-      if (Number.isInteger(data.upstreamStatus)) details.push("Groq HTTP " + data.upstreamStatus);
-      if (typeof data.detail === "string" && data.detail.trim()) details.push(data.detail.trim().slice(0, 180));
-      if (typeof data.errorCode === "string" && data.errorCode) details.push("ref " + data.errorCode);
-      const errorMessage = String(data.error || "Groq voice transcription could not complete.");
-      throw new Error(details.length ? errorMessage + " (" + details.join(" · ") + ")" : errorMessage);
-    }
-    const transcript = String(data.text || "").trim();
-    if (!transcript) throw new Error("I couldn't make out those words. Please try again.");
-    if (elements.voiceStatus) elements.voiceStatus.textContent = "Heard: " + transcript.slice(0, 95);
-    if (elements.messageInput) elements.messageInput.value = "";
-    voiceTranscribing = false;
-    await sendMessage(transcript);
-  } catch (error) {
-    voiceTranscribing = false;
-    if (voiceModeActive) stopVoiceConversation(error?.message || "Voice transcription failed. Please try again or type.");
-  } finally {
-    voiceTranscribing = false;
-  }
-}
-
-async function startMediaRecorderListening() {
-  if (!voiceModeActive || isSending || assistantIsSpeaking || voiceTranscribing || activeMediaRecorder?.state === "recording") return;
-  try {
-    if (!voiceMediaStream) {
-      voiceMediaStream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
-      });
-    }
-    if (!voiceModeActive) {
-      releaseVoiceMedia();
-      return;
-    }
-    if (!voiceAudioContext) {
-      const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
-      voiceAudioContext = new AudioContextConstructor();
-      voiceAnalyser = voiceAudioContext.createAnalyser();
-      voiceAnalyser.fftSize = 1024;
-      voiceAnalysisBuffer = new Uint8Array(voiceAnalyser.fftSize);
-      const source = voiceAudioContext.createMediaStreamSource(voiceMediaStream);
-      source.connect(voiceAnalyser);
-    }
-    if (voiceAudioContext.state === "suspended") await voiceAudioContext.resume();
-    if (!voiceModeActive) return;
-
-    const preferredTypes = [
-      "audio/mp4;codecs=mp4a.40.2",
-      "audio/mp4",
-      "audio/webm;codecs=opus",
-      "audio/webm",
-      "audio/ogg;codecs=opus"
-    ];
-    const supportedType = preferredTypes.find((type) => MediaRecorder.isTypeSupported?.(type));
-    const recorder = supportedType
-      ? new MediaRecorder(voiceMediaStream, { mimeType: supportedType })
-      : new MediaRecorder(voiceMediaStream);
-    activeMediaRecorder = recorder;
-    voiceAudioChunks = [];
-    voiceSpeechDetected = false;
-    voiceLastSpeechAt = 0;
-    voiceRecordingStartedAt = performance.now();
-    recorder.ondataavailable = (event) => {
-      if (event.data?.size) voiceAudioChunks.push(event.data);
-    };
-    recorder.onerror = () => {
-      stopVoiceConversation("The microphone recording failed. Please try again or type your message.");
-    };
-    recorder.onstop = () => {
-      stopVoiceMonitor();
-      const blobType = recorder.mimeType || supportedType || "audio/mp4";
-      const blob = new Blob(voiceAudioChunks, { type: blobType });
-      voiceAudioChunks = [];
-      if (activeMediaRecorder === recorder) activeMediaRecorder = null;
-      if (!voiceModeActive) return;
-      if (!voiceSpeechDetected) {
-        stopVoiceConversation("I didn't hear speech. Tap Voice to try again, or type your message.");
-        return;
-      }
-      void transcribeVoiceRecording(blob);
-    };
-    recorder.start(200);
-    updateVoiceExperience("listening", selectedCompanionDisplayName() + " is listening. Speak naturally.");
-    if (elements.conversationStatus) elements.conversationStatus.textContent = "Listening · speak naturally, then pause";
-    if (elements.voiceStatus) {
-      elements.voiceStatus.dataset.error = "";
-      elements.voiceStatus.textContent = "Listening · pauses send your words to Groq Whisper";
-    }
-    startVoiceMonitor();
-  } catch (error) {
-    stopVoiceConversation(
-      error?.name === "NotAllowedError"
-        ? "Microphone access blocked. Allow microphone access in browser settings, then try again."
-        : error?.name === "NotFoundError"
-          ? "No microphone was found. Connect or enable a microphone, then try again."
-          : "Voice recording could not start. Please allow microphone access or type your message."
-    );
-  }
-}
 
 function createSpeechRecognition() {
   if (!SpeechRecognitionConstructor) return null;
@@ -2680,10 +2482,6 @@ function createSpeechRecognition() {
 
 async function startVoiceListening() {
   if (!voiceModeActive || voiceInputMuted || isSending || assistantIsSpeaking || voiceTranscribing || recognitionListening) return;
-  if (voiceRecorderAvailable()) {
-    await startMediaRecorderListening();
-    return;
-  }
   if (!speechRecognition) speechRecognition = createSpeechRecognition();
   if (!speechRecognition) {
     stopVoiceConversation("Voice input isn't supported by this browser. Try a current version of Chrome or use typing.");
@@ -3166,93 +2964,198 @@ function responseRepeatsUser(reply, userMessage) {
   return overlap >= 0.78;
 }
 
-async function requestAIReply(repairMode = false) {
-  if (!API_BASE) return null;
-  if (!state.apiProvider) await checkAIBackend();
-  if (state.apiProvider !== "groq") {
-    state.apiConnected = false;
-    state.apiError = "groq-only policy";
-    state.apiErrorDetail = state.apiProvider
-      ? "AI request blocked: SYNQ.ME is configured for Groq only, but the connected backend reported a different provider. Redeploy the Groq-only backend."
-      : "AI request blocked because the backend provider could not be verified as Groq. Redeploy or restore the Groq-only backend.";
-    elements.providerLabel.textContent = "GROQ ONLY · BACKEND CHECK REQUIRED";
-    return null;
+function setLocalAIProgress({ label = "", progress = null, visible = true, indeterminate = false } = {}) {
+  if (!elements.localAIProgress) return;
+  elements.localAIProgress.hidden = !visible;
+  if (elements.localAIProgressLabel) elements.localAIProgressLabel.textContent = label;
+  const knownProgress = Number.isFinite(progress);
+  if (elements.localAIProgressPercent) elements.localAIProgressPercent.textContent = knownProgress ? Math.round(progress) + "%" : "";
+  if (elements.localAIProgressFill) {
+    elements.localAIProgressFill.style.width = knownProgress ? Math.max(0, Math.min(100, progress)) + "%" : (indeterminate ? "18%" : "0%");
+    elements.localAIProgressFill.classList.toggle("is-indeterminate", Boolean(indeterminate && !knownProgress));
   }
+  if (elements.localAIProgressTrack) {
+    if (knownProgress) elements.localAIProgressTrack.setAttribute("aria-valuenow", String(Math.round(progress)));
+    else elements.localAIProgressTrack.removeAttribute("aria-valuenow");
+  }
+  if (!isSending && elements.conversationStatus && label) elements.conversationStatus.textContent = label;
+}
+
+function rejectPendingLocalAIRequests(error) {
+  for (const [id, pending] of localAIPendingRequests.entries()) {
+    pending.reject(error);
+    localAIPendingRequests.delete(id);
+  }
+}
+
+function handleLocalAIWorkerMessage(event) {
+  const data = event.data || {};
+  if (data.type === "progress") {
+    const fileName = String(data.file || "").split("/").pop();
+    const percent = Number.isFinite(data.progress) ? data.progress : null;
+    const status = data.status || "";
+    const label = status === "progress"
+      ? "Downloading local model · " + (fileName || "model asset")
+      : status === "done"
+        ? "Model asset saved · " + (fileName || "asset")
+        : "Preparing local model · " + (fileName || "model assets");
+    setLocalAIProgress({ label, progress: percent, indeterminate: percent === null });
+    return;
+  }
+  if (data.type === "ready") {
+    localAIReady = true;
+    state.apiProvider = "local";
+    state.apiModel = LOCAL_MODEL_LABEL;
+    state.apiConfigured = true;
+    state.apiConnected = true;
+    state.apiError = "";
+    state.apiErrorDetail = "";
+    setLocalAIProgress({ label: "Local AI ready · model cached in this browser", progress: 100 });
+    if (localAILoadResolve) localAILoadResolve();
+    localAILoadResolve = null;
+    localAILoadReject = null;
+    renderAll();
+    window.setTimeout(() => setLocalAIProgress({ visible: false }), 6000);
+    return;
+  }
+  if (data.type === "load-error") {
+    const error = new Error(String(data.message || "The local model could not be loaded."));
+    localAIReady = false;
+    state.apiConnected = false;
+    state.apiConfigured = true;
+    state.apiProvider = "local";
+    state.apiModel = LOCAL_MODEL_LABEL;
+    state.apiError = "local model unavailable";
+    state.apiErrorDetail = error.message;
+    setLocalAIProgress({ label: error.message, progress: null, indeterminate: false });
+    if (localAILoadReject) localAILoadReject(error);
+    localAILoadResolve = null;
+    localAILoadReject = null;
+    renderAll();
+    return;
+  }
+  if (data.type === "reply" || data.type === "reply-error") {
+    const pending = localAIPendingRequests.get(data.id);
+    if (!pending) return;
+    localAIPendingRequests.delete(data.id);
+    if (data.type === "reply-error") pending.reject(new Error(String(data.message || "Local generation failed.")));
+    else pending.resolve(String(data.text || ""));
+  }
+}
+
+function workerFailure(error) {
+  const message = error?.message || "The local AI worker stopped unexpectedly.";
+  localAIReady = false;
+  state.apiConnected = false;
+  state.apiError = "local model unavailable";
+  state.apiErrorDetail = message;
+  setLocalAIProgress({ label: message });
+  if (localAILoadReject) localAILoadReject(new Error(message));
+  localAILoadResolve = null;
+  localAILoadReject = null;
+  rejectPendingLocalAIRequests(new Error(message));
+  renderAll();
+}
+
+function ensureLocalAIReady() {
+  if (localAIReady) return Promise.resolve();
+  if (localAILoadPromise) return localAILoadPromise;
+  state.apiProvider = "local";
+  state.apiModel = LOCAL_MODEL_LABEL;
+  state.apiError = "";
+  state.apiErrorDetail = "";
+  setLocalAIProgress({ label: "Starting local AI · first setup downloads approximately 2.8 GB", progress: null, indeterminate: true });
+  localAILoadPromise = new Promise((resolve, reject) => {
+    localAILoadResolve = resolve;
+    localAILoadReject = reject;
+    try {
+      if (!localAIWorker) {
+        localAIWorker = new Worker(new URL("./local-ai.worker.js", import.meta.url), { type: "module" });
+        localAIWorker.addEventListener("message", handleLocalAIWorkerMessage);
+        localAIWorker.addEventListener("error", (error) => workerFailure(error));
+        localAIWorker.addEventListener("messageerror", () => workerFailure(new Error("Local AI worker returned an unreadable message.")));
+      }
+      localAIWorker.postMessage({ type: "load" });
+    } catch (error) {
+      reject(error);
+    }
+  }).catch((error) => {
+    localAILoadPromise = null;
+    localAIReady = false;
+    state.apiConnected = false;
+    state.apiProvider = "local";
+    state.apiModel = LOCAL_MODEL_LABEL;
+    state.apiError = "local model unavailable";
+    state.apiErrorDetail = String(error?.message || "The local model could not be loaded.");
+    setLocalAIProgress({ label: state.apiErrorDetail });
+    renderAll();
+    throw error;
+  });
+  return localAILoadPromise;
+}
+
+function runLocalAIRequest(payload) {
+  const id = ++localAIRequestSequence;
+  return new Promise((resolve, reject) => {
+    localAIPendingRequests.set(id, { resolve, reject });
+    try {
+      localAIWorker.postMessage({ ...payload, id });
+    } catch (error) {
+      localAIPendingRequests.delete(id);
+      reject(error);
+    }
+  });
+}
+
+async function requestAIReply(repairMode = false) {
   if (!repairMode) lastAIReplyUsedFallback = false;
+  state.apiProvider = "local";
+  state.apiModel = LOCAL_MODEL_LABEL;
+  state.apiError = "";
   state.apiErrorDetail = "";
   try {
-    const response = await fetch(API_BASE + "/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        messages: state.messages.slice(-20).map((message) => ({ role: message.role, content: message.content })),
-        preferences: state.preferences.map((preference) => {
-          const extracted = preferenceExtraction(preference);
-          return {
-            category: preference.category || classifyPreference(preference.text),
-            text: preference.text,
-            epistemicStatus: preference.status || "user_stated",
-            explicitFields: extracted.explicitFields,
-            unresolvedFields: extracted.unresolvedFields
-          };
-        }),
-        profile: {
-          ownerName: state.profile.ownerName,
-          robotName: state.profile.robotName,
-          robotType: state.profile.robotType,
-          robotVoice: state.profile.robotVoice || "female",
-          preferredLanguage: state.profile.preferredLanguage || "en",
-          askBeforeActions: state.profile.confirmActions
-        },
-        domesticFunctions: state.functions.map((id) => ACTIVITIES.find((activity) => activity.id === id)?.label).filter(Boolean),
-        repairMode
-      })
+    await ensureLocalAIReady();
+    if (elements.conversationStatus) elements.conversationStatus.textContent = "Qwen3-4B is generating a reply on this device…";
+    const messages = state.messages.slice(-18).map((message) => ({ role: message.role, content: message.content }));
+    const preferences = state.preferences.map((preference) => {
+      const extracted = preferenceExtraction(preference);
+      return {
+        category: preference.category || classifyPreference(preference.text),
+        text: preference.text,
+        epistemicStatus: preference.status || "user_stated",
+        explicitFields: extracted.explicitFields,
+        unresolvedFields: extracted.unresolvedFields
+      };
     });
-    let data = {};
-    try { data = await response.json(); } catch {}
-    const responseProvider = typeof data.provider === "string" ? data.provider.toLowerCase() : state.apiProvider;
-    if (responseProvider && responseProvider !== "groq") {
-      throw new Error("SYNQ.ME is configured for Groq only. The backend response was rejected because its provider did not match the Groq-only policy. Redeploy the Groq-only backend.");
-    }
-    if (data.provider) state.apiProvider = responseProvider;
-    if (data.model) state.apiModel = String(data.model);
-    if (!response.ok) {
-      state.apiConfigured = true;
-      let errorMessage = String(data.error || ("AI endpoint returned " + response.status));
-      // Older backend deployments may mislabel Groq 429 errors.
-      if (responseProvider === "groq" && /gemini/i.test(errorMessage)) {
-        errorMessage = "Groq has reached a usage limit or rate limit. Check your Groq usage and limits, then try again.";
-      }
-      const apiError = new Error(errorMessage);
-      apiError.apiStatus = response.status;
-      apiError.upstreamStatus = Number.isInteger(data.upstreamStatus) ? data.upstreamStatus : null;
-      apiError.errorCode = typeof data.errorCode === "string" ? data.errorCode : "";
-      throw apiError;
-    }
-    const reply = typeof data.reply === "string" ? data.reply : typeof data.message === "string" ? data.message : "";
-    if (!reply.trim()) throw new Error("AI endpoint returned no reply text");
+    const reply = await runLocalAIRequest({
+      type: "generate",
+      messages,
+      preferences,
+      profile: {
+        ownerName: state.profile.ownerName,
+        robotName: state.profile.robotName,
+        robotType: state.profile.robotType,
+        robotVoice: state.profile.robotVoice || "female",
+        preferredLanguage: state.profile.preferredLanguage || "en",
+        askBeforeActions: state.profile.confirmActions
+      },
+      domesticFunctions: state.functions.map((id) => ACTIVITIES.find((activity) => activity.id === id)?.label).filter(Boolean),
+      repairMode
+    });
+    if (!reply.trim()) throw new Error("The local model returned an empty reply.");
     state.apiConnected = true;
     state.apiConfigured = true;
     state.apiError = "";
     state.apiErrorDetail = "";
-    elements.providerLabel.textContent = (state.apiProvider || "AI").toUpperCase() + " · " + (state.apiModel || "model") + " · LIVE";
-
-    // The backend has already tried the model and selected a fallback where needed.
-    // Do not trigger another full model request for the same user turn.
-    lastAIReplyUsedFallback = Boolean(data.usedFallback || data.responseNeedsReview);
-    if (data.responseNeedsReview) return "__SYNQME_UNHELPFUL_AI_RESPONSE__";
+    elements.providerLabel.textContent = "LOCAL · QWEN3-4B · ON-DEVICE";
+    lastAIReplyUsedFallback = false;
     return reply.trim();
   } catch (error) {
-    console.info("SYNQ.ME AI request failed; no scripted question will be substituted.", error);
+    console.info("SYNQ.ME local Qwen generation failed.", error);
     state.apiConnected = false;
-    state.apiError = responseErrorLabel(error);
-    state.apiErrorDetail = Number.isInteger(error?.apiStatus)
-      ? "HTTP " + error.apiStatus +
-        (Number.isInteger(error?.upstreamStatus) ? " · " + (state.apiProvider ? state.apiProvider.toUpperCase() : "UPSTREAM") + " upstream HTTP " + error.upstreamStatus : "") +
-        ": " + String(error?.message || "Request failed").slice(0, 260) +
-        (error?.errorCode ? " [reference " + error.errorCode + "]" : "")
-      : String(error?.message || "").slice(0, 260);
-    elements.providerLabel.textContent = (state.apiProvider ? state.apiProvider.toUpperCase() : "AI SERVICE") + " · " + state.apiError.toUpperCase().replace(/_/g, " ");
+    state.apiError = "local model unavailable";
+    state.apiErrorDetail = String(error?.message || "Local generation failed. Check WebGPU support and available memory.");
+    elements.providerLabel.textContent = "LOCAL AI · MODEL NEEDS ATTENTION";
     return null;
   }
 }
@@ -3279,32 +3182,6 @@ function responseErrorLabel(error) {
   if (/503|not configured|api key/.test(message)) return "not configured";
   if (/failed to fetch|network|cors|timeout|aborted/.test(message)) return "connection failed";
   return "request failed";
-}
-
-async function checkAIBackend() {
-  if (!API_BASE) return;
-  try {
-    const response = await fetch(API_BASE + "/health", { cache: "no-store" });
-    if (!response.ok) throw new Error("Health check returned " + response.status);
-    const data = await response.json();
-    state.apiProvider = typeof data.provider === "string" ? data.provider.toLowerCase() : "";
-    state.apiModel = typeof data.model === "string" ? data.model : "";
-    state.apiConfigured = Boolean(data.configured);
-    state.apiError = "";
-    if (!state.apiConnected) {
-      renderAll();
-      elements.conversationStatus.textContent = state.apiConfigured
-        ? state.apiProvider.toUpperCase() + " · " + (state.apiModel || "model") + " ready"
-        : state.apiProvider.toUpperCase() + " is not configured";
-    }
-  } catch (error) {
-    state.apiError = "health check unavailable";
-    if (!state.apiConnected) {
-      renderAll();
-      elements.conversationStatus.textContent = "AI provider status could not be verified";
-    }
-    console.info("SYNQ.ME could not verify backend provider settings.", error);
-  }
 }
 
 async function sendMessage(rawText) {
@@ -3347,50 +3224,27 @@ async function sendMessage(rawText) {
   persist();
   renderAll();
 
-  const forceAIForSelectedLanguage = Boolean(API_BASE) && (state.profile.preferredLanguage || "en") !== "en";
-  const sentToAIThisTurn = Boolean(API_BASE) && (forceAIForSelectedLanguage || (!clarificationRequest && !answeredPendingClarification));
-  // English clarification turns retain the deterministic local handling. In
-  // other selected languages, ask Groq to compose the reply in that language.
-  let reply = (state.profile.preferredLanguage || "en") !== "en" && !API_BASE
-    ? localizedAIUnavailable(state.profile.preferredLanguage)
-    : forceAIForSelectedLanguage
-      ? await requestAIReply()
-      : clarificationRequest
-        ? clarificationHelpReply(previousAssistantMessage, previousUserMessage)
-        : answeredPendingClarification
-          ? replyToResolvedClarification(message, pendingBeforeAnswer)
-          : await requestAIReply();
-  if ((!answeredPendingClarification && !clarificationRequest) || forceAIForSelectedLanguage) {
-    const replyNeedsRepair = (value) => !value ||
-      responseRepeatsUser(value, message) ||
-      responseRepeatsRecentAssistant(value) ||
-      /I've captured this preference for your browser-based SecondSelf|I've added it to your local digital persona|That's useful context for your SecondSelf|Let's make that preference more precise|What detail would matter most to get right|What matters most to you when getting that right|Which laundry detail matters most to you: sorting, washing and drying, or how clothes are put away|Can you walk me through how that usually happens at home/i.test(value);
-    if (replyNeedsRepair(reply) && API_BASE && state.apiConnected && !lastAIReplyUsedFallback) {
-      const retriedReply = await requestAIReply(true);
-      if (retriedReply && retriedReply !== "__SYNQME_UNHELPFUL_AI_RESPONSE__" && !replyNeedsRepair(retriedReply)) {
-        reply = retriedReply;
-      } else {
-        reply = (state.profile.preferredLanguage || "en") === "en"
-          ? "I’m having trouble making a useful connection from that answer, and I don’t want to give you another canned question. I’ve understood the detail you shared; please try once more, or tell me which part of your routine you’d like to explore."
-          : localizedAIUnavailable(state.profile.preferredLanguage);
-      }
-    } else if (!reply && API_BASE) {
+  const sentToAIThisTurn = true;
+  let reply = await requestAIReply();
+  const replyNeedsRepair = (value) => !value ||
+    responseRepeatsUser(value, message) ||
+    responseRepeatsRecentAssistant(value) ||
+    /I've captured this preference for your browser-based SecondSelf|I've added it to your local digital persona|That's useful context for your SecondSelf|Let's make that preference more precise|What detail would matter most to get right|What matters most to you when getting that right|Which laundry detail matters most to you: sorting, washing and drying, or how clothes are put away|Can you walk me through how that usually happens at home/i.test(value);
+  if (replyNeedsRepair(reply) && state.apiConnected && !lastAIReplyUsedFallback) {
+    const retriedReply = await requestAIReply(true);
+    if (retriedReply && retriedReply !== "__SYNQME_UNHELPFUL_AI_RESPONSE__" && !replyNeedsRepair(retriedReply)) {
+      reply = retriedReply;
+    } else {
       reply = (state.profile.preferredLanguage || "en") === "en"
-        ? (state.apiErrorDetail || "I can’t reach the AI conversation service right now, so I haven’t substituted a scripted answer. Please try again shortly.")
-        : localizedAIUnavailable(state.profile.preferredLanguage);
-    } else if (!reply) {
-      reply = (state.profile.preferredLanguage || "en") === "en"
-        ? localReply(message)
-        : localizedAIUnavailable(state.profile.preferredLanguage);
-    } else if (reply === "__SYNQME_UNHELPFUL_AI_RESPONSE__") {
-      reply = (state.profile.preferredLanguage || "en") === "en"
-        ? "I’m having trouble making a useful connection from that answer, and I don’t want to give you another canned question. I’ve understood the detail you shared; please try once more, or tell me which part of your routine you’d like to explore."
-        : localizedAIUnavailable(state.profile.preferredLanguage);
-    } else if (replyNeedsRepair(reply) && !API_BASE) {
-      reply = (state.profile.preferredLanguage || "en") === "en"
-        ? localReply(message)
+        ? "I’m having trouble making a useful connection from that answer. I’ve understood the detail you shared; please try once more, or tell me which part of your routine you’d like to explore."
         : localizedAIUnavailable(state.profile.preferredLanguage);
     }
+  } else if (!reply) {
+    reply = state.apiErrorDetail || localizedAIUnavailable(state.profile.preferredLanguage || "en");
+  } else if (reply === "__SYNQME_UNHELPFUL_AI_RESPONSE__") {
+    reply = (state.profile.preferredLanguage || "en") === "en"
+      ? "I’m having trouble making a useful connection from that answer. I’ve understood the detail you shared; please try once more, or tell me which part of your routine you’d like to explore."
+      : localizedAIUnavailable(state.profile.preferredLanguage);
   }
   state.messages.push({ role: "assistant", content: reply });
   state.pendingClarification = detectPendingClarification(message, reply);
