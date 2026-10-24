@@ -51,8 +51,9 @@ async function loadModel() {
       if (self.caches && env.useBrowserCache) {
         const cache = await self.caches.open(env.cacheKey);
         const requests = await cache.keys();
+        const encodedModelId = encodeURIComponent(MODEL_ID);
         hasCachedModelFiles = requests.some((request) =>
-          decodeURIComponent(request.url).includes(MODEL_ID)
+          request.url.includes(MODEL_ID) || request.url.includes(encodedModelId)
         );
       }
     } catch {}
