@@ -150,6 +150,7 @@ export function rankHomeMemoryCandidates(query, messages, { limit = 6 } = {}) {
       content: ownContent.slice(0, 900),
       timestamp,
       topics: [...candidateTopics],
+      search_keys: [...candidateKeys],
       score
     };
   }).filter(Boolean);
