@@ -96,6 +96,15 @@
             <div class="panel-status"><span class="status-dot"></span><span id="conversationStatus">Ready to talk</span></div>
           </div>
 
+          <div class="local-ai-progress" id="localAIProgress" hidden aria-live="polite">
+            <div class="local-ai-progress-meta">
+              <span id="localAIProgressLabel">Downloading local AMÏA model</span>
+            </div>
+            <div class="local-ai-progress-track" id="localAIProgressTrack" role="progressbar" aria-label="Local AMÏA model download progress" aria-valuemin="0" aria-valuemax="100">
+              <span class="local-ai-progress-fill" id="localAIProgressFill"></span>
+            </div>
+          </div>
+
           <div class="chat-stage">
             <div class="chat-workspace">
               <div class="chat-transcript-shell" id="chatTranscriptShell">
@@ -132,14 +141,6 @@
             <div class="voice-model-progress-meta">
               <span id="voiceModelProgressLabelMain">Preparing voice in the background…</span>
               <span id="voiceModelProgressPercentMain"></span>
-            </div>
-          </div>
-          <div class="local-ai-progress" id="localAIProgress" hidden aria-live="polite">
-            <div class="local-ai-progress-meta">
-              <span id="localAIProgressLabel">Downloading local AMÏA model</span>
-            </div>
-            <div class="local-ai-progress-track" id="localAIProgressTrack" role="progressbar" aria-label="Local AMÏA model download progress" aria-valuemin="0" aria-valuemax="100">
-              <span class="local-ai-progress-fill" id="localAIProgressFill"></span>
             </div>
           </div>
           <div class="composer-foot">
