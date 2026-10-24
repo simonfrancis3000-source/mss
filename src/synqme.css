@@ -1344,3 +1344,119 @@ h1 span { color: #1677f9; }
     border-radius: 10px;
   }
 }
+
+
+/* User profile image: chosen beside the name in Settings and reused in chat. */
+.owner-identity-row {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  align-items: start;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid #e6e7ec;
+  border-radius: 16px;
+  background: #fafafd;
+}
+.owner-avatar-preview {
+  display: grid;
+  place-items: center;
+  width: 76px;
+  height: 76px;
+  overflow: hidden;
+  border: 1px solid #dbe7f7;
+  border-radius: 50%;
+  background: #f0f6ff;
+  color: #1677f9;
+  font-size: 25px;
+  font-weight: 650;
+}
+.owner-avatar-preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.owner-identity-fields {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.owner-identity-fields > label {
+  margin-top: 0 !important;
+  color: #3d3d44;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .7px;
+  text-transform: uppercase;
+}
+.owner-avatar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.owner-image-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid #dfe0e6;
+  border-radius: 11px;
+  background: #fff;
+  color: #3e3e45;
+  font-size: 11px;
+  font-weight: 600;
+}
+.owner-image-button:hover {
+  border-color: #a8c8f5;
+  background: #f4f8ff;
+}
+.owner-image-button svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.owner-image-remove {
+  color: #6e6e73;
+  font-size: 10px;
+}
+.owner-identity-fields .field-help {
+  color: #777780;
+  font-size: 10px;
+}
+.message-avatar.owner-message-avatar {
+  overflow: hidden;
+  padding: 0;
+  border-color: #dbe7f7;
+  border-radius: 50%;
+  background: #fff;
+}
+.message-avatar.owner-message-avatar .message-owner-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+@media (max-width: 520px) {
+  .owner-identity-row {
+    grid-template-columns: 58px minmax(0, 1fr);
+    gap: 11px;
+    padding: 11px;
+  }
+  .owner-avatar-preview {
+    width: 58px;
+    height: 58px;
+    font-size: 20px;
+  }
+  .owner-image-button {
+    min-height: 34px;
+    padding: 0 10px;
+    font-size: 10px;
+  }
+}
