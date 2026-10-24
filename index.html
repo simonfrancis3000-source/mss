@@ -290,12 +290,23 @@
             <option value="Robot vacuum">Robot vacuum</option>
             <option value="Other compatible robot">Other compatible robot</option>
           </select>
-          <label for="robotVoice">Preferred voice when voice conversations are enabled</label>
+          <label for="robotVoice">Voice style</label>
           <select id="robotVoice" name="robotVoice">
             <option value="female" selected>Female voice</option>
             <option value="male">Male voice</option>
           </select>
-          <p class="field-help">Voice replies use an available voice on your device. Speech recognition may send audio to your browser’s speech service; support and processing vary by browser.</p>
+          <label for="preferredLanguage">Conversation language</label>
+          <select id="preferredLanguage" name="preferredLanguage">
+            <option value="en">English (US)</option>
+            <option value="es">Spanish</option>
+            <option value="fr">French</option>
+            <option value="it">Italian</option>
+            <option value="pt">Portuguese (Brazil)</option>
+            <option value="hi">Hindi</option>
+            <option value="ja">Japanese</option>
+            <option value="zh">Chinese (Mandarin)</option>
+          </select>
+          <p class="field-help">SYNQ.ME will reply and save the conversation in your chosen language. Voice replies use Kokoro on this device when a matching voice is available; the first use may download the speech model. Otherwise, your browser's voice is used when available.</p>
           <label class="settings-toggle" for="confirmActions">
             <span><strong>Ask me before actions</strong><small>Record this as a personal preference for future task plans.</small></span>
             <input type="checkbox" id="confirmActions" name="confirmActions" />
