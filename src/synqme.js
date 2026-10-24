@@ -2694,7 +2694,9 @@ async function sendMessage(rawText) {
       if (retriedReply && retriedReply !== "__SYNQME_UNHELPFUL_AI_RESPONSE__" && !replyNeedsRepair(retriedReply)) {
         reply = retriedReply;
       } else {
-        reply = "I’m having trouble making a useful connection from that answer, and I don’t want to give you another canned question. I’ve understood the detail you shared; please try once more, or tell me which part of your routine you’d like to explore.";
+        reply = (state.profile.preferredLanguage || "en") === "en"
+          ? "I’m having trouble making a useful connection from that answer, and I don’t want to give you another canned question. I’ve understood the detail you shared; please try once more, or tell me which part of your routine you’d like to explore."
+          : localizedAIUnavailable(state.profile.preferredLanguage);
       }
     } else if (!reply && API_BASE) {
       reply = (state.profile.preferredLanguage || "en") === "en"
@@ -2705,7 +2707,9 @@ async function sendMessage(rawText) {
         ? localReply(message)
         : localizedAIUnavailable(state.profile.preferredLanguage);
     } else if (reply === "__SYNQME_UNHELPFUL_AI_RESPONSE__") {
-      reply = "I’m having trouble making a useful connection from that answer, and I don’t want to give you another canned question. I’ve understood the detail you shared; please try once more, or tell me which part of your routine you’d like to explore.";
+      reply = (state.profile.preferredLanguage || "en") === "en"
+        ? "I’m having trouble making a useful connection from that answer, and I don’t want to give you another canned question. I’ve understood the detail you shared; please try once more, or tell me which part of your routine you’d like to explore."
+        : localizedAIUnavailable(state.profile.preferredLanguage);
     } else if (replyNeedsRepair(reply) && !API_BASE) {
       reply = localReply(message);
     }
