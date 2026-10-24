@@ -611,19 +611,75 @@ async function refreshCloudConversation() {
     const remoteUpdatedAt = data.updated_at || null;
     if (remoteUpdatedAt === cloudConversationUpdatedAt) return;
 
+    // Account saves write profile, preferences and conversation together. Read
+    // those records as well so the other browser's whole persona catches up.
+    const [profileResult, preferencesResult] = await Promise.all([
+      supabase.from("synqme_profiles").select("*").eq("user_id", userIdAtStart).maybeSingle(),
+      supabase.from("synqme_preferences")
+        .select("id,category,preference_text,normalised_text,preference_status,explicit_facets,unresolved_fields,source_message,created_at,schema_version,clarifications")
+        .eq("user_id", userIdAtStart)
+        .order("created_at", { ascending: false })
+        .limit(24)
+    ]);
+    if (profileResult.error) throw profileResult.error;
+    if (preferencesResult.error) throw preferencesResult.error;
+    if (userIdAtStart !== cloudUserId) return;
+
     const remoteMessages = Array.isArray(data.messages) ? data.messages : [];
     const mergedMessages = mergeConversationMessages(state.messages, remoteMessages);
     const localChanged = JSON.stringify(mergedMessages) !== JSON.stringify(state.messages);
     const mergedDiffersFromCloud = JSON.stringify(mergedMessages) !== JSON.stringify(remoteMessages);
     const pendingChanged = JSON.stringify(state.pendingClarification || null) !== JSON.stringify(data.pending_clarification || null);
 
+    let profileChanged = false;
+    let languageChanged = false;
+    const remoteProfile = profileResult.data;
+    if (remoteProfile) {
+      const nextProfile = {
+        ownerName: remoteProfile.owner_name || "",
+        robotName: remoteProfile.future_robot_name || "",
+        robotType: remoteProfile.future_robot_type || "Humanoid robot",
+        robotVoice: remoteProfile.future_robot_voice || "female",
+        preferredLanguage: remoteProfile.preferred_language || "en",
+        confirmActions: Boolean(remoteProfile.confirm_actions)
+      };
+      languageChanged = nextProfile.preferredLanguage !== state.profile.preferredLanguage;
+      profileChanged = JSON.stringify(nextProfile) !== JSON.stringify(state.profile);
+      if (profileChanged) state.profile = nextProfile;
+      const nextFunctions = Array.isArray(remoteProfile.domestic_functions)
+        ? remoteProfile.domestic_functions.filter((id) => ACTIVITIES.some((activity) => activity.id === id))
+        : [];
+      if (JSON.stringify(nextFunctions) !== JSON.stringify(state.functions)) {
+        state.functions = nextFunctions;
+        profileChanged = true;
+      }
+    }
+
+    const remotePreferenceRows = (preferencesResult.data || []).map((item) => ({
+      id: item.id,
+      text: item.preference_text,
+      category: item.category,
+      normalised: item.normalised_text,
+      preference_status: item.preference_status,
+      explicit_facets: item.explicit_facets,
+      unresolved_fields: item.unresolved_fields,
+      source_message: item.source_message,
+      created_at: item.created_at,
+      clarifications: item.clarifications
+    }));
+    const remotePreferences = mergePreferences(remotePreferenceRows, []);
+    const preferencesChanged = JSON.stringify(remotePreferences) !== JSON.stringify(state.preferences);
+
     cloudConversationUpdatedAt = remoteUpdatedAt;
     if (localChanged) state.messages = mergedMessages;
     if (pendingChanged) state.pendingClarification = data.pending_clarification || null;
+    if (preferencesChanged) state.preferences = remotePreferences;
+    if (languageChanged) localizeWelcomeMessage(state.profile.preferredLanguage || "en");
 
-    if (localChanged || pendingChanged) {
+    if (localChanged || pendingChanged || profileChanged || preferencesChanged) {
       persist(false);
       renderAll();
+      if (profileChanged && !elements.settingsDialog?.hidden) populateSettingsForm();
     }
 
     // If this device has messages not yet represented in the cloud snapshot,
