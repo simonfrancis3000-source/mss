@@ -1003,12 +1003,17 @@ async function processStructuredMemoryTurn(userMessage, userTimestamp, shouldExt
         continue;
       }
       if (candidate.relation === "withdraws") {
-        if (target) await updatePersonaMemoryRow(target.id, {
-          status: "archived",
-          archived_at: new Date().toISOString(),
-          reviewed_at: new Date().toISOString(),
-          relation: "withdraws"
-        });
+        if (target) {
+          await updatePersonaMemoryRow(target.id, {
+            status: "archived",
+            archived_at: new Date().toISOString(),
+            reviewed_at: new Date().toISOString(),
+            relation: "withdraws"
+          });
+          // Keep the user from having a withdrawn rule silently reappear through
+          // the legacy-preference backfill path at their next sign-in.
+          await setLinkedPreferenceStatus(target.source_preference_id, "rejected");
+        }
         continue;
       }
       let status = candidate.status;
