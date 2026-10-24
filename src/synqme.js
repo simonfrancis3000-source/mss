@@ -3228,9 +3228,11 @@ function handleLocalAIWorkerMessage(event) {
   if (data.type === "status") {
     const label = String(data.label || "Loading local AMÏA model");
     const modelId = String(data.modelId || "");
-    const isMobileModel = modelId.includes("SmolLM2-360M-Instruct-ONNX");
-    const isCompactModel = modelId.includes("Qwen2.5-0.5B-Instruct") || isMobileModel || /compact/i.test(label);
-    const modelSize = isMobileModel ? "about 386 MB" : "about 786 MB";
+    const isCompactModel = modelId.includes("SmolLM2-360M-Instruct-ONNX") ||
+      modelId.includes("Qwen2.5-0.5B-Instruct") || /compact/i.test(label);
+    const modelSize = modelId.includes("SmolLM2-360M-Instruct-ONNX")
+      ? "about 386 MB"
+      : "about 786 MB";
     setLocalAIProgress({
       label,
       progress: null,
@@ -3245,8 +3247,8 @@ function handleLocalAIWorkerMessage(event) {
   }
   if (data.type === "progress") {
     const modelId = String(data.modelId || "");
-    const isMobileModel = modelId.includes("SmolLM2-360M-Instruct-ONNX");
-    const isCompactModel = modelId.includes("Qwen2.5-0.5B-Instruct") || isMobileModel;
+    const isSmolModel = modelId.includes("SmolLM2-360M-Instruct-ONNX");
+    const isCompactModel = isSmolModel || modelId.includes("Qwen2.5-0.5B-Instruct");
     const aggregate = data.status === "progress_total" && Number.isFinite(data.progress);
     const perFileProgress = data.status === "progress" && Number.isFinite(data.progress);
     const progress = aggregate || perFileProgress ? data.progress : null;
@@ -3257,8 +3259,8 @@ function handleLocalAIWorkerMessage(event) {
       detail = "Model files are loaded. Preparing the first on-device response…";
     } else if (data.status === "initiate") {
       label = isCompactModel ? "Preparing compact local AMÏA model download" : "Preparing local AMÏA model download";
-      detail = isMobileModel
-        ? "First-time mobile model download is about 386 MB."
+      detail = isSmolModel
+        ? "First-time compact model download is about 386 MB on desktop and mobile."
         : isCompactModel
           ? "First-time compact model download is about 786 MB."
           : "First-time desktop model download is about 1.22 GB.";
