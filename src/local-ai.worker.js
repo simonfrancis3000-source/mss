@@ -2,12 +2,6 @@ import { env, pipeline, ModelRegistry } from "@huggingface/transformers";
 
 const DESKTOP_MODEL_ID = "onnx-community/Qwen2.5-1.5B-Instruct";
 const COMPACT_MODEL_ID = "onnx-community/SmolLM2-360M-Instruct-ONNX";
-const IS_MOBILE_DEVICE = (() => {
-  const nav = self.navigator || {};
-  const ua = String(nav.userAgent || "");
-  const iPadDesktopUA = /Macintosh/i.test(ua) && Number(nav.maxTouchPoints || 0) > 1;
-  return /Android|iPhone|iPad|iPod|Mobile/i.test(ua) || iPadDesktopUA;
-})();
 let forceCpuBackend = true;
 let activeBackend = "";
 let activeModelId = "";
