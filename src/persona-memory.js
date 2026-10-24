@@ -188,23 +188,43 @@ export function preferenceToPersonaMemory(preference, userId) {
   const kind = deriveMemoryKind(statement);
   const id = String(preference.id || makePersonaMemoryKey(statement)).slice(0, 180);
   const confidence = preference.status === "user_confirmed" ? 0.95 : 0.82;
+  // Run legacy records through the same privacy and type validation as newly
+  // extracted memories. Older explicit facets may contain fields unsuitable
+  // for persistent memory, so do not copy them directly into the new table.
+  const safe = cleanPersonaMemoryCandidate({
+    statement,
+    topic,
+    kind,
+    scope_key: deriveMemoryScopeKey(statement, topic, kind),
+    relation: "new",
+    confidence,
+    status: ["user_confirmed", "inferred_pending_confirmation"].includes(preference.status)
+      ? preference.status
+      : "user_stated",
+    conditions: Array.isArray(preference.unresolvedFields) ? preference.unresolvedFields : [],
+    attributes: preference.explicitFacets && typeof preference.explicitFacets === "object"
+      ? preference.explicitFacets
+      : {},
+    search_terms: []
+  });
+  if (!safe) return null;
   return {
     user_id: userId,
     memory_key: "preference-" + id,
     source_preference_id: String(preference.id || "").slice(0, 180) || null,
-    topic,
-    kind,
-    scope_key: deriveMemoryScopeKey(statement, topic, kind),
-    statement,
-    status: ["user_confirmed", "inferred_pending_confirmation"].includes(preference.status) ? preference.status : "user_stated",
-    relation: "new",
-    confidence,
-    conditions: Array.isArray(preference.unresolvedFields) ? preference.unresolvedFields.slice(0, 8) : [],
-    attributes: preference.explicitFacets && typeof preference.explicitFacets === "object" ? preference.explicitFacets : {},
-    search_terms: [],
-    search_keys: buildPersonaMemorySearchKeys(statement, [], topic),
+    topic: safe.topic,
+    kind: safe.kind,
+    scope_key: safe.scope_key,
+    statement: safe.statement,
+    status: safe.status,
+    relation: safe.relation,
+    confidence: safe.confidence,
+    conditions: safe.conditions,
+    attributes: safe.attributes,
+    search_terms: safe.search_terms,
+    search_keys: buildPersonaMemorySearchKeys(safe.statement, safe.search_terms, safe.topic),
     // Keep a concise memory statement here, not a duplicate of the full raw chat turn.
-    source_message: statement,
+    source_message: safe.statement,
     source_timestamp: preference.recordedAt || new Date().toISOString(),
     source_conversation_key: "main",
     archived_at: null
