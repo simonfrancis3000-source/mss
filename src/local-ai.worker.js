@@ -103,7 +103,8 @@ async function loadModel() {
     try { await self.navigator.storage?.persist?.(); } catch {}
 
     // Keep one small quantised model across devices to avoid a second download.
-    await removeCachedModelFiles(DESKTOP_MODEL_ID);
+    // Do not delete any model cache during routine startup. Keep previously
+    // downloaded files so a new worker can reuse them after a timeout/reload.
     const modelId = COMPACT_MODEL_ID;
     const dtype = "q4";
     activeModelId = modelId;
@@ -251,13 +252,15 @@ self.addEventListener("message", async ({ data }) => {
   generationBusy = true;
   try {
     const model = await loadModel();
-    const messages = Array.isArray(data.messages) ? data.messages.filter((item) => item && (item.role === "assistant" || item.role === "user") && typeof item.content === "string").slice(-8) : [];
-    const preferences = Array.isArray(data.preferences) ? data.preferences.slice(-10) : [];
+    const historyLimit = IS_MOBILE_DEVICE ? 4 : 8;
+    const replyTokenLimit = IS_MOBILE_DEVICE ? 48 : 96;
+    const messages = Array.isArray(data.messages) ? data.messages.filter((item) => item && (item.role === "assistant" || item.role === "user") && typeof item.content === "string").slice(-historyLimit) : [];
+    const preferences = Array.isArray(data.preferences) ? data.preferences.slice(IS_MOBILE_DEVICE ? -5 : -10) : [];
     postStatus(activeBackend === "webgpu"
       ? "Freya is generating your reply on GPU"
       : "Freya is generating your reply on CPU");
     const result = await model([{ role: "system", content: makeSystemPrompt({ ...data, preferences }) }, ...messages], {
-      max_new_tokens: 96,
+      max_new_tokens: replyTokenLimit,
       do_sample: false,
       repetition_penalty: 1.08,
     });
