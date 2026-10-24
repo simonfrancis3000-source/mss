@@ -1457,10 +1457,16 @@ function formatMessageTimestamp(value) {
   if (!value) return "Date and time not recorded";
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return "Date and time not recorded";
-  return new Intl.DateTimeFormat(undefined, {
-    day: "numeric", month: "short", year: "numeric",
-    hour: "2-digit", minute: "2-digit"
-  }).format(date);
+  const parts = new Intl.DateTimeFormat("en-US", {
+    month: "2-digit",
+    day: "2-digit",
+    year: "2-digit",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true
+  }).formatToParts(date);
+  const part = (type) => parts.find((item) => item.type === type)?.value || "";
+  return `${part("month")}/${part("day")}/${part("year")} ${part("hour")}:${part("minute")}${part("dayPeriod").toUpperCase()}`;
 }
 
 function appendMessage(role, content, timestamp = null) {
