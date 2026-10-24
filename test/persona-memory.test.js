@@ -126,6 +126,50 @@ test("only preference-like turns trigger extraction, rather than ordinary questi
   assert.equal(shouldExtractPersonaMemory("A saved preference was just added.", true), true);
 });
 
+test("semantic similarity improves ranking without overriding active status filters", () => {
+  const memories = [
+    {
+      id: "lexical",
+      topic: "kitchen",
+      statement: "I like the kitchen cleaned after breakfast.",
+      search_keys: buildPersonaMemorySearchKeys("I like the kitchen cleaned after breakfast.", [], "kitchen"),
+      status: "user_stated",
+      confidence: 0.8
+    },
+    {
+      id: "semantic",
+      topic: "surface_cleaning",
+      statement: "Use a gentle, non-abrasive method for delicate finishes.",
+      search_keys: buildPersonaMemorySearchKeys("Use a gentle, non-abrasive method for delicate finishes.", [], "surface_cleaning"),
+      status: "user_confirmed",
+      confidence: 0.98,
+      vector_score: 0.97
+    },
+    {
+      id: "archived-semantic",
+      topic: "surface_cleaning",
+      statement: "Always use a rough scrubber.",
+      search_keys: buildPersonaMemorySearchKeys("Always use a rough scrubber.", [], "surface_cleaning"),
+      status: "archived",
+      confidence: 0.98,
+      vector_score: 0.99
+    }
+  ];
+  const ranked = rankPersonaMemories("How should a delicate countertop finish be cleaned?", memories, { limit: 5 });
+  assert.equal(ranked[0].id, "semantic");
+  assert.ok(!ranked.some((memory) => memory.id === "archived-semantic"));
+});
+
+test("server exposes Groq embedding and structured-memory routes with a fallback path", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const server = await readFile(new URL("../server/index.js", import.meta.url), "utf8");
+  assert.match(server, /url\.pathname === "\/api\/memory\/embed"/);
+  assert.match(server, /api\.groq\.com\/openai\/v1\/embeddings/);
+  assert.match(server, /nomic-embed-text-v1_5/);
+  assert.match(server, /url\.pathname === "\/api\/memory\/extract"/);
+  assert.match(server, /match_synqme_persona_memories/);
+});
+
 test("task playbooks are selected separately from personal memories", () => {
   const kitchenSkills = selectHouseholdSkills("I want the kitchen worktop wiped after breakfast.");
   assert.ok(kitchenSkills.some((skill) => skill.id === "kitchen-reset"));
