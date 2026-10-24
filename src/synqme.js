@@ -2384,12 +2384,12 @@ async function playKokoroReply(reply, voiceId, requestId, onPlaybackStarted = ()
       resolve(ok);
     };
     player.onplay = () => {
-      onPlaybackStarted();
       if (requestId !== kokoroSpeechGeneration || !voiceModeActive) {
         try { player.pause(); } catch {}
         finish(true);
         return;
       }
+      onPlaybackStarted();
       assistantIsSpeaking = true;
       const companion = (state.profile.robotName || "Your SecondSelf").trim();
       updateVoiceExperience("speaking", companion + " is speaking.");
