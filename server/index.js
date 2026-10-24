@@ -976,7 +976,7 @@ const app = http.createServer(async (request, response) => {
         temperature: 0.72,
         reasoning_effort: REASONING_EFFORT,
         include_reasoning: false,
-        max_completion_tokens: 3000,
+        max_completion_tokens: 1200,
         stream: false
       }),
       signal: AbortSignal.timeout(30_000)
