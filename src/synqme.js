@@ -2210,6 +2210,24 @@ function updateVoiceExperience(mode, message) {
   if (elements.voiceMuteControlLabel) elements.voiceMuteControlLabel.textContent = voiceInputMuted ? "Unmute" : "Mute";
 }
 
+function primeBrowserSpeechForSession() {
+  if (!speechSynthesisAvailable) return;
+  try {
+    const synth = window.speechSynthesis;
+    synth.cancel();
+    synth.resume();
+    // A silent utterance inside the user's Voice-button gesture helps unlock
+    // browser speech on stricter mobile browsers before the first AI reply.
+    const primer = new SpeechSynthesisUtterance(" ");
+    primer.volume = 0;
+    primer.rate = 10;
+    primer.onend = () => { try { synth.resume(); } catch {} };
+    synth.speak(primer);
+  } catch (error) {
+    console.info("Browser speech could not be primed; the retry control remains available.", error);
+  }
+}
+
 function openVoiceExperience() {
   if (!elements.voiceExperience) return;
   elements.voiceExperience.hidden = false;
@@ -2224,6 +2242,7 @@ function openVoiceExperience() {
   if (voiceModeActive) return;
   voiceModeActive = true;
   voiceInputMuted = false;
+  primeBrowserSpeechForSession();
   if (kokoroTTSInstance) {
     renderVoiceModelProgress({ visible: false });
   } else if (kokoroVoiceForProfile()) {
@@ -3094,11 +3113,11 @@ async function speakAssistantReply(reply) {
       if (startTimeoutId !== null) window.clearTimeout(startTimeoutId);
 
       if (result.kind === "timeout") {
-        // Invalidate any in-flight Kokoro work so it cannot start audio after
-        // the browser fallback has begun.
+        // Invalidate in-flight Kokoro work so it cannot start audio after the
+        // browser fallback. Do not report a spoken reply until audio actually starts.
         stopKokoroAudio();
-        if (elements.voiceStatus) elements.voiceStatus.textContent = "Voice on · using browser speech while Kokoro loads";
-        updateVoiceExperience("thinking", "Using your device’s built-in voice…");
+        if (elements.voiceStatus) elements.voiceStatus.textContent = "Kokoro took too long to start · switching to device speech";
+        updateVoiceExperience("thinking", "Starting your device’s built-in voice…");
       } else if (result.played || !voiceModeActive || requestId !== kokoroSpeechGeneration) {
         return;
       }
