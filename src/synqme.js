@@ -3219,7 +3219,7 @@ async function requestAIReply(repairMode = false) {
     if (!response.ok) {
       state.apiConfigured = true;
       let errorMessage = String(data.error || ("AI endpoint returned " + response.status));
-      // Older backend deployments accidentally labelled Groq 429 errors as Gemini.
+      // Older backend deployments may mislabel Groq 429 errors.
       if (responseProvider === "groq" && /gemini/i.test(errorMessage)) {
         errorMessage = "Groq has reached a usage limit or rate limit. Check your Groq usage and limits, then try again.";
       }
