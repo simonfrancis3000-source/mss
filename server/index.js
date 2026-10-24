@@ -358,7 +358,7 @@ const app = http.createServer(async (request, response) => {
       provider: PROVIDER,
       configured: Boolean(API_KEY),
       model: MODEL,
-      diagnosticsVersion: "gemini-upstream-errors-v1"
+      diagnosticsVersion: "groq-whisper-transcription-v2"
     }, headers || {});
   }
 
