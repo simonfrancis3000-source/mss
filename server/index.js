@@ -259,11 +259,17 @@ function extractPdfReadableText(pdfBuffer) {
 }
 
 async function searchApplianceManual(messages) {
-  const recent = messages.slice(-10).map((item) => item.content).join("\n");
-  const latest = messages[messages.length - 1]?.content || "";
-  if (!APPLIANCE_TERMS.test(recent) || !applianceModelMentioned(latest, recent)) return null;
+  const recentMessages = messages.slice(-10);
+  const recent = recentMessages.map((item) => item.content).join("\n");
+  if (!APPLIANCE_TERMS.test(recent)) return null;
+  // Reuse the model identifier from earlier in this conversation on follow-up
+  // questions, so the manual remains available for the rest of the discussion.
+  const modelMessage = [...recentMessages].reverse().find((item) =>
+    item.role === "user" && applianceModelMentioned(item.content, recent)
+  );
+  if (!modelMessage) return null;
 
-  const queryText = (latest + " " + recent.split("\n").slice(-4).join(" ") + " official manufacturer user manual instructions").replace(/\s+/g, " ").trim().slice(0, 500);
+  const queryText = (modelMessage.content + " official manufacturer user manual instructions").replace(/\s+/g, " ").trim().slice(0, 500);
   const cacheKey = queryText.toLowerCase();
   const cached = manualLookupCache.get(cacheKey);
   if (cached && Date.now() - cached.at < 30 * 60 * 1000) return cached.value;
