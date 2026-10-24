@@ -1966,7 +1966,7 @@ function updateVoiceModeButton() {
     if (label) label.textContent = voiceModeActive ? "Stop" : "Voice";
   }
   if (elements.voiceStatus && !voiceModeActive && !elements.voiceStatus.dataset.error) {
-    elements.voiceStatus.textContent = "Voice off · browser speech services";
+    elements.voiceStatus.textContent = "Voice off · Kokoro and browser voices";
   }
 }
 
@@ -2103,7 +2103,7 @@ async function transcribeVoiceRecording(blob) {
   }
   voiceTranscribing = true;
   if (elements.conversationStatus) elements.conversationStatus.textContent = "Transcribing your speech";
-  if (elements.voiceStatus) elements.voiceStatus.textContent = "Transcribing · Google Gemini";
+  if (elements.voiceStatus) elements.voiceStatus.textContent = "Transcribing your speech…";
   try {
     const audioBase64 = await blobToBase64(blob);
     if (!voiceModeActive) return;
