@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { buildHomePersonaSystemPrompt } from "../src/home-persona-reasoning.js";
 
 test("builds a contextual, proactive home-robot reasoning prompt", () => {
@@ -75,4 +76,14 @@ test("limits recently surfaced questions to six and avoids non-conversation mess
   assert.match(prompt, /Should question 10 be asked\?/);
   assert.doesNotMatch(prompt, /Should question 1 be asked\?/);
   assert.doesNotMatch(prompt, /Do not include this system text\?/);
+});
+
+test("server injects the reasoning prompt and defaults to the larger Groq reasoning model", async () => {
+  const server = await readFile(new URL("../server/index.js", import.meta.url), "utf8");
+  assert.match(server, /buildHomePersonaSystemPrompt/);
+  assert.match(server, /combinedSystemPrompt/);
+  assert.match(server, /openai\\/gpt-oss-120b/);
+  assert.match(server, /GROQ_REASONING_EFFORT/);
+  assert.match(server, /reasoning_effort: REASONING_EFFORT/);
+  assert.match(server, /api\\.groq\\.com\\/openai\\/v1\\/chat\\/completions/);
 });
