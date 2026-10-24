@@ -23,7 +23,7 @@ const STOP_WORDS = new Set([
   "where","which","who","why","will","with","would","you","your","yours"
 ]);
 const SENSITIVE_MEMORY_PATTERN = /\b(?:password|passcode|pin code|access code|door code|alarm code|api key|secret key|social security|passport number|credit card|bank account|political party|religious affiliation|sexual orientation|medical diagnosis|immigration status|exact home address|home address|street address|my address|email address|phone number|phone is|ssn)\b/i;
-const SENSITIVE_ATTRIBUTE_PATTERN = /password|passcode|pin|access|alarm|credential|secret|token|address|email|phone|bank|credit|medical|health|politic|religion|sexual|immigration|passport|government.?id|ssn/i;
+const SENSITIVE_ATTRIBUTE_PATTERN = /password|passcode|pin|access|alarm|credential|secret|token|address|email|phone|bank|credit|medical|health|politic|religion|sexual|immigration|passport|government.?id|ssn|door.?code|access.?code|\bcode\b/i;
 
 export function normaliseMemoryText(value) {
   return String(value || "").toLocaleLowerCase()
@@ -164,7 +164,7 @@ export function rankPersonaMemories(query, memories, { limit = 8 } = {}) {
       : buildPersonaMemorySearchKeys(memory.statement, memory.search_terms, memory.topic));
     let overlaps = 0;
     for (const key of queryKeys) if (keys.has(key)) overlaps++;
-    const topicHit = queryTopics.includes(memory.topic) ? 1 : 0;
+    const topicHit = queryTopics.has(memory.topic) ? 1 : 0;
     if (!overlaps && !topicHit) return null;
     const statusWeight = memory.status === "conflicting" ? 1.2 : memory.status === "user_confirmed" ? 1.4 : 1;
     const confidence = Number.isFinite(Number(memory.confidence)) ? Number(memory.confidence) : 0.6;
