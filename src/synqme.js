@@ -2,7 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const STORAGE_KEY = "synqme-demo-v1";
 const LOCAL_MODEL_ID = "onnx-community/Qwen3-4B-ONNX";
-const LOCAL_MODEL_LABEL = "Qwen3-4B · on-device";
+const LOCAL_MODEL_LABEL = "on-device";
 const ACCOUNT_DRAFT_KEY = "synqme-pending-account-migration-v1";
 const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
@@ -2990,15 +2990,12 @@ function rejectPendingLocalAIRequests(error) {
 function handleLocalAIWorkerMessage(event) {
   const data = event.data || {};
   if (data.type === "progress") {
-    const fileName = String(data.file || "").split("/").pop();
     const percent = Number.isFinite(data.progress) ? data.progress : null;
-    const status = data.status || "";
-    const label = status === "progress"
-      ? "Downloading local model · " + (fileName || "model asset")
-      : status === "done"
-        ? "Model asset saved · " + (fileName || "asset")
-        : "Preparing local model · " + (fileName || "model assets");
-    setLocalAIProgress({ label, progress: percent, indeterminate: percent === null });
+    setLocalAIProgress({
+      label: "Downloading local model",
+      progress: percent,
+      indeterminate: percent === null
+    });
     return;
   }
   if (data.type === "ready") {
@@ -3009,7 +3006,7 @@ function handleLocalAIWorkerMessage(event) {
     state.apiConnected = true;
     state.apiError = "";
     state.apiErrorDetail = "";
-    setLocalAIProgress({ label: "Local AI ready · model cached in this browser", progress: 100 });
+    setLocalAIProgress({ label: "Local AI ready", progress: 100 });
     if (localAILoadResolve) localAILoadResolve();
     localAILoadResolve = null;
     localAILoadReject = null;
@@ -3066,7 +3063,7 @@ function ensureLocalAIReady() {
   state.apiError = "";
   state.apiErrorDetail = "";
   try { Promise.resolve(navigator.storage?.persist?.()).catch(() => {}); } catch {}
-  setLocalAIProgress({ label: "Preparing local AI for this browser…", progress: null, indeterminate: true });
+  setLocalAIProgress({ label: "Downloading local model", progress: null, indeterminate: true });
   localAILoadPromise = new Promise((resolve, reject) => {
     localAILoadResolve = resolve;
     localAILoadReject = reject;
@@ -3117,7 +3114,7 @@ async function requestAIReply(repairMode = false) {
   state.apiErrorDetail = "";
   try {
     await ensureLocalAIReady();
-    if (elements.conversationStatus) elements.conversationStatus.textContent = "Qwen3-4B is generating a reply on this device…";
+    if (elements.conversationStatus) elements.conversationStatus.textContent = "Your companion is thinking…";
     const messages = state.messages.slice(-18).map((message) => ({ role: message.role, content: message.content }));
     const preferences = state.preferences.map((preference) => {
       const extracted = preferenceExtraction(preference);
