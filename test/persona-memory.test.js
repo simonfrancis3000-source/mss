@@ -167,7 +167,9 @@ test("server exposes Groq embedding and structured-memory routes with a fallback
   assert.match(server, /api\.groq\.com\/openai\/v1\/embeddings/);
   assert.match(server, /nomic-embed-text-v1_5/);
   assert.match(server, /url\.pathname === "\/api\/memory\/extract"/);
-  assert.match(server, /match_synqme_persona_memories/);
+  const frontend = await readFile(new URL("../src/synqme.js", import.meta.url), "utf8");
+  assert.match(frontend, /match_synqme_persona_memories/);
+  assert.match(frontend, /textSearch\("search_document"/);
 });
 
 test("task playbooks are selected separately from personal memories", () => {
