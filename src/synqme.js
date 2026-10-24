@@ -333,9 +333,9 @@ function loadState() {
       functions: Array.isArray(saved.functions) ? saved.functions.filter((id) => ACTIVITIES.some((a) => a.id === id)) : [],
       pendingClarification: saved.pendingClarification && typeof saved.pendingClarification === "object" ? saved.pendingClarification : null,
       apiConnected: false,
-      apiProvider: "",
-      apiModel: "",
-      apiConfigured: null,
+      apiProvider: "local",
+      apiModel: LOCAL_MODEL_LABEL,
+      apiConfigured: true,
       apiError: "",
       apiErrorDetail: ""
     };
