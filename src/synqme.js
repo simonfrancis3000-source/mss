@@ -315,6 +315,21 @@ let recognitionTranscript = "";
 let voiceRestartTimer = null;
 let assistantIsSpeaking = false;
 let currentSpeechUtterance = null;
+let kokoroLoadPromise = null;
+let kokoroAudioElement = null;
+let kokoroAudioUrl = "";
+let kokoroSpeechGeneration = 0;
+const SPEECH_LOCALES = { en: "en-US", es: "es-ES", fr: "fr-FR", it: "it-IT", pt: "pt-BR", hi: "hi-IN", ja: "ja-JP", zh: "zh-CN" };
+const KOKORO_VOICE_MAP = {
+  en: { female: "af_heart", male: "am_michael" },
+  es: { female: "ef_dora", male: "em_alex" },
+  fr: { female: "ff_siwis", male: "" },
+  it: { female: "if_sara", male: "im_nicola" },
+  pt: { female: "pf_dora", male: "pm_alex" },
+  hi: { female: "hf_alpha", male: "hm_omega" },
+  ja: { female: "jf_alpha", male: "jm_kumo" },
+  zh: { female: "zf_xiaobei", male: "zm_yunjian" }
+};
 let voiceMediaStream = null;
 let voiceAudioContext = null;
 let voiceAnalyser = null;
@@ -1958,6 +1973,7 @@ function updateVoiceModeButton() {
 function stopVoiceConversation(statusMessage = "Voice conversation stopped.") {
   voiceModeActive = false;
   voiceInputMuted = false;
+  stopKokoroAudio();
   updateVoiceExperience("idle", statusMessage);
   if (voiceRestartTimer) window.clearTimeout(voiceRestartTimer);
   voiceRestartTimer = null;
@@ -2272,10 +2288,97 @@ async function startVoiceListening() {
   }
 }
 
-function speakAssistantReply(reply) {
-  if (!voiceModeActive) return;
+function kokoroVoiceForProfile() {
+  const language = state.profile.preferredLanguage || "en";
+  const gender = state.profile.robotVoice === "male" ? "male" : "female";
+  return KOKORO_VOICE_MAP[language]?.[gender] || "";
+}
+
+async function loadKokoroTTS() {
+  if (!kokoroLoadPromise) {
+    kokoroLoadPromise = (async () => {
+      const { KokoroTTS } = await import("kokoro-js");
+      return KokoroTTS.from_pretrained("onnx-community/Kokoro-82M-v1.0-ONNX", {
+        dtype: "q8",
+        device: "wasm"
+      });
+    })().catch((error) => {
+      kokoroLoadPromise = null;
+      throw error;
+    });
+  }
+  return kokoroLoadPromise;
+}
+
+function clearKokoroAudio(player = kokoroAudioElement, url = kokoroAudioUrl) {
+  if (player && player === kokoroAudioElement) kokoroAudioElement = null;
+  if (url) {
+    try { URL.revokeObjectURL(url); } catch {}
+    if (url === kokoroAudioUrl) kokoroAudioUrl = "";
+  }
+}
+
+function stopKokoroAudio() {
+  kokoroSpeechGeneration += 1;
+  if (kokoroAudioElement) {
+    const player = kokoroAudioElement;
+    kokoroAudioElement = null;
+    try { player.pause(); player.removeAttribute("src"); player.load(); } catch {}
+  }
+  if (kokoroAudioUrl) {
+    try { URL.revokeObjectURL(kokoroAudioUrl); } catch {}
+    kokoroAudioUrl = "";
+  }
+  assistantIsSpeaking = false;
+}
+
+async function playKokoroReply(reply, voiceId, requestId) {
+  const tts = await loadKokoroTTS();
+  if (!voiceModeActive || requestId !== kokoroSpeechGeneration) return true;
+  const generated = await tts.generate(reply, { voice: voiceId });
+  if (!voiceModeActive || requestId !== kokoroSpeechGeneration) return true;
+  if (!generated || typeof generated.toBlob !== "function") throw new Error("Kokoro returned no playable audio.");
+  const blob = generated.toBlob();
+  const url = URL.createObjectURL(blob);
+  const player = new Audio(url);
+  player.preload = "auto";
+  kokoroAudioElement = player;
+  kokoroAudioUrl = url;
+  return await new Promise((resolve) => {
+    let settled = false;
+    const finish = (ok) => {
+      if (settled) return;
+      settled = true;
+      clearKokoroAudio(player, url);
+      if (!ok) assistantIsSpeaking = false;
+      resolve(ok);
+    };
+    player.onplay = () => {
+      if (requestId !== kokoroSpeechGeneration || !voiceModeActive) {
+        try { player.pause(); } catch {}
+        finish(true);
+        return;
+      }
+      assistantIsSpeaking = true;
+      const companion = (state.profile.robotName || "Your SecondSelf").trim();
+      updateVoiceExperience("speaking", companion + " is speaking.");
+      if (elements.conversationStatus) elements.conversationStatus.textContent = companion + " is speaking";
+      if (elements.voiceStatus) elements.voiceStatus.textContent = "Voice on · Kokoro on-device speech";
+    };
+    player.onended = () => {
+      finish(true);
+      assistantIsSpeaking = false;
+      if (voiceModeActive && !voiceInputMuted) updateVoiceExperience("listening", "Listening. Your turn to speak.");
+      if (voiceModeActive) scheduleVoiceListening(250);
+    };
+    player.onerror = () => finish(false);
+    player.play().catch(() => finish(false));
+  });
+}
+
+function speakAssistantReplyWithBrowser(reply) {
   if (!speechSynthesisAvailable) {
-    if (elements.voiceStatus) elements.voiceStatus.textContent = "This browser can hear you but cannot speak replies.";
+    if (elements.voiceStatus) elements.voiceStatus.textContent = "Speech output is unavailable in this browser.";
     updateVoiceExperience("listening", "Your reply is visible in chat. Speak again when ready.");
     scheduleVoiceListening(500);
     return;
@@ -2284,26 +2387,30 @@ function speakAssistantReply(reply) {
   window.speechSynthesis.cancel();
   currentSpeechUtterance = null;
   assistantIsSpeaking = false;
+  const language = state.profile.preferredLanguage || "en";
+  const locale = SPEECH_LOCALES[language] || "en-US";
   const utterance = new SpeechSynthesisUtterance(String(reply || ""));
-  utterance.lang = "en-GB";
+  utterance.lang = locale;
   utterance.rate = 1;
-  utterance.pitch = state.profile.robotVoice === "male" ? 0.92 : 1.04;
+  utterance.pitch = state.profile.robotVoice === "male" ? 0.96 : 1.03;
   const voices = window.speechSynthesis.getVoices();
-  const englishVoices = voices.filter((voice) => /^en([_-]|$)/i.test(voice.lang));
+  const languageCode = locale.split("-")[0].toLowerCase();
+  const localeVoices = voices.filter((voice) => String(voice.lang || "").toLowerCase().startsWith(languageCode));
   const namePattern = state.profile.robotVoice === "male"
-    ? /(male|daniel|fred|alex|george|oliver|aaron|david)/i
-    : /(female|samantha|victoria|serena|karen|moira|fiona|libby|susan|kate|ava)/i;
-  const preferredVoice = englishVoices.find((voice) => namePattern.test(voice.name));
-  const selectedVoice = preferredVoice || englishVoices.find((voice) => voice.default) || englishVoices[0] || voices[0];
+    ? /(male|daniel|fred|alex|george|oliver|aaron|david|michael|liam|jorge|thomas)/i
+    : /(female|samantha|victoria|serena|karen|moira|fiona|libby|susan|kate|ava|zira|sara|monica)/i;
+  const preferredVoice = localeVoices.find((voice) => namePattern.test(voice.name));
+  const selectedVoice = preferredVoice || localeVoices.find((voice) => voice.default) || localeVoices[0] || voices.find((voice) => voice.default) || voices[0];
   if (selectedVoice) utterance.voice = selectedVoice;
 
   currentSpeechUtterance = utterance;
   assistantIsSpeaking = true;
   utterance.onstart = () => {
     if (currentSpeechUtterance !== utterance) return;
-    updateVoiceExperience("speaking", (state.profile.robotName || "Your SecondSelf") + " is speaking.");
-    if (elements.conversationStatus) elements.conversationStatus.textContent = (state.profile.robotName || "Your SecondSelf") + " is speaking";
-    if (elements.voiceStatus) elements.voiceStatus.textContent = "Voice on · reply spoken aloud";
+    const companion = (state.profile.robotName || "Your SecondSelf").trim();
+    updateVoiceExperience("speaking", companion + " is speaking.");
+    if (elements.conversationStatus) elements.conversationStatus.textContent = companion + " is speaking";
+    if (elements.voiceStatus) elements.voiceStatus.textContent = "Voice on · browser speech";
   };
   utterance.onend = () => {
     if (currentSpeechUtterance !== utterance) return;
@@ -2322,6 +2429,26 @@ function speakAssistantReply(reply) {
     }
   };
   window.speechSynthesis.speak(utterance);
+}
+
+async function speakAssistantReply(reply) {
+  if (!voiceModeActive) return;
+  const voiceId = kokoroVoiceForProfile();
+  if (voiceId) {
+    if (speechSynthesisAvailable) window.speechSynthesis.cancel();
+    currentSpeechUtterance = null;
+    const requestId = ++kokoroSpeechGeneration;
+    if (elements.voiceStatus) elements.voiceStatus.textContent = "Preparing Kokoro voice · first use downloads the model";
+    updateVoiceExperience("thinking", "Preparing voice on this device…");
+    try {
+      const played = await playKokoroReply(String(reply || ""), voiceId, requestId);
+      if (played || !voiceModeActive || requestId !== kokoroSpeechGeneration) return;
+    } catch (error) {
+      console.info("Kokoro speech unavailable; using the browser voice instead.", error);
+    }
+  }
+  if (!voiceModeActive) return;
+  speakAssistantReplyWithBrowser(reply);
 }
 
 elements.voiceModeButton?.addEventListener("click", () => {
