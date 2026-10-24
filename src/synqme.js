@@ -2216,6 +2216,7 @@ function openVoiceExperience() {
   document.body.classList.add("voice-experience-open");
   voiceInputMuted = false;
   updateVoiceCompanionLabels();
+  if (elements.voiceRetrySpeechButton) elements.voiceRetrySpeechButton.hidden = true;
   if (!SpeechRecognitionConstructor && !voiceRecorderAvailable()) {
     updateVoiceExperience("idle", "Voice input is unavailable in this browser. Return to chat or try Chrome.");
     return;
@@ -2251,6 +2252,7 @@ function openVoiceExperience() {
 
 function closeVoiceExperience(statusMessage) {
   stopVoiceConversation(statusMessage || "Voice conversation stopped.");
+  if (elements.voiceRetrySpeechButton) elements.voiceRetrySpeechButton.hidden = true;
   voiceInputMuted = false;
   if (elements.voiceExperience) elements.voiceExperience.hidden = true;
   document.body.classList.remove("voice-experience-open");
