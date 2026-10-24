@@ -581,7 +581,7 @@ function renderPersonaMemoryLibrary() {
     summary.textContent = "Evidence and conditions";
     detail.append(summary);
     const source = document.createElement("p");
-    source.textContent = "Saved wording: " + String(memory.source_message || memory.statement).slice(0, 420);
+    source.textContent = "Extracted memory summary: " + String(memory.source_message || memory.statement).slice(0, 420);
     detail.append(source);
     if (Array.isArray(memory.conditions) && memory.conditions.length) {
       const heading = document.createElement("p");
@@ -669,7 +669,7 @@ async function queryPersonaMemoryRecords() {
 
 async function backfillPersonaMemoriesFromPreferences() {
   if (!supabase || !cloudUserId || personaMemoryTableUnavailable) return false;
-  const rows = state.preferences
+  const rows = activeLegacyPreferences()
     .map((preference) => preferenceToPersonaMemory(preference, cloudUserId))
     .filter(Boolean);
   if (!rows.length) return true;
@@ -2514,7 +2514,7 @@ function savePreference(message) {
     preference.unresolvedFields = extracted.unresolvedFields;
     preference.sourceMessage = message;
     preference.clarifications = [];
-    const exists = state.preferences.some((item) => (item.normalised || item.text.toLowerCase()) === preference.normalised);
+    const exists = activeLegacyPreferences().some((item) => (item.normalised || item.text.toLowerCase()) === preference.normalised);
     if (exists) continue;
     state.preferences.unshift(preference);
   }
@@ -2740,8 +2740,15 @@ function addElement(parent, className, text) {
   return element;
 }
 
+function activeLegacyPreferences() {
+  return state.preferences.filter((item) =>
+    !["superseded", "rejected"].includes(String(item.status || item.preference_status || "").toLowerCase())
+  );
+}
+
 function renderPreferences() {
-  const count = state.preferences.length;
+  const activePreferences = activeLegacyPreferences();
+  const count = activePreferences.length;
   elements.memoryCount.textContent = count + (count === 1 ? " MEMORY" : " MEMORIES");
   elements.preferenceCount.textContent = String(count);
   elements.personaProgress.style.width = Math.min(100, count * 12.5) + "%";
@@ -2775,7 +2782,7 @@ function renderPreferences() {
     empty.append(icon, copy);
     elements.preferenceList.append(empty);
   } else {
-    state.preferences.forEach((preference, index) => {
+    activePreferences.forEach((preference, index) => {
       const item = document.createElement("div");
       item.className = "preference-item";
       addElement(item, "preference-number", String(index + 1).padStart(2, "0"));
@@ -2797,7 +2804,7 @@ function renderPreferences() {
       p.textContent = "As you chat with ELO, your preferences will appear here.";
       elements.settingsPreferenceList.append(p);
     } else {
-      state.preferences.slice(0, 8).forEach((preference) => {
+      activePreferences.slice(0, 8).forEach((preference) => {
         const item = document.createElement("div");
         item.className = "settings-preference";
         item.textContent = preference.text;
@@ -2818,8 +2825,9 @@ function milestoneUnlocked(milestone) {
 }
 
 function renderPexiReadiness() {
-  const count = state.preferences.length;
-  const unresolved = state.preferences.reduce((sum, item) => {
+  const activePreferences = activeLegacyPreferences();
+  const count = activePreferences.length;
+  const unresolved = activePreferences.reduce((sum, item) => {
     return sum + preferenceExtraction(item).unresolvedFields.length;
   }, 0);
   if (elements.pexiReadinessStatus) {
@@ -4016,7 +4024,7 @@ async function requestAIReply(repairMode = false) {
   if (!repairMode) lastAIReplyUsedFallback = false;
   state.apiErrorDetail = "";
   try {
-    const preferences = state.preferences.map((preference) => {
+    const preferences = activeLegacyPreferences().map((preference) => {
       const extracted = preferenceExtraction(preference);
       return {
         category: preference.category || classifyPreference(preference.text),
