@@ -1,4 +1,9 @@
 import { createClient } from "@supabase/supabase-js";
+import {
+  buildHomeMemoryIndexRows,
+  extractHomeMemoryKeys,
+  rankHomeMemoryCandidates
+} from "./home-memory-index.js";
 
 const STORAGE_KEY = "synqme-demo-v1";
 const ACCOUNT_DRAFT_KEY = "synqme-pending-account-migration-v1";
@@ -413,6 +418,98 @@ let cloudConversationChannel = null;
 let cloudConversationRefreshTimer = null;
 let cloudConversationRefreshTimeout = null;
 let cloudConversationRefreshInFlight = false;
+let homeMemoryIndexUnavailable = false;
+let homeMemoryIndexBackfilledUserId = null;
+let homeMemoryIndexWarningShown = false;
+
+function isMissingHomeMemoryIndexError(error) {
+  const message = String(error?.message || error?.details || error?.code || "");
+  return /PGRST205|schema cache|does not exist|could not find the table|permission denied|row-level security|not allowed/i.test(message);
+}
+
+async function syncHomeMemoryIndex(messages, { backfill = false } = {}) {
+  if (!supabase || !cloudUserId || homeMemoryIndexUnavailable) return false;
+  const userId = cloudUserId;
+  const allRows = buildHomeMemoryIndexRows(messages, userId);
+  if (!allRows.length) return true;
+
+  try {
+    let rowsToWrite = allRows.slice(-2);
+    const shouldBackfill = backfill && homeMemoryIndexBackfilledUserId !== userId;
+    if (shouldBackfill) {
+      const existingKeys = new Set();
+      for (let offset = 0; ; offset += 1000) {
+        const { data, error } = await supabase
+          .from("synqme_memory_index")
+          .select("source_key")
+          .eq("user_id", userId)
+          .range(offset, offset + 999);
+        if (error) throw error;
+        for (const row of data || []) {
+          if (typeof row.source_key === "string") existingKeys.add(row.source_key);
+        }
+        if (!data || data.length < 1000) break;
+      }
+      rowsToWrite = allRows.filter((row) => !existingKeys.has(row.source_key));
+    }
+
+    for (let offset = 0; offset < rowsToWrite.length; offset += 100) {
+      const { error } = await supabase
+        .from("synqme_memory_index")
+        .upsert(rowsToWrite.slice(offset, offset + 100), { onConflict: "user_id,source_key" });
+      if (error) throw error;
+    }
+    if (shouldBackfill) homeMemoryIndexBackfilledUserId = userId;
+    return true;
+  } catch (error) {
+    if (isMissingHomeMemoryIndexError(error)) homeMemoryIndexUnavailable = true;
+    if (!homeMemoryIndexWarningShown) {
+      console.info("SYNQ.ME searchable memory index is unavailable; local transcript search remains active.", error);
+      homeMemoryIndexWarningShown = true;
+    }
+    return false;
+  }
+}
+
+async function getHomeMemoryReferences(query) {
+  const historicalMessages = state.messages.slice(0, -1);
+  const localMatches = rankHomeMemoryCandidates(query, historicalMessages, { limit: 6 });
+  if (!supabase || !cloudUserId || homeMemoryIndexUnavailable) return localMatches;
+  const searchKeys = extractHomeMemoryKeys(query);
+  if (!searchKeys.length) return localMatches;
+
+  try {
+    let request = supabase
+      .from("synqme_memory_index")
+      .select("role,content,message_timestamp,topics,search_keys")
+      .eq("user_id", cloudUserId)
+      .overlaps("search_keys", searchKeys)
+      .order("message_timestamp", { ascending: false, nullsFirst: false })
+      .limit(60);
+    if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
+      request = request.abortSignal(AbortSignal.timeout(1200));
+    }
+    const { data, error } = await request;
+    if (error) throw error;
+    if (!Array.isArray(data) || !data.length) return localMatches;
+    homeMemoryIndexUnavailable = false;
+    const retrieved = rankHomeMemoryCandidates(query, data.map((row) => ({
+      role: row.role,
+      content: row.content,
+      timestamp: row.message_timestamp,
+      topics: row.topics,
+      search_keys: row.search_keys
+    })), { limit: 6 });
+    return rankHomeMemoryCandidates(query, [...retrieved, ...localMatches], { limit: 6 });
+  } catch (error) {
+    if (isMissingHomeMemoryIndexError(error)) homeMemoryIndexUnavailable = true;
+    if (!homeMemoryIndexWarningShown) {
+      console.info("SYNQ.ME could not query the home memory index; using the local conversation index.", error);
+      homeMemoryIndexWarningShown = true;
+    }
+    return localMatches;
+  }
+}
 
 function persist(syncCloud = true) {
   let localSaved = false;
@@ -612,6 +709,9 @@ async function saveCloudState() {
   }, { onConflict: "user_id" });
   if (conversationError) throw conversationError;
   cloudConversationUpdatedAt = conversationUpdatedAt;
+  // The transcript row is the active thread; this separate archive keeps messages
+  // searchable even when the active transcript later rolls past its retention cap.
+  await syncHomeMemoryIndex(mergedMessages.slice(-2));
 
   cloudMode = "cloud";
   renderPreferences();
@@ -1058,6 +1158,9 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   const fallbackFunctions = draftState?.functions || [];
   cloudUserId = user.id;
   cloudUserEmail = user.email;
+  homeMemoryIndexUnavailable = false;
+  homeMemoryIndexBackfilledUserId = null;
+  homeMemoryIndexWarningShown = false;
 
   const [profileResult, preferencesResult, conversationResult] = await Promise.all([
     supabase.from("synqme_profiles").select("*").eq("user_id", cloudUserId).maybeSingle(),
@@ -1132,6 +1235,9 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   cloudSaveTimer = null;
 
   await saveCloudState();
+  // Backfill the retained transcript once per account session; subsequent turns
+  // write only their newest two messages, while the archive preserves older rows.
+  await syncHomeMemoryIndex(state.messages, { backfill: true });
   if (draft) {
     try { localStorage.removeItem(ACCOUNT_DRAFT_KEY); } catch {}
   }
@@ -3159,6 +3265,7 @@ async function requestAIReply(repairMode = false) {
       role: message.role,
       content: message.content
     }));
+    const memoryReferences = await getHomeMemoryReferences(state.messages[state.messages.length - 1]?.content || "");
     const response = await fetch(API_BASE + "/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -3175,6 +3282,7 @@ async function requestAIReply(repairMode = false) {
         },
         domesticFunctions,
         pendingClarification: state.pendingClarification,
+        memoryReferences: memoryReferences.map(({ role, content, timestamp, topics }) => ({ role, content, timestamp, topics })),
         repairMode
       })
     });
@@ -3315,6 +3423,9 @@ async function sendMessage(rawText) {
   if (!answeredPendingClarification && !clarificationRequest) savePreference(message);
   persist();
   renderAll();
+  // Persist the user's message before waiting for the model so a closed tab or
+  // interrupted provider request does not leave the turn only in browser memory.
+  void flushCloudSave();
 
   const sentToAIThisTurn = true;
   let reply = await requestAIReply();
@@ -3718,6 +3829,9 @@ elements.signOutButton?.addEventListener("click", async () => {
     cloudUserId = null;
     cloudUserEmail = "";
     cloudMode = "local";
+    homeMemoryIndexBackfilledUserId = null;
+    homeMemoryIndexUnavailable = false;
+    homeMemoryIndexWarningShown = false;
     state = initialState();
     try {
       localStorage.removeItem(STORAGE_KEY);
