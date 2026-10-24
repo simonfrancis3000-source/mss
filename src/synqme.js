@@ -724,19 +724,47 @@ async function getRelevantPersonaMemories(query) {
     const keys = buildPersonaMemorySearchKeys(query, [], deriveMemoryTopic(query));
     if (keys.length) {
       try {
-        const { data, error } = await supabase
+        const activeStatuses = ["user_stated", "user_confirmed", "inferred_pending_confirmation", "conflicting"];
+        const { data: keyData, error: keyError } = await supabase
           .from("synqme_persona_memories")
           .select("*")
           .eq("user_id", cloudUserId)
           .overlaps("search_keys", keys)
-          .in("status", ["user_stated", "user_confirmed", "inferred_pending_confirmation", "conflicting"])
+          .in("status", activeStatuses)
           .order("updated_at", { ascending: false })
-          .limit(60);
-        if (error) throw error;
-        if (Array.isArray(data) && data.length) {
-          const byId = new Map([...personaMemoryRecords, ...data].map((item) => [item.id || item.memory_key, item]));
-          candidates = [...byId.values()];
+          .limit(80);
+        if (keyError) throw keyError;
+
+        // Hybrid retrieval: topic/synonym keys first, then PostgreSQL full-text
+        // search recovers relevant memories whose wording differs from the query.
+        let textData = [];
+        try {
+          const { data, error } = await supabase
+            .from("synqme_persona_memories")
+            .select("*")
+            .eq("user_id", cloudUserId)
+            .in("status", activeStatuses)
+            .textSearch("search_document", String(query).slice(0, 320), {
+              type: "websearch",
+              config: "simple"
+            })
+            .order("updated_at", { ascending: false })
+            .limit(60);
+          if (error) throw error;
+          textData = Array.isArray(data) ? data : [];
+        } catch (textError) {
+          // A search-parser issue must not disable the working topic/key path.
+          if (!personaMemoryWarningShown) {
+            console.info("SYNQ.ME full-text memory search fell back to topic and keyword matches.", textError);
+            personaMemoryWarningShown = true;
+          }
         }
+
+        const byId = new Map();
+        for (const item of [...personaMemoryRecords, ...(keyData || []), ...textData]) {
+          if (item && item.id) byId.set(item.id, item);
+        }
+        candidates = [...byId.values()];
       } catch (error) {
         if (isMissingHomeMemoryIndexError(error)) personaMemoryTableUnavailable = true;
         if (!personaMemoryWarningShown) {
