@@ -37,6 +37,7 @@ The migration filenames in this branch intentionally match the live Supabase mig
 - `20261024195254_add_synqme_home_memory_index.sql`
 - `20261024200711_add_synqme_shared_knowledge_library.sql`
 - `20261024200918_harden_shared_knowledge_privacy_checks.sql`
+- `20261024201315_restrict_shared_knowledge_to_registered_accounts.sql`
 
 The shared-library and privacy-check migrations have been applied to the active MySecondSelf Supabase project and the five curated seed records were verified in the database. Apply pending migrations only through the project's normal migration workflow; do not re-run already-recorded versions manually.
 
@@ -69,7 +70,7 @@ Before promotion, verify that each lesson is genuinely general, does not expose 
 
 ## Verification and limits
 
-- The migration is applied to the active MySecondSelf Supabase project. Both new tables have RLS enabled, and the shared library has five seeded records.
+- The migration is applied to the active MySecondSelf Supabase project. Both new tables have RLS enabled, database checks reject obvious identifier/sensitive-data patterns, and new policies explicitly exclude anonymous-auth sessions. The shared library has five seeded records.
 - The UI, chat server and validation tests are committed on the `SYNQ.ME` branch. Syntax and targeted behaviour checks were run after the changes.
 - The full hosted `npm test` and production build are not yet verified because GitHub Actions has been failing before the workflow steps start.
 - The new learning flow is not live until the `SYNQ.ME` code is deployed. No candidate has been created from the existing transcript because contribution is opt-in and the new code has not yet run.
