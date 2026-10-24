@@ -6,7 +6,11 @@ const PORT = Number.parseInt(process.env.PORT || "10000", 10);
 const GROQ_API_KEY = process.env.GROQ_API_KEY || "";
 const PROVIDER = "groq";
 const API_KEY = GROQ_API_KEY;
-const MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
+const configuredGroqModel = String(process.env.GROQ_MODEL || "").trim();
+// Upgrade the previous 20B default while preserving an intentional custom model.
+const MODEL = !configuredGroqModel || configuredGroqModel === "openai/gpt-oss-20b"
+  ? "openai/gpt-oss-120b"
+  : configuredGroqModel;
 const REASONING_EFFORT = process.env.GROQ_REASONING_EFFORT || "high";
 // Render deployments need CORS to work even when FRONTEND_ORIGIN has not
 // been populated. Keep the known SYNQ.ME origins as safe defaults and allow
