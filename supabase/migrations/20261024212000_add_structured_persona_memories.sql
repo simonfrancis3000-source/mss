@@ -77,7 +77,7 @@ FOR EACH ROW EXECUTE FUNCTION public.synqme_touch_persona_memory_updated_at();
 ALTER TABLE public.synqme_persona_memories ENABLE ROW LEVEL SECURITY;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.synqme_persona_memories TO authenticated;
 
-DO $$
+DO $persona_memory_policy$
 BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_policies
@@ -120,7 +120,7 @@ BEGIN
       USING (auth.uid() = user_id);
   END IF;
 END
-$persona_memory_fn$;
+$persona_memory_policy$;
 
 COMMENT ON TABLE public.synqme_persona_memories IS
   'Structured, user-owned memories with evidence, scope, conflict state and review metadata. Reusable task procedures live separately in application skill definitions.';
