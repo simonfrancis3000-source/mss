@@ -2989,11 +2989,11 @@ function rejectPendingLocalAIRequests(error) {
 function handleLocalAIWorkerMessage(event) {
   const data = event.data || {};
   if (data.type === "progress") {
-    const percent = Number.isFinite(data.progress) ? data.progress : null;
+    const percent = Number.isFinite(data.progress) ? data.progress : 0;
     setLocalAIProgress({
       label: "Downloading local model",
       progress: percent,
-      indeterminate: percent === null
+      indeterminate: false
     });
     return;
   }
@@ -3062,7 +3062,7 @@ function ensureLocalAIReady() {
   state.apiError = "";
   state.apiErrorDetail = "";
   try { Promise.resolve(navigator.storage?.persist?.()).catch(() => {}); } catch {}
-  setLocalAIProgress({ label: "Downloading local model", progress: null, indeterminate: true });
+  setLocalAIProgress({ label: "Downloading local model", progress: 0, indeterminate: false });
   localAILoadPromise = new Promise((resolve, reject) => {
     localAILoadResolve = resolve;
     localAILoadReject = reject;
