@@ -1116,6 +1116,17 @@ h1 span { color: #1677f9; }
 .voice-orb-ring-two { inset: 0; border-color: rgba(22,119,249,.12); }
 .voice-orb-core { position: relative; display: grid; place-items: center; width: 148px; height: 148px; border: 1px solid #e4e9f2; border-radius: 50%; background: #fff; box-shadow: 0 14px 50px rgba(36,85,153,.11), inset 0 0 0 7px rgba(244,248,255,.9); overflow: hidden; }
 .voice-orb-core img { display: block; width: 82%; height: 82%; object-fit: contain; border-radius: 50%; }
+.voice-orb-core > .robot-svg { display: block; width: 78%; height: 78%; overflow: visible; }
+.voice-orb-core > img.voice-robot-image { width: 100%; height: 100%; border-radius: 0; object-fit: contain; }
+.voice-model-progress { width: min(100%, 330px); margin: 10px 0 0; text-align: left; }
+.voice-model-progress[hidden] { display: none !important; }
+.voice-model-progress-track { position: relative; width: 100%; height: 6px; overflow: hidden; border-radius: 999px; background: #e5e9f0; }
+.voice-model-progress-fill { display: block; width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #1677f9, #6eabff); transition: width .18s ease-out; }
+.voice-model-progress-track.is-indeterminate .voice-model-progress-fill { width: 34%; animation: voice-model-progress-indeterminate 1.25s ease-in-out infinite; }
+.voice-model-progress-meta { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-top: 7px; color: #77777f; font-size: 10px; line-height: 1.45; }
+#voiceModelProgressLabel { flex: 1; }
+#voiceModelProgressPercent { flex: none; color: #333740; font-variant-numeric: tabular-nums; font-weight: 700; }
+@keyframes voice-model-progress-indeterminate { 0% { transform: translateX(-110%); } 100% { transform: translateX(310%); } }
 .voice-orb[data-state="listening"] .voice-orb-ring-one { animation: mss-pulse 2.1s ease-out infinite; border-color: rgba(22,119,249,.38); }
 .voice-orb[data-state="listening"] .voice-orb-ring-two { animation: mss-pulse 2.1s ease-out .65s infinite; border-color: rgba(22,119,249,.25); }
 .voice-orb[data-state="thinking"] .voice-orb-ring { animation: mss-breathe 1.5s ease-in-out infinite; border-color: rgba(120,132,153,.34); }
