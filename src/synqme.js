@@ -561,6 +561,115 @@ async function saveCloudState() {
   renderPreferences();
 }
 
+function scheduleCloudConversationRefresh(delay = 120) {
+  if (!cloudUserId || !supabase) return;
+  if (cloudConversationRefreshTimeout) window.clearTimeout(cloudConversationRefreshTimeout);
+  cloudConversationRefreshTimeout = window.setTimeout(() => {
+    cloudConversationRefreshTimeout = null;
+    void refreshCloudConversation();
+  }, delay);
+}
+
+async function refreshCloudConversation() {
+  if (
+    !supabase ||
+    !cloudUserId ||
+    cloudMode !== "cloud" ||
+    cloudConversationRefreshInFlight ||
+    cloudSaveInFlight ||
+    isSending ||
+    cloudSaveTimer ||
+    document.visibilityState !== "visible"
+  ) return;
+
+  cloudConversationRefreshInFlight = true;
+  const userIdAtStart = cloudUserId;
+  try {
+    const { data, error } = await supabase
+      .from("synqme_conversations")
+      .select("messages,pending_clarification,updated_at")
+      .eq("user_id", userIdAtStart)
+      .maybeSingle();
+    if (error) throw error;
+    if (userIdAtStart !== cloudUserId || !data) return;
+
+    const remoteUpdatedAt = data.updated_at || null;
+    if (remoteUpdatedAt === cloudConversationUpdatedAt) return;
+
+    const remoteMessages = Array.isArray(data.messages) ? data.messages : [];
+    const mergedMessages = mergeConversationMessages(state.messages, remoteMessages);
+    const localChanged = JSON.stringify(mergedMessages) !== JSON.stringify(state.messages);
+    const mergedDiffersFromCloud = JSON.stringify(mergedMessages) !== JSON.stringify(remoteMessages);
+    const pendingChanged = JSON.stringify(state.pendingClarification || null) !== JSON.stringify(data.pending_clarification || null);
+
+    cloudConversationUpdatedAt = remoteUpdatedAt;
+    if (localChanged) state.messages = mergedMessages;
+    if (pendingChanged) state.pendingClarification = data.pending_clarification || null;
+
+    if (localChanged || pendingChanged) {
+      persist(false);
+      renderAll();
+    }
+
+    // If this device has messages not yet represented in the cloud snapshot,
+    // merge them back after applying the incoming transcript.
+    if (mergedDiffersFromCloud && !isSending) scheduleCloudSave(250);
+  } catch (error) {
+    console.info("SYNQ.ME could not refresh conversation history from the cloud.", error);
+  } finally {
+    cloudConversationRefreshInFlight = false;
+  }
+}
+
+function stopCloudConversationSync() {
+  if (cloudConversationRefreshTimer) window.clearInterval(cloudConversationRefreshTimer);
+  cloudConversationRefreshTimer = null;
+  if (cloudConversationRefreshTimeout) window.clearTimeout(cloudConversationRefreshTimeout);
+  cloudConversationRefreshTimeout = null;
+
+  if (cloudConversationChannel && supabase) {
+    const channel = cloudConversationChannel;
+    cloudConversationChannel = null;
+    void supabase.removeChannel(channel).catch((error) => {
+      console.info("SYNQ.ME conversation sync channel could not be removed cleanly.", error);
+    });
+  }
+  cloudConversationUpdatedAt = null;
+}
+
+function startCloudConversationSync() {
+  if (!supabase || !cloudUserId) return;
+  stopCloudConversationSync();
+  const userIdAtStart = cloudUserId;
+
+  // Realtime delivers immediate updates when the account row changes. A
+  // lightweight foreground poll covers browsers/networks that drop the socket.
+  cloudConversationChannel = supabase
+    .channel("synqme-conversation-sync-" + userIdAtStart)
+    .on("postgres_changes", {
+      event: "*",
+      schema: "public",
+      table: "synqme_conversations",
+      filter: "user_id=eq." + userIdAtStart
+    }, () => scheduleCloudConversationRefresh(150))
+    .subscribe((status) => {
+      if (status === "SUBSCRIBED") scheduleCloudConversationRefresh(100);
+      else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+        console.info("SYNQ.ME live conversation notifications are unavailable; foreground polling remains enabled.");
+      }
+    });
+
+  cloudConversationRefreshTimer = window.setInterval(() => {
+    if (document.visibilityState === "visible") void refreshCloudConversation();
+  }, 5000);
+  scheduleCloudConversationRefresh(250);
+}
+
+window.addEventListener("focus", () => scheduleCloudConversationRefresh(100));
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") scheduleCloudConversationRefresh(100);
+});
+
 function snapshotAppState() {
   return {
     messages: state.messages.slice(-5000),
