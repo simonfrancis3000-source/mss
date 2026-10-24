@@ -2860,6 +2860,7 @@ function renderAll() {
   renderMessages();
   renderOwnerAvatarPreview();
   renderPreferences();
+  renderPersonaMemoryLibrary();
   updateDecisionSummary();
   renderSettingsDetails();
   renderPexiReadiness();
