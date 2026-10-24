@@ -1,4 +1,4 @@
-const CACHE_NAME = "synqme-shell-v13";
+const CACHE_NAME = "synqme-shell-v14";
 const APP_SHELL = [
   "/",
   "/manifest.webmanifest",
@@ -15,8 +15,15 @@ self.addEventListener("install", (event) => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
+    // Only retire old SYNQ.ME shell caches. Transformers/Kokoro keeps model
+    // weights in its own cache ("transformers-cache"); deleting every cache
+    // here would force the 88 MB voice model to download again after updates.
     caches.keys()
-      .then((names) => Promise.all(names.filter((name) => name !== CACHE_NAME).map((name) => caches.delete(name))))
+      .then((names) => Promise.all(
+        names
+          .filter((name) => name.startsWith("synqme-shell-") && name !== CACHE_NAME)
+          .map((name) => caches.delete(name))
+      ))
       .then(() => self.clients.claim())
   );
 });
