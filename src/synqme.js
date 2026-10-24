@@ -612,7 +612,12 @@ async function refreshCloudConversation() {
     if (userIdAtStart !== cloudUserId || !data) return;
 
     const remoteUpdatedAt = data.updated_at || null;
-    if (remoteUpdatedAt === cloudConversationUpdatedAt) return;
+    const remoteTimestamp = remoteUpdatedAt ? Date.parse(remoteUpdatedAt) : NaN;
+    const localTimestamp = cloudConversationUpdatedAt ? Date.parse(cloudConversationUpdatedAt) : NaN;
+    if (
+      remoteUpdatedAt === cloudConversationUpdatedAt ||
+      (Number.isFinite(remoteTimestamp) && Number.isFinite(localTimestamp) && remoteTimestamp === localTimestamp)
+    ) return;
 
     // Account saves write profile, preferences and conversation together. Read
     // those records as well so the other browser's whole persona catches up.
