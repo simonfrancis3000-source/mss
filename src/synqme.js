@@ -2584,6 +2584,19 @@ async function requestAIReply(repairMode = false) {
   }
 }
 
+function localizedAIUnavailable(language) {
+  const messages = {
+    es: "Ahora mismo no he podido generar una respuesta. Prefiero no inventar una; inténtalo de nuevo dentro de un momento.",
+    fr: "Je n’ai pas pu générer de réponse pour le moment. Je préfère ne pas deviner ; réessaie dans un instant.",
+    it: "Al momento non riesco a generare una risposta. Preferisco non inventare; riprova tra poco.",
+    pt: "Não consegui gerar uma resposta agora. Prefiro não inventar; tenta novamente daqui a pouco.",
+    hi: "मैं अभी जवाब तैयार नहीं कर पाया हूँ। अनुमान लगाने के बजाय, कृपया थोड़ी देर बाद फिर कोशिश करें।",
+    ja: "今は返答を生成できませんでした。推測で答えず、少し時間をおいてもう一度試してください。",
+    zh: "我现在暂时无法生成回复。我不想凭猜测回答，请稍后再试一次。"
+  };
+  return messages[language] || "I can’t generate a reply right now. Please try again shortly.";
+}
+
 function responseErrorLabel(error) {
   const message = String(error?.message || "").toLowerCase();
   if (/429|quota|usage limit/.test(message) || error?.apiStatus === 429) return "quota limit";
@@ -2660,15 +2673,18 @@ async function sendMessage(rawText) {
   persist();
   renderAll();
 
-  const sentToAIThisTurn = !clarificationRequest && !answeredPendingClarification && Boolean(API_BASE);
-  // A clarification answer must be handled against the pending question, not
-  // sent back to the general-purpose chat model where it can lose context.
-  let reply = clarificationRequest
-    ? clarificationHelpReply(previousAssistantMessage, previousUserMessage)
-    : answeredPendingClarification
-      ? replyToResolvedClarification(message, pendingBeforeAnswer)
-      : await requestAIReply();
-  if (!answeredPendingClarification && !clarificationRequest) {
+  const forceAIForSelectedLanguage = Boolean(API_BASE) && (state.profile.preferredLanguage || "en") !== "en";
+  const sentToAIThisTurn = Boolean(API_BASE) && (forceAIForSelectedLanguage || (!clarificationRequest && !answeredPendingClarification));
+  // English clarification turns retain the deterministic local handling. In
+  // other selected languages, ask Groq to compose the reply in that language.
+  let reply = forceAIForSelectedLanguage
+    ? await requestAIReply()
+    : clarificationRequest
+      ? clarificationHelpReply(previousAssistantMessage, previousUserMessage)
+      : answeredPendingClarification
+        ? replyToResolvedClarification(message, pendingBeforeAnswer)
+        : await requestAIReply();
+  if ((!answeredPendingClarification && !clarificationRequest) || forceAIForSelectedLanguage) {
     const replyNeedsRepair = (value) => !value ||
       responseRepeatsUser(value, message) ||
       responseRepeatsRecentAssistant(value) ||
@@ -2681,9 +2697,13 @@ async function sendMessage(rawText) {
         reply = "I’m having trouble making a useful connection from that answer, and I don’t want to give you another canned question. I’ve understood the detail you shared; please try once more, or tell me which part of your routine you’d like to explore.";
       }
     } else if (!reply && API_BASE) {
-      reply = state.apiErrorDetail || "I can’t reach the AI conversation service right now, so I haven’t substituted a scripted answer. Please try again shortly.";
+      reply = (state.profile.preferredLanguage || "en") === "en"
+        ? (state.apiErrorDetail || "I can’t reach the AI conversation service right now, so I haven’t substituted a scripted answer. Please try again shortly.")
+        : localizedAIUnavailable(state.profile.preferredLanguage);
     } else if (!reply) {
-      reply = localReply(message);
+      reply = (state.profile.preferredLanguage || "en") === "en"
+        ? localReply(message)
+        : localizedAIUnavailable(state.profile.preferredLanguage);
     } else if (reply === "__SYNQME_UNHELPFUL_AI_RESPONSE__") {
       reply = "I’m having trouble making a useful connection from that answer, and I don’t want to give you another canned question. I’ve understood the detail you shared; please try once more, or tell me which part of your routine you’d like to explore.";
     } else if (replyNeedsRepair(reply) && !API_BASE) {
