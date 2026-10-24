@@ -576,7 +576,7 @@ const app = http.createServer(async (request, response) => {
       const purpose = body?.purpose === "query" ? "query" : "document";
       const texts = sourceTexts
         .filter((value) => typeof value === "string")
-        .map((value) => value.replace(/\\u0000/g, "").trim().slice(0, 1800))
+        .map((value) => value.replace(/\u0000/g, "").trim().slice(0, 1800))
         .filter(Boolean);
       if (!texts.length) {
         return json(response, 400, { error: "Provide at least one non-empty text to embed.", provider: "groq" }, headers || {});
