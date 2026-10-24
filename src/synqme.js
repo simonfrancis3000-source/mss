@@ -146,7 +146,10 @@ const elements = {
   providerLabel: $("#providerLabel"),
   preferredLanguage: $("#preferredLanguage"),
   conversationStatus: $("#conversationStatus"),
+  chatTranscriptShell: $("#chatTranscriptShell"),
   chatMessages: $("#chatMessages"),
+  chatScrollbarTrack: $("#chatScrollbarTrack"),
+  chatScrollbarThumb: $("#chatScrollbarThumb"),
   chatForm: $("#chatForm"),
   messageInput: $("#messageInput"),
   sendButton: $("#sendButton"),
@@ -1367,14 +1370,45 @@ function appendMessage(role, content) {
   elements.chatMessages.append(article);
 }
 
+function updateChatScrollbar() {
+  const messages = elements.chatMessages;
+  const shell = elements.chatTranscriptShell;
+  const track = elements.chatScrollbarTrack;
+  const thumb = elements.chatScrollbarThumb;
+  if (!messages || !shell || !track || !thumb) return;
+
+  // Measure the full track even when it was hidden on the previous frame.
+  track.hidden = false;
+  const trackHeight = track.clientHeight || Math.max(0, shell.clientHeight - 20);
+  const viewportHeight = messages.clientHeight;
+  const contentHeight = messages.scrollHeight;
+
+  if (!viewportHeight || !trackHeight || contentHeight <= viewportHeight + 4) {
+    track.hidden = true;
+    return;
+  }
+
+  const thumbHeight = Math.min(trackHeight, Math.max(22, trackHeight * viewportHeight / contentHeight));
+  const maximumTop = Math.max(0, trackHeight - thumbHeight);
+  const maximumScroll = Math.max(1, contentHeight - viewportHeight);
+  const scrollRatio = Math.min(1, Math.max(0, messages.scrollTop / maximumScroll));
+  thumb.style.height = thumbHeight + "px";
+  thumb.style.transform = "translateY(" + (maximumTop * scrollRatio) + "px)";
+  track.hidden = false;
+}
+
 function renderMessages() {
   elements.chatMessages.replaceChildren();
   // Render in conversation order so newer turns naturally appear at the bottom.
   state.messages.slice(-50).forEach((message) => appendMessage(message.role, message.content));
   window.requestAnimationFrame(() => {
     elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
+    updateChatScrollbar();
   });
 }
+
+elements.chatMessages?.addEventListener("scroll", updateChatScrollbar, { passive: true });
+window.addEventListener("resize", updateChatScrollbar);
 
 function classifyPreference(message) {
   const text = message.toLowerCase();
