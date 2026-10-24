@@ -1197,3 +1197,13 @@ h1 span { color: #1677f9; }
   .voice-orb-ring, .voice-orb-core, .robot-picker-item { animation: none !important; transition: none !important; }
   * { scroll-behavior: auto !important; }
 }
+
+
+/* Keep a manageable scrolling transcript so the composer stays close to view. */
+.chat-messages {
+  min-height: 220px;
+  max-height: 350px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-behavior: smooth;
+}
