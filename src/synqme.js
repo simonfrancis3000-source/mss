@@ -324,6 +324,8 @@ function loadState() {
 
 let state = loadState();
 let isSending = false;
+let sendSequence = 0;
+let lastAIReplyUsedFallback = false;
 const SpeechRecognitionConstructor = window.SpeechRecognition || window.webkitSpeechRecognition || null;
 const speechSynthesisAvailable = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
 let voiceModeActive = false;
@@ -2543,6 +2545,7 @@ function responseRepeatsUser(reply, userMessage) {
 
 async function requestAIReply(repairMode = false) {
   if (!API_BASE) return null;
+  if (!repairMode) lastAIReplyUsedFallback = false;
   state.apiErrorDetail = "";
   try {
     const response = await fetch(API_BASE + "/api/chat", {
@@ -2592,9 +2595,9 @@ async function requestAIReply(repairMode = false) {
     state.apiErrorDetail = "";
     elements.providerLabel.textContent = (state.apiProvider || "AI").toUpperCase() + " · " + (state.apiModel || "model") + " · LIVE";
 
-    // If the server had to use a canned fallback, ask the configured model once
-    // more with explicit repair instructions before showing anything to the user.
-    if (data.usedFallback && !repairMode) return await requestAIReply(true);
+    // The backend has already tried the model and selected a fallback where needed.
+    // Do not trigger another full model request for the same user turn.
+    lastAIReplyUsedFallback = Boolean(data.usedFallback || data.responseNeedsReview);
     if (data.responseNeedsReview) return "__SYNQME_UNHELPFUL_AI_RESPONSE__";
     return reply.trim();
   } catch (error) {
@@ -2676,6 +2679,7 @@ async function sendMessage(rawText) {
   const message = rawText.trim();
   if (!message || isSending) return;
   const clarificationRequest = isClarificationRequest(message);
+  const turnId = ++sendSequence;
   isSending = true;
   if (voiceModeActive) updateVoiceExperience("thinking", "AMÏA is thinking…");
   elements.sendButton.disabled = true;
@@ -2719,7 +2723,7 @@ async function sendMessage(rawText) {
       responseRepeatsUser(value, message) ||
       responseRepeatsRecentAssistant(value) ||
       /I've captured this preference for your browser-based SecondSelf|I've added it to your local digital persona|That's useful context for your SecondSelf|Let's make that preference more precise|What detail would matter most to get right|What matters most to you when getting that right|Which laundry detail matters most to you: sorting, washing and drying, or how clothes are put away|Can you walk me through how that usually happens at home/i.test(value);
-    if (replyNeedsRepair(reply) && API_BASE && state.apiConnected) {
+    if (replyNeedsRepair(reply) && API_BASE && state.apiConnected && !lastAIReplyUsedFallback) {
       const retriedReply = await requestAIReply(true);
       if (retriedReply && retriedReply !== "__SYNQME_UNHELPFUL_AI_RESPONSE__" && !replyNeedsRepair(retriedReply)) {
         reply = retriedReply;
@@ -2751,21 +2755,30 @@ async function sendMessage(rawText) {
   state.messages = state.messages.slice(-5000);
   persist();
   renderAll();
-  const conversationSaved = await flushCloudSave();
-  renderAll();
-  const responseProviderLabel = (state.apiProvider ? state.apiProvider.toUpperCase() : "AI") + " · " + (state.apiModel || "model");
-  elements.conversationStatus.textContent = conversationSaved
-    ? (sentToAIThisTurn && state.apiConnected
-        ? responseProviderLabel + " response · saved to account"
-        : state.apiError && sentToAIThisTurn
-          ? (state.apiErrorDetail || responseProviderLabel + " unavailable · no scripted reply")
-          : "Reply saved to account")
-    : "Reply received · account sync needs attention";
+
+  // The reply is already visible. Release the composer immediately instead of
+  // keeping the UI in a thinking state while Supabase finishes syncing.
   isSending = false;
   elements.sendButton.disabled = false;
   elements.messageInput.disabled = false;
+  const responseProviderLabel = (state.apiProvider ? state.apiProvider.toUpperCase() : "AI") + " · " + (state.apiModel || "model");
+  elements.conversationStatus.textContent = sentToAIThisTurn && state.apiConnected
+    ? responseProviderLabel + " · reply received · saving to account…"
+    : "Reply received · saving to account…";
   if (voiceModeActive) speakAssistantReply(reply);
   else elements.messageInput.focus();
+
+  void flushCloudSave().then((conversationSaved) => {
+    // An older save must not overwrite the status for a newer user turn.
+    if (turnId !== sendSequence || isSending) return;
+    elements.conversationStatus.textContent = conversationSaved
+      ? (sentToAIThisTurn && state.apiConnected
+          ? responseProviderLabel + " response · saved to account"
+          : state.apiError && sentToAIThisTurn
+            ? (state.apiErrorDetail || responseProviderLabel + " unavailable · no scripted reply")
+            : "Reply saved to account")
+      : "Reply received · account sync needs attention";
+  });
 }
 
 elements.chatForm.addEventListener("submit", (event) => {
