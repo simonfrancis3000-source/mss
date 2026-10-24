@@ -1,8 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 
 const STORAGE_KEY = "synqme-demo-v1";
-const LOCAL_MODEL_ID = "onnx-community/Qwen3-4B-ONNX";
-const LOCAL_MODEL_LABEL = "on-device";
+const LOCAL_MODEL_LABEL = "On-device AI";
 const ACCOUNT_DRAFT_KEY = "synqme-pending-account-migration-v1";
 const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
