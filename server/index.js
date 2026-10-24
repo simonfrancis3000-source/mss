@@ -6,7 +6,8 @@ const PORT = Number.parseInt(process.env.PORT || "10000", 10);
 const GROQ_API_KEY = process.env.GROQ_API_KEY || "";
 const PROVIDER = "groq";
 const API_KEY = GROQ_API_KEY;
-const MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-20b";
+const MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
+const REASONING_EFFORT = process.env.GROQ_REASONING_EFFORT || "high";
 // Render deployments need CORS to work even when FRONTEND_ORIGIN has not
 // been populated. Keep the known SYNQ.ME origins as safe defaults and allow
 // additional exact origins through FRONTEND_ORIGIN (comma-separated).
@@ -588,9 +589,9 @@ const app = http.createServer(async (request, response) => {
         model: MODEL,
         messages: [{ role: "system", content: combinedSystemPrompt }, ...messages],
         temperature: 0.72,
-        reasoning_effort: "low",
+        reasoning_effort: REASONING_EFFORT,
         include_reasoning: false,
-        max_completion_tokens: 1000,
+        max_completion_tokens: 3000,
         stream: false
       }),
       signal: AbortSignal.timeout(30_000)
