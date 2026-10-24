@@ -3045,6 +3045,8 @@ function handleLocalAIWorkerMessage(event) {
 function workerFailure(error) {
   const message = error?.message || "The local AI worker stopped unexpectedly.";
   localAIReady = false;
+  localAIWorker = null;
+  localAILoadPromise = null;
   state.apiConnected = false;
   state.apiError = "local model unavailable";
   state.apiErrorDetail = message;
