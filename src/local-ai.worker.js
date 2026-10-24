@@ -1,4 +1,4 @@
-import { env, pipeline } from "@huggingface/transformers";
+import { env, pipeline, ModelRegistry } from "@huggingface/transformers";
 
 const DESKTOP_MODEL_ID = "onnx-community/Qwen2.5-1.5B-Instruct";
 const COMPACT_MODEL_ID = "onnx-community/SmolLM2-360M-Instruct-ONNX";
@@ -128,7 +128,18 @@ async function loadModel() {
     const dtype = "q4";
     activeModelId = modelId;
     activeBackend = "wasm";
-    modelCacheDetected = await hasCachedModelFiles(modelId, dtype);
+    // Use Transformers.js' own cache registry so the decision matches
+    // the exact pipeline and quantisation rather than guessing from one URL.
+    try {
+      modelCacheDetected = await ModelRegistry.is_pipeline_cached(
+        "text-generation",
+        modelId,
+        { dtype }
+      );
+    } catch (cacheCheckError) {
+      console.warn("Could not verify the local model cache; falling back to normal cache-aware loading.", cacheCheckError);
+      modelCacheDetected = await hasCachedModelFiles(modelId, dtype);
+    }
     postStatus(modelCacheDetected
       ? "Loading cached compact local AMÏA model"
       : "Preparing compact local AMÏA model");
@@ -145,6 +156,9 @@ async function loadModel() {
         revision: "main",
         device: "wasm",
         dtype,
+        // Once all required files are in cache, disallow remote fallbacks.
+        // This prevents a cache miss from silently becoming a large re-download.
+        local_files_only: modelCacheDetected,
         progress_callback: (event) => postProgress(event)
       });
       postStatus("Testing compact local AMÏA model");
