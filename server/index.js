@@ -1,14 +1,11 @@
 import http from "node:http";
 
 const PORT = Number.parseInt(process.env.PORT || "10000", 10);
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
+// SYNQ.ME uses Groq exclusively. No other AI provider is supported.
 const GROQ_API_KEY = process.env.GROQ_API_KEY || "";
-const REQUESTED_PROVIDER = String(process.env.AI_PROVIDER || "").trim().toLowerCase();
-const PROVIDER = REQUESTED_PROVIDER === "gemini" || (!REQUESTED_PROVIDER && GEMINI_API_KEY) ? "gemini" : "groq";
-const API_KEY = PROVIDER === "gemini" ? GEMINI_API_KEY : GROQ_API_KEY;
-const MODEL = PROVIDER === "gemini"
-  ? (process.env.GEMINI_MODEL || "gemini-3.8-flash")
-  : (process.env.GROQ_MODEL || "openai/gpt-oss-20b");
+const PROVIDER = "groq";
+const API_KEY = GROQ_API_KEY;
+const MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-20b";
 // Render deployments need CORS to work even when FRONTEND_ORIGIN has not
 // been populated. Keep the known SYNQ.ME origins as safe defaults and allow
 // additional exact origins through FRONTEND_ORIGIN (comma-separated).
@@ -505,7 +502,7 @@ const app = http.createServer(async (request, response) => {
     return json(response, 403, { error: "Origin not allowed." });
   }
   if (!API_KEY) {
-    const requiredKey = PROVIDER === "gemini" ? "GEMINI_API_KEY" : "GROQ_API_KEY";
+    const requiredKey = "GROQ_API_KEY";
     return json(response, 503, { error: "AI is not configured. Add " + requiredKey + " to the Render backend environment." }, headers || {});
   }
   if (limitReached(request)) {
@@ -570,37 +567,23 @@ const app = http.createServer(async (request, response) => {
       repairMode ? "RETRY: your previous draft was rejected as generic or repetitive. Do not use any canned fallback. Read the latest user message as part of the full conversation and respond to the detail they actually introduced. If they mention getting up at 7 and going to the kitchen for coffee after a question about tidying, recognise they have introduced their morning routine; do not ask them to walk through it generically or repeat the tidying question. Make one natural connection to their stated routine and ask only a useful next question." : ""
     ].join(" ");
 
-    const upstream = PROVIDER === "gemini"
-      ? await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(MODEL) + ":generateContent", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-goog-api-key": API_KEY },
-          body: JSON.stringify({
-            systemInstruction: { parts: [{ text: systemPrompt }] },
-            contents: messages.map((item) => ({
-              role: item.role === "assistant" ? "model" : "user",
-              parts: [{ text: item.content }]
-            })),
-            generationConfig: { temperature: 0.78, topP: 0.92, maxOutputTokens: 400 }
-          }),
-          signal: AbortSignal.timeout(30_000)
-        })
-      : await fetch("https://api.groq.com/openai/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Authorization": "Bearer " + API_KEY,
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            model: MODEL,
-            messages: [{ role: "system", content: systemPrompt }, ...messages],
-            temperature: 0.72,
-            reasoning_effort: "low",
-            include_reasoning: false,
-            max_completion_tokens: 1000,
-            stream: false
-          }),
-          signal: AbortSignal.timeout(30_000)
-        });
+    const upstream = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": "Bearer " + GROQ_API_KEY,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        messages: [{ role: "system", content: systemPrompt }, ...messages],
+        temperature: 0.72,
+        reasoning_effort: "low",
+        include_reasoning: false,
+        max_completion_tokens: 1000,
+        stream: false
+      }),
+      signal: AbortSignal.timeout(30_000)
+    });
 
     if (!upstream.ok) {
       const errorCode = PROVIDER + "-" + Date.now().toString(36);
@@ -618,19 +601,15 @@ const app = http.createServer(async (request, response) => {
 
       let friendly;
       if (upstream.status === 429) {
-        friendly = "Gemini has reached a usage limit or rate limit. Check your Gemini quota and billing, then try again.";
-      } else if (PROVIDER === "gemini" && [401, 403].includes(upstream.status)) {
-        friendly = "Gemini rejected the API key or project access. Check that the key is valid, unrestricted for this server, and has Gemini API access enabled.";
-      } else if (PROVIDER === "gemini" && upstream.status === 404) {
-        friendly = "Gemini could not find the configured model. Check GEMINI_MODEL and the model access available to this API key.";
-      } else if (PROVIDER === "gemini" && upstream.status === 400) {
-        friendly = "Gemini rejected the request. The Render API logs contain the provider error code and diagnostic detail.";
-      } else if (PROVIDER === "gemini" && upstream.status >= 500) {
-        friendly = "Gemini is temporarily returning a server error. Check Render logs and retry shortly.";
-      } else if (PROVIDER === "gemini") {
-        friendly = "Gemini could not complete the reply. Check the API key, model access, quota and the provider error in Render logs.";
+        friendly = "Groq has reached a usage limit or rate limit. Check your Groq usage and limits, then try again.";
+      } else if (upstream.status === 401 || upstream.status === 403) {
+        friendly = "Groq rejected the API key or project access. Check GROQ_API_KEY and your Groq project permissions.";
+      } else if (upstream.status === 404) {
+        friendly = "Groq could not find the configured model. Check GROQ_MODEL and model access for this API key.";
+      } else if (upstream.status >= 500) {
+        friendly = "Groq is temporarily returning a server error. Check Render logs and retry shortly.";
       } else {
-        friendly = "The AI service could not complete the reply. Check the provider error in Render logs and try again.";
+        friendly = "Groq could not complete the reply. Check the provider error in Render logs and try again.";
       }
       return json(response, upstream.status === 429 ? 429 : 502, {
         error: friendly,
@@ -641,10 +620,8 @@ const app = http.createServer(async (request, response) => {
     }
 
     const result = await upstream.json();
-    const finishReason = PROVIDER === "gemini"
-      ? result?.candidates?.[0]?.finishReason
-      : result?.choices?.[0]?.finish_reason;
-    if (PROVIDER === "groq" && finishReason === "length") {
+    const finishReason = result?.choices?.[0]?.finish_reason;
+    if (finishReason === "length") {
       console.warn("Groq reply reached the completion token limit", { model: MODEL, finishReason });
       return json(response, 502, {
         error: "The AI reply reached its length limit before finishing. Please try again.",
@@ -653,9 +630,7 @@ const app = http.createServer(async (request, response) => {
         finishReason
       }, headers || {});
     }
-    const reply = PROVIDER === "gemini"
-      ? (result?.candidates?.[0]?.content?.parts || []).map((part) => typeof part.text === "string" ? part.text : "").join("\n").trim()
-      : result?.choices?.[0]?.message?.content;
+    const reply = result?.choices?.[0]?.message?.content;
     if (typeof reply !== "string" || !reply.trim()) {
       return json(response, 502, { error: "The AI service returned an empty reply." }, headers || {});
     }
@@ -693,9 +668,7 @@ const app = http.createServer(async (request, response) => {
       message: String(error?.message || "Unknown server error").slice(0, 300)
     });
     return json(response, 502, {
-      error: PROVIDER === "gemini"
-        ? "The SYNQ.ME backend could not complete the request to Gemini. Check the backend logs for the diagnostic error."
-        : "The SYNQ.ME backend could not complete the request to the AI provider. Check the backend logs for the diagnostic error.",
+      error: "The SYNQ.ME backend could not complete the request to Groq. Check the backend logs for the diagnostic error.",
       provider: PROVIDER
     }, headers || {});
   }
@@ -706,5 +679,5 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log("AI provider: " + PROVIDER);
   console.log("Model: " + MODEL);
   console.log("AI API key configured: " + Boolean(API_KEY));
-  console.log("Gemini transcription configured: " + Boolean(GEMINI_API_KEY));
+
 });
