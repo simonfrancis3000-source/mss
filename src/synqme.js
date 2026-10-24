@@ -68,6 +68,25 @@ const supabase = SUPABASE_URL && SUPABASE_KEY
     })
   : null;
 const WELCOME = "Hi, I’m here to help you build your SecondSelf. Which parts of home life would you like it to understand first?";
+const WELCOME_BY_LANGUAGE = {
+  en: WELCOME,
+  es: "Hola, estoy aquí para ayudarte a crear tu SecondSelf. ¿Qué aspectos de la vida en casa te gustaría que aprendiera primero?",
+  fr: "Bonjour, je suis là pour t’aider à construire ton SecondSelf. Quels aspects de la vie à la maison aimerais-tu que je comprenne en premier ?",
+  it: "Ciao, sono qui per aiutarti a costruire il tuo SecondSelf. Quali aspetti della vita in casa vorresti che imparassi per primi?",
+  pt: "Olá, estou aqui para te ajudar a construir o teu SecondSelf. Que aspetos da vida em casa gostarias que eu aprendesse primeiro?",
+  hi: "नमस्ते, मैं आपका SecondSelf बनाने में मदद करने के लिए यहाँ हूँ। आप चाहेंगे कि मैं घर की दिनचर्या के किन पहलुओं को सबसे पहले समझूँ?",
+  ja: "こんにちは。あなたのSecondSelfづくりをお手伝いします。家での暮らしのどんなことを、まず理解してほしいですか？",
+  zh: "你好，我来帮你建立自己的 SecondSelf。你希望我先了解家庭生活中的哪些方面？"
+};
+const KNOWN_WELCOME_MESSAGES = new Set(Object.values(WELCOME_BY_LANGUAGE));
+function localizeWelcomeMessage(language) {
+  const welcome = WELCOME_BY_LANGUAGE[language] || WELCOME;
+  state.messages = state.messages.map((item) =>
+    item?.role === "assistant" && KNOWN_WELCOME_MESSAGES.has(item.content)
+      ? { ...item, content: welcome }
+      : item
+  );
+}
 
 const ROBOT_APPEARANCE_KEY = "synqme-robot-appearance-v1";
 const OWNER_AVATAR_KEY = "synqme-owner-avatar-v1";
@@ -726,6 +745,7 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
 
   state.preferences = mergePreferences(remotePreferences, draftState?.preferences || []);
   state.messages = mergeConversationMessages(remoteConversation?.messages || [], draftState?.messages || []);
+  localizeWelcomeMessage(state.profile.preferredLanguage || "en");
   state.pendingClarification = remoteConversation?.pending_clarification || draftState?.pendingClarification || null;
   state.apiConnected = false;
   cloudMode = "syncing";
@@ -895,6 +915,7 @@ elements.settingsForm?.addEventListener("submit", async (event) => {
     preferredLanguage: elements.preferredLanguage?.value || "en",
     confirmActions: Boolean(elements.confirmActions.checked)
   };
+  localizeWelcomeMessage(state.profile.preferredLanguage);
   persist();
   renderAll();
   const savedToAccount = await flushCloudSave();
