@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import {
   buildHomeMemoryIndexRows,
   extractHomeMemoryKeys,
+  extractHomeMemoryTopics,
   rankHomeMemoryCandidates
 } from "./home-memory-index.js";
 
