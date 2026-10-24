@@ -12,7 +12,7 @@ This is a Groq inference and conversation-orchestration improvement. It does **n
 - server/index.js adds those instructions to its existing Freya system prompt **on the server**, then calls Groq. The browser's system messages are filtered out by the server, so the prompt must remain server-owned.
 - The existing user message history, profile, preference records, selected domestic interests, pending clarification, and repair-mode flag are passed into the prompt builder.
 - Groq remains the sole model provider. The default is openai/gpt-oss-120b, with high reasoning effort; GROQ_REASONING_EFFORT can override the effort. A legacy GROQ_MODEL=openai/gpt-oss-20b value is upgraded to the 120B default, while another explicitly configured model is preserved.
-- public/sw.js uses shell cache synqme-shell-v34; the change does not deliberately delete stored voice/model caches.
+- public/sw.js uses shell cache synqme-shell-v35; the change does not deliberately delete stored voice/model caches.
 - test/home-persona-reasoning.test.js covers prompt content, persona context, recently asked questions, and malformed/missing input. test/home-memory-index.test.js covers topic synonyms, short-answer context, stable message keys and relevance ranking. npm test is part of the GitHub Actions build workflow.
 
 ## Conversation persistence and searchable memory
@@ -24,6 +24,7 @@ This is a Groq inference and conversation-orchestration improvement. It does **n
 - Retrieval is a deterministic keyword/topic index, not semantic vector search. It is intentionally small and quick, and can fall back to the current browser transcript when the database index is unavailable. It does not claim to understand every paraphrase; the topic aliases can be expanded using real conversation examples.
 - **Live database status (24 October 2026):** the migration has been applied to the active MySecondSelf Supabase project; the new table has RLS enabled and currently contains zero rows. The latest inspected transcript table contains one active transcript with 211 retained messages. The application changes are on branch `SYNQ.ME`; the archive backfill will run when that client code is deployed and the signed-in account loads. Until then, keyword retrieval uses only the browser's retained transcript. The migration can backfill only messages still present in the retained transcript at rollout time; any earlier content already trimmed away cannot be reconstructed from this app's current data.
 - The current product has one primary conversation stream. The archive includes a `conversation_key` so future multi-chat threads can be separated, but the UI does not yet create or switch among separate conversation IDs.
+- The separate shared household knowledge library is documented in `docs/shared-knowledge-library.md`. It is opt-in, keeps private user memories separate, stores only generalized candidates in a per-user moderation queue, and retrieves only approved non-attributed entries. Five curated starter patterns are present in the live database; community candidate ingestion is not live until the branch is deployed and a user opts in.
 
 ## Reasoning principles translated from the Dropbox Veyra / Inca Labs material
 
