@@ -70,6 +70,15 @@ const supabase = SUPABASE_URL && SUPABASE_KEY
 const WELCOME = "Hi, I’m here to help you build your SecondSelf. Which parts of home life would you like it to understand first?";
 
 const ROBOT_APPEARANCE_KEY = "synqme-robot-appearance-v1";
+const OWNER_AVATAR_KEY = "synqme-owner-avatar-v1";
+let ownerAvatarData = (() => {
+  try {
+    const saved = localStorage.getItem(OWNER_AVATAR_KEY);
+    return typeof saved === "string" ? saved : "";
+  } catch {
+    return "";
+  }
+})();
 const ROBOT_OPTIONS = [
   { id: "elo", name: "ELO", accent: "#58a6ff", description: "Friendly and familiar" },
   { id: "lumi", name: "LUMI", accent: "#77c8b2", description: "Calm and curious" },
@@ -168,6 +177,10 @@ const elements = {
   cancelSettings: $("#cancelSettings"),
   settingsForm: $("#settingsForm"),
   ownerName: $("#ownerName"),
+  ownerAvatarPreview: $("#ownerAvatarPreview"),
+  ownerImageInput: $("#ownerImageInput"),
+  uploadOwnerImageButton: $("#uploadOwnerImageButton"),
+  removeOwnerImageButton: $("#removeOwnerImageButton"),
   robotName: $("#robotName"),
   robotType: $("#robotType"),
   confirmActions: $("#confirmActions"),
@@ -914,13 +927,95 @@ function selectedCompanionDisplayName() {
   return (state.profile.robotName || "").trim() || "Your companion";
 }
 
+function renderOwnerAvatarPreview() {
+  if (!elements.ownerAvatarPreview) return;
+  elements.ownerAvatarPreview.replaceChildren();
+  if (ownerAvatarData) {
+    const image = document.createElement("img");
+    image.src = ownerAvatarData;
+    image.alt = "";
+    elements.ownerAvatarPreview.append(image);
+    elements.ownerAvatarPreview.classList.add("has-photo");
+  } else {
+    const initial = (elements.ownerName?.value || state.profile.ownerName || "").trim().charAt(0).toUpperCase() || "Y";
+    const fallback = document.createElement("span");
+    fallback.setAttribute("aria-hidden", "true");
+    fallback.textContent = initial;
+    elements.ownerAvatarPreview.append(fallback);
+    elements.ownerAvatarPreview.classList.remove("has-photo");
+  }
+  if (elements.removeOwnerImageButton) elements.removeOwnerImageButton.hidden = !ownerAvatarData;
+  if (elements.uploadOwnerImageButton) {
+    const label = elements.uploadOwnerImageButton.querySelector("span");
+    if (label) label.textContent = ownerAvatarData ? "Change your photo" : "Upload your photo";
+  }
+}
+
+function saveOwnerAvatar() {
+  try {
+    if (ownerAvatarData) localStorage.setItem(OWNER_AVATAR_KEY, ownerAvatarData);
+    else localStorage.removeItem(OWNER_AVATAR_KEY);
+  } catch {
+    if (elements.voiceStatus) elements.voiceStatus.textContent = "Photo selected for this session only; browser storage is full.";
+  }
+}
+
+function handleOwnerImageUpload(file) {
+  if (!file || !file.type || !file.type.startsWith("image/")) return;
+  if (file.size > 8 * 1024 * 1024) {
+    window.alert("Choose a profile image smaller than 8 MB.");
+    return;
+  }
+  const reader = new FileReader();
+  reader.onerror = () => window.alert("That image could not be opened. Choose another file.");
+  reader.onload = () => {
+    const image = new Image();
+    image.onerror = () => window.alert("That image could not be opened. Choose another file.");
+    image.onload = () => {
+      const maxSide = 512;
+      const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+      const context = canvas.getContext("2d");
+      if (!context) {
+        window.alert("This browser could not process the profile image.");
+        return;
+      }
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      try {
+        ownerAvatarData = canvas.toDataURL("image/jpeg", 0.82);
+        saveOwnerAvatar();
+        renderOwnerAvatarPreview();
+        renderMessages();
+      } catch {
+        window.alert("The profile image could not be processed. Try a smaller image.");
+      }
+    };
+    image.src = String(reader.result || "");
+  };
+  reader.readAsDataURL(file);
+}
+
 function appendMessage(role, content) {
   const article = document.createElement("article");
   article.className = "message " + (role === "user" ? "user-message" : "assistant-message");
   const avatar = document.createElement("div");
   avatar.className = "message-avatar";
   if (role === "user") {
-    avatar.textContent = state.profile.ownerName.trim().charAt(0).toUpperCase() || "Y";
+    if (ownerAvatarData) {
+      avatar.classList.add("owner-message-avatar");
+      avatar.setAttribute("aria-hidden", "true");
+      const image = document.createElement("img");
+      image.className = "message-owner-image";
+      image.src = ownerAvatarData;
+      image.alt = "";
+      avatar.append(image);
+    } else {
+      avatar.textContent = state.profile.ownerName.trim().charAt(0).toUpperCase() || "Y";
+    }
   } else {
     avatar.classList.add("robot-message-avatar");
     avatar.setAttribute("aria-hidden", "true");
@@ -1420,6 +1515,7 @@ function updateDecisionSummary() {
 
 function renderAll() {
   renderMessages();
+  renderOwnerAvatarPreview();
   renderPreferences();
   updateDecisionSummary();
   renderSettingsDetails();
@@ -1809,6 +1905,20 @@ function handleRobotImageUpload(file) {
 function initialiseRobotAndVoiceControls() {
   renderRobotPicker();
   applyRobotAppearance();
+  renderOwnerAvatarPreview();
+  elements.uploadOwnerImageButton?.addEventListener("click", () => elements.ownerImageInput?.click());
+  elements.ownerImageInput?.addEventListener("change", () => {
+    const file = elements.ownerImageInput.files?.[0];
+    handleOwnerImageUpload(file);
+    elements.ownerImageInput.value = "";
+  });
+  elements.removeOwnerImageButton?.addEventListener("click", () => {
+    ownerAvatarData = "";
+    saveOwnerAvatar();
+    renderOwnerAvatarPreview();
+    renderMessages();
+  });
+  elements.ownerName?.addEventListener("input", renderOwnerAvatarPreview);
   elements.uploadRobotImageButton?.addEventListener("click", () => elements.robotImageInput?.click());
   elements.robotImageInput?.addEventListener("change", () => {
     const file = elements.robotImageInput.files?.[0];
