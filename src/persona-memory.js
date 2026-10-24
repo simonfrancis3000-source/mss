@@ -165,14 +165,16 @@ export function rankPersonaMemories(query, memories, { limit = 8 } = {}) {
     let overlaps = 0;
     for (const key of queryKeys) if (keys.has(key)) overlaps++;
     const topicHit = queryTopics.has(memory.topic) ? 1 : 0;
-    if (!overlaps && !topicHit) return null;
+    const semanticSimilarity = Number.isFinite(Number(memory.vector_score))
+      ? Math.max(0, Math.min(1, Number(memory.vector_score)))
+      : 0;
+    // Allow high-quality vector matches even when the query and saved rule
+    // share no literal words or topic label. Lexical retrieval still works.
+    if (!overlaps && !topicHit && semanticSimilarity < 0.4) return null;
     const statusWeight = memory.status === "conflicting" ? 1.2 : memory.status === "user_confirmed" ? 1.4 : 1;
     const confidence = Number.isFinite(Number(memory.confidence)) ? Number(memory.confidence) : 0.6;
     const date = Date.parse(memory.updated_at || memory.source_timestamp || memory.created_at || "") || 0;
     const recency = date ? Math.min(1, date / Date.now()) : 0;
-    const semanticSimilarity = Number.isFinite(Number(memory.vector_score))
-      ? Math.max(0, Math.min(1, Number(memory.vector_score)))
-      : 0;
     return {
       memory,
       score: topicHit * 6 + Math.min(overlaps, 10) * 0.9 + confidence * 1.2 + statusWeight + recency * 0.25 + semanticSimilarity * 5
