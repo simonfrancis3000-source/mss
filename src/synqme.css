@@ -1485,8 +1485,14 @@ body:not(.auth-required):not(.profile-setup-required) {
     flex-direction: column;
     min-width: 0;
   }
-  .chat-workspace > .chat-messages {
+  .chat-workspace > .chat-transcript-shell {
     order: 0;
+    flex: 0 1 auto;
+    min-width: 0;
+    min-height: 0;
+    width: 100%;
+  }
+  .chat-workspace > .chat-transcript-shell > .chat-messages {
     flex: 0 1 auto;
     height: auto;
     min-height: 140px;
@@ -1535,5 +1541,52 @@ body:not(.auth-required):not(.profile-setup-required) {
   .chat-messages .message-body p {
     font-size: 18px !important;
     line-height: 1.5;
+  }
+}
+
+
+/* Stable, very light scrollbar for mobile browsers that hide native scrollbars. */
+.chat-transcript-shell {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex: 0 1 auto;
+}
+.chat-transcript-shell > .chat-messages {
+  width: 100%;
+  box-sizing: border-box;
+  padding-right: 15px;
+}
+.chat-scrollbar-track {
+  position: absolute;
+  z-index: 4;
+  top: 12px;
+  right: 5px;
+  bottom: 12px;
+  width: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(229, 233, 240, .62);
+  pointer-events: none;
+}
+.chat-scrollbar-track[hidden] {
+  display: none !important;
+}
+.chat-scrollbar-thumb {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: block;
+  min-height: 22px;
+  border-radius: 999px;
+  background: rgba(163, 176, 195, .56);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .25);
+  will-change: transform, height;
+}
+@media (max-width: 560px) {
+  .chat-transcript-shell > .chat-messages {
+    padding-right: 16px;
   }
 }
