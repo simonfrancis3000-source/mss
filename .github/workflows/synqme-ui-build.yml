@@ -25,7 +25,8 @@ permissions:
 jobs:
   build:
     name: Install and build SYNQ.ME
-    runs-on: ubuntu-latest
+    # Pin the runner while GitHub is migrating ubuntu-latest to Ubuntu 26.04.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Check out source
