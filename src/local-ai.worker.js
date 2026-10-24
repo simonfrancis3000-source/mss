@@ -2,6 +2,7 @@ import { env, pipeline } from "@huggingface/transformers";
 
 const DESKTOP_MODEL_ID = "onnx-community/Qwen2.5-1.5B-Instruct";
 const COMPACT_MODEL_ID = "onnx-community/Qwen2.5-0.5B-Instruct";
+const MOBILE_MODEL_ID = "onnx-community/SmolLM2-360M-Instruct-ONNX";
 const IS_MOBILE_DEVICE = (() => {
   const nav = self.navigator || {};
   const ua = String(nav.userAgent || "");
@@ -60,6 +61,24 @@ function describeLoadError(error) {
     : "The model loader failed without a detailed error. Check browser storage, available memory, and WebGPU support, then refresh and retry.";
 }
 
+async function removeCachedModelFiles(modelId) {
+  try {
+    if (!self.caches) return;
+    const cache = await self.caches.open(env.cacheKey);
+    const requests = await cache.keys();
+    const encodedModelId = encodeURIComponent(modelId);
+    await Promise.all(requests.map((request) => {
+      const url = request.url;
+      if (url.includes(modelId) || url.includes(encodedModelId)) {
+        return cache.delete(request);
+      }
+      return Promise.resolve(false);
+    }));
+  } catch (error) {
+    console.warn("Could not remove obsolete model files from browser cache.", error);
+  }
+}
+
 async function hasCachedModelFiles(modelId, dtype) {
   try {
     if (!self.caches || !env.useBrowserCache) return false;
@@ -105,9 +124,16 @@ async function loadModel() {
     // Mobile browsers can evict origin storage when a single model is larger
     // than their practical quota. Use the compact 0.5B model on mobile and
     // skip WebGPU there: the 1.5B q4f16 file is 1.22 GB.
-    const preferredModelId = (IS_MOBILE_DEVICE || forceCpuBackend)
-      ? COMPACT_MODEL_ID
-      : DESKTOP_MODEL_ID;
+    if (IS_MOBILE_DEVICE) {
+      // Free the oversized model if a previous app version cached it. Keep
+      // other caches, including Kokoro voice assets, untouched.
+      await removeCachedModelFiles(DESKTOP_MODEL_ID);
+    }
+    const preferredModelId = IS_MOBILE_DEVICE
+      ? MOBILE_MODEL_ID
+      : forceCpuBackend
+        ? COMPACT_MODEL_ID
+        : DESKTOP_MODEL_ID;
     const preferredDtype = (IS_MOBILE_DEVICE || forceCpuBackend) ? "q4" : "q4f16";
     modelCacheDetected = await hasCachedModelFiles(preferredModelId, preferredDtype);
     postStatus(modelCacheDetected
@@ -167,7 +193,7 @@ async function loadModel() {
             Math.min(4, (self.navigator?.hardwareConcurrency || 2) - 1)
           );
         } catch {}
-        await tryBackend("wasm", COMPACT_MODEL_ID, "q4");
+        await tryBackend("wasm", IS_MOBILE_DEVICE ? MOBILE_MODEL_ID : COMPACT_MODEL_ID, "q4");
       } catch (wasmError) {
         generator = null;
         const gpuDetail = webgpuError?.message || String(webgpuError || "GPU inference was skipped");
