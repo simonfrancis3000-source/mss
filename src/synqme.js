@@ -382,6 +382,7 @@ let authRecoveryInProgress = Boolean(/type=recovery/i.test(window.location.hash 
 let cloudMode = "local";
 let cloudSaveTimer = null;
 let cloudSaveChain = Promise.resolve();
+let cloudSaveInFlight = false;
 let cloudConversationUpdatedAt = null;
 let cloudConversationChannel = null;
 let cloudConversationRefreshTimer = null;
@@ -406,7 +407,7 @@ function persist(syncCloud = true) {
   return localSaved;
 }
 
-function scheduleCloudSave() {
+function scheduleCloudSave(delay = 300) {
   if (!supabase || !cloudUserId) return;
   if (cloudSaveTimer) window.clearTimeout(cloudSaveTimer);
   cloudSaveTimer = window.setTimeout(() => {
@@ -419,13 +420,20 @@ function scheduleCloudSave() {
       return;
     }
     cloudSaveChain = cloudSaveChain
-      .then(() => saveCloudState())
+      .then(async () => {
+        cloudSaveInFlight = true;
+        try {
+          await saveCloudState();
+        } finally {
+          cloudSaveInFlight = false;
+        }
+      })
       .catch((error) => {
         console.info("SYNQ.ME account sync failed.", error);
         cloudMode = "error";
         renderPreferences();
       });
-  }, 300);
+  }, delay);
 }
 
 async function flushCloudSave() {
@@ -433,7 +441,14 @@ async function flushCloudSave() {
   if (cloudSaveTimer) window.clearTimeout(cloudSaveTimer);
   cloudSaveTimer = null;
   cloudSaveChain = cloudSaveChain
-    .then(() => saveCloudState())
+    .then(async () => {
+      cloudSaveInFlight = true;
+      try {
+        await saveCloudState();
+      } finally {
+        cloudSaveInFlight = false;
+      }
+    })
     .catch((error) => {
       console.info("SYNQ.ME account sync failed.", error);
       cloudMode = "error";
@@ -974,6 +989,7 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   renderAll();
   if (!profileComplete()) openSettings();
   else updateSettingsMode();
+  startCloudConversationSync();
   return true;
 }
 
@@ -3486,6 +3502,7 @@ elements.signOutButton?.addEventListener("click", async () => {
     if (error) throw error;
     if (cloudSaveTimer) window.clearTimeout(cloudSaveTimer);
     cloudSaveTimer = null;
+    stopCloudConversationSync();
     cloudUserId = null;
     cloudUserEmail = "";
     cloudMode = "local";
