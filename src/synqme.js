@@ -125,6 +125,7 @@ const $ = (selector) => document.querySelector(selector);
 const elements = {
   splash: $("#appSplash"),
   providerLabel: $("#providerLabel"),
+  preferredLanguage: $("#preferredLanguage"),
   conversationStatus: $("#conversationStatus"),
   chatMessages: $("#chatMessages"),
   chatForm: $("#chatForm"),
@@ -216,7 +217,7 @@ const elements = {
 };
 
 function defaultProfile() {
-  return { ownerName: "", robotName: "", robotType: "Humanoid robot", robotVoice: "female", confirmActions: false };
+  return { ownerName: "", robotName: "", robotType: "Humanoid robot", robotVoice: "female", preferredLanguage: "en", confirmActions: false };
 }
 
 function initialState() {
@@ -427,6 +428,7 @@ async function saveCloudState() {
     future_robot_name: snapshot.profile.robotName,
     future_robot_type: snapshot.profile.robotType,
     future_robot_voice: snapshot.profile.robotVoice || "female",
+    preferred_language: snapshot.profile.preferredLanguage || "en",
     confirm_actions: snapshot.profile.confirmActions,
     domestic_functions: snapshot.functions,
     updated_at: new Date().toISOString()
@@ -693,6 +695,7 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
       robotName: remoteProfile.future_robot_name || fallbackProfile.robotName || "",
       robotType: remoteProfile.future_robot_type || fallbackProfile.robotType || "Humanoid robot",
       robotVoice: remoteProfile.future_robot_voice || fallbackProfile.robotVoice || "female",
+      preferredLanguage: remoteProfile.preferred_language || fallbackProfile.preferredLanguage || "en",
       confirmActions: Boolean(remoteProfile.confirm_actions)
     };
     const remoteFunctions = Array.isArray(remoteProfile.domestic_functions)
@@ -851,6 +854,7 @@ function populateSettingsForm() {
   elements.robotType.value = state.profile.robotType || "Humanoid robot";
   const voiceField = document.querySelector("#robotVoice");
   if (voiceField) voiceField.value = state.profile.robotVoice || "female";
+  if (elements.preferredLanguage) elements.preferredLanguage.value = state.profile.preferredLanguage || "en";
   elements.confirmActions.checked = Boolean(state.profile.confirmActions);
   elements.functionGrid.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
     checkbox.checked = state.functions.includes(checkbox.value);
@@ -873,6 +877,7 @@ elements.settingsForm?.addEventListener("submit", async (event) => {
     robotName,
     robotType: elements.robotType.value || "Humanoid robot",
     robotVoice: document.querySelector("#robotVoice")?.value || "female",
+    preferredLanguage: elements.preferredLanguage?.value || "en",
     confirmActions: Boolean(elements.confirmActions.checked)
   };
   persist();
@@ -2089,7 +2094,7 @@ async function transcribeVoiceRecording(blob) {
     const response = await fetch(API_BASE + "/api/transcribe", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ audioBase64, mimeType: blob.type || "audio/mp4" }),
+      body: JSON.stringify({ audioBase64, mimeType: blob.type || "audio/mp4", language: state.profile.preferredLanguage || "en" }),
       signal: AbortSignal.timeout(45_000)
     });
     const data = await response.json().catch(() => ({}));
@@ -2190,7 +2195,7 @@ function createSpeechRecognition() {
   if (!SpeechRecognitionConstructor) return null;
   try {
     const recognizer = new SpeechRecognitionConstructor();
-    recognizer.lang = "en-GB";
+    recognizer.lang = ({"en":"en-US","es":"es-ES","fr":"fr-FR","it":"it-IT","pt":"pt-BR","hi":"hi-IN","ja":"ja-JP","zh":"zh-CN"})[state.profile.preferredLanguage || "en"] || "en-US";
     recognizer.continuous = false;
     recognizer.interimResults = true;
     recognizer.maxAlternatives = 1;
@@ -2405,6 +2410,7 @@ async function requestAIReply(repairMode = false) {
           robotName: state.profile.robotName,
           robotType: state.profile.robotType,
           robotVoice: state.profile.robotVoice || "female",
+          preferredLanguage: state.profile.preferredLanguage || "en",
           askBeforeActions: state.profile.confirmActions
         },
         domesticFunctions: state.functions.map((id) => ACTIVITIES.find((activity) => activity.id === id)?.label).filter(Boolean),
