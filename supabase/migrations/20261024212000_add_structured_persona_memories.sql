@@ -120,7 +120,7 @@ BEGIN
       USING (auth.uid() = user_id);
   END IF;
 END
-$$;
+$persona_memory_fn$;
 
 COMMENT ON TABLE public.synqme_persona_memories IS
   'Structured, user-owned memories with evidence, scope, conflict state and review metadata. Reusable task procedures live separately in application skill definitions.';
