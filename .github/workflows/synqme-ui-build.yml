@@ -2,10 +2,11 @@ name: SYNQ.ME UI build
 
 on:
   push:
-    branches: [feature/synqme-robot-voice-ui]
+    branches: [SYNQ.ME, feature/synqme-robot-voice-ui]
     paths:
       - "index.html"
       - "src/**"
+      - "public/**"
       - "package.json"
       - "package-lock.json"
       - ".github/workflows/synqme-ui-build.yml"
@@ -14,6 +15,7 @@ on:
     paths:
       - "index.html"
       - "src/**"
+      - "public/**"
       - "package.json"
       - "package-lock.json"
       - ".github/workflows/synqme-ui-build.yml"
