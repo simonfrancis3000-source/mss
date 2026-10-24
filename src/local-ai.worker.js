@@ -24,6 +24,7 @@ function postProgress(event) {
     self.postMessage({
       type: "progress",
       cached: modelCacheDetected,
+      modelId: activeModelId,
       status: String(info.status || ""),
       file: typeof info.file === "string" ? info.file : "",
       aggregate,
@@ -224,6 +225,7 @@ function extractReply(output) {
 self.addEventListener("message", async ({ data }) => {
   if (!data || typeof data !== "object") return;
   if (data.type === "load") {
+    if (data.forceCpu === true) forceCpuBackend = true;
     try {
       await loadModel();
       self.postMessage({ type: "ready" });
