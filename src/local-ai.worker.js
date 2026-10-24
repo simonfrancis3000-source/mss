@@ -7,7 +7,19 @@ let generationBusy = false;
 let modelCacheDetected = false;
 
 function postProgress(event) {
-  try { self.postMessage({ type: "progress", cached: modelCacheDetected, ...event }); } catch {}
+  const info = event && typeof event === "object" ? event : {};
+  const aggregate = info.status === "progress_total";
+  try {
+    self.postMessage({
+      type: "progress",
+      cached: modelCacheDetected,
+      status: String(info.status || ""),
+      file: typeof info.file === "string" ? info.file : "",
+      progress: aggregate && Number.isFinite(info.progress) ? info.progress : null,
+      loaded: Number.isFinite(info.loaded) ? info.loaded : null,
+      total: Number.isFinite(info.total) ? info.total : null
+    });
+  } catch {}
 }
 
 function postStatus(label) {
