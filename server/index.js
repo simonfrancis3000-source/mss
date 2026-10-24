@@ -29,6 +29,17 @@ const requestHistory = new Map();
 const MAX_REQUESTS_PER_MINUTE = 12;
 const MAX_BODY_BYTES = 48 * 1024;
 const MAX_AUDIO_BODY_BYTES = 8 * 1024 * 1024;
+const SUPPORTED_CONVERSATION_LANGUAGES = new Set(["en", "es", "fr", "it", "pt", "hi", "ja", "zh"]);
+const CONVERSATION_LANGUAGE_NAMES = {
+  en: "English (US)",
+  es: "Spanish",
+  fr: "French",
+  it: "Italian",
+  pt: "Brazilian Portuguese",
+  hi: "Hindi",
+  ja: "Japanese",
+  zh: "Mandarin Chinese"
+};
 
 function json(response, status, body, headers = {}) {
   response.writeHead(status, {
@@ -129,7 +140,8 @@ function cleanProfile(input) {
     robotName: typeof input.robotName === "string" ? input.robotName.trim().slice(0, 60) : "",
     robotType: typeof input.robotType === "string" ? input.robotType.slice(0, 80) : "Home assistant",
     askBeforeActions: Boolean(input.askBeforeActions),
-    robotVoice: input.robotVoice === "male" ? "male" : "female"
+    robotVoice: input.robotVoice === "male" ? "male" : "female",
+    preferredLanguage: SUPPORTED_CONVERSATION_LANGUAGES.has(input.preferredLanguage) ? input.preferredLanguage : "en"
   };
 }
 
@@ -355,6 +367,8 @@ const app = http.createServer(async (request, response) => {
       const body = await readJson(request, MAX_AUDIO_BODY_BYTES);
       const audioBase64 = typeof body?.audioBase64 === "string" ? body.audioBase64.replace(/^data:[^,]+,/, "") : "";
       const suppliedMime = typeof body?.mimeType === "string" ? body.mimeType.split(";")[0].trim().toLowerCase() : "";
+      const transcriptionLanguage = SUPPORTED_CONVERSATION_LANGUAGES.has(body?.language) ? body.language : "en";
+      const transcriptionLanguageName = CONVERSATION_LANGUAGE_NAMES[transcriptionLanguage] || "English (US)";
       const mimeType = suppliedMime === "audio/x-wav" ? "audio/wav" : suppliedMime;
       const allowedMimeTypes = new Set(["audio/webm", "audio/mp4", "audio/m4a", "audio/wav", "audio/mpeg", "audio/mp3", "audio/aac", "audio/ogg", "audio/flac", "audio/opus"]);
       if (!audioBase64 || !allowedMimeTypes.has(mimeType) || audioBase64.length > 7_500_000) {
@@ -367,7 +381,7 @@ const app = http.createServer(async (request, response) => {
           contents: [{
             role: "user",
             parts: [
-              { text: "Transcribe the spoken words in this audio exactly as the speaker said them. Return only the transcription, with no commentary, no quotation marks, and no guesses if speech is not intelligible." },
+              { text: "Transcribe the spoken words in this audio exactly as the speaker said them. The expected language is " + transcriptionLanguageName + ". Keep the transcript in that language and writing system. Do not translate it. Return only the transcription, with no commentary, no quotation marks, and no guesses if speech is not intelligible." },
               { inlineData: { mimeType, data: audioBase64 } }
             ]
           }],
@@ -413,6 +427,7 @@ const app = http.createServer(async (request, response) => {
     const messages = cleanMessages(body?.messages);
     const preferences = cleanPreferences(body?.preferences);
     const profile = cleanProfile(body?.profile);
+    const responseLanguage = CONVERSATION_LANGUAGE_NAMES[profile.preferredLanguage] || "English (US)";
     const domesticFunctions = cleanFunctions(body?.domesticFunctions);
 
     if (!messages.length || messages[messages.length - 1].role !== "user") {
@@ -423,7 +438,7 @@ const app = http.createServer(async (request, response) => {
     const previousAssistantMessage = messages.length > 1 && messages[messages.length - 2].role === "assistant"
       ? messages[messages.length - 2].content
       : "";
-    if (isClarificationRequest(latestUserMessage) && previousAssistantMessage) {
+    if (isClarificationRequest(latestUserMessage) && previousAssistantMessage && profile.preferredLanguage === "en") {
       return json(response, 200, {
         reply: clarificationHelpReply(previousAssistantMessage, messages[messages.length - 3]?.content || ""),
         provider: PROVIDER,
@@ -434,6 +449,7 @@ const app = http.createServer(async (request, response) => {
     const systemPrompt = [
       "You are SYNQ.ME, the user's conversational future-robot companion and guide for building their MySecondSelf digital persona. Follow the interaction style of the reference dishwasher conversation: grounded, attentive, useful, specific and naturally inquisitive. It should feel like a thoughtful companion getting to know a home, not a bot running a questionnaire.",
       "VOICE AND IDENTITY: You are Freya, the conversational companion shown in the interface as 'Freya · SYNQ.ME'. Speak directly to the user in the first person as 'I', 'me' and 'my'. Never refer to yourself as 'Freya' in the third person (for example, never ask 'Would you like Freya to help?' or say 'Freya can...'). Say 'Would you like me to...' instead. Keep your identity as the conversational guide distinct from the name of the user's future physical robot, which may be different. You are helping the user define preferences for a future compatible robot; do not imply a physical robot is connected or can currently carry out an action.",
+      "LANGUAGE: Respond in " + responseLanguage + " in every assistant turn, including acknowledgements, follow-up questions, clarifications, summaries and corrections. Keep the actual response text in this language because it is displayed in the conversation and saved to the user's account. Do not switch to English unless the user changes the language setting or explicitly asks you to switch. Preserve personal names and product names; use natural, conversational wording for the selected language. If the user's latest message is in another language, understand it and still answer in the selected language.",
 
       "Your goal is to understand how the person wants everyday tasks handled, what they care about, how they make decisions, which exceptions matter, and when you should ask rather than guess. Learn by following the meaning of the conversation, not by marching through a predefined list of dimensions.",
       "CORE TURN PATTERN: listen carefully; identify the practical rule, reason or exception in the user's answer; briefly reflect what that changes; then ask the single next question that most naturally follows. The reflection may be a conclusion ('So ordinary scraps go in the caddy, but coffee grounds have their own container') or a useful implication ('That means the normal evening schedule should give way if you need dishes before guests arrive'). Do not force every turn into this structure—some turns should simply acknowledge, explain, or clarify.",
