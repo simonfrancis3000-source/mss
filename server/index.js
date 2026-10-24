@@ -323,14 +323,25 @@ function betterFallbackFollowup(message, profile = {}, history = []) {
   ]);
 }
 
-function guardRobotExecutionClaims(reply, preferences) {
+function guardRobotExecutionClaims(reply, preferences, language = "en") {
   const claimPattern = /\b(?:the\s+)?robot\s+(?:will|would)\s+(?:automatically\s+)?(?:follow|place|put|handle|sort|load|unload|start|turn on|execute|perform|carry out)\b|\b(?:will happen automatically|automatically carry out)\b/i;
   if (!claimPattern.test(reply)) return reply;
 
   const saved = preferences.length
     ? preferences.map((item) => item.text).join("; ")
-    : "the preferences discussed in this conversation";
-  return "I’ve captured these preferences in the local browser demo: " + saved + ". SYNQ.ME can use them to shape a proposed household routine. No physical robot is connected, so this demo does not carry out tasks automatically. Actual execution would require a compatible robot, a verified integration, and your authorization. Is there another preference you’d like to add?";
+    : "";
+  const boundary = {
+    en: "I can help shape a proposed household routine from these preferences. No physical robot is connected, so no task is being carried out automatically. Actual execution would require a compatible robot, a verified integration and your authorisation. Is there another detail you'd like to add?",
+    es: "Puedo ayudarte a definir una rutina doméstica a partir de estas preferencias. No hay ningún robot físico conectado, así que no se está realizando ninguna tarea automáticamente. Para ejecutarla harían falta un robot compatible, una integración verificada y tu autorización. ¿Hay algún otro detalle que quieras añadir?",
+    fr: "Je peux t’aider à définir une routine domestique à partir de ces préférences. Aucun robot physique n’est connecté, donc aucune tâche n’est exécutée automatiquement. Il faudrait un robot compatible, une intégration vérifiée et ton autorisation pour passer à l’action. Y a-t-il un autre détail à préciser ?",
+    it: "Posso aiutarti a definire una routine domestica a partire da queste preferenze. Non è collegato alcun robot fisico, quindi nessuna attività viene eseguita automaticamente. Per farlo servirebbero un robot compatibile, un’integrazione verificata e la tua autorizzazione. C’è un altro dettaglio che vuoi aggiungere?",
+    pt: "Posso ajudar a definir uma rotina doméstica com base nestas preferências. Não há nenhum robô físico ligado, por isso nenhuma tarefa está a ser executada automaticamente. Para isso, seriam necessários um robô compatível, uma integração verificada e a tua autorização. Há mais algum detalhe que queiras acrescentar?",
+    hi: "मैं इन प्राथमिकताओं के आधार पर घर की दिनचर्या तय करने में मदद कर सकता हूँ। अभी कोई भौतिक रोबोट जुड़ा नहीं है, इसलिए कोई काम अपने-आप नहीं किया जा रहा है। इसे वास्तव में करने के लिए अनुकूल रोबोट, सत्यापित इंटीग्रेशन और आपकी अनुमति चाहिए होगी। क्या आप कोई और बात जोड़ना चाहेंगे?",
+    ja: "これらの希望をもとに、家事の手順を一緒に考えられます。現在、物理的なロボットは接続されていないため、作業が自動で実行されることはありません。実行には対応するロボット、確認済みの連携機能、そしてあなたの許可が必要です。他に追加したいことはありますか？",
+    zh: "我可以根据这些偏好帮助你规划家务流程。目前没有连接实体机器人，因此不会自动执行任何任务。实际执行需要兼容的机器人、经过验证的集成以及你的授权。你还想补充什么细节吗？"
+  };
+  const response = boundary[language] || boundary.en;
+  return saved ? response.replace(/[?？]$/, "") + (language === "en" ? " I’ll keep these preferences in mind: " : " 已讨论的偏好：") + saved + (language === "zh" ? "。你还想补充什么细节吗？" : ".") : response;
 }
 
 const app = http.createServer(async (request, response) => {
@@ -572,7 +583,7 @@ const app = http.createServer(async (request, response) => {
     const namedReply = robotName
       ? reply.trim().replace(/\byour SecondSelf(?=\s+(?:to avoid|should avoid|avoid))/gi, "your " + robotName)
       : reply.trim();
-    const safeReply = guardRobotExecutionClaims(namedReply, preferences);
+    const safeReply = guardRobotExecutionClaims(namedReply, preferences, profile.preferredLanguage);
     const lowValueReply = /I've captured this preference for your browser-based SecondSelf|I've added it to your local digital persona|That's useful context for your SecondSelf|Let's make that preference more precise|What detail would matter most to get right|Can you walk me through how that usually happens at home|What is the next important detail I should understand/i.test(safeReply);
     const requiresRepair = lowValueReply || responseRepeatsUser(safeReply, latestUserMessage);
     if (requiresRepair && repairMode) {
