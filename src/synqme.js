@@ -153,6 +153,7 @@ const elements = {
   localAIProgressDetail: $("#localAIProgressDetail"),
   localAIProgressFill: $("#localAIProgressFill"),
   localAIProgressTrack: $("#localAIProgressTrack"),
+  localAIProgressPercent: $("#localAIProgressPercent"),
   chatTranscriptShell: $("#chatTranscriptShell"),
   chatMessages: $("#chatMessages"),
   chatScrollbarTrack: $("#chatScrollbarTrack"),
@@ -2036,7 +2037,7 @@ function renderAll() {
   const robotName = state.profile.robotName.trim();
   const companionName = robotName || "your companion";
   if (elements.companionName) elements.companionName.textContent = companionName;
-  if (elements.messageInput) elements.messageInput.placeholder = "Tell SYNQ.ME how you like things done...";
+  if (elements.messageInput) elements.messageInput.placeholder = "Tell " + selectedCompanionDisplayName() + " how you like things.";
   if (elements.mobileOwnerTitle) elements.mobileOwnerTitle.textContent = name ? name + "’s SecondSelf" : "Your SecondSelf";
   const count = state.preferences.length;
   const functionsCount = state.functions.length;
@@ -3137,25 +3138,34 @@ function responseRepeatsUser(reply, userMessage) {
 
 function setLocalAIProgress({ label = "", progress = null, visible = true, indeterminate = false, detail = "" } = {}) {
   if (!elements.localAIProgress) return;
+  const isTerminalLabel = /ready|failed|error|unavailable|not supported|could not/i.test(label);
+  const displayLabel = label && !isTerminalLabel && !label.includes("(this can take a few moments...)")
+    ? label + " (this can take a few moments...)"
+    : label;
   elements.localAIProgress.hidden = !visible;
-  elements.localAIProgress.classList.toggle("is-error", /error|failed|unavailable|not supported|could not/i.test(label));
-  if (elements.localAIProgressLabel) elements.localAIProgressLabel.textContent = label;
+  elements.localAIProgress.classList.toggle("is-error", /error|failed|unavailable|not supported|could not/i.test(displayLabel));
+  if (elements.localAIProgressLabel) elements.localAIProgressLabel.textContent = displayLabel;
   if (elements.localAIProgressDetail) {
     elements.localAIProgressDetail.textContent = detail;
     elements.localAIProgressDetail.hidden = !detail;
   }
   const knownProgress = Number.isFinite(progress);
+  const progressValue = knownProgress ? Math.max(0, Math.min(100, progress)) : null;
   if (elements.localAIProgressFill) {
-    elements.localAIProgressFill.style.width = knownProgress ? Math.max(0, Math.min(100, progress)) + "%" : (indeterminate ? "28%" : "0%");
+    elements.localAIProgressFill.style.width = knownProgress ? progressValue + "%" : (indeterminate ? "28%" : "0%");
     elements.localAIProgressFill.classList.toggle("is-indeterminate", Boolean(indeterminate && !knownProgress));
   }
+  if (elements.localAIProgressPercent) {
+    elements.localAIProgressPercent.textContent = knownProgress ? Math.round(progressValue) + "%" : "";
+    elements.localAIProgressPercent.hidden = !knownProgress;
+  }
   if (elements.localAIProgressTrack) {
-    if (knownProgress) elements.localAIProgressTrack.setAttribute("aria-valuenow", String(Math.round(progress)));
+    if (knownProgress) elements.localAIProgressTrack.setAttribute("aria-valuenow", String(Math.round(progressValue)));
     else elements.localAIProgressTrack.removeAttribute("aria-valuenow");
-    if (label) elements.localAIProgressTrack.setAttribute("aria-valuetext", [label, detail].filter(Boolean).join(". "));
+    if (displayLabel) elements.localAIProgressTrack.setAttribute("aria-valuetext", [displayLabel, detail].filter(Boolean).join(". "));
     else elements.localAIProgressTrack.removeAttribute("aria-valuetext");
   }
-  if (!isSending && elements.conversationStatus && label) elements.conversationStatus.textContent = label;
+  if (!isSending && elements.conversationStatus && displayLabel) elements.conversationStatus.textContent = displayLabel;
 }
 
 function formatModelBytes(value) {
@@ -3223,7 +3233,8 @@ function handleLocalAIWorkerMessage(event) {
   }
   if (data.type === "progress") {
     const aggregate = data.status === "progress_total" && Number.isFinite(data.progress);
-    const progress = aggregate ? data.progress : null;
+    const perFileProgress = data.status === "progress" && Number.isFinite(data.progress);
+    const progress = aggregate || perFileProgress ? data.progress : null;
     let label;
     let detail = "";
     if (data.status === "done" || data.status === "ready") {
