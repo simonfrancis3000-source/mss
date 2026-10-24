@@ -3993,9 +3993,10 @@ async function requestAIReply(repairMode = false) {
       content: message.content
     }));
     const currentUserText = state.messages[state.messages.length - 1]?.content || "";
-    const [memoryReferences, sharedKnowledgeReferences] = await Promise.all([
+    const [memoryReferences, sharedKnowledgeReferences, relevantPersonaMemories] = await Promise.all([
       getHomeMemoryReferences(currentUserText),
-      getSharedKnowledgeReferences(currentUserText)
+      getSharedKnowledgeReferences(currentUserText),
+      getRelevantPersonaMemories(currentUserText)
     ]);
     const response = await fetch(API_BASE + "/api/chat", {
       method: "POST",
@@ -4014,6 +4015,9 @@ async function requestAIReply(repairMode = false) {
         domesticFunctions,
         pendingClarification: state.pendingClarification,
         memoryReferences: memoryReferences.map(({ role, content, timestamp, topics }) => ({ role, content, timestamp, topics })),
+        personaMemories: relevantPersonaMemories.map(({ memory_key, topic, kind, scope_key, statement, status, confidence, conditions, source_message, source_timestamp, conflict_group }) => ({
+          memory_key, topic, kind, scope_key, statement, status, confidence, conditions, source_message, source_timestamp, conflict_group
+        })),
         sharedKnowledgeReferences,
         repairMode
       })
