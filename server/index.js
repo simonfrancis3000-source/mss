@@ -147,7 +147,7 @@ function cleanSharedKnowledgeReferences(input) {
     answer_pattern: typeof item?.answer_pattern === "string" ? item.answer_pattern.trim().slice(0, 700) : "",
     general_principle: typeof item?.general_principle === "string" ? item.general_principle.trim().slice(0, 500) : "",
     context_tags: Array.isArray(item?.context_tags)
-      ? [...new Set(item.context_tags.filter((tag) => typeof tag === "string" && allowedTopics.has(tag))].slice(0, 8))
+      ? [...new Set(item.context_tags.filter((tag) => typeof tag === "string" && allowedTopics.has(tag)))].slice(0, 8)
       : [],
     applicability: item?.applicability && typeof item.applicability === "object" && !Array.isArray(item.applicability)
       ? item.applicability
