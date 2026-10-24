@@ -600,10 +600,22 @@ function stateFromSnapshot(snapshot) {
 }
 
 function mergeConversationMessages(...groups) {
-  // Preserve repeated user/assistant messages within each transcript. Only
-  // remove an overlap at the boundary when combining cloud history with a
-  // browser draft for the same account.
+  // Merge device snapshots without duplicating an older transcript that is
+  // already present in a newer one. Repeated messages inside one transcript
+  // are preserved; overlap is considered only between separate snapshots.
   let messages = [];
+  const key = (item) => item.role + "\\n" + item.content;
+  const sequenceIndex = (haystack, needle) => {
+    if (!needle.length || needle.length > haystack.length) return -1;
+    outer: for (let start = 0; start <= haystack.length - needle.length; start++) {
+      for (let offset = 0; offset < needle.length; offset++) {
+        if (key(haystack[start + offset]) !== key(needle[offset])) continue outer;
+      }
+      return start;
+    }
+    return -1;
+  };
+
   for (const group of groups) {
     const incoming = (Array.isArray(group) ? group : [])
       .map(sanitiseConversationMessage)
@@ -614,7 +626,28 @@ function mergeConversationMessages(...groups) {
       messages = incoming;
       continue;
     }
-    const key = (item) => item.role + "\\n" + item.content;
+
+    // If one complete snapshot is contained in the other, keep the superset.
+    if (sequenceIndex(messages, incoming) >= 0) continue;
+    if (sequenceIndex(incoming, messages) >= 0) {
+      messages = incoming;
+      continue;
+    }
+
+    // When both devices share opening history but diverge later, keep both tails
+    // instead of duplicating all of their shared conversation.
+    let commonPrefix = 0;
+    while (
+      commonPrefix < messages.length &&
+      commonPrefix < incoming.length &&
+      key(messages[commonPrefix]) === key(incoming[commonPrefix])
+    ) commonPrefix++;
+    if (commonPrefix > 0) {
+      messages.push(...incoming.slice(commonPrefix));
+      continue;
+    }
+
+    // Handle a suffix of the current transcript overlapping the incoming head.
     let overlap = Math.min(messages.length, incoming.length);
     while (overlap > 0) {
       let matches = true;
@@ -627,7 +660,30 @@ function mergeConversationMessages(...groups) {
       if (matches) break;
       overlap--;
     }
-    messages.push(...incoming.slice(overlap));
+    if (overlap > 0) {
+      messages.push(...incoming.slice(overlap));
+      continue;
+    }
+
+    // Handle an incoming suffix that overlaps the current transcript's head.
+    let prefixOverlap = Math.min(messages.length, incoming.length);
+    while (prefixOverlap > 0) {
+      let matches = true;
+      for (let i = 0; i < prefixOverlap; i++) {
+        if (key(incoming[incoming.length - prefixOverlap + i]) !== key(messages[i])) {
+          matches = false;
+          break;
+        }
+      }
+      if (matches) break;
+      prefixOverlap--;
+    }
+    if (prefixOverlap > 0) {
+      messages = [...incoming.slice(0, incoming.length - prefixOverlap), ...messages];
+      continue;
+    }
+
+    messages.push(...incoming);
   }
   return (messages.length ? messages : [{ role: "assistant", content: WELCOME }]).slice(-5000);
 }
