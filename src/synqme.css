@@ -1621,3 +1621,119 @@ body:not(.auth-required):not(.profile-setup-required) {
   background: #f2f7ff;
   border-color: #bcd4f6;
 }
+
+
+/* Visible local AMÏA model loading status (this is the stylesheet loaded by index.html). */
+.local-ai-progress {
+  display: block;
+  width: auto;
+  margin: 10px 18px 12px;
+  padding: 12px 14px;
+  border: 1px solid #e0e5ed;
+  border-radius: 12px;
+  background: #f8faff;
+  color: #252a32;
+  font-size: 12px;
+}
+.local-ai-progress[hidden],
+.local-ai-progress-detail[hidden] {
+  display: none !important;
+}
+.local-ai-progress-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  margin-bottom: 9px;
+  padding-left: 8px;
+  color: #2f3744;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+.local-ai-progress-track {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 8px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 999px;
+  background: #e1e7f0;
+}
+.local-ai-progress-fill {
+  display: block;
+  width: 0;
+  height: 100%;
+  min-width: 0;
+  border-radius: inherit;
+  background: #1677f9;
+  transition: width .18s ease;
+}
+.local-ai-progress-fill.is-indeterminate {
+  width: 28%;
+  background: linear-gradient(90deg, #1677f9, #78b2ff);
+  animation: synqme-ai-progress-indeterminate 1.15s ease-in-out infinite;
+}
+.local-ai-progress-detail {
+  margin: 8px 0 0;
+  padding-left: 8px;
+  color: #6a7180;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.local-ai-progress.is-error {
+  border-color: #f0c4c4;
+  background: #fff8f8;
+}
+.local-ai-progress.is-error .local-ai-progress-meta {
+  color: #9b2634;
+}
+.local-ai-progress.is-error .local-ai-progress-fill {
+  background: #d34852;
+}
+@keyframes synqme-ai-progress-indeterminate {
+  from { transform: translateX(-115%); }
+  to { transform: translateX(390%); }
+}
+.panel-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 7px;
+}
+.panel-status > span:last-child {
+  padding-left: 3px;
+}
+.message-timestamp {
+  display: block;
+  margin-top: 7px;
+  color: #888e98;
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1.35;
+  letter-spacing: 0;
+  text-align: left;
+  text-transform: none;
+  font-variant-numeric: tabular-nums;
+}
+.user-message .message-timestamp {
+  text-align: right;
+}
+.message-timestamp.timestamp-unavailable {
+  color: #a4a8af;
+  font-style: italic;
+}
+@media (max-width: 560px) {
+  .local-ai-progress {
+    margin: 9px 12px 10px;
+    padding: 10px 12px;
+  }
+  .local-ai-progress-meta,
+  .local-ai-progress-detail {
+    padding-left: 5px;
+  }
+  .message-timestamp {
+    font-size: 9px;
+  }
+}
