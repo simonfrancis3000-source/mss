@@ -3630,8 +3630,34 @@ async function sendMessage(rawText) {
 elements.chatForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const text = elements.messageInput.value;
-  elements.messageInput.value = "";
-  sendMessage(text);
+  if (!text.trim() || isSending) return;
+
+  // Preserve the draft when the account/profile gate prevents sending.
+  // Once a valid turn begins, sendMessage immediately renders the user message.
+  if (cloudUserId && profileComplete()) elements.messageInput.value = "";
+
+  void sendMessage(text).catch((error) => {
+    console.error("SYNQ.ME could not complete the submitted message.", error);
+    isSending = false;
+    if (elements.sendButton) elements.sendButton.disabled = false;
+    if (elements.messageInput) elements.messageInput.disabled = false;
+
+    const detail = String(error?.message || "An unexpected error interrupted the reply.");
+    if (elements.conversationStatus) {
+      elements.conversationStatus.textContent = "Reply failed. Your message is still available to retry.";
+    }
+    state.apiConnected = false;
+    state.apiError = "message failed";
+    state.apiErrorDetail = detail;
+    state.messages.push({
+      role: "assistant",
+      content: "I couldn’t complete that reply. " + detail + " You can try sending your message again.",
+      timestamp: new Date().toISOString()
+    });
+    persist();
+    renderAll();
+    elements.messageInput?.focus();
+  });
 });
 elements.messageInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && !event.shiftKey) {
