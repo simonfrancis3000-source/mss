@@ -30,6 +30,16 @@ The system deliberately separates three layers:
 
 New community candidates are not automatically made visible to other users. Review prevents one person's mistaken, malicious or highly specific answer from becoming a platform-wide rule.
 
+## Migrations applied
+
+The migration filenames in this branch intentionally match the live Supabase migration history:
+
+- `20261024195254_add_synqme_home_memory_index.sql`
+- `20261024200711_add_synqme_shared_knowledge_library.sql`
+- `20261024200918_harden_shared_knowledge_privacy_checks.sql`
+
+The shared-library and privacy-check migrations have been applied to the active MySecondSelf Supabase project and the five curated seed records were verified in the database. Apply pending migrations only through the project's normal migration workflow; do not re-run already-recorded versions manually.
+
 ## Database access model
 
 - `synqme_shared_knowledge`: RLS enabled. Authenticated users can select rows only where `status='approved'`. No authenticated insert/update/delete policy is provided, so the browser cannot publish or edit shared entries.
