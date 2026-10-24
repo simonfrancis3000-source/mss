@@ -192,7 +192,7 @@ function publicHttpsUrl(value) {
 
 function applianceModelMentioned(latest, context) {
   const modelLabel = /\b(model|model no\.?|model number|type no\.?|product code|service number|e-nr|pnc|serial)\b/i.test(latest);
-  const modelCode = /\b(?=[A-Z0-9-]{4,}\b)(?=[A-Z0-9-]*\d)[A-Z]{0,5}[- ]?\d[A-Z0-9-]{2,}\b/.test(latest);
+  const modelCode = /\b(?=[A-Z0-9-]{4,}\b)(?=[A-Z0-9-]*\d)[A-Z]{0,5}[- ]?\d[A-Z0-9-]{2,}\b/i.test(latest);
   // A product family such as "Series 6" is not an exact model identifier.
   return (modelLabel && latest.length > 5) || modelCode ||
     (APPLIANCE_BRANDS.test(latest) && /\b\d{2,}[A-Z0-9-]*\b/i.test(latest)) ||
@@ -242,7 +242,9 @@ async function searchApplianceManual(messages) {
     let manualText = "";
     let readUrl = "";
     for (const result of results.slice(0, 4)) {
-      if (/\.pdf(?:$|[?#])/i.test(result.url)) continue;
+      // Fetch readable content only from likely manufacturer domains. Other
+      // search results remain links/snippets and are never fetched server-side.
+      if (!result.official || /\.pdf(?:$|[?#])/i.test(result.url)) continue;
       try {
         const pageResponse = await fetch(result.url, {
           headers: { "User-Agent": "Mozilla/5.0 (compatible; SYNQMEManualLookup/1.0)" },
