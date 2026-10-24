@@ -82,13 +82,13 @@ function isUnusableReply(text) {
   if (value.length < 3) return true;
 
   // Reject obvious tokenizer/GPU corruption rather than showing symbol soup.
-  const suspicious = value.match(/[#$%*+|<>_\\[\\]{}@^~]/g) || [];
-  const slashCount = (value.match(/\\//g) || []).length;
+  const suspicious = value.match(/[#$%*+|<>_\[\]{}@^~]/g) || [];
+  const slashCount = (value.match(/\//g) || []).length;
   const suspiciousCount = suspicious.length + slashCount;
   const suspiciousRatio = suspiciousCount / Math.max(1, value.length);
-  const invalidRuns = /[#$%*+|<>_\\[\\]{}@^~]{4,}/.test(value) || /\\/{4,}/.test(value);
+  const invalidRuns = /[#$%*+|<>_\[\]{}@^~]{4,}/.test(value) || /\/{4,}/.test(value);
   const letters = value.match(/\p{L}/gu) || [];
-  return invalidRuns || (suspicious.length >= 8 && suspiciousRatio > 0.08) ||
+  return invalidRuns || (suspiciousCount >= 8 && suspiciousRatio > 0.08) ||
     (value.length > 20 && letters.length / value.length < 0.22);
 }
 
