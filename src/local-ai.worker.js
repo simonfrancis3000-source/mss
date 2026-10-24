@@ -80,7 +80,7 @@ async function hasCachedModelFiles(modelId, dtype) {
 
 function isUnusableReply(text) {
   const value = String(text || "").trim();
-  if (value.length < 3) return true;
+  if (value.length < 2) return true;
 
   // Reject obvious tokenizer/GPU corruption rather than showing symbol soup.
   const suspicious = value.match(/[#$%*+|<>_\[\]{}@^~]/g) || [];
