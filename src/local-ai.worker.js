@@ -121,9 +121,9 @@ async function loadModel() {
     env.cacheKey = "transformers-cache";
     try { await self.navigator.storage?.persist?.(); } catch {}
 
-    // Mobile browsers can evict origin storage when a single model is larger
-    // than their practical quota. Use the compact 0.5B model on mobile and
-    // skip WebGPU there: the 1.5B q4f16 file is 1.22 GB.
+    // Mobile browsers can evict origin storage when model files are large.
+    // Use a sub-400 MB instruction model on mobile and skip WebGPU there.
+    // Remove only the old 1.5B repo's assets, not voice assets or other caches.
     if (IS_MOBILE_DEVICE) {
       // Free the oversized model if a previous app version cached it. Keep
       // other caches, including Kokoro voice assets, untouched.
@@ -135,10 +135,11 @@ async function loadModel() {
         ? COMPACT_MODEL_ID
         : DESKTOP_MODEL_ID;
     const preferredDtype = (IS_MOBILE_DEVICE || forceCpuBackend) ? "q4" : "q4f16";
+    activeModelId = preferredModelId;
     modelCacheDetected = await hasCachedModelFiles(preferredModelId, preferredDtype);
     postStatus(modelCacheDetected
-      ? (IS_MOBILE_DEVICE ? "Loading cached compact local AMÏA model" : "Loading cached local AMÏA model")
-      : (IS_MOBILE_DEVICE ? "Preparing compact local AMÏA model for mobile" : "Preparing local AMÏA model"));
+      ? (IS_MOBILE_DEVICE || forceCpuBackend ? "Loading cached compact local AMÏA model" : "Loading cached local AMÏA model")
+      : (IS_MOBILE_DEVICE ? "Preparing compact local AMÏA model for mobile" : forceCpuBackend ? "Preparing compact local AMÏA CPU model" : "Preparing local AMÏA model"));
 
     const tryBackend = async (device, modelId, dtype) => {
       activeBackend = "";
@@ -146,7 +147,7 @@ async function loadModel() {
       modelCacheDetected = await hasCachedModelFiles(modelId, dtype);
       postStatus(device === "webgpu"
         ? (modelCacheDetected ? "Loading cached local AMÏA model on GPU" : "Loading local AMÏA model on GPU")
-        : (modelId === COMPACT_MODEL_ID
+        : ((modelId === COMPACT_MODEL_ID || modelId === MOBILE_MODEL_ID)
           ? (modelCacheDetected ? "Loading cached compact local AMÏA model" : "Loading compact local AMÏA model")
           : "Switching local AMÏA to CPU inference"));
       generator = await pipeline("text-generation", modelId, {
