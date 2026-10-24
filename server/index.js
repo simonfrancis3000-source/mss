@@ -15,6 +15,8 @@ const configuredGroqModel = String(process.env.GROQ_MODEL || "").trim();
 const MODEL = !configuredGroqModel || configuredGroqModel === "openai/gpt-oss-20b"
   ? "openai/gpt-oss-120b"
   : configuredGroqModel;
+const GROQ_EMBEDDING_MODEL = String(process.env.GROQ_EMBEDDING_MODEL || "nomic-embed-text-v1_5").trim();
+const EXPECTED_EMBEDDING_DIMENSIONS = 768;
 const REASONING_EFFORT = process.env.GROQ_REASONING_EFFORT || "high";
 // Render deployments need CORS to work even when FRONTEND_ORIGIN has not
 // been populated. Keep the known SYNQ.ME origins as safe defaults and allow
@@ -35,9 +37,11 @@ const ALLOWED_ORIGINS = new Set([
 const requestHistory = new Map();
 const knowledgeRequestHistory = new Map();
 const personaMemoryRequestHistory = new Map();
+const personaEmbeddingRequestHistory = new Map();
 const MAX_REQUESTS_PER_MINUTE = 12;
 const MAX_KNOWLEDGE_EXTRACTIONS_PER_MINUTE = 6;
 const MAX_PERSONA_MEMORY_EXTRACTIONS_PER_MINUTE = 8;
+const MAX_PERSONA_MEMORY_EMBEDDINGS_PER_MINUTE = 40;
 const MAX_BODY_BYTES = 48 * 1024;
 const MAX_AUDIO_BODY_BYTES = 8 * 1024 * 1024;
 const SUPPORTED_CONVERSATION_LANGUAGES = new Set(["en", "es", "fr", "it", "pt", "hi", "ja", "zh"]);
@@ -554,6 +558,102 @@ const app = http.createServer(async (request, response) => {
       return json(response, 500, {
         error: "The Groq voice transcription request failed before it could be completed. Try again, or type your message instead.",
         provider: "groq",
+        errorCode
+      }, headers || {});
+    }
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/memory/embed") {
+    if (origin && headers === null) return json(response, 403, { error: "Origin not allowed.", provider: "groq" }, headers || {});
+    if (!GROQ_API_KEY) return json(response, 503, { error: "Groq embeddings are not configured.", provider: "groq" }, headers || {});
+    if (limitReached(request, personaEmbeddingRequestHistory, MAX_PERSONA_MEMORY_EMBEDDINGS_PER_MINUTE)) {
+      return json(response, 429, { error: "Memory embedding rate limit reached. Keyword retrieval remains available.", provider: "groq" }, headers || {});
+    }
+
+    try {
+      const body = await readJson(request);
+      const sourceTexts = Array.isArray(body?.texts) ? body.texts.slice(0, 16) : [];
+      const purpose = body?.purpose === "query" ? "query" : "document";
+      const texts = sourceTexts
+        .filter((value) => typeof value === "string")
+        .map((value) => value.replace(/\\u0000/g, "").trim().slice(0, 1800))
+        .filter(Boolean);
+      if (!texts.length) {
+        return json(response, 400, { error: "Provide at least one non-empty text to embed.", provider: "groq" }, headers || {});
+      }
+
+      // Nomic retrieval embeddings use asymmetric prefixes so query text and
+      // memory statements are placed in the appropriate embedding space.
+      const prefixedTexts = texts.map((value) => (purpose === "query" ? "search_query: " : "search_document: ") + value);
+      const upstream = await fetch("https://api.groq.com/openai/v1/embeddings", {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer " + GROQ_API_KEY,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          input: prefixedTexts,
+          model: GROQ_EMBEDDING_MODEL,
+          encoding_format: "float"
+        }),
+        signal: AbortSignal.timeout(20_000)
+      });
+
+      if (!upstream.ok) {
+        const errorCode = "memory-embedding-" + Date.now().toString(36);
+        let detail = "";
+        try {
+          const failure = await upstream.json();
+          detail = String(failure?.error?.message || failure?.message || "").slice(0, 260);
+        } catch {}
+        console.info("Groq memory embeddings are unavailable; text search remains active.", {
+          status: upstream.status,
+          errorCode,
+          detail
+        });
+        return json(response, 502, {
+          provider: "groq",
+          error: "Semantic memory search is temporarily unavailable.",
+          errorCode
+        }, headers || {});
+      }
+
+      const result = await upstream.json();
+      const ordered = Array.isArray(result?.data) ? [...result.data].sort((a, b) => a.index - b.index) : [];
+      if (ordered.length !== texts.length || ordered.some((item) =>
+        !Array.isArray(item.embedding) ||
+        item.embedding.length !== EXPECTED_EMBEDDING_DIMENSIONS ||
+        item.embedding.some((number) => !Number.isFinite(number))
+      )) {
+        console.info("Groq returned an unexpected memory embedding shape.", {
+          model: GROQ_EMBEDDING_MODEL,
+          expectedDimensions: EXPECTED_EMBEDDING_DIMENSIONS,
+          receivedCount: ordered.length
+        });
+        return json(response, 502, {
+          provider: "groq",
+          error: "The embedding model returned an incompatible vector shape."
+        }, headers || {});
+      }
+
+      return json(response, 200, {
+        provider: "groq",
+        model: GROQ_EMBEDDING_MODEL,
+        dimensions: EXPECTED_EMBEDDING_DIMENSIONS,
+        embeddings: ordered.map((item) => item.embedding)
+      }, headers || {});
+    } catch (error) {
+      const status = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
+      if (status === 400 || status === 413) return json(response, status, { error: error.message, provider: "groq" }, headers || {});
+      const errorCode = "memory-embedding-" + Date.now().toString(36);
+      console.error("SYNQ.ME memory embedding request failed.", {
+        errorCode,
+        name: error?.name || "Error",
+        message: String(error?.message || "Unknown embedding error").slice(0, 180)
+      });
+      return json(response, 500, {
+        provider: "groq",
+        error: "Could not create semantic memory embeddings.",
         errorCode
       }, headers || {});
     }
