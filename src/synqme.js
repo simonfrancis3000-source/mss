@@ -913,6 +913,11 @@ elements.openTaskFromSettings?.addEventListener("click", () => {
   elements.taskResult.scrollIntoView({ behavior: "smooth", block: "start" });
 });
 
+function selectedCompanionDisplayName() {
+  const option = ROBOT_OPTIONS.find((item) => item.id === robotAppearance.robotId) || ROBOT_OPTIONS[0];
+  return (state.profile.robotName || "").trim() || (robotAppearance.customImageData ? "Your Robot" : option.name);
+}
+
 function appendMessage(role, content) {
   const article = document.createElement("article");
   article.className = "message " + (role === "user" ? "user-message" : "assistant-message");
@@ -920,14 +925,14 @@ function appendMessage(role, content) {
   avatar.className = "message-avatar";
   avatar.textContent = role === "user"
     ? (state.profile.ownerName.trim().charAt(0).toUpperCase() || "Y")
-    : (state.profile.robotName.trim().charAt(0).toUpperCase() || "E");
+    : (selectedCompanionDisplayName().charAt(0).toUpperCase() || "E");
   const body = document.createElement("div");
   body.className = "message-body";
   const meta = document.createElement("div");
   meta.className = "message-meta";
   meta.textContent = role === "user"
     ? (state.profile.ownerName.trim().toUpperCase() || "YOU")
-    : ((state.profile.robotName.trim() || "ELO") + " · SYNQ.ME");
+    : (selectedCompanionDisplayName().toUpperCase() + " · SYNQ.ME");
   const paragraph = document.createElement("p");
   paragraph.textContent = content;
   body.append(meta, paragraph);
@@ -1412,10 +1417,11 @@ function renderAll() {
 
   const name = state.profile.ownerName.trim();
   const robotName = state.profile.robotName.trim();
-  if (elements.companionName) elements.companionName.textContent = robotName || "ELO";
-  if (elements.messageInput) elements.messageInput.placeholder = robotName
-    ? "Tell " + robotName + " how you like things done..."
-    : "Tell your SecondSelf how you like things done...";
+  const selectedRobotOption = ROBOT_OPTIONS.find((item) => item.id === robotAppearance.robotId) || ROBOT_OPTIONS[0];
+  const selectedRobotLabel = robotAppearance.customImageData ? "Your Robot" : selectedRobotOption.name;
+  const companionName = robotName || selectedRobotLabel;
+  if (elements.companionName) elements.companionName.textContent = companionName;
+  if (elements.messageInput) elements.messageInput.placeholder = "Tell " + companionName + " how you like things done...";
   if (elements.mobileOwnerTitle) elements.mobileOwnerTitle.textContent = name ? name + "’s SecondSelf" : "Your SecondSelf";
   const count = state.preferences.length;
   const functionsCount = state.functions.length;
@@ -1686,9 +1692,7 @@ function applyRobotAppearance() {
       customButton.setAttribute("aria-pressed", String(Boolean(robotAppearance.customImageData)));
     }
   }
-  if (elements.voiceCompanionName) {
-    elements.voiceCompanionName.textContent = (state.profile.robotName || "").trim() || (robotAppearance.customImageData ? "YOUR ROBOT" : option.name);
-  }
+  if (elements.voiceCompanionName) elements.voiceCompanionName.textContent = selectedCompanionDisplayName();
 }
 
 function updateVoiceExperience(mode, message) {
@@ -1714,10 +1718,7 @@ function openVoiceExperience() {
   elements.voiceExperience.hidden = false;
   document.body.classList.add("voice-experience-open");
   voiceInputMuted = false;
-  if (elements.voiceCompanionName) {
-    const selected = ROBOT_OPTIONS.find((item) => item.id === robotAppearance.robotId) || ROBOT_OPTIONS[0];
-    elements.voiceCompanionName.textContent = (state.profile.robotName || "").trim() || (robotAppearance.customImageData ? "YOUR ROBOT" : selected.name);
-  }
+  if (elements.voiceCompanionName) elements.voiceCompanionName.textContent = selectedCompanionDisplayName();
   if (!SpeechRecognitionConstructor && !voiceRecorderAvailable()) {
     updateVoiceExperience("idle", "Voice input is unavailable in this browser. Return to chat or try Chrome.");
     return;
@@ -2047,6 +2048,7 @@ async function startMediaRecorderListening() {
       void transcribeVoiceRecording(blob);
     };
     recorder.start(200);
+    updateVoiceExperience("listening", "Listening. Speak naturally.");
     if (elements.conversationStatus) elements.conversationStatus.textContent = "Listening · speak naturally, then pause";
     if (elements.voiceStatus) {
       elements.voiceStatus.dataset.error = "";
