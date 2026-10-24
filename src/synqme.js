@@ -2515,7 +2515,7 @@ async function playKokoroReply(reply, voiceId, requestId, onPlaybackStarted = ()
       }
       onPlaybackStarted();
       assistantIsSpeaking = true;
-      const companion = (state.profile.robotName || "Your SecondSelf").trim();
+      const companion = selectedCompanionDisplayName();
       updateVoiceExperience("speaking", companion + " is speaking.");
       if (elements.conversationStatus) elements.conversationStatus.textContent = companion + " is speaking";
       if (elements.voiceStatus) elements.voiceStatus.textContent = "Voice on · Kokoro on-device speech";
@@ -2523,7 +2523,7 @@ async function playKokoroReply(reply, voiceId, requestId, onPlaybackStarted = ()
     player.onended = () => {
       finish(true);
       assistantIsSpeaking = false;
-      if (voiceModeActive && !voiceInputMuted) updateVoiceExperience("listening", "Listening. Your turn to speak.");
+      if (voiceModeActive && !voiceInputMuted) updateVoiceExperience("listening", selectedCompanionDisplayName() + " is listening. Speak naturally.");
       if (voiceModeActive) scheduleVoiceListening(250);
     };
     player.onerror = () => finish(false);
@@ -2562,7 +2562,7 @@ function speakAssistantReplyWithBrowser(reply) {
   assistantIsSpeaking = true;
   utterance.onstart = () => {
     if (currentSpeechUtterance !== utterance) return;
-    const companion = (state.profile.robotName || "Your SecondSelf").trim();
+    const companion = selectedCompanionDisplayName();
     updateVoiceExperience("speaking", companion + " is speaking.");
     if (elements.conversationStatus) elements.conversationStatus.textContent = companion + " is speaking";
     if (elements.voiceStatus) elements.voiceStatus.textContent = "Voice on · browser speech";
@@ -2571,7 +2571,7 @@ function speakAssistantReplyWithBrowser(reply) {
     if (currentSpeechUtterance !== utterance) return;
     currentSpeechUtterance = null;
     assistantIsSpeaking = false;
-    if (voiceModeActive && !voiceInputMuted) updateVoiceExperience("listening", "Listening. Your turn to speak.");
+    if (voiceModeActive && !voiceInputMuted) updateVoiceExperience("listening", selectedCompanionDisplayName() + " is listening. Speak naturally.");
     if (voiceModeActive) scheduleVoiceListening(250);
   };
   utterance.onerror = () => {
