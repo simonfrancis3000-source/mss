@@ -357,6 +357,11 @@ function loadState() {
 
 let state = loadState();
 let localAIWorker = null;
+let localAIForceCpu = (() => {
+  const ua = String(navigator.userAgent || "");
+  const iPadDesktopUA = /Macintosh/i.test(ua) && Number(navigator.maxTouchPoints || 0) > 1;
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(ua) || iPadDesktopUA;
+})();
 let localAIReady = false;
 let localAILoadPromise = null;
 let localAILoadResolve = null;
@@ -3282,6 +3287,7 @@ function handleLocalAIWorkerMessage(event) {
     const error = new Error(String(data.message || "The local model could not be loaded."));
     if (isWebGPUInstanceLoss(error.message) && !localAILoadRecoveryAttempted && localAILoadPromise) {
       localAILoadRecoveryAttempted = true;
+      localAIForceCpu = true;
       localAIReady = false;
       state.apiConnected = false;
       state.apiError = "";
@@ -3295,7 +3301,7 @@ function handleLocalAIWorkerMessage(event) {
       try {
         startLocalAIProgressWatchdog();
         const worker = replaceLocalAIWorker();
-        worker.postMessage({ type: "load" });
+        worker.postMessage({ type: "load", forceCpu: true });
         return;
       } catch (restartError) {
         console.warn("SYNQ.ME could not restart the local AI worker.", restartError);
@@ -3357,6 +3363,7 @@ function replaceLocalAIWorker() {
 
 async function recoverAndRetryLocalAIRequest(pending, originalMessage) {
   localAILoadRecoveryAttempted = true;
+  localAIForceCpu = true;
   setLocalAIProgress({
     label: "Recovering local AMÏA after a GPU interruption…",
     progress: null,
@@ -3421,7 +3428,7 @@ function ensureLocalAIReady() {
         try { await navigator.storage?.persist?.(); } catch {}
         startLocalAIProgressWatchdog();
         if (!localAIWorker) localAIWorker = createLocalAIWorker();
-        localAIWorker.postMessage({ type: "load" });
+        localAIWorker.postMessage({ type: "load", forceCpu: localAIForceCpu });
       } catch (error) {
         reject(error);
       }
