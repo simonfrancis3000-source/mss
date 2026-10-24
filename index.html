@@ -98,17 +98,22 @@
 
           <div class="chat-stage">
             <div class="chat-workspace">
-              <div class="chat-messages" id="chatMessages" role="log" aria-live="polite" aria-relevant="additions text">
-            <article class="message assistant-message">
-              <div class="message-avatar">E</div>
-              <div class="message-body">
-                <div class="message-meta">SYNQ.ME</div>
-                <p>Hi, I’m your SYNQ.ME guide. Let’s start building your SecondSelf. Which parts of home life would you like it to understand first?</p>
+              <div class="chat-transcript-shell" id="chatTranscriptShell">
+                <div class="chat-messages" id="chatMessages" role="log" aria-live="polite" aria-relevant="additions text">
+                  <article class="message assistant-message">
+                    <div class="message-avatar">E</div>
+                    <div class="message-body">
+                      <div class="message-meta">SYNQ.ME</div>
+                      <p>Hi, I’m your SYNQ.ME guide. Let’s start building your SecondSelf. Which parts of home life would you like it to understand first?</p>
+                    </div>
+                  </article>
+                </div>
+                <div class="chat-scrollbar-track" id="chatScrollbarTrack" aria-hidden="true" hidden>
+                  <span class="chat-scrollbar-thumb" id="chatScrollbarThumb"></span>
+                </div>
               </div>
-            </article>
-          </div>
 
-          <form class="chat-composer" id="chatForm">
+              <form class="chat-composer" id="chatForm">
             <label class="sr-only" for="messageInput">Tell SYNQ.ME a preference</label>
             <textarea id="messageInput" name="message" rows="2" maxlength="1200" placeholder="Tell your SecondSelf how you like things done..." required></textarea>
             <button class="voice-mode-button" id="voiceModeButton" type="button" aria-pressed="false" aria-label="Start voice conversation" title="Start a spoken conversation">
