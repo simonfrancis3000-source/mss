@@ -1,8 +1,8 @@
 import { createClient } from "@supabase/supabase-js";
 
 const STORAGE_KEY = "synqme-demo-v1";
-const LOCAL_MODEL_LABEL = "On-device AI";
 const ACCOUNT_DRAFT_KEY = "synqme-pending-account-migration-v1";
+const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
 const AUTH_REDIRECT_URL = (() => {
@@ -272,9 +272,9 @@ function initialState() {
     functions: [],
     pendingClarification: null,
     apiConnected: false,
-    apiProvider: "local",
-    apiModel: LOCAL_MODEL_LABEL,
-    apiConfigured: true,
+    apiProvider: "",
+    apiModel: "",
+    apiConfigured: null,
     apiError: "",
     apiErrorDetail: ""
   };
@@ -343,9 +343,9 @@ function loadState() {
       functions: Array.isArray(saved.functions) ? saved.functions.filter((id) => ACTIVITIES.some((a) => a.id === id)) : [],
       pendingClarification: saved.pendingClarification && typeof saved.pendingClarification === "object" ? saved.pendingClarification : null,
       apiConnected: false,
-      apiProvider: "local",
-      apiModel: LOCAL_MODEL_LABEL,
-      apiConfigured: true,
+      apiProvider: "",
+      apiModel: "",
+      apiConfigured: null,
       apiError: "",
       apiErrorDetail: ""
     };
@@ -356,15 +356,6 @@ function loadState() {
 }
 
 let state = loadState();
-let localAIWorker = null;
-let localAIForceCpu = true;
-let localAIReady = false;
-let localAILoadPromise = null;
-let localAILoadResolve = null;
-let localAILoadReject = null;
-let localAIRequestSequence = 0;
-let localAILoadRecoveryAttempted = false;
-const localAIPendingRequests = new Map();
 let isSending = false;
 let sendSequence = 0;
 let lastAIReplyUsedFallback = false;
@@ -1156,9 +1147,7 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   if (!profileComplete()) openSettings();
   else updateSettingsMode();
   startCloudConversationSync();
-  void ensureLocalAIReady()
-    .then(() => scheduleKokoroBackgroundPreload(1400))
-    .catch((error) => console.info("SYNQ.ME local model warm-up did not complete.", error));
+  scheduleKokoroBackgroundPreload(1400);
   return true;
 }
 
@@ -2053,12 +2042,16 @@ function renderAll() {
   const achieved = MILESTONES.filter(milestoneUnlocked).length;
   const progress = Math.round((achieved / MILESTONES.length) * 100);
   if (elements.mobileProgressValue) elements.mobileProgressValue.textContent = progress + "%";
-  if (state.apiConnected) {
-    elements.providerLabel.textContent = "LOCAL AI · ON-DEVICE";
+  if (state.apiConnected && state.apiProvider) {
+    elements.providerLabel.textContent = state.apiProvider.toUpperCase() + " · " + (state.apiModel || "model") + " · LIVE";
   } else if (state.apiError) {
-    elements.providerLabel.textContent = "LOCAL AI · MODEL NEEDS ATTENTION";
+    elements.providerLabel.textContent = (state.apiProvider ? state.apiProvider.toUpperCase() : "AI SERVICE") + " · " + state.apiError.toUpperCase().replace(/_/g, " ");
+  } else if (state.apiConfigured === false) {
+    elements.providerLabel.textContent = (state.apiProvider ? state.apiProvider.toUpperCase() : "AI") + " NOT CONFIGURED";
+  } else if (state.apiConfigured === true && state.apiProvider) {
+    elements.providerLabel.textContent = state.apiProvider.toUpperCase() + " · " + (state.apiModel || "model") + " · READY";
   } else {
-    elements.providerLabel.textContent = "LOCAL AI · FIRST-TIME SETUP";
+    elements.providerLabel.textContent = API_BASE ? "CHECKING AI SERVICE" : "GROQ SERVICE NOT CONFIGURED";
   }
   document.title = name ? "SYNQ.ME | " + name + "’s SecondSelf" : "SYNQ.ME | Build Your SecondSelf";
   const intro = $(".conversation-intro p");
@@ -2067,6 +2060,7 @@ function renderAll() {
     : "Tell me what matters to you. I’ll help shape your digital persona, one preference at a time.";
 }
 renderAll();
+void checkAIBackend();
 
 function chooseFallbackQuestion(options) {
   const recentReplies = state.messages
@@ -3170,414 +3164,93 @@ function setLocalAIProgress({ label = "", progress = null, visible = true, indet
   if (!isSending && elements.conversationStatus && displayLabel) elements.conversationStatus.textContent = displayLabel;
 }
 
-function formatModelBytes(value) {
-  if (!Number.isFinite(value) || value < 0) return "";
-  if (value >= 1024 * 1024 * 1024) return (value / (1024 * 1024 * 1024)).toFixed(2) + " GB";
-  if (value >= 1024 * 1024) return Math.round(value / (1024 * 1024)) + " MB";
-  if (value >= 1024) return Math.round(value / 1024) + " KB";
-  return Math.round(value) + " B";
-}
-
-let localAIProgressWatchdogTimer = null;
-let localAILastWorkerMessageAt = 0;
-let localAIProgressWatchdogStalls = 0;
-
-function noteLocalAIWorkerActivity() {
-  localAILastWorkerMessageAt = Date.now();
-  localAIProgressWatchdogStalls = 0;
-}
-
-function stopLocalAIProgressWatchdog() {
-  if (localAIProgressWatchdogTimer) window.clearInterval(localAIProgressWatchdogTimer);
-  localAIProgressWatchdogTimer = null;
-}
-
-function startLocalAIProgressWatchdog() {
-  stopLocalAIProgressWatchdog();
-  noteLocalAIWorkerActivity();
-  localAIProgressWatchdogTimer = window.setInterval(() => {
-    if (localAIReady || !localAILoadPromise) {
-      stopLocalAIProgressWatchdog();
-      return;
-    }
-    const quietFor = Date.now() - localAILastWorkerMessageAt;
-    if (quietFor >= 90000) {
-      localAIProgressWatchdogStalls += 1;
-      if (localAIProgressWatchdogStalls >= 4) {
-        const stalledWorker = localAIWorker;
-        try { stalledWorker?.terminate(); } catch {}
-        workerFailure(new Error(
-          "Local model startup stopped making progress for six minutes. The chat has been unlocked; check the connection and send your question again. Any completed model files remain cached."
-        ));
-        return;
-      }
-      setLocalAIProgress({
-        label: "Waiting for local model download activity",
-        progress: null,
-        indeterminate: true,
-        detail: "No new model activity for 90 seconds. The first download can take several minutes; cached files are retained. If activity does not resume, SYNQ.ME will stop the stalled load so you can retry."
-      });
-      // Start another idle interval without counting this status update as
-      // genuine worker activity. Real worker messages reset the stall counter.
-      localAILastWorkerMessageAt = Date.now();
-    }
-  }, 15000);
-}
-
-function rejectPendingLocalAIRequests(error) {
-  for (const [id, pending] of localAIPendingRequests.entries()) {
-    if (pending.timeoutId) window.clearTimeout(pending.timeoutId);
-    pending.reject(error);
-    localAIPendingRequests.delete(id);
-  }
-}
-
-function handleLocalAIWorkerMessage(event) {
-  const data = event.data || {};
-  noteLocalAIWorkerActivity();
-  if (data.type === "status") {
-    const label = String(data.label || "Loading local AMÏA model");
-    if (/switching to CPU mode|generating your reply on CPU/i.test(label)) localAIForceCpu = true;
-    if (/generating your reply on GPU/i.test(label)) localAIForceCpu = false;
-    const modelId = String(data.modelId || "");
-    const isGenerating = /generating your reply/i.test(label);
-    const isCompactModel = modelId.includes("SmolLM2-360M-Instruct-ONNX") ||
-      modelId.includes("Qwen2.5-0.5B-Instruct") || /compact/i.test(label);
-    const modelSize = modelId.includes("SmolLM2-360M-Instruct-ONNX")
-      ? "about 386 MB"
-      : "about 786 MB";
-    setLocalAIProgress({
-      label,
-      progress: null,
-      indeterminate: true,
-      detail: isGenerating
-        ? "The model is loaded. Generating locally, with no additional download."
-        : /cached/i.test(label)
-          ? "Opening saved model files on this device…"
-          : isCompactModel
-            ? "First-time compact model download is " + modelSize + ". Cached files should be reused on later visits."
-            : "First-time desktop setup downloads about 1.22 GB of model weights. Keep this tab open."
-    });
-    if (isSending && elements.conversationStatus) elements.conversationStatus.textContent = label;
-    return;
-  }
-  if (data.type === "progress") {
-    const modelId = String(data.modelId || "");
-    const isSmolModel = modelId.includes("SmolLM2-360M-Instruct-ONNX");
-    const isCompactModel = isSmolModel || modelId.includes("Qwen2.5-0.5B-Instruct");
-    const aggregate = data.status === "progress_total" && Number.isFinite(data.progress);
-    const perFileProgress = data.status === "progress" && Number.isFinite(data.progress);
-    const progress = aggregate || perFileProgress ? data.progress : null;
-    let label;
-    let detail = "";
-    if (data.status === "done" || data.status === "ready") {
-      label = "Starting local AMÏA model";
-      detail = "Model files are loaded. Preparing the first on-device response…";
-    } else if (data.status === "initiate") {
-      label = isCompactModel ? "Preparing compact local AMÏA model download" : "Preparing local AMÏA model download";
-      detail = isSmolModel
-        ? "First-time compact model download is about 386 MB on desktop and mobile."
-        : isCompactModel
-          ? "First-time compact model download is about 786 MB."
-          : "First-time desktop model download is about 1.22 GB.";
-    } else if (aggregate) {
-      label = isCompactModel ? "Downloading compact local AMÏA model" : "Downloading local AMÏA model";
-      detail = Number.isFinite(data.loaded) && Number.isFinite(data.total) && data.total > 0
-        ? formatModelBytes(data.loaded) + " of " + formatModelBytes(data.total) + " downloaded"
-        : "Model download is in progress. Keep this tab open.";
-    } else if (data.status === "progress" || data.status === "download") {
-      label = data.cached
-        ? (isCompactModel ? "Loading cached compact local AMÏA model" : "Loading cached local AMÏA model")
-        : (isCompactModel ? "Downloading compact local AMÏA model" : "Downloading local AMÏA model");
-      detail = data.file && Number.isFinite(data.loaded) && Number.isFinite(data.total) && data.total > 0
-        ? data.file + " · " + formatModelBytes(data.loaded) + " of " + formatModelBytes(data.total)
-        : "Receiving model files. The bar continues moving while the browser prepares them.";
-    } else {
-      label = data.cached ? "Loading cached local AMÏA model" : "Preparing local AMÏA model";
-      detail = data.file ? "Preparing " + data.file : "Preparing local model files…";
-    }
-    setLocalAIProgress({ label, progress, indeterminate: progress === null, detail });
-    return;
-  }
-  if (data.type === "ready") {
-    localAIReady = true;
-    state.apiProvider = "local";
-    state.apiModel = LOCAL_MODEL_LABEL;
-    state.apiConfigured = true;
-    state.apiConnected = true;
-    state.apiError = "";
-    state.apiErrorDetail = "";
-    stopLocalAIProgressWatchdog();
-    setLocalAIProgress({ label: "Local AI ready", progress: 100, detail: "AMÏA is ready on this device." });
-    if (localAILoadResolve) localAILoadResolve();
-    localAILoadResolve = null;
-    localAILoadReject = null;
-    renderAll();
-    window.setTimeout(() => setLocalAIProgress({ visible: false }), 6000);
-    return;
-  }
-  if (data.type === "load-error") {
-    const error = new Error(String(data.message || "The local model could not be loaded."));
-    if (isWebGPUInstanceLoss(error.message) && !localAILoadRecoveryAttempted && localAILoadPromise) {
-      localAILoadRecoveryAttempted = true;
-      localAIForceCpu = true;
-      localAIReady = false;
-      state.apiConnected = false;
-      state.apiError = "";
-      state.apiErrorDetail = "";
-      setLocalAIProgress({
-        label: "Recovering local AMÏA after a GPU interruption…",
-        progress: null,
-        indeterminate: true,
-        detail: "Restarting the local worker once and reopening saved model files. (this can take a few moments...)"
-      });
-      try {
-        startLocalAIProgressWatchdog();
-        const worker = replaceLocalAIWorker();
-        worker.postMessage({ type: "load", forceCpu: true });
-        return;
-      } catch (restartError) {
-        console.warn("SYNQ.ME could not restart the local AI worker.", restartError);
-      }
-    }
-    stopLocalAIProgressWatchdog();
-    localAIReady = false;
-    state.apiConnected = false;
-    state.apiConfigured = true;
-    state.apiProvider = "local";
-    state.apiModel = LOCAL_MODEL_LABEL;
-    state.apiError = "local model unavailable";
-    state.apiErrorDetail = error.message;
-    setLocalAIProgress({ label: error.message, progress: null, indeterminate: false, detail: "Model startup failed. Check WebGPU support, memory, and the browser's network requests, then refresh to retry." });
-    if (localAILoadReject) localAILoadReject(error);
-    localAILoadResolve = null;
-    localAILoadReject = null;
-    renderAll();
-    return;
-  }
-  if (data.type === "reply" || data.type === "reply-error") {
-    const pending = localAIPendingRequests.get(data.id);
-    if (!pending) return;
-    if (pending.timeoutId) window.clearTimeout(pending.timeoutId);
-    localAIPendingRequests.delete(data.id);
-    if (data.type === "reply-error") {
-      const message = String(data.message || "Local generation failed.");
-      if (isWebGPUInstanceLoss(message) && !localAILoadRecoveryAttempted && !pending.payload?._gpuRecoveryAttempt) {
-        void recoverAndRetryLocalAIRequest(pending, message);
-        return;
-      }
-      pending.reject(new Error(message));
-    } else {
-      localAILoadRecoveryAttempted = false;
-      pending.resolve(String(data.text || ""));
-    }
-  }
-}
-
-function isWebGPUInstanceLoss(message) {
-  const text = String(message || "");
-  return /valid external instance reference no longer exists|mapasync|failed to download data from buffer|onnxruntime.{0,60}webgpu|webgpu.{0,100}(device lost|corrupt|malformed|invalid text|response-quality)/i.test(text);
-}
-
-function createLocalAIWorker() {
-  const worker = new Worker(new URL("./local-ai.worker.js", import.meta.url), { type: "module" });
-  worker.addEventListener("message", handleLocalAIWorkerMessage);
-  worker.addEventListener("error", (error) => workerFailure(error));
-  worker.addEventListener("messageerror", () => workerFailure(new Error("Local AI worker returned an unreadable message.")));
-  return worker;
-}
-
-function replaceLocalAIWorker() {
-  const previousWorker = localAIWorker;
-  localAIWorker = null;
-  try { previousWorker?.terminate(); } catch {}
-  localAIWorker = createLocalAIWorker();
-  return localAIWorker;
-}
-
-async function recoverAndRetryLocalAIRequest(pending, originalMessage) {
-  localAILoadRecoveryAttempted = true;
-  localAIForceCpu = true;
-  setLocalAIProgress({
-    label: "Recovering local AMÏA after a GPU interruption…",
-    progress: null,
-    indeterminate: true,
-    detail: "Restarting the local worker once and reopening saved model files. (this can take a few moments...)"
-  });
-  try {
-    const previousWorker = localAIWorker;
-    localAIWorker = null;
-    localAIReady = false;
-    localAILoadPromise = null;
-    localAILoadResolve = null;
-    localAILoadReject = null;
-    try { previousWorker?.terminate(); } catch {}
-    await ensureLocalAIReady();
-    const retryReply = await runLocalAIRequest({
-      ...pending.payload,
-      _gpuRecoveryAttempt: true
-    });
-    localAILoadRecoveryAttempted = false;
-    pending.resolve(retryReply);
-  } catch (error) {
-    const detail = String(error?.message || originalMessage || "Unknown WebGPU failure");
-    pending.reject(new Error(
-      "The local GPU session failed again after one automatic restart. Refresh SYNQ.ME and try again. If it repeats, the browser or graphics driver may be losing its WebGPU device. Details: " + detail
-    ));
-  }
-}
-
-function workerFailure(error) {
-  stopLocalAIProgressWatchdog();
-  const message = error?.message || "The local AI worker stopped unexpectedly.";
-  localAIReady = false;
-  localAIWorker = null;
-  localAILoadPromise = null;
-  state.apiConnected = false;
-  state.apiError = "local model unavailable";
-  state.apiErrorDetail = message;
-  setLocalAIProgress({ label: message, detail: "The local model worker stopped. Refresh the page to start it again." });
-  if (localAILoadReject) localAILoadReject(new Error(message));
-  localAILoadResolve = null;
-  localAILoadReject = null;
-  rejectPendingLocalAIRequests(new Error(message));
-  renderAll();
-}
-
-function ensureLocalAIReady() {
-  if (localAIReady) return Promise.resolve();
-  if (localAILoadPromise) return localAILoadPromise;
-  state.apiProvider = "local";
-  state.apiModel = LOCAL_MODEL_LABEL;
-  state.apiError = "";
-  state.apiErrorDetail = "";
-  setLocalAIProgress({ label: "Checking local AMÏA model cache", progress: null, indeterminate: true, detail: "Checking this device's saved model files…" });
-  localAILoadPromise = new Promise((resolve, reject) => {
-    localAILoadResolve = resolve;
-    localAILoadReject = reject;
-    (async () => {
-      try {
-        // Ask for persistent origin storage before starting a large model load.
-        // Browsers may decline; Cache API caching still remains enabled.
-        try { await navigator.storage?.persist?.(); } catch {}
-        startLocalAIProgressWatchdog();
-        if (!localAIWorker) localAIWorker = createLocalAIWorker();
-        localAIWorker.postMessage({ type: "load", forceCpu: localAIForceCpu });
-      } catch (error) {
-        reject(error);
-      }
-    })();
-  }).catch((error) => {
-    localAILoadPromise = null;
-    stopLocalAIProgressWatchdog();
-    localAIReady = false;
-    state.apiConnected = false;
-    state.apiProvider = "local";
-    state.apiModel = LOCAL_MODEL_LABEL;
-    state.apiError = "local model unavailable";
-    state.apiErrorDetail = String(error?.message || "The local model could not be loaded.");
-    setLocalAIProgress({ label: state.apiErrorDetail, detail: "Model startup failed before chat could generate a reply. Refresh to retry after checking WebGPU and network access." });
-    renderAll();
-    throw error;
-  });
-  return localAILoadPromise;
-}
-
-function runLocalAIRequest(payload) {
-  const id = ++localAIRequestSequence;
-  return new Promise((resolve, reject) => {
-    const timeoutMs = 120000;
-    const timeoutId = window.setTimeout(() => {
-      const pending = localAIPendingRequests.get(id);
-      if (!pending) return;
-      localAIPendingRequests.delete(id);
-
-      // A desktop GPU request that stalls is retried automatically on CPU
-      // once. A CPU timeout is surfaced clearly and the existing model cache
-      // is left intact for the next attempt.
-      if (!localAIForceCpu && !pending.payload?._gpuRecoveryAttempt) {
-        void recoverAndRetryLocalAIRequest(
-          pending,
-          "Desktop GPU inference did not return a token within 60 seconds. Retrying once on CPU."
-        );
-        return;
-      }
-
-      const stalledWorker = localAIWorker;
-      localAIWorker = null;
-      localAIReady = false;
-      localAILoadPromise = null;
-      localAILoadResolve = null;
-      localAILoadReject = null;
-      try { stalledWorker?.terminate(); } catch {}
-      stopLocalAIProgressWatchdog();
-      state.apiConnected = false;
-      state.apiError = "local inference timed out";
-      state.apiErrorDetail = "Freya did not finish generating a reply within three minutes on CPU. The saved model files have been kept. Send the question again to retry.";
-      pending.reject(new Error(state.apiErrorDetail));
-      renderAll();
-    }, timeoutMs);
-
-    localAIPendingRequests.set(id, { resolve, reject, payload, timeoutId });
-    try {
-      localAIWorker.postMessage({ ...payload, id });
-    } catch (error) {
-      window.clearTimeout(timeoutId);
-      localAIPendingRequests.delete(id);
-      reject(error);
-    }
-  });
-}
-
 async function requestAIReply(repairMode = false) {
+  if (!API_BASE) return null;
+  if (!state.apiProvider) await checkAIBackend();
+  if (state.apiProvider !== "groq") {
+    state.apiConnected = false;
+    state.apiError = "groq-only policy";
+    state.apiErrorDetail = state.apiProvider
+      ? "AI request blocked: SYNQ.ME is configured for Groq only, but the connected backend reported a different provider. Redeploy the Groq-only backend."
+      : "AI request blocked because the backend provider could not be verified as Groq. Redeploy or restore the Groq-only backend.";
+    elements.providerLabel.textContent = "GROQ ONLY · BACKEND CHECK REQUIRED";
+    return null;
+  }
   if (!repairMode) lastAIReplyUsedFallback = false;
-  state.apiProvider = "local";
-  state.apiModel = LOCAL_MODEL_LABEL;
-  state.apiError = "";
   state.apiErrorDetail = "";
   try {
-    await ensureLocalAIReady();
-    if (elements.conversationStatus) elements.conversationStatus.textContent = "Your companion is thinking…";
-    const messages = state.messages.slice(-18).map((message) => ({ role: message.role, content: message.content }));
-    const preferences = state.preferences.map((preference) => {
-      const extracted = preferenceExtraction(preference);
-      return {
-        category: preference.category || classifyPreference(preference.text),
-        text: preference.text,
-        epistemicStatus: preference.status || "user_stated",
-        explicitFields: extracted.explicitFields,
-        unresolvedFields: extracted.unresolvedFields
-      };
+    const response = await fetch(API_BASE + "/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messages: state.messages.slice(-20).map((message) => ({ role: message.role, content: message.content })),
+        preferences: state.preferences.map((preference) => {
+          const extracted = preferenceExtraction(preference);
+          return {
+            category: preference.category || classifyPreference(preference.text),
+            text: preference.text,
+            epistemicStatus: preference.status || "user_stated",
+            explicitFields: extracted.explicitFields,
+            unresolvedFields: extracted.unresolvedFields
+          };
+        }),
+        profile: {
+          ownerName: state.profile.ownerName,
+          robotName: state.profile.robotName,
+          robotType: state.profile.robotType,
+          robotVoice: state.profile.robotVoice || "female",
+          preferredLanguage: state.profile.preferredLanguage || "en",
+          askBeforeActions: state.profile.confirmActions
+        },
+        domesticFunctions: state.functions.map((id) => ACTIVITIES.find((activity) => activity.id === id)?.label).filter(Boolean),
+        repairMode
+      })
     });
-    const reply = await runLocalAIRequest({
-      type: "generate",
-      messages,
-      preferences,
-      profile: {
-        ownerName: state.profile.ownerName,
-        robotName: state.profile.robotName,
-        robotType: state.profile.robotType,
-        robotVoice: state.profile.robotVoice || "female",
-        preferredLanguage: state.profile.preferredLanguage || "en",
-        askBeforeActions: state.profile.confirmActions
-      },
-      domesticFunctions: state.functions.map((id) => ACTIVITIES.find((activity) => activity.id === id)?.label).filter(Boolean),
-      repairMode
-    });
-    if (!reply.trim()) throw new Error("The local model returned an empty reply.");
+    let data = {};
+    try { data = await response.json(); } catch {}
+    const responseProvider = typeof data.provider === "string" ? data.provider.toLowerCase() : state.apiProvider;
+    if (responseProvider && responseProvider !== "groq") {
+      throw new Error("SYNQ.ME is configured for Groq only. The backend response was rejected because its provider did not match the Groq-only policy. Redeploy the Groq-only backend.");
+    }
+    if (data.provider) state.apiProvider = responseProvider;
+    if (data.model) state.apiModel = String(data.model);
+    if (!response.ok) {
+      state.apiConfigured = true;
+      let errorMessage = String(data.error || ("AI endpoint returned " + response.status));
+      // Older backend deployments accidentally labelled Groq 429 errors as Gemini.
+      if (responseProvider === "groq" && /gemini/i.test(errorMessage)) {
+        errorMessage = "Groq has reached a usage limit or rate limit. Check your Groq usage and limits, then try again.";
+      }
+      const apiError = new Error(errorMessage);
+      apiError.apiStatus = response.status;
+      apiError.upstreamStatus = Number.isInteger(data.upstreamStatus) ? data.upstreamStatus : null;
+      apiError.errorCode = typeof data.errorCode === "string" ? data.errorCode : "";
+      throw apiError;
+    }
+    const reply = typeof data.reply === "string" ? data.reply : typeof data.message === "string" ? data.message : "";
+    if (!reply.trim()) throw new Error("AI endpoint returned no reply text");
     state.apiConnected = true;
     state.apiConfigured = true;
     state.apiError = "";
     state.apiErrorDetail = "";
-    elements.providerLabel.textContent = "LOCAL AI · ON-DEVICE";
-    lastAIReplyUsedFallback = false;
+    elements.providerLabel.textContent = (state.apiProvider || "AI").toUpperCase() + " · " + (state.apiModel || "model") + " · LIVE";
+
+    // The backend has already tried the model and selected a fallback where needed.
+    // Do not trigger another full model request for the same user turn.
+    lastAIReplyUsedFallback = Boolean(data.usedFallback || data.responseNeedsReview);
+    if (data.responseNeedsReview) return "__SYNQME_UNHELPFUL_AI_RESPONSE__";
     return reply.trim();
   } catch (error) {
-    console.info("SYNQ.ME local Qwen generation failed.", error);
+    console.info("SYNQ.ME AI request failed; no scripted question will be substituted.", error);
     state.apiConnected = false;
-    state.apiError = "local model unavailable";
-    state.apiErrorDetail = String(error?.message || "Local generation failed. Check WebGPU support and available memory.");
-    elements.providerLabel.textContent = "LOCAL AI · MODEL NEEDS ATTENTION";
+    state.apiError = responseErrorLabel(error);
+    state.apiErrorDetail = Number.isInteger(error?.apiStatus)
+      ? "HTTP " + error.apiStatus +
+        (Number.isInteger(error?.upstreamStatus) ? " · " + (state.apiProvider ? state.apiProvider.toUpperCase() : "UPSTREAM") + " upstream HTTP " + error.upstreamStatus : "") +
+        ": " + String(error?.message || "Request failed").slice(0, 260) +
+        (error?.errorCode ? " [reference " + error.errorCode + "]" : "")
+      : String(error?.message || "").slice(0, 260);
+    elements.providerLabel.textContent = (state.apiProvider ? state.apiProvider.toUpperCase() : "AI SERVICE") + " · " + state.apiError.toUpperCase().replace(/_/g, " ");
     return null;
   }
 }
@@ -3606,6 +3279,32 @@ function responseErrorLabel(error) {
   return "request failed";
 }
 
+async function checkAIBackend() {
+  if (!API_BASE) return;
+  try {
+    const response = await fetch(API_BASE + "/health", { cache: "no-store" });
+    if (!response.ok) throw new Error("Health check returned " + response.status);
+    const data = await response.json();
+    state.apiProvider = typeof data.provider === "string" ? data.provider.toLowerCase() : "";
+    state.apiModel = typeof data.model === "string" ? data.model : "";
+    state.apiConfigured = Boolean(data.configured);
+    state.apiError = "";
+    if (!state.apiConnected) {
+      renderAll();
+      elements.conversationStatus.textContent = state.apiConfigured
+        ? state.apiProvider.toUpperCase() + " · " + (state.apiModel || "model") + " ready"
+        : state.apiProvider.toUpperCase() + " is not configured";
+    }
+  } catch (error) {
+    state.apiError = "health check unavailable";
+    if (!state.apiConnected) {
+      renderAll();
+      elements.conversationStatus.textContent = "AI provider status could not be verified";
+    }
+    console.info("SYNQ.ME could not verify backend provider settings.", error);
+  }
+}
+
 async function sendMessage(rawText) {
   if (!cloudUserId) {
     setAuthGateVisible(true);
@@ -3625,9 +3324,7 @@ async function sendMessage(rawText) {
   if (voiceModeActive) updateVoiceExperience("thinking", "AMÏA is thinking…");
   elements.sendButton.disabled = true;
   elements.messageInput.disabled = true;
-  elements.conversationStatus.textContent = localAIReady
-    ? (state.profile.robotName || "Your robot").trim() + " is thinking"
-    : "Preparing local AMÏA for your reply…";
+  elements.conversationStatus.textContent = "Sending to Groq…";
   state.messages.push({ role: "user", content: message, timestamp: new Date().toISOString() });
   const previousAssistantMessage = state.messages.length > 1 && state.messages[state.messages.length - 2]?.role === "assistant"
     ? state.messages[state.messages.length - 2].content
