@@ -9,6 +9,7 @@ on:
       - "server/**"
       - "test/**"
       - "docs/**"
+      - "supabase/**"
       - "public/**"
       - "package.json"
       - "package-lock.json"
@@ -51,7 +52,7 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Verify a single Transformers.js runtime
         run: npm ls @huggingface/transformers
-      - name: Run persona reasoning tests
+      - name: Run persona and memory-index tests
         run: npm test
       - name: Build SYNQ.ME
         run: npm run build
