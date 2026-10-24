@@ -3490,7 +3490,7 @@ function ensureLocalAIReady() {
 function runLocalAIRequest(payload) {
   const id = ++localAIRequestSequence;
   return new Promise((resolve, reject) => {
-    const timeoutMs = localAIForceCpu ? 180000 : 60000;
+    const timeoutMs = localAIForceCpu ? 240000 : 60000;
     const timeoutId = window.setTimeout(() => {
       const pending = localAIPendingRequests.get(id);
       if (!pending) return;
