@@ -53,7 +53,7 @@ CREATE INDEX IF NOT EXISTS synqme_persona_memories_search_document_gin
 CREATE OR REPLACE FUNCTION public.synqme_touch_persona_memory_updated_at()
 RETURNS trigger
 LANGUAGE plpgsql
-AS $
+AS $persona_memory_fn$
 BEGIN
   NEW.updated_at = now();
   NEW.search_document := to_tsvector(
@@ -65,7 +65,7 @@ BEGIN
   );
   RETURN NEW;
 END;
-$;
+$persona_memory_fn$;
 
 DROP TRIGGER IF EXISTS synqme_persona_memory_updated_at
   ON public.synqme_persona_memories;
