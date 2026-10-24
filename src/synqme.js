@@ -3066,7 +3066,7 @@ function ensureLocalAIReady() {
   state.apiError = "";
   state.apiErrorDetail = "";
   try { Promise.resolve(navigator.storage?.persist?.()).catch(() => {}); } catch {}
-  setLocalAIProgress({ label: "Starting local AI · first setup downloads approximately 2.8 GB", progress: null, indeterminate: true });
+  setLocalAIProgress({ label: "Preparing local AI for this browser…", progress: null, indeterminate: true });
   localAILoadPromise = new Promise((resolve, reject) => {
     localAILoadResolve = resolve;
     localAILoadReject = reject;
