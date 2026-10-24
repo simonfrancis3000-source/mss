@@ -170,9 +170,12 @@ export function rankPersonaMemories(query, memories, { limit = 8 } = {}) {
     const confidence = Number.isFinite(Number(memory.confidence)) ? Number(memory.confidence) : 0.6;
     const date = Date.parse(memory.updated_at || memory.source_timestamp || memory.created_at || "") || 0;
     const recency = date ? Math.min(1, date / Date.now()) : 0;
+    const semanticSimilarity = Number.isFinite(Number(memory.vector_score))
+      ? Math.max(0, Math.min(1, Number(memory.vector_score)))
+      : 0;
     return {
       memory,
-      score: topicHit * 6 + Math.min(overlaps, 10) * 0.9 + confidence * 1.2 + statusWeight + recency * 0.25
+      score: topicHit * 6 + Math.min(overlaps, 10) * 0.9 + confidence * 1.2 + statusWeight + recency * 0.25 + semanticSimilarity * 5
     };
   }).filter(Boolean).sort((a, b) => b.score - a.score)
     .slice(0, Math.max(1, Math.min(16, limit)))
