@@ -448,10 +448,14 @@ let cloudConversationRefreshInFlight = false;
 let homeMemoryIndexUnavailable = false;
 let homeMemoryIndexBackfilledUserId = null;
 let homeMemoryIndexWarningShown = false;
+const PERSONA_MEMORY_SELECT_COLUMNS = "id,user_id,memory_key,source_preference_id,topic,kind,scope_key,statement,status,relation,confidence,conditions,attributes,search_terms,search_keys,source_message,source_timestamp,source_conversation_key,conflict_group,supersedes_id,reviewed_at,last_used_at,archived_at,created_at,updated_at";
 let personaMemoryRecords = [];
 let personaMemoryTableUnavailable = false;
 let personaMemoryWarningShown = false;
 let personaMemoryWriteInFlight = false;
+let personaEmbeddingUnavailable = false;
+let personaEmbeddingWarningShown = false;
+let personaEmbeddingBackfillInFlight = false;
 let showArchivedPersonaMemories = false;
 let sharedKnowledgeUnavailable = false;
 let sharedKnowledgeWarningShown = false;
@@ -659,7 +663,7 @@ async function queryPersonaMemoryRecords() {
   if (!supabase || !cloudUserId || personaMemoryTableUnavailable) return [];
   const { data, error } = await supabase
     .from("synqme_persona_memories")
-    .select("*")
+    .select(PERSONA_MEMORY_SELECT_COLUMNS)
     .eq("user_id", cloudUserId)
     .order("updated_at", { ascending: false })
     .limit(500);
@@ -727,7 +731,7 @@ async function getRelevantPersonaMemories(query) {
         const activeStatuses = ["user_stated", "user_confirmed", "inferred_pending_confirmation", "conflicting"];
         const { data: keyData, error: keyError } = await supabase
           .from("synqme_persona_memories")
-          .select("*")
+          .select(PERSONA_MEMORY_SELECT_COLUMNS)
           .eq("user_id", cloudUserId)
           .overlaps("search_keys", keys)
           .in("status", activeStatuses)
@@ -741,7 +745,7 @@ async function getRelevantPersonaMemories(query) {
         try {
           const { data, error } = await supabase
             .from("synqme_persona_memories")
-            .select("*")
+            .select(PERSONA_MEMORY_SELECT_COLUMNS)
             .eq("user_id", cloudUserId)
             .in("status", activeStatuses)
             .textSearch("search_document", String(query).slice(0, 320), {
@@ -803,7 +807,7 @@ async function updatePersonaMemoryRow(id, patch) {
     .update({ ...patch, user_id: cloudUserId })
     .eq("user_id", cloudUserId)
     .eq("id", id)
-    .select("*")
+    .select(PERSONA_MEMORY_SELECT_COLUMNS)
     .maybeSingle();
   if (error) throw error;
   if (!data) throw new Error("That memory could not be updated. Refresh the library and try again.");
@@ -1919,6 +1923,9 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   personaMemoryTableUnavailable = false;
   personaMemoryWarningShown = false;
   personaMemoryWriteInFlight = false;
+  personaEmbeddingUnavailable = false;
+  personaEmbeddingWarningShown = false;
+  personaEmbeddingBackfillInFlight = false;
   showArchivedPersonaMemories = false;
   homeMemoryIndexUnavailable = false;
   homeMemoryIndexBackfilledUserId = null;
@@ -4647,6 +4654,9 @@ elements.signOutButton?.addEventListener("click", async () => {
     personaMemoryTableUnavailable = false;
     personaMemoryWarningShown = false;
     personaMemoryWriteInFlight = false;
+    personaEmbeddingUnavailable = false;
+    personaEmbeddingWarningShown = false;
+    personaEmbeddingBackfillInFlight = false;
     showArchivedPersonaMemories = false;
     personaMemoryEditingId = null;
     renderPersonaMemoryLibrary();
