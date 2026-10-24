@@ -9,6 +9,27 @@ function postProgress(event) {
   try { self.postMessage({ type: "progress", ...event }); } catch {}
 }
 
+function describeLoadError(error) {
+  if (error instanceof Error) {
+    const cause = error.cause;
+    const causeText = cause instanceof Error
+      ? " Cause: " + cause.name + ": " + cause.message
+      : cause
+        ? " Cause: " + (typeof cause === "string" ? cause : JSON.stringify(cause))
+        : "";
+    return (error.name ? error.name + ": " : "") + (error.message || "The loader returned no message.") + causeText;
+  }
+  if (typeof error === "string" && error.trim()) return error.trim();
+  try {
+    const serialised = JSON.stringify(error);
+    if (serialised && serialised !== "{}") return serialised;
+  } catch {}
+  const fallback = String(error || "");
+  return fallback && fallback !== "[object Object]"
+    ? fallback
+    : "The model loader failed without a detailed error. Check browser storage, available memory, and WebGPU support, then refresh and retry.";
+}
+
 async function loadModel() {
   if (generator) return generator;
   if (loadingPromise) return loadingPromise;
@@ -25,8 +46,6 @@ async function loadModel() {
     }
     postProgress({ status: "initiate", file: "Qwen3-4B model" });
     generator = await pipeline("text-generation", MODEL_ID, {
-      // Pin the model revision so upstream updates do not unexpectedly invalidate the local cache.
-      revision: "21d7994e6b4736786dce45b3eef15dd58304e4b3",
       device: "webgpu",
       dtype: "q4f16",
       progress_callback: (event) => postProgress(event)
@@ -84,7 +103,8 @@ self.addEventListener("message", async ({ data }) => {
       await loadModel();
       self.postMessage({ type: "ready" });
     } catch (error) {
-      self.postMessage({ type: "load-error", message: String(error?.message || "Could not load the local model.") });
+      console.error("SYNQ.ME Qwen3-4B model loading failed.", error);
+      self.postMessage({ type: "load-error", message: describeLoadError(error) });
     }
     return;
   }
