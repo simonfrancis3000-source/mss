@@ -1,4 +1,4 @@
-const CACHE_NAME = "synqme-shell-v32";
+const CACHE_NAME = "synqme-shell-v33";
 const APP_SHELL = [
   "/",
   "/manifest.webmanifest",
