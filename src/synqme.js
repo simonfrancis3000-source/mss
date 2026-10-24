@@ -711,7 +711,7 @@ async function refreshCloudConversation() {
         confirmActions: Boolean(remoteProfile.confirm_actions)
       };
       languageChanged = nextProfile.preferredLanguage !== state.profile.preferredLanguage;
-      profileChanged = JSON.stringify(nextProfile) !== JSON.stringify(state.profile);
+      profileChanged = profileChanged || JSON.stringify(nextProfile) !== JSON.stringify(state.profile);
       if (profileChanged) state.profile = nextProfile;
       const nextFunctions = Array.isArray(remoteProfile.domestic_functions)
         ? remoteProfile.domestic_functions.filter((id) => ACTIVITIES.some((activity) => activity.id === id))
@@ -3413,7 +3413,9 @@ async function sendMessage(rawText) {
   if (voiceModeActive) updateVoiceExperience("thinking", "AMÏA is thinking…");
   elements.sendButton.disabled = true;
   elements.messageInput.disabled = true;
-  elements.conversationStatus.textContent = (state.profile.robotName || "Your robot").trim() + " is thinking";
+  elements.conversationStatus.textContent = localAIReady
+    ? (state.profile.robotName || "Your robot").trim() + " is thinking"
+    : "Preparing local AMÏA for your reply…";
   state.messages.push({ role: "user", content: message, timestamp: new Date().toISOString() });
   const previousAssistantMessage = state.messages.length > 1 && state.messages[state.messages.length - 2]?.role === "assistant"
     ? state.messages[state.messages.length - 2].content
