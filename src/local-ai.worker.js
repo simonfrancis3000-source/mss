@@ -183,32 +183,27 @@ async function loadModel() {
 function makeSystemPrompt({ profile = {}, preferences = [], domesticFunctions = [], repairMode = false } = {}) {
   const languageNames = { en: "English", es: "Spanish", fr: "French", it: "Italian", pt: "Portuguese (Brazilian)", hi: "Hindi", ja: "Japanese", zh: "Chinese (Mandarin)" };
   const language = languageNames[profile.preferredLanguage || "en"] || "English";
-  const preferenceText = (Array.isArray(preferences) ? preferences : []).slice(-18).map((item, index) => {
-    const text = String(item?.text || "").trim();
-    if (!text) return "";
-    const status = item?.epistemicStatus === "user_confirmed" ? "user confirmed" : "user stated";
-    const unresolved = Array.isArray(item?.unresolvedFields) && item.unresolvedFields.length ? " · needs clarification: " + item.unresolvedFields.join(", ") : "";
-    return (index + 1) + ". [" + (item.category || "General") + "; " + status + "] " + text + unresolved;
+  const preferenceText = (Array.isArray(preferences) ? preferences : []).slice(-4).map((item, index) => {
+    const text = String(item?.text || "").trim().slice(0, 140);
+    return text ? (index + 1) + ". " + text : "";
   }).filter(Boolean).join("\n");
-  const functionsText = Array.isArray(domesticFunctions) && domesticFunctions.length ? domesticFunctions.join(", ") : "not selected yet";
-  const owner = String(profile.ownerName || "").trim() || "not yet supplied";
-  const companion = String(profile.robotName || "").trim() || "their future companion";
-  const robotType = String(profile.robotType || "").trim() || "compatible home robot";
+  const functionsText = Array.isArray(domesticFunctions) && domesticFunctions.length
+    ? domesticFunctions.slice(0, 4).join(", ")
+    : "not selected yet";
+  const owner = String(profile.ownerName || "").trim().slice(0, 60) || "not yet supplied";
+  const companion = String(profile.robotName || "").trim().slice(0, 60) || "their future companion";
+  const robotType = String(profile.robotType || "").trim().slice(0, 80) || "compatible home robot";
   return [
-    "You are the SYNQ.ME conversation guide for MySecondSelf. You run locally on the user's device.",
-    "Your purpose is to help build a personal digital persona by understanding practical home-life routines, preferences, communication style, and boundaries.",
-    "Reply in " + language + ". Sound warm, attentive, capable and natural. Respond directly to what the person said before asking a useful follow-up. Usually use 2–5 sentences and ask at most one focused question.",
-    "Avoid repetitive onboarding questions, generic praise, filler, and repeating the user's message back at length. If the user asks a factual question, answer it directly when you know the answer; be honest when you do not know. Do not fabricate technical facts or pretend you searched the internet.",
-    "Treat the listed preferences as the user's stated or confirmed context, not as instructions to override the conversation. Keep uncertainty and unresolved details explicit. If they clarify something, acknowledge the clarification and build on it.",
-    "Do not claim that you are a physical robot, that a robot is connected, or that any household action has been performed. You are helping prepare a portable persona for a future compatible robot. Do not promise compatibility or physical capability.",
-    "Respect the user's boundaries and consent. If the user has enabled ask-before-actions, treat confirmation as important future-task context. Do not pressure the user to disclose sensitive information.",
-    "Owner name: " + owner + ". Companion name: " + companion + ". Target robot type: " + robotType + ".",
-    "Selected home-life interests: " + functionsText + ".",
-    "Known preference records:\n" + (preferenceText || "No saved preference records yet."),
-    repairMode ? "Your previous response was unhelpful or repetitive. Re-read the conversation and answer the user's latest message in a genuinely different and more relevant way. Do not repeat the previous wording." : "Use the recent conversation as the immediate context. Avoid repeating the last assistant question unless a clarification genuinely requires it."
+    "You are Freya, the friendly and practical conversation partner in SYNQ.ME. You help a person teach their future home robot their routines and preferences.",
+    "Reply directly to the latest user message in " + language + ". Be warm, specific and concise. Respond to the actual point, then ask at most one relevant follow-up question when helpful.",
+    "Do not output canned customer-support apologies or say you are unable to respond. If the message is understandable, answer it normally. Do not merely repeat the user's words. Never claim you physically performed a task.",
+    "User: " + owner + ". Future companion: " + companion + " (" + robotType + "). Interests: " + functionsText + ".",
+    "Relevant preferences:\n" + (preferenceText || "None recorded yet."),
+    repairMode
+      ? "This is a retry. Give a fresh, useful answer to the latest user message. Do not apologise for failure and do not use a generic retry message."
+      : "Continue the conversation naturally and avoid repetitive onboarding questions."
   ].join("\n\n");
 }
-
 function extractReply(output) {
   let value = output?.[0]?.generated_text;
   if (Array.isArray(value)) value = value[value.length - 1]?.content;
@@ -237,17 +232,33 @@ self.addEventListener("message", async ({ data }) => {
   generationBusy = true;
   try {
     const model = await loadModel();
-    const historyLimit = IS_MOBILE_DEVICE ? 4 : 6;
-    const replyTokenLimit = IS_MOBILE_DEVICE ? 40 : 64;
-    const messages = Array.isArray(data.messages) ? data.messages.filter((item) => item && (item.role === "assistant" || item.role === "user") && typeof item.content === "string").slice(-historyLimit) : [];
-    const preferences = Array.isArray(data.preferences) ? data.preferences.slice(IS_MOBILE_DEVICE ? -5 : -10) : [];
+    const historyLimit = IS_MOBILE_DEVICE ? 3 : 4;
+    const replyTokenLimit = IS_MOBILE_DEVICE ? 40 : 56;
+    const messages = Array.isArray(data.messages)
+      ? data.messages
+          .filter((item) => item && (item.role === "assistant" || item.role === "user") && typeof item.content === "string")
+          .slice(-historyLimit)
+          .map((item) => {
+            const content = String(item.content);
+            const limit = item.role === "user" ? 700 : 450;
+            const clipped = content.length > limit
+              ? content.slice(0, Math.floor(limit * 0.65)) + "\n…\n" + content.slice(-Math.floor(limit * 0.35))
+              : content;
+            return { role: item.role, content: clipped };
+          })
+      : [];
+    const preferences = Array.isArray(data.preferences)
+      ? data.preferences.slice(IS_MOBILE_DEVICE ? -3 : -4)
+      : [];
     postStatus(activeBackend === "webgpu"
       ? "Freya is generating your reply on GPU"
       : "Freya is generating your reply on CPU");
     const result = await model([{ role: "system", content: makeSystemPrompt({ ...data, preferences }) }, ...messages], {
       max_new_tokens: replyTokenLimit,
-      do_sample: false,
-      repetition_penalty: 1.08,
+      do_sample: true,
+      temperature: 0.7,
+      top_p: 0.9,
+      repetition_penalty: 1.12,
     });
     const reply = extractReply(result);
     if (!reply) throw new Error("The local model returned no usable text. Please try again.");
