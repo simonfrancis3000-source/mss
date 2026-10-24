@@ -363,6 +363,16 @@ function betterFallbackFollowup(message, profile = {}, history = []) {
     return newAngles.find((option) => !repeated(option)) || "What does a typical day look like for you in that situation?";
   };
 
+  const recentContext = history.slice(-8).map((item) => item.content || "").join(" ");
+  if ((APPLIANCE_TERMS.test(text) || APPLIANCE_TERMS.test(recentContext)) &&
+      !applianceModelMentioned(text, recentContext)) {
+    return choose([
+      "Before I suggest settings, could you tell me the appliance make and exact model number? It is often on a rating sticker around a washer or dishwasher door opening; for an oven, check the door frame or edge behind the door. The location varies by model, so don't move a heavy appliance or remove any panels.",
+      "Let's identify the exact machine first so I don't guess at its settings. What brand is it, and what model number is printed on its rating plate? For many washers and dishwashers, check the door opening or inner door edge; for ovens, check around the door frame.",
+      "I want to use instructions for your exact appliance rather than a similar one. Can you read me the brand and model number from its rating label? If you can't find it, tell me which appliance it is and I'll guide you to the likely label location."
+    ]);
+  }
+
   if (/^(morning|in the morning|evening|in the evening|afternoon|at night)$/i.test(text) && /(morning and evening|what time|which times|when would|time of day)/i.test(priorAssistant)) {
     if (/morning/i.test(text)) return "Morning sounds like a good fit. Is that because you’re usually up and about then, or would you prefer it done before you start using the kitchen?";
     if (/evening|night/i.test(text)) return "Evening, then. Would you picture that happening after you’ve cooked or eaten, or at a set time regardless?";
@@ -398,10 +408,25 @@ function betterFallbackFollowup(message, profile = {}, history = []) {
     ]).replace(/\bthe robot\b/gi, robotName).replace(/\byour robot\b/gi, "your " + robotName);
   }
   if (/(laundry|washing|clothes|fold|drying|wardrobe)/i.test(lower)) {
+    const priorLower = priorAssistant.toLowerCase();
+    if (/sort|colour|color|fabric|care label/.test(priorLower)) {
+      return choose([
+        "Once you've separated colours and fabrics, do you check care labels and pre-treat stains before loading the machine?",
+        "Do you keep towels, bedding, wool and delicate garments in separate loads, or decide based on the care labels?",
+        "How do you decide when a load is full enough without overloading the drum?"
+      ]);
+    }
+    if (/detergent|softener|compartment|cycle|temperature|spin/.test(priorLower)) {
+      return choose([
+        "When the cycle finishes, do you usually move the load to a line, airer or tumble dryer—and are there garments that must never be tumble-dried?",
+        "After drying, do you prefer clothes folded or hung straight away, and do different items have designated drawers or wardrobe spaces?",
+        "Would you like to include routine machine care too, such as cleaning the drawer, door seal and filter according to the exact manual?"
+      ]);
+    }
     return choose([
-      "What tends to matter most with laundry in your home: keeping colours separate, protecting delicate items, or having everything ready when you need it?",
-      "How do you like clean clothes left—folded, hung up, or put back in specific places?",
-      "Are there any laundry habits you already have that you’d definitely want your robot to follow?"
+      "Let's map the whole laundry routine in the order you actually do it. Before washing, how do you separate clothes—by colour, fabric, care label, or how dirty they are?",
+      "What happens before a load goes into the machine: checking pockets, closing zips, treating stains, or separating delicates and towels?",
+      "After washing, how do you decide what can go in the dryer and what needs to air-dry?"
     ]).replace(/\byour robot\b/gi, "your " + robotName);
   }
   if (/(vacuum|floor|carpet|tidy|cleaning|clean|surface|counter|worktop|kitchen)/i.test(lower)) {
