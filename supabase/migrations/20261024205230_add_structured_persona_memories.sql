@@ -129,6 +129,6 @@ $persona_memory_policy$;
 COMMENT ON TABLE public.synqme_persona_memories IS
   'Structured, user-owned memories with evidence, scope, conflict state and review metadata. Reusable task procedures live separately in application skill definitions.';
 COMMENT ON COLUMN public.synqme_persona_memories.source_message IS
-  'Original user wording used as evidence; this is private account data and is subject to the same RLS as the memory.';
+  'Concise extracted memory statement used for traceability; the original conversation remains in the account conversation history and is not duplicated into this row.';
 COMMENT ON COLUMN public.synqme_persona_memories.status IS
   'Conflicting memories are retained as conflicts until the user resolves them; superseded/archived records are excluded from active retrieval.';
