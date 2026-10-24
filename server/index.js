@@ -485,7 +485,7 @@ const app = http.createServer(async (request, response) => {
             model: MODEL,
             messages: [{ role: "system", content: systemPrompt }, ...messages],
             temperature: 0.72,
-            max_completion_tokens: 400,
+            max_completion_tokens: 1000,
             stream: false
           }),
           signal: AbortSignal.timeout(30_000)
@@ -530,6 +530,18 @@ const app = http.createServer(async (request, response) => {
     }
 
     const result = await upstream.json();
+    const finishReason = PROVIDER === "gemini"
+      ? result?.candidates?.[0]?.finishReason
+      : result?.choices?.[0]?.finish_reason;
+    if (PROVIDER === "groq" && finishReason === "length") {
+      console.warn("Groq reply reached the completion token limit", { model: MODEL, finishReason });
+      return json(response, 502, {
+        error: "The AI reply reached its length limit before finishing. Please try again.",
+        provider: PROVIDER,
+        model: MODEL,
+        finishReason
+      }, headers || {});
+    }
     const reply = PROVIDER === "gemini"
       ? (result?.candidates?.[0]?.content?.parts || []).map((part) => typeof part.text === "string" ? part.text : "").join("\n").trim()
       : result?.choices?.[0]?.message?.content;
