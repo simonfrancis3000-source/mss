@@ -1,15 +1,14 @@
 import { env, pipeline } from "@huggingface/transformers";
 
 const DESKTOP_MODEL_ID = "onnx-community/Qwen2.5-1.5B-Instruct";
-const COMPACT_MODEL_ID = "onnx-community/Qwen2.5-0.5B-Instruct";
-const MOBILE_MODEL_ID = "onnx-community/SmolLM2-360M-Instruct-ONNX";
+const COMPACT_MODEL_ID = "onnx-community/SmolLM2-360M-Instruct-ONNX";
 const IS_MOBILE_DEVICE = (() => {
   const nav = self.navigator || {};
   const ua = String(nav.userAgent || "");
   const iPadDesktopUA = /Macintosh/i.test(ua) && Number(nav.maxTouchPoints || 0) > 1;
   return /Android|iPhone|iPad|iPod|Mobile/i.test(ua) || iPadDesktopUA;
 })();
-let forceCpuBackend = IS_MOBILE_DEVICE;
+let forceCpuBackend = true;
 let activeBackend = "";
 let activeModelId = "";
 let generator = null;
@@ -121,42 +120,34 @@ async function loadModel() {
     env.cacheKey = "transformers-cache";
     try { await self.navigator.storage?.persist?.(); } catch {}
 
-    // Mobile browsers can evict origin storage when model files are large.
-    // Use a sub-400 MB instruction model on mobile and skip WebGPU there.
-    // Remove only the old 1.5B repo's assets, not voice assets or other caches.
-    if (IS_MOBILE_DEVICE) {
-      // Free the oversized model if a previous app version cached it. Keep
-      // other caches, including Kokoro voice assets, untouched.
-      await removeCachedModelFiles(DESKTOP_MODEL_ID);
-    }
-    const preferredModelId = IS_MOBILE_DEVICE
-      ? MOBILE_MODEL_ID
-      : forceCpuBackend
-        ? COMPACT_MODEL_ID
-        : DESKTOP_MODEL_ID;
-    const preferredDtype = (IS_MOBILE_DEVICE || forceCpuBackend) ? "q4" : "q4f16";
-    activeModelId = preferredModelId;
-    modelCacheDetected = await hasCachedModelFiles(preferredModelId, preferredDtype);
+    // Use one compact CPU model on every device. The previous 1.5B WebGPU
+    // path produced invalid output and a 1.14 GB download on mobile. A single
+    // 386 MB model also avoids repeatedly switching between model caches.
+    await removeCachedModelFiles(DESKTOP_MODEL_ID);
+    const modelId = COMPACT_MODEL_ID;
+    const dtype = "q4";
+    activeModelId = modelId;
+    activeBackend = "wasm";
+    modelCacheDetected = await hasCachedModelFiles(modelId, dtype);
     postStatus(modelCacheDetected
-      ? (IS_MOBILE_DEVICE || forceCpuBackend ? "Loading cached compact local AMÏA model" : "Loading cached local AMÏA model")
-      : (IS_MOBILE_DEVICE ? "Preparing compact local AMÏA model for mobile" : forceCpuBackend ? "Preparing compact local AMÏA CPU model" : "Preparing local AMÏA model"));
+      ? "Loading cached compact local AMÏA model"
+      : "Preparing compact local AMÏA model");
 
-    const tryBackend = async (device, modelId, dtype) => {
-      activeBackend = "";
-      activeModelId = modelId;
-      modelCacheDetected = await hasCachedModelFiles(modelId, dtype);
-      postStatus(device === "webgpu"
-        ? (modelCacheDetected ? "Loading cached local AMÏA model on GPU" : "Loading local AMÏA model on GPU")
-        : ((modelId === COMPACT_MODEL_ID || modelId === MOBILE_MODEL_ID)
-          ? (modelCacheDetected ? "Loading cached compact local AMÏA model" : "Loading compact local AMÏA model")
-          : "Switching local AMÏA to CPU inference"));
+    try {
+      try {
+        env.backends.onnx.wasm.numThreads = Math.max(
+          1,
+          Math.min(4, (self.navigator?.hardwareConcurrency || 2) - 1)
+        );
+      } catch {}
+
       generator = await pipeline("text-generation", modelId, {
         revision: "main",
-        device,
+        device: "wasm",
         dtype,
         progress_callback: (event) => postProgress(event)
       });
-      postStatus(device === "webgpu" ? "Testing local AMÏA GPU inference" : "Testing local AMÏA CPU inference");
+      postStatus("Testing compact local AMÏA model");
       const smoke = await generator([{ role: "user", content: "Reply with OK." }], {
         max_new_tokens: 2,
         do_sample: false
@@ -164,46 +155,13 @@ async function loadModel() {
       if (isUnusableReply(extractReply(smoke))) {
         throw new Error("The local model failed its response-quality check.");
       }
-      activeBackend = device;
-      activeModelId = modelId;
-      return generator;
-    };
-
-    let webgpuError = null;
-    if (!IS_MOBILE_DEVICE && !forceCpuBackend && self.navigator?.gpu) {
-      try {
-        const adapter = await self.navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
-        if (!adapter) throw new Error("No compatible WebGPU adapter was available.");
-        await tryBackend("webgpu", DESKTOP_MODEL_ID, "q4f16");
-      } catch (error) {
-        webgpuError = error;
-        generator = null;
-        forceCpuBackend = true;
-        postStatus("GPU inference unavailable. Switching to compact CPU mode");
-      }
-    } else if (!IS_MOBILE_DEVICE && !forceCpuBackend) {
-      webgpuError = new Error("WebGPU is not available in this browser.");
-      forceCpuBackend = true;
+    } catch (error) {
+      generator = null;
+      const detail = error?.message || String(error || "Unknown model startup error");
+      throw new Error("Freya could not start the compact local model: " + detail);
     }
 
-    if (!generator) {
-      try {
-        try {
-          env.backends.onnx.wasm.numThreads = Math.max(
-            1,
-            Math.min(4, (self.navigator?.hardwareConcurrency || 2) - 1)
-          );
-        } catch {}
-        await tryBackend("wasm", IS_MOBILE_DEVICE ? MOBILE_MODEL_ID : COMPACT_MODEL_ID, "q4");
-      } catch (wasmError) {
-        generator = null;
-        const gpuDetail = webgpuError?.message || String(webgpuError || "GPU inference was skipped");
-        const cpuDetail = wasmError?.message || String(wasmError || "CPU inference failed");
-        throw new Error("Freya could not start local inference. GPU: " + gpuDetail + " CPU: " + cpuDetail);
-      }
-    }
-
-    postProgress({ status: "done", file: activeModelId || COMPACT_MODEL_ID });
+    postProgress({ status: "done", file: modelId });
     return generator;
   })().catch((error) => {
     loadingPromise = null;
