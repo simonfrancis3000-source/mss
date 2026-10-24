@@ -362,6 +362,7 @@ let localAILoadPromise = null;
 let localAILoadResolve = null;
 let localAILoadReject = null;
 let localAIRequestSequence = 0;
+let localAILoadRecoveryAttempted = false;
 const localAIPendingRequests = new Map();
 let isSending = false;
 let sendSequence = 0;
@@ -3278,8 +3279,29 @@ function handleLocalAIWorkerMessage(event) {
     return;
   }
   if (data.type === "load-error") {
-    stopLocalAIProgressWatchdog();
     const error = new Error(String(data.message || "The local model could not be loaded."));
+    if (isWebGPUInstanceLoss(error.message) && !localAILoadRecoveryAttempted && localAILoadPromise) {
+      localAILoadRecoveryAttempted = true;
+      localAIReady = false;
+      state.apiConnected = false;
+      state.apiError = "";
+      state.apiErrorDetail = "";
+      setLocalAIProgress({
+        label: "Recovering local AMÏA after a GPU interruption…",
+        progress: null,
+        indeterminate: true,
+        detail: "Restarting the local worker once and reopening saved model files. (this can take a few moments...)"
+      });
+      try {
+        startLocalAIProgressWatchdog();
+        const worker = replaceLocalAIWorker();
+        worker.postMessage({ type: "load" });
+        return;
+      } catch (restartError) {
+        console.warn("SYNQ.ME could not restart the local AI worker.", restartError);
+      }
+    }
+    stopLocalAIProgressWatchdog();
     localAIReady = false;
     state.apiConnected = false;
     state.apiConfigured = true;
@@ -3298,8 +3320,69 @@ function handleLocalAIWorkerMessage(event) {
     const pending = localAIPendingRequests.get(data.id);
     if (!pending) return;
     localAIPendingRequests.delete(data.id);
-    if (data.type === "reply-error") pending.reject(new Error(String(data.message || "Local generation failed.")));
-    else pending.resolve(String(data.text || ""));
+    if (data.type === "reply-error") {
+      const message = String(data.message || "Local generation failed.");
+      if (isWebGPUInstanceLoss(message) && !localAILoadRecoveryAttempted && !pending.payload?._gpuRecoveryAttempt) {
+        void recoverAndRetryLocalAIRequest(pending, message);
+        return;
+      }
+      pending.reject(new Error(message));
+    } else {
+      localAILoadRecoveryAttempted = false;
+      pending.resolve(String(data.text || ""));
+    }
+  }
+}
+
+function isWebGPUInstanceLoss(message) {
+  const text = String(message || "");
+  return /valid external instance reference no longer exists|mapasync|failed to download data from buffer|onnxruntime.{0,60}webgpu|webgpu.{0,60}device lost/i.test(text);
+}
+
+function createLocalAIWorker() {
+  const worker = new Worker(new URL("./local-ai.worker.js", import.meta.url), { type: "module" });
+  worker.addEventListener("message", handleLocalAIWorkerMessage);
+  worker.addEventListener("error", (error) => workerFailure(error));
+  worker.addEventListener("messageerror", () => workerFailure(new Error("Local AI worker returned an unreadable message.")));
+  return worker;
+}
+
+function replaceLocalAIWorker() {
+  const previousWorker = localAIWorker;
+  localAIWorker = null;
+  try { previousWorker?.terminate(); } catch {}
+  localAIWorker = createLocalAIWorker();
+  return localAIWorker;
+}
+
+async function recoverAndRetryLocalAIRequest(pending, originalMessage) {
+  localAILoadRecoveryAttempted = true;
+  setLocalAIProgress({
+    label: "Recovering local AMÏA after a GPU interruption…",
+    progress: null,
+    indeterminate: true,
+    detail: "Restarting the local worker once and reopening saved model files. (this can take a few moments...)"
+  });
+  try {
+    const previousWorker = localAIWorker;
+    localAIWorker = null;
+    localAIReady = false;
+    localAILoadPromise = null;
+    localAILoadResolve = null;
+    localAILoadReject = null;
+    try { previousWorker?.terminate(); } catch {}
+    await ensureLocalAIReady();
+    const retryReply = await runLocalAIRequest({
+      ...pending.payload,
+      _gpuRecoveryAttempt: true
+    });
+    localAILoadRecoveryAttempted = false;
+    pending.resolve(retryReply);
+  } catch (error) {
+    const detail = String(error?.message || originalMessage || "Unknown WebGPU failure");
+    pending.reject(new Error(
+      "The local GPU session failed again after one automatic restart. Refresh SYNQ.ME and try again. If it repeats, the browser or graphics driver may be losing its WebGPU device. Details: " + detail
+    ));
   }
 }
 
@@ -3337,12 +3420,7 @@ function ensureLocalAIReady() {
         // Browsers may decline; Cache API caching still remains enabled.
         try { await navigator.storage?.persist?.(); } catch {}
         startLocalAIProgressWatchdog();
-        if (!localAIWorker) {
-          localAIWorker = new Worker(new URL("./local-ai.worker.js", import.meta.url), { type: "module" });
-          localAIWorker.addEventListener("message", handleLocalAIWorkerMessage);
-          localAIWorker.addEventListener("error", (error) => workerFailure(error));
-          localAIWorker.addEventListener("messageerror", () => workerFailure(new Error("Local AI worker returned an unreadable message.")));
-        }
+        if (!localAIWorker) localAIWorker = createLocalAIWorker();
         localAIWorker.postMessage({ type: "load" });
       } catch (error) {
         reject(error);
@@ -3367,7 +3445,7 @@ function ensureLocalAIReady() {
 function runLocalAIRequest(payload) {
   const id = ++localAIRequestSequence;
   return new Promise((resolve, reject) => {
-    localAIPendingRequests.set(id, { resolve, reject });
+    localAIPendingRequests.set(id, { resolve, reject, payload });
     try {
       localAIWorker.postMessage({ ...payload, id });
     } catch (error) {
