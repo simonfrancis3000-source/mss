@@ -80,6 +80,19 @@ function messageTimestamp(message) {
   return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
 }
 
+function relatedContextMessages(messages, index) {
+  const current = messages[index];
+  const previous = messages[index - 1];
+  const related = [current].filter(Boolean);
+
+  // A short user answer can inherit the immediately preceding assistant question.
+  if (current?.role === "user" && previous?.role === "assistant") related.push(previous);
+  // An assistant reply can be found alongside the user statement that prompted it.
+  if (current?.role === "assistant" && previous?.role === "user") related.push(previous);
+  // Do not blend a later, unrelated user message into this message's memory.
+  return related;
+}
+
 export function buildHomeMemoryIndexRows(messages, userId, conversationKey = "main") {
   if (!Array.isArray(messages) || !userId) return [];
   const valid = messages.map((message, index) => ({
@@ -93,7 +106,7 @@ export function buildHomeMemoryIndexRows(messages, userId, conversationKey = "ma
   );
 
   return valid.map((item, position) => {
-    const neighbours = [valid[position - 1], item, valid[position + 1]].filter(Boolean);
+    const neighbours = relatedContextMessages(valid, position);
     const keys = new Set();
     const topics = new Set();
     for (const neighbour of neighbours) {
@@ -124,7 +137,7 @@ export function rankHomeMemoryCandidates(query, messages, { limit = 6 } = {}) {
   const prepared = messages.map((message, index) => {
     const ownContent = typeof message?.content === "string" ? message.content.trim() : "";
     const precomputedKeys = message?.search_keys || message?.searchKeys;
-    const neighbourMessages = [messages[index - 1], message, messages[index + 1]].filter(Boolean);
+    const neighbourMessages = relatedContextMessages(messages, index);
     const candidateKeys = new Set(Array.isArray(precomputedKeys) && precomputedKeys.length
       ? precomputedKeys
       : neighbourMessages.flatMap((neighbour) => extractHomeMemoryKeys(neighbour?.content)));
