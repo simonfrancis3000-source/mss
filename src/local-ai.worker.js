@@ -4,9 +4,10 @@ const MODEL_ID = "onnx-community/Qwen3-1.7B-ONNX";
 let generator = null;
 let loadingPromise = null;
 let generationBusy = false;
+let modelCacheDetected = false;
 
 function postProgress(event) {
-  try { self.postMessage({ type: "progress", ...event }); } catch {}
+  try { self.postMessage({ type: "progress", cached: modelCacheDetected, ...event }); } catch {}
 }
 
 function postStatus(label) {
