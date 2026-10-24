@@ -31,12 +31,7 @@ CREATE TABLE IF NOT EXISTS public.synqme_persona_memories (
   archived_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
-  search_document tsvector GENERATED ALWAYS AS (
-    to_tsvector('simple', coalesce(statement, '') || ' ' ||
-      coalesce(topic, '') || ' ' ||
-      coalesce(scope_key, '') || ' ' ||
-      coalesce(array_to_string(search_terms, ' '), ''))
-  ) STORED,
+  search_document tsvector NOT NULL DEFAULT ''::tsvector,
   CONSTRAINT synqme_persona_memories_user_key_unique UNIQUE (user_id, memory_key)
 );
 
@@ -58,18 +53,25 @@ CREATE INDEX IF NOT EXISTS synqme_persona_memories_search_document_gin
 CREATE OR REPLACE FUNCTION public.synqme_touch_persona_memory_updated_at()
 RETURNS trigger
 LANGUAGE plpgsql
-AS $$
+AS $
 BEGIN
   NEW.updated_at = now();
+  NEW.search_document := to_tsvector(
+    'simple',
+    coalesce(NEW.statement, '') || ' ' ||
+    coalesce(NEW.topic, '') || ' ' ||
+    coalesce(NEW.scope_key, '') || ' ' ||
+    coalesce(array_to_string(NEW.search_terms, ' '), '')
+  );
   RETURN NEW;
 END;
-$$;
+$;
 
 DROP TRIGGER IF EXISTS synqme_persona_memory_updated_at
   ON public.synqme_persona_memories;
 
 CREATE TRIGGER synqme_persona_memory_updated_at
-BEFORE UPDATE ON public.synqme_persona_memories
+BEFORE INSERT OR UPDATE ON public.synqme_persona_memories
 FOR EACH ROW EXECUTE FUNCTION public.synqme_touch_persona_memory_updated_at();
 
 ALTER TABLE public.synqme_persona_memories ENABLE ROW LEVEL SECURITY;
