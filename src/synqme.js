@@ -3242,6 +3242,7 @@ function handleLocalAIWorkerMessage(event) {
   if (data.type === "status") {
     const label = String(data.label || "Loading local AMÏA model");
     const modelId = String(data.modelId || "");
+    const isGenerating = /generating your reply/i.test(label);
     const isCompactModel = modelId.includes("SmolLM2-360M-Instruct-ONNX") ||
       modelId.includes("Qwen2.5-0.5B-Instruct") || /compact/i.test(label);
     const modelSize = modelId.includes("SmolLM2-360M-Instruct-ONNX")
@@ -3251,12 +3252,15 @@ function handleLocalAIWorkerMessage(event) {
       label,
       progress: null,
       indeterminate: true,
-      detail: /cached/i.test(label)
-        ? "Opening saved model files on this device…"
-        : isCompactModel
-          ? "First-time compact model download is " + modelSize + ". Cached files should be reused on later visits."
-          : "First-time desktop setup downloads about 1.22 GB of model weights. Keep this tab open."
+      detail: isGenerating
+        ? "The model is loaded. Generating locally, with no additional download."
+        : /cached/i.test(label)
+          ? "Opening saved model files on this device…"
+          : isCompactModel
+            ? "First-time compact model download is " + modelSize + ". Cached files should be reused on later visits."
+            : "First-time desktop setup downloads about 1.22 GB of model weights. Keep this tab open."
     });
+    if (isSending && elements.conversationStatus) elements.conversationStatus.textContent = label;
     return;
   }
   if (data.type === "progress") {
@@ -3484,13 +3488,23 @@ function ensureLocalAIReady() {
 function runLocalAIRequest(payload) {
   const id = ++localAIRequestSequence;
   return new Promise((resolve, reject) => {
+    const timeoutMs = localAIForceCpu ? 180000 : 60000;
     const timeoutId = window.setTimeout(() => {
       const pending = localAIPendingRequests.get(id);
       if (!pending) return;
       localAIPendingRequests.delete(id);
 
-      // A worker that has stopped answering cannot be reused safely. Terminate
-      // it, but leave the browser model cache untouched for the next attempt.
+      // A desktop GPU request that stalls is retried automatically on CPU
+      // once. A CPU timeout is surfaced clearly and the existing model cache
+      // is left intact for the next attempt.
+      if (!localAIForceCpu && !pending.payload?._gpuRecoveryAttempt) {
+        void recoverAndRetryLocalAIRequest(
+          pending,
+          "Desktop GPU inference did not return a token within 60 seconds. Retrying once on CPU."
+        );
+        return;
+      }
+
       const stalledWorker = localAIWorker;
       localAIWorker = null;
       localAIReady = false;
@@ -3501,10 +3515,10 @@ function runLocalAIRequest(payload) {
       stopLocalAIProgressWatchdog();
       state.apiConnected = false;
       state.apiError = "local inference timed out";
-      state.apiErrorDetail = "Freya did not finish generating a reply within three minutes. The saved model files have been kept. Send the question again to restart local inference.";
+      state.apiErrorDetail = "Freya did not finish generating a reply within three minutes on CPU. The saved model files have been kept. Send the question again to retry.";
       pending.reject(new Error(state.apiErrorDetail));
       renderAll();
-    }, 180000);
+    }, timeoutMs);
 
     localAIPendingRequests.set(id, { resolve, reject, payload, timeoutId });
     try {
