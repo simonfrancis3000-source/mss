@@ -78,23 +78,6 @@ async function removeCachedModelFiles(modelId) {
   }
 }
 
-async function hasCachedModelFiles(modelId, dtype) {
-  try {
-    if (!self.caches || !env.useBrowserCache) return false;
-    const cache = await self.caches.open(env.cacheKey);
-    const requests = await cache.keys();
-    const encodedModelId = encodeURIComponent(modelId);
-    const weightName = dtype === "q4f16" ? "model_q4f16.onnx" : "model_q4.onnx";
-    return requests.some((request) => {
-      const url = request.url;
-      const matchesModel = url.includes(modelId) || url.includes(encodedModelId);
-      const matchesWeights = url.includes(weightName);
-      return matchesModel && matchesWeights;
-    });
-  } catch {
-    return false;
-  }
-}
 
 function isUnusableReply(text) {
   const value = String(text || "").trim();
@@ -137,8 +120,10 @@ async function loadModel() {
         { dtype }
       );
     } catch (cacheCheckError) {
-      console.warn("Could not verify the local model cache; falling back to normal cache-aware loading.", cacheCheckError);
-      modelCacheDetected = await hasCachedModelFiles(modelId, dtype);
+      // A partial cache is not a complete cache. Allow Transformers.js to
+      // retrieve any missing config/tokenizer/runtime files and save them.
+      console.warn("Could not verify the complete model cache; allowing normal cache-aware loading.", cacheCheckError);
+      modelCacheDetected = false;
     }
     postStatus(modelCacheDetected
       ? "Loading cached compact local AMÏA model"
