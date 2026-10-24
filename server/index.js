@@ -155,6 +155,129 @@ function cleanFunctions(input) {
   return [...new Set(input.filter((item) => typeof item === "string" && allowed.has(item)))].slice(0, 12);
 }
 
+
+const manualLookupCache = new Map();
+const APPLIANCE_TERMS = /\b(washing machine|washer|dishwasher|tumble dryer|dryer|oven|hob|cooktop|fridge|refrigerator|freezer|microwave|coffee machine|espresso machine|vacuum|robot vacuum|air fryer|washing appliance)\b/i;
+const APPLIANCE_BRANDS = /\b(Bosch|Siemens|Neff|Miele|Samsung|LG|Whirlpool|Beko|AEG|Electrolux|Hotpoint|Indesit|Candy|Hoover|Haier|Hisense|Dyson|iRobot|Smeg|Zanussi|Panasonic|Philips|DeLonghi|De'Longhi|Breville|Sage)\b/i;
+
+function decodeHtml(value) {
+  return String(value || "")
+    .replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'")
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&nbsp;/g, " ")
+    .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code) || 32));
+}
+
+function htmlToReadableText(html) {
+  return decodeHtml(String(html || "")
+    .replace(/<script\b[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[\s\S]*?<\/style>/gi, " ")
+    .replace(/<nav\b[\s\S]*?<\/nav>/gi, " ")
+    .replace(/<footer\b[\s\S]*?<\/footer>/gi, " ")
+    .replace(/<header\b[\s\S]*?<\/header>/gi, " ")
+    .replace(/<[^>]+>/g, " "))
+    .replace(/\s+/g, " ").trim();
+}
+
+function publicHttpsUrl(value) {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" || !url.hostname || url.username || url.password) return null;
+    if (url.hostname === "localhost" || url.hostname.endsWith(".local") ||
+        /^(127\.|10\.|192\.168\.|169\.254\.|0\.)/.test(url.hostname)) return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+function applianceModelMentioned(latest, context) {
+  const modelLabel = /\b(model|model no\.?|model number|type no\.?|product code|service number|e-nr|pnc|serial)\b/i.test(latest);
+  const modelCode = /\b(?=[A-Z0-9-]{4,}\b)(?=[A-Z0-9-]*\d)[A-Z]{0,5}[- ]?\d[A-Z0-9-]{2,}\b/.test(latest);
+  // A product family such as "Series 6" is not an exact model identifier.
+  return (modelLabel && latest.length > 5) || modelCode ||
+    (APPLIANCE_BRANDS.test(latest) && /\b\d{2,}[A-Z0-9-]*\b/i.test(latest)) ||
+    (APPLIANCE_BRANDS.test(context) && modelLabel && latest.length > 5);
+}
+
+async function searchApplianceManual(messages) {
+  const recent = messages.slice(-10).map((item) => item.content).join("\n");
+  const latest = messages[messages.length - 1]?.content || "";
+  if (!APPLIANCE_TERMS.test(recent) || !applianceModelMentioned(latest, recent)) return null;
+
+  const queryText = (latest + " " + recent.split("\n").slice(-4).join(" ") + " official manufacturer user manual instructions").replace(/\s+/g, " ").trim().slice(0, 500);
+  const cacheKey = queryText.toLowerCase();
+  const cached = manualLookupCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < 30 * 60 * 1000) return cached.value;
+
+  try {
+    const searchUrl = "https://html.duckduckgo.com/html/?" + new URLSearchParams({ q: queryText });
+    const response = await fetch(searchUrl, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; SYNQMEManualLookup/1.0)" },
+      signal: AbortSignal.timeout(6500)
+    });
+    if (!response.ok) return null;
+    const html = await response.text();
+    const results = [];
+    const anchorPattern = /<a\b[^>]*class=["'][^"']*result__a[^"']*["'][^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+    let match;
+    while ((match = anchorPattern.exec(html)) && results.length < 8) {
+      let href = decodeHtml(match[1]);
+      try {
+        const parsed = new URL(href, "https://duckduckgo.com");
+        if (parsed.searchParams.has("uddg")) href = decodeURIComponent(parsed.searchParams.get("uddg"));
+      } catch {}
+      const url = publicHttpsUrl(href);
+      const title = htmlToReadableText(match[2]).slice(0, 180);
+      if (!url || !title || /duckduckgo\.com/i.test(new URL(url).hostname)) continue;
+      const block = html.slice(Math.max(0, match.index - 350), Math.min(html.length, anchorPattern.lastIndex + 900));
+      const snippetMatch = block.match(/class=["'][^"']*result__snippet[^"']*["'][^>]*>([\s\S]*?)<\/(?:a|td|div)>/i);
+      const snippet = snippetMatch ? htmlToReadableText(snippetMatch[1]).slice(0, 420) : "";
+      const host = new URL(url).hostname.toLowerCase();
+      const official = /bosch-home|siemens-home|neff-home|miele|samsung|lg\.com|whirlpool|beko|aeg|electrolux|hotpoint|indesit|candy-home|hoover|haier|hisense|dyson|irobot|smeg|zanussi|panasonic|philips|delonghi|sageappliances|breville/i.test(host);
+      results.push({ title, url, snippet, official });
+    }
+    results.sort((a, b) => Number(b.official) - Number(a.official));
+    if (!results.length) return null;
+
+    let manualText = "";
+    let readUrl = "";
+    for (const result of results.slice(0, 4)) {
+      if (/\.pdf(?:$|[?#])/i.test(result.url)) continue;
+      try {
+        const pageResponse = await fetch(result.url, {
+          headers: { "User-Agent": "Mozilla/5.0 (compatible; SYNQMEManualLookup/1.0)" },
+          signal: AbortSignal.timeout(3500),
+          redirect: "follow"
+        });
+        const type = pageResponse.headers.get("content-type") || "";
+        if (!pageResponse.ok || !type.includes("text/html")) continue;
+        const pageHtml = await pageResponse.text();
+        const text = htmlToReadableText(pageHtml);
+        if (text.length > 500) {
+          manualText = text.slice(0, 6500);
+          readUrl = result.url;
+          break;
+        }
+      } catch {}
+    }
+
+    const value = {
+      query: queryText,
+      results: results.slice(0, 5),
+      readUrl,
+      manualText,
+      note: manualText
+        ? "A public HTML page was fetched and its readable text extracted. Use only the content below as source evidence."
+        : "Search results and links were found, but the manual text itself was not successfully extracted. Do not claim to have read the manual; give the user the best official link and be explicit about this limitation."
+    };
+    manualLookupCache.set(cacheKey, { at: Date.now(), value });
+    return value;
+  } catch (error) {
+    console.info("SYNQ.ME manual search unavailable.", String(error?.message || error).slice(0, 160));
+    return null;
+  }
+}
+
 function responseRepeatsUser(reply, userMessage) {
   const normalise = (value) => String(value || "").toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
   const userText = normalise(userMessage);
