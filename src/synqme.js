@@ -2677,13 +2677,15 @@ async function sendMessage(rawText) {
   const sentToAIThisTurn = Boolean(API_BASE) && (forceAIForSelectedLanguage || (!clarificationRequest && !answeredPendingClarification));
   // English clarification turns retain the deterministic local handling. In
   // other selected languages, ask Groq to compose the reply in that language.
-  let reply = forceAIForSelectedLanguage
-    ? await requestAIReply()
-    : clarificationRequest
-      ? clarificationHelpReply(previousAssistantMessage, previousUserMessage)
-      : answeredPendingClarification
-        ? replyToResolvedClarification(message, pendingBeforeAnswer)
-        : await requestAIReply();
+  let reply = (state.profile.preferredLanguage || "en") !== "en" && !API_BASE
+    ? localizedAIUnavailable(state.profile.preferredLanguage)
+    : forceAIForSelectedLanguage
+      ? await requestAIReply()
+      : clarificationRequest
+        ? clarificationHelpReply(previousAssistantMessage, previousUserMessage)
+        : answeredPendingClarification
+          ? replyToResolvedClarification(message, pendingBeforeAnswer)
+          : await requestAIReply();
   if ((!answeredPendingClarification && !clarificationRequest) || forceAIForSelectedLanguage) {
     const replyNeedsRepair = (value) => !value ||
       responseRepeatsUser(value, message) ||
@@ -2711,7 +2713,9 @@ async function sendMessage(rawText) {
         ? "I’m having trouble making a useful connection from that answer, and I don’t want to give you another canned question. I’ve understood the detail you shared; please try once more, or tell me which part of your routine you’d like to explore."
         : localizedAIUnavailable(state.profile.preferredLanguage);
     } else if (replyNeedsRepair(reply) && !API_BASE) {
-      reply = localReply(message);
+      reply = (state.profile.preferredLanguage || "en") === "en"
+        ? localReply(message)
+        : localizedAIUnavailable(state.profile.preferredLanguage);
     }
   }
   state.messages.push({ role: "assistant", content: reply });
