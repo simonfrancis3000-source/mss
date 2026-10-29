@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#08090c" />
+    <meta name="description" content="Build a personal digital persona with SYNQ.ME, powered by MySecondSelf decision intelligence." />
+    <title>SYNQ.ME | Build Your SecondSelf</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/src/synqme.css" />
+    <script type="module" src="/src/synqme.js"></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="nav-wrap">
+        <a class="brand" href="https://mysecondself.app/" aria-label="MySecondSelf home">
+          <img src="https://mysecondself.app/wp-content/uploads/2026/10/MySecondSelf-Dual-Head-Logo.png" alt="MySecondSelf" />
+        </a>
+        <nav class="nav-links" aria-label="Main navigation">
+          <a href="https://mysecondself.app/owners/">OWNERS</a>
+          <a href="https://mysecondself.app/partners/">PARTNERS</a>
+          <a href="https://mysecondself.app/pexi/">PEXI</a>
+          <a href="https://mysecondself.app/contact/">CONTACT</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="hero-copy">
+          <div class="eyebrow">SYNQ.ME <span class="eyebrow-divider">/</span> YOUR PERSONALISATION LAYER</div>
+          <h1>A SecondSelf that<br /><span>knows you.</span></h1>
+          <p>Build a digital persona through natural conversation. Your preferences become the context a compatible robot needs to understand how you like things done.</p>
+        </div>
+        <div class="demo-stamp"><span class="stamp-dot"></span><span id="providerLabel">Checking AI connection</span></div>
+      </section>
+
+      <section class="app-grid" aria-label="SYNQ.ME interactive product demo">
+        <section class="panel conversation-panel" aria-labelledby="conversationTitle">
+          <div class="panel-heading">
+            <div>
+              <div class="section-kicker">01 / Conversation</div>
+              <h2 id="conversationTitle">Build your SecondSelf</h2>
+            </div>
+            <div class="panel-status"><span class="status-dot"></span><span id="conversationStatus">Ready to talk</span></div>
+          </div>
+
+          <div class="conversation-intro">
+            <div class="elo-avatar" aria-hidden="true">
+              <svg viewBox="0 0 48 48" role="img">
+                <rect x="7" y="10" width="34" height="28" rx="11"></rect>
+                <path d="M13 20h22M16 28h5m6 0h5"></path>
+                <circle cx="17" cy="23" r="2"></circle>
+                <circle cx="31" cy="23" r="2"></circle>
+              </svg>
+            </div>
+            <div>
+              <div class="intro-title">Meet ELO <span class="intro-badge">SYNQ.ME GUIDE</span></div>
+              <p>Tell me what matters to you. I’ll help shape your digital persona, one preference at a time.</p>
+            </div>
+          </div>
+
+          <div class="chat-messages" id="chatMessages" role="log" aria-live="polite" aria-relevant="additions text">
+            <article class="message assistant-message">
+              <div class="message-avatar">E</div>
+              <div class="message-body">
+                <div class="message-meta">ELO <span>·</span> SYNQ.ME</div>
+                <p>Hi, I’m ELO. Let’s start with a household routine. If a robot were loading your dishwasher, what would you want it to know about how you like things done?</p>
+              </div>
+            </article>
+          </div>
+
+          <div class="suggestions-wrap">
+            <div class="suggestion-label">TRY A STARTING POINT</div>
+            <div class="suggestion-chips">
+              <button type="button" class="suggestion-chip" data-prompt="Put glasses on the top rack and keep delicate items separate.">Protect glassware</button>
+              <button type="button" class="suggestion-chip" data-prompt="Ask me before starting the dishwasher cycle.">Ask before starting</button>
+              <button type="button" class="suggestion-chip" data-prompt="Keep knives pointed down in the cutlery basket.">Handle knives safely</button>
+            </div>
+          </div>
+
+          <form class="chat-composer" id="chatForm">
+            <label class="sr-only" for="messageInput">Tell SYNQ.ME a preference</label>
+            <textarea id="messageInput" name="message" rows="2" maxlength="1200" placeholder="Tell ELO how you like things done..." required></textarea>
+            <button class="send-button" id="sendButton" type="submit" aria-label="Send message">
+              <span>Send</span>
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 10h13M10 4l6 6-6 6"></path></svg>
+            </button>
+          </form>
+          <div class="composer-foot">
+            <span><span class="small-lock"></span> Demo memory is saved in this browser</span>
+            <button type="button" id="resetDemo" class="text-button">Reset demo</button>
+          </div>
+        </section>
+
+        <aside class="side-stack">
+          <section class="panel persona-panel" aria-labelledby="personaTitle">
+            <div class="panel-heading">
+              <div>
+                <div class="section-kicker">02 / Digital persona</div>
+                <h2 id="personaTitle">Your SecondSelf</h2>
+              </div>
+              <span class="mini-tag" id="memoryCount">0 MEMORIES</span>
+            </div>
+            <div class="persona-profile">
+              <div class="persona-mark" aria-hidden="true">
+                <svg viewBox="0 0 64 64">
+                  <path d="M32 8 50 18v22L32 54 14 40V18Z"></path>
+                  <path d="M14 18 32 30 50 18M32 30v24M23 24l9-5 9 5M24 39l8-5 8 5"></path>
+                  <circle cx="25" cy="27" r="2"></circle><circle cx="39" cy="27" r="2"></circle>
+                </svg>
+              </div>
+              <div class="persona-heading">
+                <span class="persona-name">My SecondSelf</span>
+                <span class="persona-subtitle">A portable digital persona</span>
+              </div>
+              <span class="memory-pulse" title="Local demo memory"></span>
+            </div>
+            <div class="persona-progress">
+              <div class="progress-copy"><span>Persona foundation</span><strong id="foundationValue">Waiting for your first preference</strong></div>
+              <div class="progress-track"><div class="progress-fill" id="personaProgress"></div></div>
+            </div>
+            <div class="preference-header"><span>LEARNED PREFERENCES</span><span id="preferenceCount">0</span></div>
+            <div id="preferenceList" class="preference-list">
+              <div class="empty-memory"><span class="empty-memory-icon">+</span><div><strong>Your persona starts here</strong><p>Share a preference in the conversation. SYNQ.ME will add it to your SecondSelf.</p></div></div>
+            </div>
+            <div class="persona-footnote"><span class="footnote-dot"></span><span id="memoryFootnote">No preferences saved yet</span></div>
+          </section>
+
+          <section class="panel decision-panel" aria-labelledby="decisionTitle">
+            <div class="panel-heading">
+              <div>
+                <div class="section-kicker">03 / AMYA decision intelligence</div>
+                <h2 id="decisionTitle">From preference to action</h2>
+              </div>
+              <span class="mini-tag">DEMO</span>
+            </div>
+            <div class="decision-body">
+              <div class="decision-summary" id="decisionSummary">AMYA will use the preferences you share to shape a personalised task plan.</div>
+              <div class="decision-route">
+                <div class="route-node">
+                  <span class="route-icon">01</span>
+                  <div><strong>AMYA</strong><small>Interprets intent and preferences</small></div>
+                  <span class="route-state" id="amyaState">Waiting</span>
+                </div>
+                <div class="route-connector"></div>
+                <div class="route-node">
+                  <span class="route-icon">02</span>
+                  <div><strong>PEXI</strong><small>Maps the task to robot capabilities</small></div>
+                  <span class="route-state" id="pexiState">Waiting</span>
+                </div>
+              </div>
+              <button class="run-button" type="button" id="runTask">
+                <span>Run dishwasher task demo</span>
+                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 4 14 10 7 16Z"></path></svg>
+              </button>
+              <p class="scope-note">Illustrative simulation only. No physical robot is controlled and no production capability is claimed.</p>
+            </div>
+          </section>
+        </aside>
+      </section>
+
+      <section class="task-result panel" id="taskResult" hidden aria-labelledby="taskResultTitle">
+        <div class="task-visual">
+          <img src="https://mysecondself.app/wp-content/uploads/2026/10/Friendly-Robot-Loads-the-Dishwasher.png" alt="Illustrative domestic robot loading a dishwasher" loading="lazy" />
+          <span class="visual-label"><span class="status-dot"></span> SIMULATION-FIRST VALIDATION</span>
+        </div>
+        <div class="task-detail">
+          <div class="section-kicker">PEXI / TASK MAPPING</div>
+          <h2 id="taskResultTitle">A task plan shaped around you.</h2>
+          <p id="taskDescription">The demonstration maps a household task to an illustrative capability profile, then applies the preferences saved in your SecondSelf.</p>
+          <div class="task-steps" id="taskSteps"></div>
+          <div class="result-disclaimer">This is a choreographed product demonstration, not a physics simulation or a claim of live robot integration.</div>
+        </div>
+      </section>
+
+      <section class="principles">
+        <div class="principles-heading">
+          <div class="section-kicker">The SYNQ.ME model</div>
+          <h2>Personal intelligence, ready to travel.</h2>
+        </div>
+        <div class="principles-grid">
+          <article class="principle"><span>01</span><h3>Learn</h3><p>Natural conversation builds a digital persona from the way you communicate, choose and prefer.</p></article>
+          <article class="principle"><span>02</span><h3>Reason</h3><p>AMYA applies personal context to interpret intent and shape a more individual response.</p></article>
+          <article class="principle"><span>03</span><h3>Transfer</h3><p>PEXI maps a task to compatible robot capabilities, so a SecondSelf can move with you.</p></article>
+        </div>
+      </section>
+
+      <footer class="footer">
+        <span>© MySecondSelf · SYNQ.ME interactive demo</span>
+        <nav class="footer-nav" aria-label="Footer navigation">
+          <a href="https://mysecondself.app/owners/">OWNERS</a>
+          <a href="https://mysecondself.app/partners/">PARTNERS</a>
+          <a href="https://mysecondself.app/pexi/">PEXI</a>
+          <a href="https://mysecondself.app/contact/">CONTACT</a>
+        </nav>
+      </footer>
+    </main>
+  </body>
+</html>

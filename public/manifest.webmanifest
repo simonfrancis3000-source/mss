@@ -1,0 +1,19 @@
+{
+  "name": "SYNQ.ME | MySecondSelf",
+  "short_name": "SYNQ.ME",
+  "description": "Build your personal digital persona with SYNQ.ME.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#08090c",
+  "theme_color": "#08090c",
+  "icons": [
+    {
+      "src": "/synqme-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

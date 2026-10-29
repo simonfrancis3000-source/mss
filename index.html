@@ -4,14 +4,53 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#08090c" />
-    <meta name="description" content="A lightweight MySecondSelf persona demo with Sarah, Alex and an animated wireframe." />
-    <title>MySecondSelf | Persona Lab</title>
+    <meta name="description" content="Build a personal digital persona with SYNQ.ME, powered by MySecondSelf decision intelligence." />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="SYNQ.ME" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/synqme-icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="https://mysecondself.app/wp-content/uploads/2026/10/MySecondSelf-Dual-Head-Logo.png" />
+    <title>SYNQ.ME | Build Your SecondSelf</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="/src/style.css" />
+    <link rel="stylesheet" href="/src/synqme.css" />
+    <script type="module" src="/src/synqme.js"></script>
   </head>
-  <body>
+  <body class="auth-required">
+    <div class="app-splash" id="appSplash" role="status" aria-label="Opening SYNQ.ME">
+      <img class="splash-logo" src="https://mysecondself.app/wp-content/uploads/2026/10/MySecondSelf-Dual-Head-Logo.png" alt="MySecondSelf" />
+      <div class="splash-caption">SYNQ.ME <span>PERSONAL INTELLIGENCE</span></div>
+      <div class="splash-track"><span></span></div>
+    </div>
+    <section class="auth-overlay" id="authGate" aria-labelledby="authTitle">
+      <div class="auth-card">
+        <img class="auth-logo" src="https://mysecondself.app/wp-content/uploads/2026/10/MySecondSelf-Dual-Head-Logo.png" alt="MySecondSelf" />
+        <div class="section-kicker">SYNQ.ME / PERSONAL ACCOUNT</div>
+        <h1 id="authTitle">Your SecondSelf, saved.</h1>
+        <p class="auth-description" id="authDescription">Sign in to continue building your personal digital persona. Your conversations and preferences will be saved to your account.</p>
+        <form id="authForm" class="auth-form">
+          <label id="authEmailLabel" for="authEmail">Email address</label>
+          <input id="authEmail" name="email" type="email" autocomplete="email" maxlength="254" placeholder="you@example.com" required />
+          <label id="authPasswordLabel" for="authPassword">Password</label>
+          <input id="authPassword" name="password" type="password" autocomplete="current-password" minlength="8" placeholder="At least 8 characters" required />
+          <label class="auth-remember" for="rememberMe">
+            <input type="checkbox" id="rememberMe" name="rememberMe" checked />
+            <span>Remember me on this device</span>
+          </label>
+          <label class="auth-remember auth-import-draft" id="authImportDraftWrap" for="authImportDraft" hidden>
+            <input type="checkbox" id="authImportDraft" name="authImportDraft" />
+            <span>Import this browser’s existing persona and chat history (optional)</span>
+          </label>
+          <p class="auth-status" id="authStatus" role="status" aria-live="polite"></p>
+          <button class="auth-submit" id="authSubmit" type="submit">Sign in</button>
+          <button class="auth-mode-toggle" id="authModeToggle" type="button">New to SYNQ.ME? Create an account</button>
+          <button class="auth-forgot" id="authForgotPassword" type="button">Forgot password?</button>
+        </form>
+        <p class="auth-privacy-note">Your account keeps your profile, preferences and chat history together. Use “Remember me” only on a device you trust.</p>
+      </div>
+    </section>
     <header class="site-header">
       <div class="nav-wrap">
         <a class="brand" href="https://mysecondself.app/" aria-label="MySecondSelf home">
@@ -23,266 +62,321 @@
           <a href="https://mysecondself.app/pexi/">PEXI</a>
           <a href="https://mysecondself.app/contact/">CONTACT</a>
         </nav>
+        <button class="settings-button" type="button" id="openSettings" aria-haspopup="dialog" aria-controls="settingsDialog" aria-label="Open settings">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"/><path d="m19.4 13.5 1.1.9-1.5 2.6-1.4-.5a7.9 7.9 0 0 1-1.8 1l-.2 1.5h-3l-.3-1.5a7.9 7.9 0 0 1-1.8-1l-1.4.5-1.5-2.6 1.1-.9a7.2 7.2 0 0 1 0-2l-1.1-.9 1.5-2.6 1.4.5a7.9 7.9 0 0 1 1.8-1l.3-1.5h3l.2 1.5a7.9 7.9 0 0 1 1.8 1l1.4-.5 1.5 2.6-1.1.9a7.2 7.2 0 0 1 0 2Z" transform="translate(-.4 -1)"/></svg>
+          <span>Settings</span>
+        </button>
       </div>
     </header>
 
     <main>
       <section class="hero">
-        <div>
-          <div class="eyebrow">A personalisation layer for robotics</div>
-          <h1>One demo.<br />Two personal responses.</h1>
-          <p>Choose Sarah or Alex, select a household scenario, and see how a SecondSelf profile changes the pace, pauses and confirmations in a lightweight wireframe walkthrough.</p>
+        <div class="hero-copy">
+          <div class="eyebrow">SYNQ.ME <span class="eyebrow-divider">/</span> YOUR PERSONALISATION LAYER</div>
+          <h1>A SecondSelf that<br /><span>knows you.</span></h1>
+          <p>Build your digital persona through natural conversation. Choose the parts of home life you want your SecondSelf to understand, one preference at a time. No robot is needed to get started.</p>
         </div>
-        <div class="demo-stamp"><span class="stamp-dot"></span> Browser visual demo</div>
+        <div class="demo-stamp"><span class="stamp-dot"></span><span id="providerLabel">Checking AI connection</span></div>
       </section>
 
-      <section class="demo-layout" aria-label="Interactive MySecondSelf persona demo">
-        <section class="panel stage-panel" aria-labelledby="stageTitle">
+      <button class="mobile-summary" type="button" id="openPersonaFromSummary" aria-label="Open your SecondSelf settings">
+        <span class="mobile-summary-mark" aria-hidden="true">S</span>
+        <span class="mobile-summary-copy"><strong id="mobileOwnerTitle">Your SecondSelf</strong><small id="mobileJourneyText">Your personalisation journey starts here</small></span>
+        <span class="mobile-summary-progress"><strong id="mobileProgressValue">0%</strong><small>BUILT</small></span>
+        <span class="mobile-summary-chevron" aria-hidden="true">›</span>
+      </button>
+
+      <section class="app-grid" aria-label="SYNQ.ME interactive product demo">
+        <section class="panel conversation-panel" aria-labelledby="conversationTitle">
           <div class="panel-heading">
             <div>
-              <div class="section-kicker">Full body wireframe</div>
-              <h2 id="stageTitle">Household task preview</h2>
+              <div class="section-kicker">01 / Conversation</div>
+              <h2 id="conversationTitle">Build your SecondSelf</h2>
             </div>
-            <span class="mini-tag">WIREFRAME · VISUAL ONLY</span>
+            <div class="panel-status"><span class="status-dot"></span><span id="conversationStatus">Ready to talk</span></div>
           </div>
-          <figure class="viewport">
-            <div class="scene-corner"><span>PERSONA LAB / 01</span><span id="sceneTaskLabel">Prepare breakfast · cup routine</span></div>
-            <div class="scene-legend"><span class="legend-dot"></span><span id="scenePersonaLabel">SARAH · FAMILIAR ROUTINE</span></div>
-            <svg class="wire-scene" id="wireScene" data-motion="idle" data-task="breakfast" viewBox="0 0 1000 620" role="img" aria-labelledby="wireTitle wireDesc" preserveAspectRatio="xMidYMid meet">
-              <title id="wireTitle">MySecondSelf animated wireframe task preview</title>
-              <desc id="wireDesc">A proportioned, full body humanoid wireframe performs a visual storyboard for breakfast, kitchen tidying or welcoming a visitor. The objects and movements are choreographed, not physics based.</desc>
-              <defs>
-                <radialGradient id="stageGlow" cx="50%" cy="53%" r="56%">
-                  <stop offset="0" stop-color="#172337" stop-opacity=".7" />
-                  <stop offset="1" stop-color="#090b0f" stop-opacity="0" />
-                </radialGradient>
-                <linearGradient id="wireTint" x1="0" x2="1" y1="0" y2="1">
-                  <stop offset="0" stop-color="#dceaff" />
-                  <stop offset=".52" stop-color="#91b8eb" />
-                  <stop offset="1" stop-color="#6a86ad" />
-                </linearGradient>
-              </defs>
-              <rect width="1000" height="620" fill="url(#stageGlow)" />
-              <g class="floor-grid" aria-hidden="true">
-                <path d="M86 500H914 M138 472H862 M190 445H810 M242 419H758 M294 396H706" />
-                <path d="M422 393L70 556 M422 393L184 556 M422 393L298 556 M422 393L412 556 M422 393L526 556 M422 393L640 556 M422 393L754 556 M422 393L868 556 M422 393L982 556" />
-                <path class="ground-line" d="M65 500H985" />
-              </g>
-              <g class="kitchen-set" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M526 300H1000V321H526Z M544 321V505H986V321 M544 356H986 M544 488H986" class="set-line" />
-                <path d="M552 300V321M974 300V321" class="set-highlight" />
-                <path d="M565 505V529M966 505V529M552 529H980" class="set-line" />
-              </g>
 
-              <g class="breakfast-props" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path class="coaster" d="M596 297H644M601 301H639" />
-                <g class="cup-object">
-                  <path class="cup-prop" d="M540 269H558L556 295Q549 301 542 295Z M558 274Q571 273 565 286Q563 290 557 290 M543 273H556" />
-                  <path class="cup-detail" d="M543 280H557M545 286H556" />
-                </g>
-                <path class="object-guide" d="M558 262C575 232 589 232 601 272" />
-                <text class="object-label" x="546" y="257">CUP</text>
-                <text class="object-label" x="598" y="286">COASTER</text>
-              </g>
+          <div class="chat-stage">
+            <div class="chat-workspace">
+              <div class="chat-transcript-shell" id="chatTranscriptShell">
+                <div class="chat-messages" id="chatMessages" role="log" aria-live="polite" aria-relevant="additions text">
+                  <article class="message assistant-message">
+                    <div class="message-avatar">E</div>
+                    <div class="message-body">
+                      <div class="message-meta">SYNQ.ME</div>
+                      <p>Hi, I’m your SYNQ.ME guide. Let’s start building your SecondSelf. Which parts of home life would you like it to understand first?</p>
+                    </div>
+                  </article>
+                </div>
+                <div class="chat-scrollbar-track" id="chatScrollbarTrack" aria-hidden="true" hidden>
+                  <span class="chat-scrollbar-thumb" id="chatScrollbarThumb"></span>
+                </div>
+              </div>
 
-              <g class="tidy-props" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <g class="plate-object"><path class="dish-prop" d="M541 291Q554 275 569 291Q555 304 541 291Z M546 291Q555 282 564 291Q555 299 546 291Z" /></g>
-                <g class="jar-object"><path class="jar-prop" d="M573 268H592L595 296H570Z M576 264H589V269H576Z M573 277H593" /></g>
-                <g class="cloth-object"><path class="cloth-prop" d="M603 285L624 278L633 296L612 301Z M610 285L624 293" /></g>
-                <path class="rack-prop" d="M584 295H656M590 295V276M650 295V276M594 284L602 294M608 284L616 294M622 284L630 294M636 284L644 294" />
-                <path class="object-guide" d="M623 263C617 246 609 246 602 268" />
-                <text class="object-label" x="586" y="266">DISH RACK</text>
-                <text class="clear-label" x="570" y="250">WORK AREA</text>
-                <path class="wipe-trail" d="M554 307H729" />
-              </g>
-
-              <g class="visitor-props" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path class="door-frame" d="M791 353V135Q791 126 801 126H946V353 M814 353V149H925V353" />
-                <path class="door-detail" d="M902 244H911M804 338H934" />
-                <circle class="visitor-wire" cx="866" cy="214" r="22" />
-                <path class="visitor-wire" d="M848 208L860 192L879 193L884 211L875 229L858 231Z M849 254L866 238L883 254L892 304L879 326L852 326L840 303Z M850 257L826 276L813 298 M884 257L901 274L914 294 M852 326L846 360L837 383 M879 326L886 360L897 383" />
-                <path class="visitor-wire detail" d="M848 254L866 267L883 254M840 303L864 294L892 304M866 239V267M846 360L835 365M886 360L899 365" />
-                <text class="object-label" x="840" y="112">VISITOR</text>
-              </g>
-
-              <path class="reach-trail" d="M486 252C510 270 532 283 565 285" aria-hidden="true" />
-              <circle class="reach-point" cx="565" cy="285" r="4" aria-hidden="true" />
-
-              <g class="robot-rig" fill="none" stroke="url(#wireTint)" stroke-linecap="round" stroke-linejoin="round" aria-label="Full body wireframe humanoid">
-                <g class="leg left-leg" stroke-width="1.8">
-                  <path class="segment-shell" d="M396 299L421 304L415 384L403 395L382 382Z" />
-                  <path class="segment-wire" d="M396 299L403 348L415 384M421 304L403 348L382 382M391 316L416 322M386 369L410 365" />
-                  <circle cx="401" cy="389" r="12" class="joint" />
-                  <g class="shin left-shin">
-                    <path class="segment-shell" d="M388 389L414 390L411 469L402 482L386 472Z" />
-                    <path class="segment-wire" d="M388 389L399 433L386 472M414 390L399 433L411 469M391 411L408 414M388 455L408 450" />
-                    <path class="foot-shell" d="M387 470L405 477L414 491L407 498H365L361 492L375 481Z" />
-                    <path class="segment-wire" d="M375 481L389 490L414 491M369 492H406" />
-                  </g>
-                </g>
-                <g class="leg right-leg" stroke-width="1.8">
-                  <path class="segment-shell" d="M428 304L453 299L467 382L446 395L434 384Z" />
-                  <path class="segment-wire" d="M428 304L447 348L434 384M453 299L447 348L467 382M434 322L459 316M440 365L463 369" />
-                  <circle cx="450" cy="389" r="12" class="joint" />
-                  <g class="shin right-shin">
-                    <path class="segment-shell" d="M438 390L464 389L466 472L450 482L441 469Z" />
-                    <path class="segment-wire" d="M438 390L453 433L441 469M464 389L453 433L466 472M443 414L462 411M443 450L463 455" />
-                    <path class="foot-shell" d="M441 477L459 470L471 481L487 492L483 498H441L434 492Z" />
-                    <path class="segment-wire" d="M441 477L453 490L483 492M441 492H481" />
-                  </g>
-                </g>
-
-                <g class="pelvis-cage" stroke-width="1.8">
-                  <path class="segment-shell" d="M391 279L411 271L422 278L435 271L456 279L464 302L451 319L423 328L395 319L382 302Z" />
-                  <path class="segment-wire" d="M391 279L423 294L456 279M382 302L408 301L423 328L438 301L464 302M411 271L408 301M435 271L438 301M423 294V328" />
-                  <circle cx="401" cy="305" r="10" class="joint" />
-                  <circle cx="447" cy="305" r="10" class="joint" />
-                </g>
-
-                <g class="torso-cage" stroke-width="1.85">
-                  <path class="segment-shell" d="M382 164L402 154L421 160L442 154L463 164L476 203L466 255L449 284L423 293L397 284L379 255L369 203Z" />
-                  <path class="segment-wire" d="M382 164L423 183L463 164M369 203L402 216L423 183L444 216L476 203M379 255L407 246L423 277L439 246L466 255M397 284L407 246L423 293L439 246L449 284" />
-                  <path class="fine-wire" d="M402 165L402 216L407 246L397 284M444 165L444 216L439 246L449 284M423 183V277M382 188L402 198L423 183L444 198L463 188M377 226L402 232H444L470 226M383 266L407 263H439L462 266" />
-                  <path class="core-line" d="M412 193L423 187L434 193V235L423 243L412 235Z M412 250L423 244L434 250V269L423 276L412 269Z" />
-                  <path class="joint-frame" d="M371 160L383 148L395 160L383 172ZM451 160L463 148L475 160L463 172Z" />
-                  <circle cx="383" cy="160" r="10" class="joint" />
-                  <circle cx="463" cy="160" r="10" class="joint" />
-                </g>
-
-                <g class="neck-cage" stroke-width="1.5">
-                  <path d="M411 141L412 164H434L435 141M412 151L434 151M416 145V160M430 145V160" />
-                </g>
-                <g class="head-cage" stroke-width="1.65">
-                  <path class="head-shell" d="M404 100L410 88Q423 81 436 88L442 100V121L436 137L423 142L410 137L404 121Z" />
-                  <path class="segment-wire" d="M404 100L423 105L442 100M404 121L423 117L442 121M410 88L413 102L410 137M436 88L433 102L436 137M423 105V117M410 137L423 131L436 137" />
-                  <path class="face-band" d="M407 105L423 109L439 105M409 114L423 118L437 114" />
-                  <circle class="eye-node" cx="415" cy="111" r="2.1" />
-                  <circle class="eye-node" cx="431" cy="111" r="2.1" />
-                  <path class="fine-wire" d="M415 128L423 131L431 128" />
-                </g>
-
-                <g class="left-arm" stroke-width="1.75">
-                  <path class="segment-shell upper-shell" d="M383 161L397 163L380 226L363 239L350 227Z" />
-                  <path class="segment-wire" d="M383 161L374 202L350 227M397 163L374 202L380 226M366 181L392 188M358 218L379 220" />
-                  <circle cx="365" cy="232" r="10.5" class="joint" />
-                  <g class="left-forearm">
-                    <path class="segment-shell" d="M355 233L375 229L352 282L338 293L328 282Z" />
-                    <path class="segment-wire" d="M355 233L344 264L328 282M375 229L344 264L352 282M337 251L359 260M332 275L349 276" />
-                    <circle cx="341" cy="286" r="8.5" class="joint" />
-                    <path class="hand-shell" d="M335 287L346 285L346 299L339 308L331 305L334 298L327 302L324 298L333 292Z" />
-                    <path class="segment-wire" d="M335 287L337 296L331 305M346 285L341 296L339 308M333 292L341 296" />
-                  </g>
-                </g>
-
-                <g class="right-arm" stroke-width="1.75">
-                  <path class="segment-shell upper-shell" d="M458 163L474 159L496 221L482 239L466 229Z" />
-                  <path class="segment-wire" d="M458 163L480 198L466 229M474 159L480 198L496 221M464 185L489 177M470 221L490 215" />
-                  <circle cx="489" cy="231" r="10.5" class="joint" />
-                  <g class="right-forearm">
-                    <path class="segment-shell" d="M480 232L499 228L521 274L510 290L495 283Z" />
-                    <path class="segment-wire" d="M480 232L505 257L495 283M499 228L505 257L521 274M489 246L512 242M499 276L517 266" />
-                    <circle cx="514" cy="281" r="8.5" class="joint" />
-                    <g class="right-hand">
-                      <path class="hand-shell" d="M508 280L520 278L529 287L527 294L519 293L515 303L510 302L512 293L504 300L500 296L508 289Z" />
-                      <path class="segment-wire fingers-open" d="M508 280L513 289L512 293L519 293L527 294M508 289L500 296M513 289L519 285L525 287M513 293L510 302M519 293L519 300" />
-                      <path class="segment-wire fingers-closed" d="M508 280L513 289L516 294L522 292L527 294M508 289L513 292M513 289L519 285L525 287M516 294L515 300M522 292L521 298" />
-                    </g>
-                  </g>
-                </g>
-              </g>
-
-              <g class="scene-labels" aria-hidden="true">
-                <text x="98" y="237">ARTICULATED WIREFRAME</text>
-                <path d="M98 247H264L340 220" />
-                <text class="motion-label" x="633" y="386">HOUSEHOLD SCENARIO</text>
-                <path d="M628 396H582L565 316" />
-                <text x="500" y="584" text-anchor="middle">CHOREOGRAPHED VISUAL STORYBOARD · NO PHYSICS OR ROBOT CONTROL</text>
-              </g>
-            </svg>
-            <figcaption class="stage-caption"><span id="statusText" role="status" aria-live="polite">Choose a persona and start a task preview.</span><span id="statusDetail">This wireframe is illustrative; it does not demonstrate robot capability.</span></figcaption>
-          </figure>
-          <div class="timeline-wrap" aria-label="Task preview progress">
-            <div class="timeline-top"><span>Preview sequence</span><span id="stepCount">Ready</span></div>
-            <div class="progress-track" id="progressTrack" role="progressbar" aria-label="Preview progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="progress-fill" id="progressFill"></div></div>
-            <div class="timeline-steps" id="timelineSteps" aria-hidden="true"></div>
+              <form class="chat-composer" id="chatForm">
+            <label class="sr-only" for="messageInput">Tell SYNQ.ME a preference</label>
+            <textarea id="messageInput" name="message" rows="2" maxlength="1200" placeholder="Tell your SecondSelf how you like things done..." required></textarea>
+            <button class="voice-mode-button" id="voiceModeButton" type="button" aria-pressed="false" aria-label="Start voice conversation" title="Start a spoken conversation">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"></rect><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3m-4 0h8"></path></svg>
+              <span>Voice</span>
+            </button>
+            <button class="send-button" id="sendButton" type="submit" aria-label="Send message">
+              <span>Send</span>
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 10h13M10 4l6 6-6 6"></path></svg>
+            </button>
+          </form>
+          <div class="voice-model-progress voice-model-progress-main" id="voiceModelProgressMain" hidden>
+            <div class="voice-model-progress-track" id="voiceModelProgressTrackMain" role="progressbar" aria-label="Voice model download progress" aria-valuemin="0" aria-valuemax="100">
+              <span class="voice-model-progress-fill" id="voiceModelProgressFillMain"></span>
+            </div>
+            <div class="voice-model-progress-meta">
+              <span id="voiceModelProgressLabelMain">Preparing voice in the background…</span>
+              <span id="voiceModelProgressPercentMain"></span>
+            </div>
+          </div>
+          <div class="local-ai-progress" id="localAIProgress" hidden aria-live="polite">
+            <div class="local-ai-progress-meta">
+              <span id="localAIProgressLabel">Downloading local AMÏA model</span>
+            </div>
+            <div class="local-ai-progress-track" id="localAIProgressTrack" role="progressbar" aria-label="Local AMÏA model download progress" aria-valuemin="0" aria-valuemax="100">
+              <span class="local-ai-progress-fill" id="localAIProgressFill"></span>
+            </div>
+          </div>
+          <div class="composer-foot">
+            <span><span class="small-lock"></span> Your SecondSelf is saved to your account</span>
+            <span id="voiceStatus" class="voice-status" aria-live="polite"></span>
+            <button type="button" id="resetDemo" class="text-button">Reset demo</button>
+          </div>
+            </div>
           </div>
         </section>
 
-        <aside class="panel control-panel" aria-labelledby="controlTitle">
-          <div class="control-head">
-            <div class="section-kicker">Personal response</div>
-            <h2 id="controlTitle">Choose a SecondSelf</h2>
-            <p>Each profile changes how the visual task preview proceeds.</p>
-          </div>
-
-          <span class="form-label">Select a persona</span>
-          <div class="personas" role="group" aria-label="SecondSelf persona">
-            <button class="persona" id="sarahBtn" type="button" aria-pressed="true">
-              <span class="persona-name">Sarah</span>
-              <span class="persona-caption">Quiet mornings · Familiar routines</span>
-            </button>
-            <button class="persona" id="alexBtn" type="button" aria-pressed="false">
-              <span class="persona-name">Alex</span>
-              <span class="persona-caption">Explanations · Confirm new actions</span>
-            </button>
-          </div>
-
-          <div class="preference-box" id="preferenceBox">
-            <div class="preference-title" id="preferenceTitle">Sarah’s preferences</div>
-            <ul class="preference-list" id="preferences">
-              <li>Familiar steps proceed independently</li>
-              <li>A measured pace with a settling pause</li>
-            </ul>
-          </div>
-
-          <label class="form-label" for="taskSelect">Choose a household task</label>
-          <select id="taskSelect">
-            <option value="breakfast">Prepare breakfast · cup routine</option>
-            <option value="tidy">Tidy the kitchen · clear the counter</option>
-            <option value="visitor">Respond to a visitor · greet at the door</option>
-          </select>
-          <p class="task-help" id="taskHelp">A visual storyboard of a familiar breakfast routine.</p>
-
-          <div class="mode-row">
-            <div class="mode-label">
-              <strong>Use SecondSelf personalisation</strong>
-              <small id="modeHelp">Sarah’s pace and settling pauses are active.</small>
+        <aside class="side-stack">
+          <section class="panel persona-panel" aria-labelledby="personaTitle">
+            <div class="panel-heading">
+              <div>
+                <div class="section-kicker">02 / Digital persona</div>
+                <h2 id="personaTitle">Your SecondSelf</h2>
+              </div>
+              <span class="mini-tag" id="memoryCount">0 MEMORIES</span>
             </div>
-            <label class="switch">
-              <input id="personalization" type="checkbox" checked aria-label="Use SecondSelf personalisation" />
-              <span class="switch-ui" aria-hidden="true"></span>
-            </label>
-          </div>
+            <div class="persona-profile">
+              <div class="persona-mark" aria-hidden="true">
+                <svg viewBox="0 0 64 64">
+                  <path d="M32 8 50 18v22L32 54 14 40V18Z"></path>
+                  <path d="M14 18 32 30 50 18M32 30v24M23 24l9-5 9 5M24 39l8-5 8 5"></path>
+                  <circle cx="25" cy="27" r="2"></circle><circle cx="39" cy="27" r="2"></circle>
+                </svg>
+              </div>
+              <div class="persona-heading">
+                <span class="persona-name">My SecondSelf</span>
+                <span class="persona-subtitle">A portable digital persona</span>
+              </div>
+              <span class="memory-pulse" title="Local demo memory"></span>
+            </div>
+            <div class="persona-progress">
+              <div class="progress-copy"><span>Persona foundation</span><strong id="foundationValue">Waiting for your first preference</strong></div>
+              <div class="progress-track"><div class="progress-fill" id="personaProgress"></div></div>
+            </div>
+            <div class="preference-header"><span>LEARNED PREFERENCES</span><span id="preferenceCount">0</span></div>
+            <div id="preferenceList" class="preference-list">
+              <div class="empty-memory"><span class="empty-memory-icon">+</span><div><strong>Your persona starts here</strong><p>Share a preference in the conversation. SYNQ.ME will add it to your SecondSelf.</p></div></div>
+            </div>
+            <div class="persona-footnote"><span class="footnote-dot"></span><span id="memoryFootnote">No preferences saved yet</span></div>
+          </section>
 
-          <div class="explain-card">
-            <strong id="explainTitle">A measured, familiar routine</strong>
-            <p id="explainText">Sarah’s preview moves at a calmer pace and pauses briefly after key moments.</p>
-          </div>
-
-          <div class="actions">
-            <button class="action-button primary" id="runBtn" type="button">Start task preview</button>
-            <button class="action-button" id="pauseBtn" type="button" disabled>Pause</button>
-            <button class="action-button" id="resetBtn" type="button">Reset</button>
-            <button class="action-button confirm" id="confirmBtn" type="button" hidden>Confirm and continue</button>
-          </div>
-          <p class="scope-note">Visual choreography only. No robot, physics engine or hardware is connected.</p>
+          <section class="panel decision-panel" aria-labelledby="decisionTitle">
+            <div class="panel-heading">
+              <div>
+                <div class="section-kicker">03 / PERSONA JOURNEY</div>
+                <h2 id="decisionTitle">Every step builds you</h2>
+              </div>
+              <span class="mini-tag">DEMO</span>
+            </div>
+            <div class="decision-body">
+              <div class="decision-summary" id="decisionSummary">Choose the home activities that matter to you, then share preferences with ELO. Your SecondSelf grows one step at a time.</div>
+              <div class="decision-route">
+                <div class="route-node">
+                  <span class="route-icon">01</span>
+                  <div><strong>AMÏA</strong><small>Structures personal context</small></div>
+                  <span class="route-state" id="amyaState">Waiting</span>
+                </div>
+                <div class="route-connector"></div>
+                <div class="route-node">
+                  <span class="route-icon">02</span>
+                  <div><strong>YOUR SECONDSELF</strong><small>Milestones unlock as your persona grows</small></div>
+                  <span class="route-state" id="pexiState">Waiting</span>
+                </div>
+              </div>
+              <button class="run-button" type="button" id="runTask">
+                <span>Preview future household routine</span>
+                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 4 14 10 7 16Z"></path></svg>
+              </button>
+              <p class="scope-note">Persona-building preview only. No robot connection or control is needed.</p>
+            </div>
+          </section>
         </aside>
       </section>
 
-      <section class="how" aria-labelledby="howTitle">
-        <div class="how-head">
-          <h2 id="howTitle">How MySecondSelf works</h2>
-          <p>Personal understanding can be built today and made available to compatible robots in the future.</p>
+      <section class="task-result panel" id="taskResult" hidden aria-labelledby="taskResultTitle">
+        <div class="task-visual">
+          <img src="https://mysecondself.app/wp-content/uploads/2026/10/Friendly-Robot-Loads-the-Dishwasher.png" alt="Illustrative domestic robot loading a dishwasher" loading="lazy" />
+          <span class="visual-label"><span class="status-dot"></span> SIMULATION-FIRST VALIDATION</span>
         </div>
-        <div class="flow">
-          <article class="flow-item"><div class="flow-num">01 · BUILD</div><strong>SYNQ.ME</strong><p>People build their SecondSelf through natural conversations, feedback and shared preferences.</p></article>
-          <article class="flow-item"><div class="flow-num">02 · UNDERSTAND</div><strong>AMYA</strong><p>Decision intelligence helps develop and refine the personal context that can guide a response.</p></article>
-          <article class="flow-item"><div class="flow-num">03 · CONNECT</div><strong>PEXI</strong><p>The planned interface makes authorised persona information available to compatible robot software.</p></article>
+        <div class="task-detail">
+          <div class="section-kicker">PEXI / TASK MAPPING</div>
+          <h2 id="taskResultTitle">A household routine shaped by you.</h2>
+          <p id="taskDescription">An optional illustration of how your chosen interests and preferences could inform a future household routine.</p>
+          <div class="task-steps" id="taskSteps"></div>
+          <div class="result-disclaimer">This is a conceptual product preview. No physical robot is connected, controlled or assumed to be available.</div>
         </div>
       </section>
 
+      <section class="principles">
+        <div class="principles-heading">
+          <div class="section-kicker">The SYNQ.ME model</div>
+          <h2>Personal intelligence, ready to travel.</h2>
+        </div>
+        <div class="principles-grid">
+          <article class="principle"><span>01</span><h3>Learn</h3><p>Natural conversation builds a digital persona from the way you communicate, choose and prefer.</p></article>
+          <article class="principle"><span>02</span><h3>Reason</h3><p>AMÏA applies personal context to interpret intent and shape a more individual response.</p></article>
+          <article class="principle"><span>03</span><h3>Transfer</h3><p>PEXI maps a task to compatible robot capabilities, so a SecondSelf can move with you.</p></article>
+        </div>
+      </section>
+
+    <section class="settings-overlay" id="settingsDialog" hidden>
+      <button type="button" class="settings-backdrop" id="settingsBackdrop" aria-label="Close settings"></button>
+      <div class="settings-sheet" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" tabindex="-1">
+        <div class="settings-heading">
+          <div>
+            <div class="section-kicker">PERSONALISE YOUR APP</div>
+            <h2 id="settingsTitle">Settings</h2>
+            <p id="settingsIntro">Make SYNQ.ME feel like yours. Your profile, preferences and conversation history are saved to your account.</p>
+            <p id="profileSetupNotice" class="profile-setup-notice" hidden>First, add your name and choose a name for your future robot before beginning.</p>
+          </div>
+          <button type="button" class="settings-close" id="closeSettings" aria-label="Close settings">×</button>
+        </div>
+        <form id="settingsForm" class="settings-form">
+          <div class="owner-identity-row">
+            <div class="owner-avatar-preview" id="ownerAvatarPreview" aria-label="Your profile image preview">
+              <span aria-hidden="true">Y</span>
+            </div>
+            <div class="owner-identity-fields">
+              <label for="ownerName">Your name</label>
+              <input id="ownerName" name="ownerName" maxlength="60" autocomplete="given-name" placeholder="What should your companion call you?" required />
+              <input class="sr-only" type="file" id="ownerImageInput" accept="image/*" aria-label="Upload your profile image" />
+              <div class="owner-avatar-actions">
+                <button type="button" class="owner-image-button" id="uploadOwnerImageButton">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h3l1.5-2h7L17 7.5h3v11H4z"/><circle cx="12" cy="13" r="3.2"/></svg>
+                  <span>Upload your photo</span>
+                </button>
+                <button type="button" class="text-button owner-image-remove" id="removeOwnerImageButton" hidden>Remove</button>
+              </div>
+              <p class="field-help">Shown beside your messages. Your photo stays in this browser.</p>
+            </div>
+          </div>
+          <label for="robotName">Robot name (optional)</label>
+          <input id="robotName" name="robotName" maxlength="60" placeholder="Optional — you can name it later" />
+          <p class="field-help">You can leave this blank. Your robot image does not need a name to use SYNQ.ME.</p>
+
+          <section class="settings-section robot-appearance-settings" aria-labelledby="robotAppearanceTitle">
+            <div class="settings-subhead" id="robotAppearanceTitle"><span>ROBOT APPEARANCE</span><span>OPTIONAL</span></div>
+            <p class="settings-section-copy">Choose the image shown beside SYNQ.ME replies, or upload your own. You can change this at any time.</p>
+            <div class="robot-settings-preview">
+              <div class="robot-art" id="selectedRobotArt" aria-hidden="true"></div>
+              <span>Selected companion image</span>
+            </div>
+            <div class="robot-picker-heading">CHOOSE AN IMAGE</div>
+            <div class="robot-picker robot-settings-picker" id="robotPicker" role="group" aria-label="Choose from five robot images"></div>
+            <input class="sr-only" type="file" id="robotImageInput" accept="image/*" aria-label="Upload your own robot image" />
+            <button class="robot-upload-button" type="button" id="uploadRobotImageButton">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m-4 4 4-4 4 4M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg>
+              <span>Upload your image</span>
+            </button>
+            <p class="robot-upload-note">Your image stays in this browser.</p>
+          </section>
+
+          <label for="robotType">Robot you may want to personalise in the future</label>
+          <select id="robotType" name="robotType">
+            <option value="Humanoid robot" selected>Humanoid robot</option>
+            <option value="Home assistant">Home assistant</option>
+            <option value="Robot vacuum">Robot vacuum</option>
+            <option value="Other compatible robot">Other compatible robot</option>
+          </select>
+          <label for="robotVoice">Voice style</label>
+          <select id="robotVoice" name="robotVoice">
+            <option value="female" selected>Female voice</option>
+            <option value="male">Male voice</option>
+          </select>
+          <label for="preferredLanguage">Conversation language</label>
+          <select id="preferredLanguage" name="preferredLanguage">
+            <option value="en">English (US)</option>
+            <option value="es">Spanish</option>
+            <option value="fr">French</option>
+            <option value="it">Italian</option>
+            <option value="pt">Portuguese (Brazil)</option>
+            <option value="hi">Hindi</option>
+            <option value="ja">Japanese</option>
+            <option value="zh">Chinese (Mandarin)</option>
+          </select>
+          <p class="field-help">SYNQ.ME will reply and save the conversation in your chosen language. The female/male setting selects the voice; English uses an American accent. Kokoro speaks on this device after its first download. For languages or devices without a matching Kokoro voice, SYNQ.ME uses your browser's voice when available.</p>
+          <p class="field-help">Voice input uses your browser’s speech recognition when supported. Processing depends on your browser and device; SYNQ.ME does not upload microphone recordings to a hosted transcription API.</p>
+          <label class="settings-toggle" for="confirmActions">
+            <span><strong>Ask me before actions</strong><small>Record this as a personal preference for future task plans.</small></span>
+            <input type="checkbox" id="confirmActions" name="confirmActions" />
+            <span class="toggle-ui" aria-hidden="true"></span>
+          </label>
+          <div class="settings-section">
+            <div class="settings-subhead function-section-head"><span>DOMESTIC FUNCTIONS</span><div class="function-section-controls"><span id="functionCount">0 SELECTED</span><button type="button" id="toggleAllFunctions" class="select-all-functions">Select all</button></div></div>
+            <p class="settings-section-copy">Choose the parts of everyday life you want your SecondSelf to learn about. You can change these at any time.</p>
+            <div class="function-grid" id="functionGrid">
+              <label class="function-option"><input type="checkbox" value="dishwashing"><span class="function-symbol">01</span><span class="function-label"><strong>Dishwashing</strong><small>Loading, unloading, preferences</small></span></label>
+              <label class="function-option"><input type="checkbox" value="vacuuming"><span class="function-symbol">02</span><span class="function-label"><strong>Vacuuming & floors</strong><small>Rooms, timing, floor types</small></span></label>
+              <label class="function-option"><input type="checkbox" value="laundry"><span class="function-symbol">03</span><span class="function-label"><strong>Laundry</strong><small>Sorting, washing, drying</small></span></label>
+              <label class="function-option"><input type="checkbox" value="folding"><span class="function-symbol">04</span><span class="function-label"><strong>Folding & putting away</strong><small>Clothes and linen routines</small></span></label>
+              <label class="function-option"><input type="checkbox" value="tidying"><span class="function-symbol">05</span><span class="function-label"><strong>Tidying</strong><small>Where things belong</small></span></label>
+              <label class="function-option"><input type="checkbox" value="surfaces"><span class="function-symbol">06</span><span class="function-label"><strong>Surface cleaning</strong><small>Kitchen and living spaces</small></span></label>
+              <label class="function-option"><input type="checkbox" value="meal-prep"><span class="function-symbol">07</span><span class="function-label"><strong>Meal preparation</strong><small>Ingredients and routines</small></span></label>
+              <label class="function-option"><input type="checkbox" value="cooking"><span class="function-symbol">08</span><span class="function-label"><strong>Cooking</strong><small>Taste, timing, methods</small></span></label>
+              <label class="function-option"><input type="checkbox" value="groceries"><span class="function-symbol">09</span><span class="function-label"><strong>Groceries & supplies</strong><small>Shopping lists and preferences</small></span></label>
+              <label class="function-option"><input type="checkbox" value="pet-care"><span class="function-symbol">10</span><span class="function-label"><strong>Pet care</strong><small>Household routines and boundaries</small></span></label>
+              <label class="function-option"><input type="checkbox" value="plants"><span class="function-symbol">11</span><span class="function-label"><strong>Plant care</strong><small>Watering and care routines</small></span></label>
+              <label class="function-option"><input type="checkbox" value="recycling"><span class="function-symbol">12</span><span class="function-label"><strong>Waste & recycling</strong><small>Sorting and collection routines</small></span></label>
+            </div>
+          </div>
+          <div class="settings-actions">
+            <button type="submit" class="settings-save">Save settings</button>
+            <button type="button" class="settings-cancel" id="cancelSettings">Close</button>
+          </div>
+        </form>
+        <div class="settings-preferences">
+          <div class="settings-subhead"><span>YOUR LEARNED PREFERENCES</span><span id="settingsPreferenceCount">0</span></div>
+          <div id="settingsPreferenceList"><p class="settings-empty">As you chat with ELO, your preferences will appear here.</p></div>
+        </div>
+        <div class="settings-milestones">
+          <div class="settings-subhead"><span>PERSONA MILESTONES</span><span id="milestoneCount">0 OF 5</span></div>
+          <p class="settings-section-copy">Small steps that show your SecondSelf taking shape. Rewards are profile achievements, not payments or robot capabilities.</p>
+          <div id="milestoneList" class="milestone-list"></div>
+        </div>
+        <div class="pexi-readiness" id="pexiReadiness">
+          <div class="settings-subhead"><span>PEXI TRANSFER READINESS</span><span id="pexiReadinessStatus">NOT STARTED</span></div>
+          <p id="pexiReadinessSummary">Your stated preferences and unresolved details will be kept separate. PEXI must map these to a compatible robot before use.</p>
+        </div>
+        <div class="account-status-panel" id="accountStatusPanel">
+          <div>
+            <div class="settings-subhead"><span>YOUR ACCOUNT</span><span id="accountStatusLabel">SIGNED IN</span></div>
+            <p id="accountEmail">Your account</p>
+          </div>
+          <button type="button" id="signOutButton" class="settings-task-link account-signout">Sign out <span>↗</span></button>
+        </div>
+        <button type="button" class="settings-task-link" id="exportPexiPackage">Export persona package for PEXI <span>↗</span></button>
+        <button type="button" class="settings-task-link" id="openTaskFromSettings">Preview persona journey <span>↗</span></button>
+        <p class="settings-note">The export contains your stated preferences, captured details and items still needing clarification. It is a portable data package for future PEXI compatibility mapping, not a robot-control connection or execution command.</p>
+      </div>
+    </section>
+
       <footer class="footer">
-        <span>MySecondSelf · Persona demo only. The wireframe sequence is not evidence of real robot capability.</span>
+        <span>© MySecondSelf · SYNQ.ME interactive demo</span>
         <nav class="footer-nav" aria-label="Footer navigation">
           <a href="https://mysecondself.app/owners/">OWNERS</a>
           <a href="https://mysecondself.app/partners/">PARTNERS</a>
@@ -291,6 +385,51 @@
         </nav>
       </footer>
     </main>
-    <script type="module" src="/src/main.js"></script>
+    <section class="voice-experience" id="voiceExperience" role="dialog" aria-modal="true" aria-labelledby="voiceExperienceTitle" hidden>
+      <div class="voice-experience-topbar">
+        <button class="voice-back-button" type="button" id="voiceChatButton" aria-label="Return to text chat">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6M9 12h11"/></svg>
+          <span>Chat</span>
+        </button>
+        <div class="voice-topbar-label">MYSECONDSELF <span>VOICE</span></div>
+        <button class="voice-icon-button" type="button" id="voiceMuteButton" aria-pressed="false" aria-label="Mute microphone" title="Mute microphone">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"></rect><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3m-4 0h8"></path></svg>
+        </button>
+      </div>
+      <div class="voice-experience-content">
+        <div class="voice-eyebrow">A MORE PERSONAL CONVERSATION</div>
+        <h2 id="voiceExperienceTitle">Talk to your robot.</h2>
+        <p class="voice-intro-copy" id="voiceIntroCopy">Speak naturally. Your robot is listening.</p>
+        <div class="voice-orb" id="voiceOrb" data-state="idle" aria-hidden="true">
+          <span class="voice-orb-ring voice-orb-ring-one"></span>
+          <span class="voice-orb-ring voice-orb-ring-two"></span>
+          <span class="voice-orb-core" id="voiceOrbCore"></span>
+        </div>
+        <div class="voice-companion-name" id="voiceCompanionName">Your robot</div>
+        <p class="voice-experience-status" id="voiceExperienceStatus" role="status" aria-live="polite">Ready to connect</p>
+        <button type="button" class="voice-retry-speech" id="voiceRetrySpeechButton" hidden>Tap to hear Freya’s reply</button>
+        <div class="voice-model-progress" id="voiceModelProgress" hidden>
+          <div class="voice-model-progress-track" id="voiceModelProgressTrack" role="progressbar" aria-label="Voice model download progress" aria-valuemin="0" aria-valuemax="100">
+            <span class="voice-model-progress-fill" id="voiceModelProgressFill"></span>
+          </div>
+          <div class="voice-model-progress-meta">
+            <span id="voiceModelProgressLabel">Checking for a saved voice model…</span>
+            <span id="voiceModelProgressPercent"></span>
+          </div>
+        </div>
+        <div class="voice-state-caption">LISTENING <span></span> THINKING <span></span> SPEAKING</div>
+        <div class="voice-controls">
+          <button class="voice-control-secondary" type="button" id="voiceMuteControlButton" aria-label="Mute microphone">
+            <span class="voice-control-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"></rect><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3m-4 0h8"></path></svg></span>
+            <span id="voiceMuteControlLabel">Mute</span>
+          </button>
+          <button class="voice-control-end" type="button" id="voiceEndButton" aria-label="End voice conversation">
+            <span class="voice-control-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14c4.5-4 11.5-4 16 0l-2.5 3.5-3.2-1.7v-2.2a6.6 6.6 0 0 0-4.6 0v2.2l-3.2 1.7Z"></path></svg></span>
+            <span>End</span>
+          </button>
+        </div>
+        <p class="voice-privacy-note">Microphone access is used for this conversation. Browser voice quality varies by device.</p>
+      </div>
+    </section>
   </body>
 </html>
