@@ -1,4 +1,4 @@
-const CACHE_NAME = "synqme-shell-v35";
+const CACHE_NAME = "synqme-shell-v36";
 const APP_SHELL = [
   "/",
   "/manifest.webmanifest",
@@ -24,6 +24,9 @@ self.addEventListener("activate", (event) => {
           .filter((name) => name.startsWith("synqme-shell-") && name !== CACHE_NAME)
           .map((name) => caches.delete(name))
       ))
+      // The old Kokoro TTS model is no longer used. Remove its dedicated
+      // Transformers cache (about 88 MB) for this server-driven SYNQ.ME app.
+      .then(() => caches.delete("transformers-cache"))
       .then(() => self.clients.claim())
   );
 });
