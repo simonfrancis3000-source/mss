@@ -6,7 +6,7 @@ const LOCAL_MODEL_LABEL = "On-device AI";
 const ACCOUNT_DRAFT_KEY = "synqme-pending-account-migration-v1";
 const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
-const PHONIC_API_BASE_URL = String(import.meta.env.VITE_PHONIC_API_BASE_URL || "https://synqme-ai-api.onrender.com").replace(/\/+$/, "");
+const PHONIC_API_BASE_URL = String(import.meta.env.VITE_PHONIC_API_BASE_URL || "https://synqme-api.onrender.com").replace(/\/+$/, "");
 const AUTH_REDIRECT_URL = (() => {
   const configured = String(import.meta.env.VITE_AUTH_REDIRECT_URL || "").trim();
   if (configured && !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(configured)) {
@@ -1086,9 +1086,11 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   if (!profileComplete()) openSettings();
   else updateSettingsMode();
   startCloudConversationSync();
-  void ensureLocalAIReady()
-    .then(() => scheduleKokoroBackgroundPreload(1400))
-    .catch((error) => console.info("SYNQ.ME local model warm-up did not complete.", error));
+  // AMÏA runs locally, but Phonic provides voice output. Do not download
+  // the legacy Kokoro text-to-speech model in the background.
+  void ensureLocalAIReady().catch((error) =>
+    console.info("SYNQ.ME local model warm-up did not complete.", error)
+  );
   return true;
 }
 
@@ -3141,49 +3143,17 @@ async function speakAssistantReply(reply) {
   lastAssistantReplyForSpeech = String(reply || "");
   if (elements.voiceRetrySpeechButton) elements.voiceRetrySpeechButton.hidden = true;
 
-  const voiceId = kokoroVoiceForProfile();
-  // Use the configured character voice for the full reply. Do not speak with
-  // the browser's generic voice just because Kokoro is still downloading.
-  if (!voiceId) {
-    speakAssistantReplyWithBrowser(reply);
+  // Phonic already owns microphone audio and spoken replies during a live
+  // voice session. If a legacy UI path asks for speech outside that session,
+  // use the browser's built-in voice instead of loading an 88 MB local model.
+  if (phonicVoiceConversation) return;
+  if (!lastAssistantReplyForSpeech) return;
+  if (!speechSynthesisAvailable) {
+    if (elements.voiceStatus) elements.voiceStatus.textContent = "Speech output is unavailable in this browser.";
     return;
   }
-
-  try {
-    if (!kokoroTTSInstance) {
-      const loadPromise = kokoroLoadPromise || loadKokoroTTS();
-      if (elements.voiceStatus) elements.voiceStatus.textContent = "Loading the selected robot voice…";
-      updateVoiceExperience("thinking", "Preparing " + selectedCompanionDisplayName() + "’s voice…");
-      await loadPromise;
-    }
-    if (!voiceModeActive) return;
-    if (!kokoroTTSInstance) throw new Error("The selected voice model is not ready.");
-
-    if (speechSynthesisAvailable) window.speechSynthesis.cancel();
-    currentSpeechUtterance = null;
-    const requestId = ++kokoroSpeechGeneration;
-    if (elements.voiceStatus) elements.voiceStatus.textContent = "Preparing the selected robot voice…";
-    updateVoiceExperience("thinking", "Preparing " + selectedCompanionDisplayName() + "’s reply…");
-
-    // Wait for inference and playback to finish. A short startup timeout caused
-    // slower devices to abandon Kokoro and fall back to an unrelated system voice.
-    const played = await playKokoroReply(String(reply || ""), voiceId, requestId);
-    if (played || !voiceModeActive || requestId !== kokoroSpeechGeneration) return;
-    throw new Error("The selected voice could not start audio playback.");
-  } catch (error) {
-    console.info("SYNQ.ME selected voice could not play.", error);
-    if (!voiceModeActive) return;
-    assistantIsSpeaking = false;
-    if (elements.voiceStatus) elements.voiceStatus.textContent = "The selected robot voice could not start.";
-    updateVoiceExperience("listening", "I couldn’t start the selected voice. Tap retry to try it again.");
-    if (elements.voiceRetrySpeechButton) {
-      elements.voiceRetrySpeechButton.textContent = "Retry " + selectedCompanionDisplayName() + "’s voice";
-      elements.voiceRetrySpeechButton.hidden = false;
-    }
-    if (voiceModeActive) scheduleVoiceListening(500);
-  }
+  speakAssistantReplyWithBrowser(lastAssistantReplyForSpeech);
 }
-
 elements.voiceRetrySpeechButton?.addEventListener("click", () => {
   if (!lastAssistantReplyForSpeech || !voiceModeActive) return;
   elements.voiceRetrySpeechButton.hidden = true;
