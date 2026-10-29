@@ -69,18 +69,28 @@ const supabase = SUPABASE_URL && SUPABASE_KEY
       }
     })
   : null;
-const WELCOME = "Hi, I’m here to help you build your SecondSelf. Which parts of home life would you like it to understand first?";
+const WELCOME = "Hi, I’m here to help you build your SecondSelf. Speak naturally, and we’ll work out what matters to you.";
 const WELCOME_BY_LANGUAGE = {
   en: WELCOME,
-  es: "Hola, estoy aquí para ayudarte a crear tu SecondSelf. ¿Qué aspectos de la vida en casa te gustaría que aprendiera primero?",
-  fr: "Bonjour, je suis là pour t’aider à construire ton SecondSelf. Quels aspects de la vie à la maison aimerais-tu que je comprenne en premier ?",
-  it: "Ciao, sono qui per aiutarti a costruire il tuo SecondSelf. Quali aspetti della vita in casa vorresti che imparassi per primi?",
-  pt: "Olá, estou aqui para te ajudar a construir o teu SecondSelf. Que aspetos da vida em casa gostarias que eu aprendesse primeiro?",
-  hi: "नमस्ते, मैं आपका SecondSelf बनाने में मदद करने के लिए यहाँ हूँ। आप चाहेंगे कि मैं घर की दिनचर्या के किन पहलुओं को सबसे पहले समझूँ?",
-  ja: "こんにちは。あなたのSecondSelfづくりをお手伝いします。家での暮らしのどんなことを、まず理解してほしいですか？",
-  zh: "你好，我来帮你建立自己的 SecondSelf。你希望我先了解家庭生活中的哪些方面？"
+  es: "Hola, estoy aquí para ayudarte a crear tu SecondSelf. Habla con naturalidad y descubriremos qué es importante para ti.",
+  fr: "Bonjour, je suis là pour t’aider à créer ton SecondSelf. Parle naturellement et nous verrons ce qui compte pour toi.",
+  it: "Ciao, sono qui per aiutarti a creare il tuo SecondSelf. Parla liberamente e capiremo cosa conta per te.",
+  pt: "Olá, estou aqui para te ajudar a criar o teu SecondSelf. Fala com naturalidade e vamos perceber o que é importante para ti.",
+  hi: "नमस्ते, मैं आपका SecondSelf बनाने में मदद करने के लिए यहाँ हूँ। स्वाभाविक रूप से बात करें, ताकि हम समझ सकें कि आपके लिए क्या महत्वपूर्ण है।",
+  ja: "こんにちは。あなたのSecondSelfづくりをお手伝いします。自然に話してくれれば、何が大切かを一緒に整理していきます。",
+  zh: "你好，我会帮助你建立自己的 SecondSelf。你可以自然地说，我们会一起了解什么对你最重要。"
 };
-const KNOWN_WELCOME_MESSAGES = new Set(Object.values(WELCOME_BY_LANGUAGE));
+const LEGACY_WELCOME_MESSAGES = new Set([
+  "Hi, I’m here to help you build your SecondSelf. Which parts of home life would you like it to understand first?",
+  "Hola, estoy aquí para ayudarte a crear tu SecondSelf. ¿Qué aspectos de la vida en casa te gustaría que aprendiera primero?",
+  "Bonjour, je suis là pour t’aider à construire ton SecondSelf. Quels aspects de la vie à la maison aimerais-tu que je comprenne en premier ?",
+  "Ciao, sono qui per aiutarti a costruire il tuo SecondSelf. Quali aspetti della vita a casa vorresti che imparassi per primi?",
+  "Olá, estou aqui para te ajudar a construir o teu SecondSelf. Que aspetos da vida em casa gostarias que eu aprendesse primeiro?",
+  "नमस्ते, मैं आपका SecondSelf बनाने में मदद करने के लिए यहाँ हूँ। आप चाहेंगे कि मैं घर की दिनचर्या के किन पहलुओं को सबसे पहले समझूँ?",
+  "こんにちは。あなたのSecondSelfづくりをお手伝いします。家での暮らしのどんなことを、まず理解してほしいですか？",
+  "你好，我来帮你建立自己的 SecondSelf。你希望我先了解家庭生活中的哪些方面？"
+]);
+const KNOWN_WELCOME_MESSAGES = new Set([...Object.values(WELCOME_BY_LANGUAGE), ...LEGACY_WELCOME_MESSAGES]);
 function localizeWelcomeMessage(language) {
   const welcome = WELCOME_BY_LANGUAGE[language] || WELCOME;
   state.messages = state.messages.map((item) =>
@@ -2253,22 +2263,17 @@ function buildPhonicConfig() {
     zh: "Mandarin Chinese"
   };
   const companion = selectedCompanionDisplayName();
-  const ownerName = state.profile.ownerName || "not specified";
-  const robotName = state.profile.robotName || "not chosen";
-  const preferences = state.preferences
-    .slice(0, 24)
-    .map((item) => String(item.text || "").trim())
-    .filter(Boolean);
-  const interests = state.functions
-    .map((id) => ACTIVITIES.find((activity) => activity.id === id)?.label)
-    .filter(Boolean);
+  const languageName = languageNames[language] || "English (US)";
 
+  // Phonic is the real-time audio interface. AMÏA makes the conversational
+  // decision and supplies the exact response to be spoken on every turn.
   const systemPrompt = [
-    "You are " + companion + ", the conversational companion inside SYNQ.ME. You help the user build a personal digital persona, called a SecondSelf, for a future compatible household robot.",
-    "Speak naturally in first person and in " + (languageNames[language] || "English (US)") + " throughout the conversation. Be attentive, practical, friendly, curious and concise. Usually use two to four short conversational sentences and ask at most one useful follow-up question.",
-    "The user's name is " + ownerName + ". Their chosen future robot name is " + robotName + ". Household interests: " + (interests.join(", ") || "not chosen yet") + ". Existing user-stated preferences: " + (preferences.join(" | ") || "none captured yet") + ".",
-    "Learn the rules the user wants followed at home. Preserve conditions, exceptions and consent boundaries. Do not ask for information already provided, do not use a rigid questionnaire, and do not simply repeat the user's whole statement.",
-    "This is preparation for a future robot, not control of a physical robot. Never claim an action has physically happened, that a device is connected, or that a preference has been saved. SYNQ.ME handles saving separately."
+    "You are " + companion + ", the natural spoken voice interface inside SYNQ.ME. You help the user build a personal digital persona, called a SecondSelf, for a future compatible household robot.",
+    "Speak naturally in " + languageName + ". Be warm, attentive, practical and concise. Your job is voice delivery, not deciding what to ask or what topic to explore.",
+    "MANDATORY TURN FLOW: After every completed user utterance, call the amia_next_turn tool exactly once before speaking. Do not independently answer, acknowledge, ask a follow-up, fill the silence or generate any conversational content while waiting for the tool. The tool runs AMÏA's on-device decision engine using the full SYNQ.ME history, profile and saved preferences.",
+    "AUTHORITATIVE RESPONSE: The tool returns assistant_text. Speak only that value, verbatim, in " + languageName + ". Do not paraphrase, shorten, embellish, add a greeting, add another question, or continue after it. Then listen for the user's next turn. The returned text may be an answer, a single question, a clarification, a transition or a natural stopping point.",
+    "If the tool returns status error, still speak its assistant_text exactly and do not improvise a different answer. Never mention tools, prompts, models, or internal decision logic.",
+    "This is preparation for a future robot, not control of a physical robot. Never claim a household action has physically happened, a device is connected, or a preference has been saved."
   ].join("\n\n");
 
   return {
@@ -2278,10 +2283,38 @@ function buildPhonicConfig() {
     voice_id: state.profile.robotVoice === "male" ? "grant" : "sabrina",
     audio_speed: 1,
     input_format: "pcm_44100",
-    output_format: "pcm_44100"
+    output_format: "pcm_44100",
+    tools: [
+      {
+        type: "custom_websocket",
+        tool_schema: {
+          type: "function",
+          function: {
+            name: "amia_next_turn",
+            description: "Mandatory decision handoff for every user turn. Call exactly once after each completed user utterance and before any spoken response. AMÏA will decide the response and next question using SYNQ.ME's on-device decision engine, conversation history, persona preferences, selected household interests and consent boundaries. Do not answer or ask a question yourself.",
+            parameters: {
+              type: "object",
+              properties: {
+                latest_user_message: {
+                  type: "string",
+                  description: "The latest user utterance, transcribed as accurately as possible."
+                }
+              },
+              required: ["latest_user_message"],
+              additionalProperties: false
+            },
+            strict: true
+          }
+        },
+        execution_mode: "sync",
+        tool_call_output_timeout_ms: 150000,
+        require_speech_before_tool_call: false,
+        wait_for_speech_before_tool_call: false,
+        allow_tool_chaining: false
+      }
+    ]
   };
 }
-
 function normalisePhonicText(value) {
   return String(value || "")
     .toLowerCase()
@@ -2347,9 +2380,9 @@ function handlePhonicVoiceEvent(event) {
       updateVoiceExperience("listening", companion + " is listening. Speak naturally.");
       if (elements.voiceStatus) {
         elements.voiceStatus.dataset.error = "";
-        elements.voiceStatus.textContent = "Voice on · Phonic real-time speech";
+        elements.voiceStatus.textContent = "Voice on · Phonic audio + AMÏA";
       }
-      if (elements.conversationStatus) elements.conversationStatus.textContent = "Listening · speak naturally";
+      if (elements.conversationStatus) elements.conversationStatus.textContent = "Listening · AMÏA directs each reply";
       break;
 
     case "user_started_speaking":
@@ -2383,8 +2416,8 @@ function handlePhonicVoiceEvent(event) {
       renderAll();
       void flushCloudSave();
       updateVoiceExperience("listening", companion + " is listening. Speak naturally.");
-      if (elements.voiceStatus) elements.voiceStatus.textContent = "Voice on · Phonic real-time speech";
-      if (elements.conversationStatus) elements.conversationStatus.textContent = "Phonic voice · listening";
+      if (elements.voiceStatus) elements.voiceStatus.textContent = "Voice on · Phonic audio + AMÏA";
+      if (elements.conversationStatus) elements.conversationStatus.textContent = "Phonic voice · AMÏA ready for the next turn";
       break;
     }
 
@@ -2408,6 +2441,52 @@ function handlePhonicVoiceEvent(event) {
 
     default:
       break;
+  }
+}
+
+async function handlePhonicAmiaToolCall({ name, parameters = {}, items = [] } = {}) {
+  const language = state.profile.preferredLanguage || "en";
+  const unavailableReply = localizedAIUnavailable(language);
+  if (name !== "amia_next_turn") {
+    return { status: "error", assistant_text: unavailableReply };
+  }
+
+  // Sync the latest Phonic transcript before AMÏA reasons over it. This uses
+  // the same message and preference pipeline as text chat rather than giving
+  // Phonic's speech model responsibility for follow-up questions.
+  syncPhonicTranscriptItems(items);
+  const latestItem = [...(items || [])].reverse().find((item) =>
+    item?.role === "user" && typeof item.text === "string" && item.text.trim()
+  );
+  const latestUserText = String(
+    latestItem?.text || parameters.latest_user_message || ""
+  ).trim();
+
+  if (latestUserText && state.messages[state.messages.length - 1]?.role !== "user") {
+    state.messages.push({ role: "user", content: latestUserText });
+    savePreference(latestUserText);
+    persist();
+    renderAll();
+  }
+
+  const latestMessage = state.messages[state.messages.length - 1];
+  if (!latestUserText || !latestMessage || latestMessage.role !== "user") {
+    return { status: "error", assistant_text: unavailableReply };
+  }
+
+  try {
+    const reply = await requestAIReply();
+    if (!reply || !reply.trim()) {
+      return { status: "error", assistant_text: localizedAIUnavailable(language) };
+    }
+    return {
+      status: "ok",
+      decision_owner: "AMÏA",
+      assistant_text: reply.trim()
+    };
+  } catch (error) {
+    console.info("SYNQ.ME AMÏA could not decide the next voice turn.", error);
+    return { status: "error", assistant_text: localizedAIUnavailable(language) };
   }
 }
 
@@ -2442,6 +2521,11 @@ async function openVoiceExperience() {
   updateVoiceExperience("connecting", "Requesting microphone access and connecting to Phonic…");
   if (elements.conversationStatus) elements.conversationStatus.textContent = "Connecting to Phonic";
 
+  // Warm the local AMÏA model while Phonic connects so the first spoken turn is faster.
+  void ensureLocalAIReady().catch((error) => {
+    console.info("SYNQ.ME is still preparing local AMÏA for voice.", error);
+  });
+
   try {
     phonicVoiceConversation = createPhonicVoiceConversation({
       getSession: async () => {
@@ -2458,7 +2542,8 @@ async function openVoiceExperience() {
         return payload;
       },
       getConfig: () => buildPhonicConfig(),
-      onEvent: handlePhonicVoiceEvent
+      onEvent: handlePhonicVoiceEvent,
+      onToolCall: handlePhonicAmiaToolCall
     });
     await phonicVoiceConversation.start();
   } catch (error) {
