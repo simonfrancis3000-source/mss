@@ -13,6 +13,7 @@ const MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-20b";
 const DEFAULT_ALLOWED_ORIGINS = [
   "https://synqme-demo.onrender.com",
   "https://synqme-demo-pr-1.onrender.com",
+  "https://mss-7uas.onrender.com",
   "https://synqme.mysecondself.app",
   "https://demo.mysecondself.app",
   "https://mysecondself.app",
