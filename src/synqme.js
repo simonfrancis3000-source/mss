@@ -2285,8 +2285,8 @@ function buildPhonicConfig() {
 function normalisePhonicText(value) {
   return String(value || "")
     .toLowerCase()
-    .replace(/[^\\p{L}\\p{N}\\s]/gu, " ")
-    .replace(/\\s+/g, " ")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
