@@ -2486,7 +2486,7 @@ async function handlePhonicAmiaToolCall({ name, parameters = {}, items = [] } = 
   }
 
   try {
-    const reply = await requestAIReply();
+    const reply = await requestAIReply(false, "spoken");
     if (!reply || !reply.trim()) {
       return { status: "error", assistant_text: localizedAIUnavailable(language) };
     }
@@ -3415,7 +3415,7 @@ function runLocalAIRequest(payload) {
   });
 }
 
-async function requestAIReply(repairMode = false) {
+async function requestAIReply(repairMode = false, outputMode = "text") {
   if (!repairMode) lastAIReplyUsedFallback = false;
   state.apiProvider = "local";
   state.apiModel = LOCAL_MODEL_LABEL;
@@ -3448,6 +3448,7 @@ async function requestAIReply(repairMode = false) {
         askBeforeActions: state.profile.confirmActions
       },
       domesticFunctions: state.functions.map((id) => ACTIVITIES.find((activity) => activity.id === id)?.label).filter(Boolean),
+      outputMode,
       repairMode
     });
     if (!reply.trim()) throw new Error("The local model returned an empty reply.");
