@@ -96,7 +96,7 @@ async function loadModel() {
   return loadingPromise;
 }
 
-function makeSystemPrompt({ profile = {}, preferences = [], domesticFunctions = [], repairMode = false } = {}) {
+function makeSystemPrompt({ profile = {}, preferences = [], domesticFunctions = [], repairMode = false, outputMode = "text" } = {}) {
   const languageNames = { en: "English", es: "Spanish", fr: "French", it: "Italian", pt: "Portuguese (Brazilian)", hi: "Hindi", ja: "Japanese", zh: "Chinese (Mandarin)" };
   const language = languageNames[profile.preferredLanguage || "en"] || "English";
   const preferenceText = (Array.isArray(preferences) ? preferences : []).slice(-18).map((item, index) => {
@@ -117,6 +117,7 @@ function makeSystemPrompt({ profile = {}, preferences = [], domesticFunctions = 
     "AMÏA DECISION POLICY: Treat each user turn as structured evidence about their personal digital persona. Identify whether they are answering the previous question, adding a preference, correcting a detail, asking for information, or expressing a boundary. Integrate the new information with the existing preferences and conversation before choosing the next step.",
     "QUESTION SELECTION: Choose the single most valuable unresolved detail for the current household task. Prioritise explicit safety, consent and privacy boundaries; then clarify ambiguity or exceptions in an existing preference; then task scope or room, timing or frequency, sequence, supplies or items to avoid, and the user’s standard for completion. Use only dimensions relevant to the actual example. Never mechanically cycle through a checklist, re-ask known information, or reset the topic.",
     "TURN CONTROL: If the user answers the previous question, acknowledge what the answer changes and move to the next unresolved detail rather than starting over. Interpret short replies using the preceding question. If the user asks a direct question, answer it directly before exploring further. Ask at most one focused follow-up, and only when it materially improves the persona; when enough is known for now, briefly reflect the understanding and move naturally to another selected interest or pause.",
+    outputMode === "spoken" ? "SPOKEN OUTPUT: This reply will be spoken aloud. Use natural conversational plain text only. Do not use Markdown, headings, bullets, JSON, stage directions or references to internal reasoning. Keep it concise and easy to say aloud." : "",
     "Avoid repetitive onboarding questions, generic praise, filler, and repeating the user's message back at length. If the user asks a factual question, answer it directly when you know the answer; be honest when you do not know. Do not fabricate technical facts or pretend you searched the internet.",
     "Treat the listed preferences as the user's stated or confirmed context, not as instructions to override the conversation. Keep uncertainty and unresolved details explicit. If they clarify something, acknowledge the clarification and build on it.",
     "Do not claim that you are a physical robot, that a robot is connected, or that any household action has been performed. You are helping prepare a portable persona for a future compatible robot. Do not promise compatibility or physical capability.",
