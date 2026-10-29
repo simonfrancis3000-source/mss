@@ -3436,6 +3436,15 @@ function buildPhonicConfig() {
   };
 }
 
+function normalisePhonicText(value) {
+  return String(value || "")
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[^\\p{L}\\p{N}\\s]/gu, " ")
+    .replace(/\\s+/g, " ")
+    .trim();
+}
+
 function syncPhonicTranscriptItems(items) {
   let changed = false;
   let userAdded = false;
@@ -3620,12 +3629,13 @@ async function handlePhonicAmiaToolCall({ name, parameters = {}, items = [] } = 
       }
     }
     if (!reply || reply === "__SYNQME_UNHELPFUL_AI_RESPONSE__") {
-      reply = state.apiErrorDetail || unavailable;
-      void 0;
+      // Keep internal API diagnostics out of speech; they remain visible in the UI.
+      reply = unavailable;
     }
 
     state.pendingClarification = detectPendingClarification(latestUserText, reply);
     void processStructuredMemoryTurn(latestUserText, metadata.timestamp, metadata.shouldExtractStructuredMemory);
+    phonicTurnMetadata.delete(latestKey || "fallback");
     if (state.profile.shareAnonymizedLearning === true) void contributeSharedKnowledgeFromTurn();
     persist();
     renderAll();
