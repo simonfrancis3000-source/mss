@@ -15,9 +15,8 @@ self.addEventListener("install", (event) => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    // Only retire old SYNQ.ME shell caches. Transformers/Kokoro keeps model
-    // weights in its own cache ("transformers-cache"); deleting every cache
-    // here would force the 88 MB voice model to download again after updates.
+    // Retire old shell caches and the unused Kokoro model cache.
+    // This app now uses Phonic for voice output, with no browser TTS weights.
     caches.keys()
       .then((names) => Promise.all(
         names
