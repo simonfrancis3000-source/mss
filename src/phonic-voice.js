@@ -53,7 +53,7 @@ function base64ToInt16Array(base64) {
   return new Int16Array(bytes.buffer);
 }
 
-export function createPhonicVoiceConversation({ getSession, getConfig, onEvent = () => {} }) {
+export function createPhonicVoiceConversation({ getSession, getConfig, onEvent = () => {}, onToolCall = async () => ({ status: "error", assistant_text: "I’m having trouble preparing a response right now. Please try again in a moment." }) }) {
   let socket = null;
   let microphoneStream = null;
   let microphoneContext = null;
@@ -108,6 +108,42 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
       try { source.disconnect(); } catch {}
     };
     source.start(startAt);
+  }
+
+  async function handleToolCall(message) {
+    const toolCallId = String(message?.tool_call_id || "");
+    if (!toolCallId) return;
+
+    const activeSocket = socket;
+    let output;
+    try {
+      output = await onToolCall({
+        name: String(message.tool_name || ""),
+        parameters: message.parameters && typeof message.parameters === "object" ? message.parameters : {},
+        items: conversationItems.map((item) => ({ ...item }))
+      });
+    } catch (error) {
+      console.error("SYNQ.ME AMÏA tool call failed.", error);
+      output = {
+        status: "error",
+        assistant_text: "I’m having trouble preparing a response right now. Please try again in a moment."
+      };
+    }
+
+    // A tool call may finish after the user ends the voice session. Never write
+    // a late result to a closed or superseded socket.
+    if (!activeSocket || activeSocket !== socket || activeSocket.readyState !== WebSocket.OPEN) return;
+    const safeOutput = output && typeof output === "object"
+      ? output
+      : {
+          status: "error",
+          assistant_text: "I’m having trouble preparing a response right now. Please try again in a moment."
+        };
+    activeSocket.send(JSON.stringify({
+      type: "tool_call_output",
+      tool_call_id: toolCallId,
+      output: safeOutput
+    }));
   }
 
   function handleMessage(raw) {
@@ -186,6 +222,10 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
         emit({ type: "input_cancelled" });
         break;
       }
+
+      case "tool_call":
+        void handleToolCall(message);
+        break;
 
       case "error":
         emit({
