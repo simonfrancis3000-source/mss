@@ -8,6 +8,7 @@ import { selectHouseholdSkills } from "../src/household-skills.js";
 const PORT = Number.parseInt(process.env.PORT || "10000", 10);
 // SYNQ.ME uses Groq exclusively. No other AI provider is supported.
 const GROQ_API_KEY = process.env.GROQ_API_KEY || "";
+const PHONIC_API_KEY = process.env.PHONIC_API_KEY || "";
 const PROVIDER = "groq";
 const API_KEY = GROQ_API_KEY;
 const configuredGroqModel = String(process.env.GROQ_MODEL || "").trim();
@@ -424,8 +425,77 @@ const app = http.createServer(async (request, response) => {
       provider: PROVIDER,
       configured: Boolean(API_KEY),
       model: MODEL,
-      diagnosticsVersion: "groq-whisper-transcription-v2"
+      diagnosticsVersion: "groq-whisper-transcription-v2",
+      phonicConfigured: Boolean(PHONIC_API_KEY)
     }, headers || {});
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/phonic/session") {
+    if (origin && headers === null) return json(response, 403, { error: "Origin not allowed." });
+    if (!PHONIC_API_KEY) {
+      return json(response, 503, {
+        error: "Phonic real-time voice is not configured. Add PHONIC_API_KEY to the Render API environment."
+      }, headers || {});
+    }
+    if (limitReached(request)) {
+      return json(response, 429, { error: "Too many voice requests. Wait a minute, then try again." }, headers || {});
+    }
+
+    try {
+      await readJson(request, 1024);
+      const upstream = await fetch("https://api.phonic.ai/v1/auth/session_token", {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer " + PHONIC_API_KEY,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ ttl_seconds: 300 }),
+        signal: AbortSignal.timeout(15000)
+      });
+
+      if (!upstream.ok) {
+        const errorCode = "phonic-session-" + Date.now().toString(36);
+        let providerDetail = "";
+        try {
+          const payload = await upstream.json();
+          providerDetail = String(payload?.error?.message || payload?.message || "").slice(0, 250);
+        } catch {}
+        console.error("Phonic session-token request failed", {
+          errorCode,
+          status: upstream.status,
+          detail: providerDetail || "No provider error detail returned"
+        });
+        const friendly = upstream.status === 401 || upstream.status === 403
+          ? "Phonic rejected the configured API key. Check PHONIC_API_KEY in the backend environment."
+          : "Phonic could not start a voice session. Check the backend logs and try again.";
+        return json(response, 502, { error: friendly, errorCode }, headers || {});
+      }
+
+      const payload = await upstream.json();
+      if (typeof payload?.session_token !== "string" || !payload.session_token) {
+        return json(response, 502, { error: "Phonic did not return a session token." }, headers || {});
+      }
+
+      return json(response, 200, {
+        sessionToken: payload.session_token,
+        websocketUrl: "wss://api.phonic.ai/v1/sts/ws"
+      }, headers || {});
+    } catch (error) {
+      const status = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
+      if (status === 400 || status === 413) {
+        return json(response, status, { error: error.message }, headers || {});
+      }
+      const errorCode = "phonic-session-" + Date.now().toString(36);
+      console.error("SYNQ.ME Phonic session handler failed", {
+        errorCode,
+        name: error?.name || "Error",
+        message: String(error?.message || "Unknown error").slice(0, 250)
+      });
+      return json(response, 502, {
+        error: "The Phonic voice session could not be created. Check backend logs and try again.",
+        errorCode
+      }, headers || {});
+    }
   }
 
   if (request.method === "POST" && url.pathname === "/api/transcribe") {
