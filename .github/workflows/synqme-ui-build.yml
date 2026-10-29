@@ -2,7 +2,7 @@ name: SYNQ.ME UI build
 
 on:
   push:
-    branches: [feature/synqme-robot-voice-ui]
+    branches: [feature/synqme-robot-voice-ui, feature/phonic-voice-chat]
     paths:
       - "index.html"
       - "src/**"
@@ -10,7 +10,7 @@ on:
       - "package-lock.json"
       - ".github/workflows/synqme-ui-build.yml"
   pull_request:
-    branches: [SYNQ.ME]
+    branches: [SYNQ.ME, feature/synqme-robot-voice-ui]
     paths:
       - "index.html"
       - "src/**"
