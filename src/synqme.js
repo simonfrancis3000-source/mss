@@ -2462,15 +2462,26 @@ async function handlePhonicAmiaToolCall({ name, parameters = {}, items = [] } = 
     latestItem?.text || parameters.latest_user_message || ""
   ).trim();
 
-  if (latestUserText && state.messages[state.messages.length - 1]?.role !== "user") {
+  const latestMappedIndex = latestItem
+    ? phonicItemMap.get(String(latestItem.itemIdx))
+    : undefined;
+  const latestMappedMessage = Number.isInteger(latestMappedIndex)
+    ? state.messages[latestMappedIndex]
+    : null;
+  if (latestUserText && (
+    !latestMappedMessage ||
+    latestMappedMessage.role !== "user" ||
+    latestMappedMessage.content !== latestUserText
+  )) {
     state.messages.push({ role: "user", content: latestUserText });
+    if (latestItem) phonicItemMap.set(String(latestItem.itemIdx), state.messages.length - 1);
     savePreference(latestUserText);
     persist();
     renderAll();
   }
 
   const latestMessage = state.messages[state.messages.length - 1];
-  if (!latestUserText || !latestMessage || latestMessage.role !== "user") {
+  if (!latestUserText || !latestMessage || latestMessage.role !== "user" || latestMessage.content !== latestUserText) {
     return { status: "error", assistant_text: unavailableReply };
   }
 
