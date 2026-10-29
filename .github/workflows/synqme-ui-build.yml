@@ -39,6 +39,12 @@ jobs:
         run: |
           node --version
           npm --version
+      - name: Check JavaScript syntax
+        run: |
+          node --check server/index.js
+          node --check src/synqme.js
+          node --check src/phonic-voice.js
+          node --check public/phonic-pcm-processor.worklet.js
       - name: Install dependencies and refresh the npm lockfile
         run: npm install --no-audit --no-fund
       - name: Verify a single Transformers.js runtime
