@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { createPhonicVoiceConversation } from "./phonic-voice.js";
 import {
   buildHomeMemoryIndexRows,
   extractHomeMemoryKeys,
@@ -21,6 +22,7 @@ import {
 const STORAGE_KEY = "synqme-demo-v1";
 const ACCOUNT_DRAFT_KEY = "synqme-pending-account-migration-v1";
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
+const PHONIC_API_BASE_URL = String(import.meta.env.VITE_PHONIC_API_BASE_URL || import.meta.env.VITE_API_BASE_URL || "https://synqme-api.onrender.com").replace(/\/+$/, "");
 const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
 const AUTH_REDIRECT_URL = (() => {
@@ -85,18 +87,28 @@ const supabase = SUPABASE_URL && SUPABASE_KEY
       }
     })
   : null;
-const WELCOME = "Hi, I’m here to help you build your SecondSelf. Which parts of home life would you like it to understand first?";
+const WELCOME = "Hi, I’m here to help you build your SecondSelf. Speak naturally, and we’ll work out what matters to you.";
 const WELCOME_BY_LANGUAGE = {
   en: WELCOME,
-  es: "Hola, estoy aquí para ayudarte a crear tu SecondSelf. ¿Qué aspectos de la vida en casa te gustaría que aprendiera primero?",
-  fr: "Bonjour, je suis là pour t’aider à construire ton SecondSelf. Quels aspects de la vie à la maison aimerais-tu que je comprenne en premier ?",
-  it: "Ciao, sono qui per aiutarti a costruire il tuo SecondSelf. Quali aspetti della vita in casa vorresti che imparassi per primi?",
-  pt: "Olá, estou aqui para te ajudar a construir o teu SecondSelf. Que aspetos da vida em casa gostarias que eu aprendesse primeiro?",
-  hi: "नमस्ते, मैं आपका SecondSelf बनाने में मदद करने के लिए यहाँ हूँ। आप चाहेंगे कि मैं घर की दिनचर्या के किन पहलुओं को सबसे पहले समझूँ?",
-  ja: "こんにちは。あなたのSecondSelfづくりをお手伝いします。家での暮らしのどんなことを、まず理解してほしいですか？",
-  zh: "你好，我来帮你建立自己的 SecondSelf。你希望我先了解家庭生活中的哪些方面？"
+  es: "Hola, estoy aquí para ayudarte a crear tu SecondSelf. Habla con naturalidad y descubriremos qué es importante para ti.",
+  fr: "Bonjour, je suis là pour t’aider à créer ton SecondSelf. Parle naturellement et nous verrons ce qui compte pour toi.",
+  it: "Ciao, sono qui per aiutarti a creare il tuo SecondSelf. Parla liberamente e capiremo cosa conta per te.",
+  pt: "Olá, estou aqui para te ajudar a criar o teu SecondSelf. Fala com naturalidade e vamos perceber o que é importante para ti.",
+  hi: "नमस्ते, मैं आपका SecondSelf बनाने में मदद करने के लिए यहाँ हूँ। स्वाभाविक रूप से बात करें, ताकि हम समझ सकें कि आपके लिए क्या महत्वपूर्ण है।",
+  ja: "こんにちは。あなたのSecondSelfづくりをお手伝いします。自然に話してくれれば、何が大切かを一緒に整理していきます。",
+  zh: "你好，我会帮助你建立自己的 SecondSelf。你可以自然地说，我们会一起了解什么对你最重要。"
 };
-const KNOWN_WELCOME_MESSAGES = new Set(Object.values(WELCOME_BY_LANGUAGE));
+const LEGACY_WELCOME_MESSAGES = new Set([
+  "Hi, I’m here to help you build your SecondSelf. Which parts of home life would you like it to understand first?",
+  "Hola, estoy aquí para ayudarte a crear tu SecondSelf. ¿Qué aspectos de la vida en casa te gustaría que aprendiera primero?",
+  "Bonjour, je suis là pour t’aider à construire ton SecondSelf. Quels aspects de la vie à la maison aimerais-tu que je comprenne en premier ?",
+  "Ciao, sono qui per aiutarti a costruire il tuo SecondSelf. Quali aspetti della vita a casa vorresti che imparassi per primi?",
+  "Olá, estou aqui para te ajudar a construir o teu SecondSelf. Que aspetos da vida em casa gostarias que aprendesse primeiro?",
+  "नमस्ते, मैं आपका SecondSelf बनाने में मदद करने के लिए यहाँ हूँ। आप चाहेंगे कि मैं घर की दिनचर्या के किन पहलुओं को सबसे पहले समझूँ?",
+  "こんにちは。あなたのSecondSelfづくりをお手伝いします。家での暮らしのどんなことを、まず理解してほしいですか？",
+  "你好，我来帮你建立自己的 SecondSelf。你希望我先了解家庭生活中的哪些方面？"
+]);
+const KNOWN_WELCOME_MESSAGES = new Set([...Object.values(WELCOME_BY_LANGUAGE), ...LEGACY_WELCOME_MESSAGES]);
 function localizeWelcomeMessage(language) {
   const welcome = WELCOME_BY_LANGUAGE[language] || WELCOME;
   state.messages = state.messages.map((item) =>
@@ -389,6 +401,9 @@ const SpeechRecognitionConstructor = window.SpeechRecognition || window.webkitSp
 const speechSynthesisAvailable = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
 let voiceModeActive = false;
 let voiceInputMuted = false;
+let phonicVoiceConversation = null;
+const phonicItemMap = new Map();
+const phonicTurnMetadata = new Map();
 let speechRecognition = null;
 let recognitionListening = false;
 let recognitionTranscript = "";
@@ -2155,7 +2170,7 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   if (!profileComplete()) openSettings();
   else updateSettingsMode();
   startCloudConversationSync();
-  scheduleKokoroBackgroundPreload(1400);
+  // Phonic provides spoken output; do not download the legacy Kokoro voice model.
   return true;
 }
 
@@ -3389,45 +3404,321 @@ function primeBrowserSpeechForSession() {
   }
 }
 
-function openVoiceExperience() {
+function buildPhonicConfig() {
+  const language = state.profile.preferredLanguage || "en";
+  const languageNames = {
+    en: "English (US)", es: "Spanish", fr: "French", it: "Italian",
+    pt: "Portuguese", hi: "Hindi", ja: "Japanese", zh: "Mandarin Chinese"
+  };
+  const languageName = languageNames[language] || "English (US)";
+  const companion = selectedCompanionDisplayName();
+  const systemPrompt = [
+    "You are " + companion + ", the natural spoken voice inside SYNQ.ME. You help the user build a personal digital persona, called a SecondSelf, for a future compatible household robot.",
+    "Speak naturally in " + languageName + ". Be warm, curious, practical and concise. Phonic handles voice delivery. AMÏA owns the decisions, answers and questions.",
+    "MANDATORY TURN FLOW: After each completed user utterance, call amia_next_turn exactly once before speaking. Do not independently answer, acknowledge, or ask a follow-up while waiting. The tool calls SYNQ.ME's AMÏA conversation engine with the current transcript, saved preferences, relevant home memories, profile and selected household interests.",
+    "AUTHORITATIVE RESPONSE: Speak only the tool's assistant_text, verbatim, in " + languageName + ". Do not paraphrase, add greetings, ask an extra question, or continue after that response. Never mention tools or internal decision logic.",
+    "Never claim a robot is physically connected or that a household task has happened. This conversation prepares a personal digital persona for a future compatible robot."
+  ].join("\n\n");
+  return {
+    type: "config",
+    system_prompt: systemPrompt,
+    welcome_message: WELCOME_BY_LANGUAGE[language] || WELCOME,
+    voice_id: state.profile.robotVoice === "male" ? "grant" : "sabrina",
+    audio_speed: 1,
+    input_format: "pcm_44100",
+    output_format: "pcm_44100",
+    tools: [{
+      type: "custom_websocket",
+      tool_schema: {
+        type: "function",
+        function: {
+          name: "amia_next_turn",
+          description: "Call this once after every completed user utterance. AMÏA decides the reply and next useful question using the full SYNQ.ME context. Do not answer or ask a follow-up yourself.",
+          parameters: {
+            type: "object",
+            properties: {
+              latest_user_message: {
+                type: "string",
+                description: "The latest user utterance, transcribed accurately."
+              }
+            },
+            required: ["latest_user_message"],
+            additionalProperties: false
+          },
+          strict: true
+        }
+      },
+      execution_mode: "sync",
+      tool_call_output_timeout_ms: 150000,
+      require_speech_before_tool_call: false,
+      wait_for_speech_before_tool_call: false,
+      allow_tool_chaining: false
+    }]
+  };
+}
+
+function syncPhonicTranscriptItems(items) {
+  let changed = false;
+  let userAdded = false;
+  for (const item of items || []) {
+    const textValue = typeof item?.text === "string" ? item.text.trim() : "";
+    if (!textValue || (item.role !== "user" && item.role !== "assistant")) continue;
+    const key = String(item.itemIdx);
+    if (phonicItemMap.has(key)) {
+      const index = phonicItemMap.get(key);
+      const previous = state.messages[index];
+      if (previous && previous.role === item.role && previous.content !== textValue) {
+        previous.content = textValue;
+        changed = true;
+      }
+      continue;
+    }
+
+    if (item.role === "assistant" && KNOWN_WELCOME_MESSAGES.has(textValue)) {
+      const norm = normalisePhonicText(textValue);
+      const existingWelcomeIndex = state.messages.findIndex((message) =>
+        message.role === "assistant" &&
+        KNOWN_WELCOME_MESSAGES.has(message.content) &&
+        normalisePhonicText(message.content) === norm
+      );
+      if (existingWelcomeIndex >= 0) {
+        phonicItemMap.set(key, existingWelcomeIndex);
+        continue;
+      }
+    }
+
+    const timestamp = new Date().toISOString();
+    state.messages.push({ role: item.role, content: textValue, timestamp });
+    phonicItemMap.set(key, state.messages.length - 1);
+    changed = true;
+
+    if (item.role === "user") {
+      userAdded = true;
+      const clarificationRequest = isClarificationRequest(textValue);
+      const preferenceIdsBeforeTurn = new Set(state.preferences.map((preference) => String(preference.id)));
+      const answeredPendingClarification = resolvePendingClarification(textValue);
+      if (!answeredPendingClarification && !clarificationRequest) savePreference(textValue);
+      const preferenceWasAdded = state.preferences.some((preference) => !preferenceIdsBeforeTurn.has(String(preference.id)));
+      const shouldExtractStructuredMemory = shouldExtractPersonaMemory(textValue, preferenceWasAdded) ||
+        Boolean(answeredPendingClarification && textValue.length >= 4);
+      phonicTurnMetadata.set(key, {
+        timestamp,
+        shouldExtractStructuredMemory,
+        text: textValue
+      });
+    }
+  }
+  if (changed) {
+    state.messages = state.messages.slice(-5000);
+    persist();
+    renderAll();
+  }
+  return { changed, userAdded };
+}
+
+function handlePhonicVoiceEvent(event) {
+  const companion = selectedCompanionDisplayName();
+  switch (event.type) {
+    case "open":
+      updateVoiceExperience("connecting", "Connected to Phonic. Preparing your conversation…");
+      if (elements.conversationStatus) elements.conversationStatus.textContent = "Connected to Phonic";
+      break;
+    case "ready":
+      updateVoiceExperience("listening", companion + " is listening. Speak naturally.");
+      if (elements.voiceStatus) {
+        elements.voiceStatus.dataset.error = "";
+        elements.voiceStatus.textContent = "Voice on · Phonic audio + AMÏA";
+      }
+      if (elements.conversationStatus) elements.conversationStatus.textContent = "Listening · AMÏA directs each reply";
+      break;
+    case "user_started_speaking":
+      updateVoiceExperience("listening", "Listening to you…");
+      if (elements.conversationStatus) elements.conversationStatus.textContent = "Listening";
+      break;
+    case "user_finished_speaking":
+      updateVoiceExperience("thinking", "AMÏA is deciding the next response…");
+      if (elements.conversationStatus) elements.conversationStatus.textContent = "AMÏA is deciding the next response";
+      break;
+    case "input_text":
+      if (elements.conversationStatus) elements.conversationStatus.textContent = "AMÏA is deciding the next response";
+      break;
+    case "assistant_started_speaking":
+      assistantIsSpeaking = true;
+      updateVoiceExperience("speaking", companion + " is speaking.");
+      if (elements.conversationStatus) elements.conversationStatus.textContent = companion + " is speaking";
+      break;
+    case "audio_chunk":
+      syncPhonicTranscriptItems(event.items);
+      break;
+    case "assistant_finished_speaking": {
+      assistantIsSpeaking = false;
+      syncPhonicTranscriptItems(event.items);
+      const latestUser = [...state.messages].reverse().find((message) => message.role === "user")?.content || "";
+      const latestAssistant = state.messages[state.messages.length - 1]?.role === "assistant"
+        ? state.messages[state.messages.length - 1].content
+        : "";
+      if (latestUser && latestAssistant) state.pendingClarification = detectPendingClarification(latestUser, latestAssistant);
+      persist();
+      renderAll();
+      void flushCloudSave();
+      updateVoiceExperience("listening", companion + " is listening. Speak naturally.");
+      if (elements.voiceStatus) elements.voiceStatus.textContent = "Voice on · Phonic audio + AMÏA";
+      if (elements.conversationStatus) elements.conversationStatus.textContent = "Phonic voice · AMÏA ready for the next turn";
+      break;
+    }
+    case "error": {
+      const detail = typeof event.error === "string" ? event.error : "Phonic reported a voice-session error.";
+      stopVoiceConversation("Phonic voice error.");
+      if (elements.voiceStatus) {
+        elements.voiceStatus.dataset.error = "true";
+        elements.voiceStatus.textContent = detail;
+      }
+      updateVoiceExperience("idle", detail);
+      break;
+    }
+    case "close":
+      assistantIsSpeaking = false;
+      if (voiceModeActive) stopVoiceConversation("Phonic voice connection closed.");
+      break;
+    default:
+      break;
+  }
+}
+
+async function handlePhonicAmiaToolCall({ name, parameters = {}, items = [] } = {}) {
+  const language = state.profile.preferredLanguage || "en";
+  const unavailable = localizedAIUnavailable(language);
+  if (name !== "amia_next_turn") return { status: "error", assistant_text: unavailable };
+
+  const synced = syncPhonicTranscriptItems(items);
+  if (synced.userAdded) void flushCloudSave();
+
+  const latestItem = [...(items || [])].reverse().find((item) =>
+    item?.role === "user" && typeof item.text === "string" && item.text.trim()
+  );
+  const latestUserText = String(latestItem?.text || parameters.latest_user_message || "").trim();
+  if (!latestUserText) return { status: "error", assistant_text: unavailable };
+
+  const latestKey = latestItem ? String(latestItem.itemIdx) : "";
+  const mappedIndex = latestKey ? phonicItemMap.get(latestKey) : undefined;
+  const mappedMessage = Number.isInteger(mappedIndex) ? state.messages[mappedIndex] : null;
+  if (!mappedMessage || mappedMessage.role !== "user" || mappedMessage.content !== latestUserText) {
+    const timestamp = new Date().toISOString();
+    state.messages.push({ role: "user", content: latestUserText, timestamp });
+    if (latestKey) phonicItemMap.set(latestKey, state.messages.length - 1);
+    const preferenceIdsBeforeTurn = new Set(state.preferences.map((preference) => String(preference.id)));
+    const clarificationRequest = isClarificationRequest(latestUserText);
+    const answeredPendingClarification = resolvePendingClarification(latestUserText);
+    if (!answeredPendingClarification && !clarificationRequest) savePreference(latestUserText);
+    const preferenceWasAdded = state.preferences.some((preference) => !preferenceIdsBeforeTurn.has(String(preference.id)));
+    phonicTurnMetadata.set(latestKey || "fallback", {
+      timestamp,
+      shouldExtractStructuredMemory: shouldExtractPersonaMemory(latestUserText, preferenceWasAdded) ||
+        Boolean(answeredPendingClarification && latestUserText.length >= 4),
+      text: latestUserText
+    });
+    persist();
+    renderAll();
+    void flushCloudSave();
+  }
+
+  const metadata = phonicTurnMetadata.get(latestKey || "fallback") || {
+    timestamp: new Date().toISOString(),
+    shouldExtractStructuredMemory: shouldExtractPersonaMemory(latestUserText, true),
+    text: latestUserText
+  };
+
+  try {
+    let reply = await requestAIReply();
+    const replyNeedsRepair = (value) => !value ||
+      value === "__SYNQME_UNHELPFUL_AI_RESPONSE__" ||
+      responseRepeatsUser(value, latestUserText) ||
+      responseRepeatsRecentAssistant(value);
+    if (replyNeedsRepair(reply) && state.apiConnected && !lastAIReplyUsedFallback) {
+      const retriedReply = await requestAIReply(true);
+      if (retriedReply && retriedReply !== "__SYNQME_UNHELPFUL_AI_RESPONSE__" && !replyNeedsRepair(retriedReply)) {
+        reply = retriedReply;
+      }
+    }
+    if (!reply || reply === "__SYNQME_UNHELPFUL_AI_RESPONSE__") {
+      reply = state.apiErrorDetail || unavailable;
+      void 0;
+    }
+
+    state.pendingClarification = detectPendingClarification(latestUserText, reply);
+    void processStructuredMemoryTurn(latestUserText, metadata.timestamp, metadata.shouldExtractStructuredMemory);
+    if (state.profile.shareAnonymizedLearning === true) void contributeSharedKnowledgeFromTurn();
+    persist();
+    renderAll();
+    void flushCloudSave();
+    return { status: "ok", decision_owner: "AMÏA", assistant_text: reply.trim() || unavailable };
+  } catch (error) {
+    console.info("SYNQ.ME AMÏA voice decision failed.", error);
+    return { status: "error", assistant_text: state.apiErrorDetail || unavailable };
+  }
+}
+
+async function openVoiceExperience() {
   if (!elements.voiceExperience) return;
-  elements.voiceExperience.hidden = false;
-  document.body.classList.add("voice-experience-open");
-  voiceInputMuted = false;
-  updateVoiceCompanionLabels();
-  if (elements.voiceRetrySpeechButton) elements.voiceRetrySpeechButton.hidden = true;
-  if (!SpeechRecognitionConstructor) {
-    updateVoiceExperience("idle", "Voice input is unavailable in this browser. Return to chat or try Chrome.");
+  if (!cloudUserId) {
+    setAuthGateVisible(true);
+    setAuthMode("signin", "Sign in or create an account before continuing. Your conversation history is saved to your account.");
+    return;
+  }
+  if (!profileComplete()) {
+    openSettings();
+    if (elements.conversationStatus) elements.conversationStatus.textContent = "Complete your profile to begin";
     return;
   }
   if (voiceModeActive) return;
-  voiceModeActive = true;
+
+  elements.voiceExperience.hidden = false;
+  document.body.classList.add("voice-experience-open");
   voiceInputMuted = false;
-  primeBrowserSpeechForSession();
-  if (kokoroTTSInstance) {
-    renderVoiceModelProgress({ visible: false });
-  } else if (kokoroVoiceForProfile()) {
-    if (kokoroLoadFailed) kokoroLoadFailed = false;
-    if (!kokoroLoadPromise) {
-      renderVoiceModelProgress({ label: "Checking for a saved voice model…" + VOICE_MODEL_WAIT_NOTE, indeterminate: true });
-      void loadKokoroTTS().catch((error) => {
-        console.info("Kokoro model unavailable; browser speech remains available.", error);
-      });
-    } else if (elements.voiceModelProgress) {
-      elements.voiceModelProgress.hidden = false;
-    }
-  } else {
-    renderVoiceModelProgress({ visible: false });
-  }
+  voiceModeActive = true;
+  assistantIsSpeaking = false;
+  phonicItemMap.clear();
+  phonicTurnMetadata.clear();
+  updateVoiceCompanionLabels();
+  updateVoiceModeButton();
+  renderVoiceModelProgress({ visible: false });
+  if (elements.voiceRetrySpeechButton) elements.voiceRetrySpeechButton.hidden = true;
   if (elements.voiceStatus) {
     elements.voiceStatus.dataset.error = "";
-    elements.voiceStatus.textContent = speechSynthesisAvailable
-      ? "Voice on · browser speech services"
-      : "Voice input on · spoken replies may not be supported";
+    elements.voiceStatus.textContent = "Connecting to Phonic…";
   }
-  updateVoiceModeButton();
-  updateVoiceExperience("listening", "Connecting to your microphone…");
-  startVoiceListening();
+  updateVoiceExperience("connecting", "Requesting microphone access and connecting to Phonic…");
+  if (elements.conversationStatus) elements.conversationStatus.textContent = "Connecting to Phonic";
+
+  try {
+    void checkAIBackend();
+    phonicVoiceConversation = createPhonicVoiceConversation({
+      getSession: async () => {
+        const response = await fetch(PHONIC_API_BASE_URL + "/api/phonic/session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({})
+        });
+        let payload = {};
+        try { payload = await response.json(); } catch {}
+        if (!response.ok) throw new Error(payload?.error || "Could not create a Phonic session (HTTP " + response.status + ").");
+        return payload;
+      },
+      getConfig: () => buildPhonicConfig(),
+      onEvent: handlePhonicVoiceEvent,
+      onToolCall: handlePhonicAmiaToolCall
+    });
+    await phonicVoiceConversation.start();
+  } catch (error) {
+    const detail = String(error?.message || "Phonic voice could not start.");
+    stopVoiceConversation("Phonic voice could not start.");
+    if (elements.voiceStatus) {
+      elements.voiceStatus.dataset.error = "true";
+      elements.voiceStatus.textContent = detail;
+    }
+    updateVoiceExperience("idle", detail);
+    if (elements.conversationStatus) elements.conversationStatus.textContent = "Voice unavailable · text chat remains available";
+  }
 }
 
 function closeVoiceExperience(statusMessage) {
@@ -3441,15 +3732,11 @@ function closeVoiceExperience(statusMessage) {
 function toggleVoiceInputMute() {
   if (!voiceModeActive) return;
   voiceInputMuted = !voiceInputMuted;
+  if (phonicVoiceConversation) phonicVoiceConversation.setMuted(voiceInputMuted);
   if (voiceInputMuted) {
-    if (speechRecognition && recognitionListening) {
-      try { speechRecognition.abort(); } catch {}
-    }
-    recognitionListening = false;
-    updateVoiceExperience("muted", "Microphone muted. Your companion can still finish speaking.");
+    updateVoiceExperience("muted", "Microphone muted. You can still hear the current reply.");
   } else {
     updateVoiceExperience("listening", "Microphone on. Speak whenever you are ready.");
-    startVoiceListening();
   }
 }
 
@@ -3556,6 +3843,9 @@ function updateVoiceModeButton() {
 function stopVoiceConversation(statusMessage = "Voice conversation stopped.") {
   voiceModeActive = false;
   voiceInputMuted = false;
+  const activePhonic = phonicVoiceConversation;
+  phonicVoiceConversation = null;
+  if (activePhonic) void activePhonic.stop();
   stopKokoroAudio();
   updateVoiceExperience("idle", statusMessage);
   if (voiceRestartTimer) window.clearTimeout(voiceRestartTimer);
@@ -4054,53 +4344,16 @@ function speakAssistantReplyWithBrowser(reply, retryAttempt = 0, userInitiated =
 }
 
 async function speakAssistantReply(reply) {
-  if (!voiceModeActive) return;
+  if (!voiceModeActive || phonicVoiceConversation) return;
   lastAssistantReplyForSpeech = String(reply || "");
   if (elements.voiceRetrySpeechButton) elements.voiceRetrySpeechButton.hidden = true;
-
-  const voiceId = kokoroVoiceForProfile();
-  // Use the configured character voice for the full reply. Do not speak with
-  // the browser's generic voice just because Kokoro is still downloading.
-  if (!voiceId) {
-    speakAssistantReplyWithBrowser(reply);
+  if (!lastAssistantReplyForSpeech) return;
+  if (!speechSynthesisAvailable) {
+    if (elements.voiceStatus) elements.voiceStatus.textContent = "Speech output is unavailable in this browser.";
     return;
   }
-
-  try {
-    if (!kokoroTTSInstance) {
-      const loadPromise = kokoroLoadPromise || loadKokoroTTS();
-      if (elements.voiceStatus) elements.voiceStatus.textContent = "Loading the selected robot voice…";
-      updateVoiceExperience("thinking", "Preparing " + selectedCompanionDisplayName() + "’s voice…");
-      await loadPromise;
-    }
-    if (!voiceModeActive) return;
-    if (!kokoroTTSInstance) throw new Error("The selected voice model is not ready.");
-
-    if (speechSynthesisAvailable) window.speechSynthesis.cancel();
-    currentSpeechUtterance = null;
-    const requestId = ++kokoroSpeechGeneration;
-    if (elements.voiceStatus) elements.voiceStatus.textContent = "Preparing the selected robot voice…";
-    updateVoiceExperience("thinking", "Preparing " + selectedCompanionDisplayName() + "’s reply…");
-
-    // Wait for inference and playback to finish. A short startup timeout caused
-    // slower devices to abandon Kokoro and fall back to an unrelated system voice.
-    const played = await playKokoroReply(String(reply || ""), voiceId, requestId);
-    if (played || !voiceModeActive || requestId !== kokoroSpeechGeneration) return;
-    throw new Error("The selected voice could not start audio playback.");
-  } catch (error) {
-    console.info("SYNQ.ME selected voice could not play.", error);
-    if (!voiceModeActive) return;
-    assistantIsSpeaking = false;
-    if (elements.voiceStatus) elements.voiceStatus.textContent = "The selected robot voice could not start.";
-    updateVoiceExperience("listening", "I couldn’t start the selected voice. Tap retry to try it again.");
-    if (elements.voiceRetrySpeechButton) {
-      elements.voiceRetrySpeechButton.textContent = "Retry " + selectedCompanionDisplayName() + "’s voice";
-      elements.voiceRetrySpeechButton.hidden = false;
-    }
-    if (voiceModeActive) scheduleVoiceListening(500);
-  }
+  speakAssistantReplyWithBrowser(lastAssistantReplyForSpeech);
 }
-
 elements.voiceRetrySpeechButton?.addEventListener("click", () => {
   if (!lastAssistantReplyForSpeech || !voiceModeActive) return;
   elements.voiceRetrySpeechButton.hidden = true;
