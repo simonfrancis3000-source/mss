@@ -207,7 +207,7 @@ function renderEvents(events) {
 
 function exportCsv() {
   if (!currentData) return;
-  const rows = [["Name", "Email", "User ID", "Registered At", "Chat Requests", "Voice Sessions", "Voice Minutes", "User Speech Minutes", "Assistant Speech Minutes", "Input Tokens", "Cached Input Tokens", "Output Tokens", "Search Requests", "Fetch Requests", "DeepSeek Cost USD", "Search Cost USD", "Fetch Cost USD", "Phonic Cost USD", "Known Total Cost USD"]];
+  const rows = [["Name", "Email", "User ID", "Registered At", "Chat Requests", "Voice Sessions", "Voice Minutes", "User Speech Minutes", "Assistant Speech Minutes", "Input Tokens", "Cached Input Tokens", "Output Tokens", "Search Requests", "Fetch Requests", "DeepSeek Cost USD", "Search Cost USD", "Fetch Cost USD", "Phonic Cost USD", "Phonic Unpriced Sessions", "Known Total Cost USD"]];
   const query = String(userSearch.value || "").trim().toLowerCase();
   for (const user of currentData.users || []) {
     if (query && ![user.email, user.ownerName, user.userId].some((value) => String(value || "").toLowerCase().includes(query))) continue;
@@ -216,7 +216,7 @@ function exportCsv() {
       user.chatRequests || 0, user.voiceSessions || 0, user.voiceMinutes || 0, user.userSpeechMinutes || 0,
       user.assistantSpeechMinutes || 0, user.inputTokens || 0, user.cacheHitTokens || 0, user.outputTokens || 0,
       user.searchRequests || 0, user.fetchRequests || 0, user.deepseekCostUsd || 0, user.searchCostUsd || 0,
-      user.fetchCostUsd || 0, user.phonicCostUsd || 0, totalUserCost(user)
+      user.fetchCostUsd || 0, user.phonicUnpricedSessions ? "" : (user.phonicCostUsd || 0), user.phonicUnpricedSessions || 0, totalUserCost(user)
     ]);
   }
   const csv = rows.map((row) => row.map((value) => '"' + String(value ?? "").replace(/"/g, '""') + '"').join(",")).join("\r\n");
