@@ -160,16 +160,42 @@ test("semantic similarity improves ranking without overriding active status filt
   assert.ok(!ranked.some((memory) => memory.id === "archived-semantic"));
 });
 
-test("server exposes Groq embedding and structured-memory routes with a fallback path", async () => {
+test("DeepSeek is the language provider and memory retrieval no longer depends on retired embeddings", async () => {
   const { readFile } = await import("node:fs/promises");
   const server = await readFile(new URL("../server/index.js", import.meta.url), "utf8");
-  assert.match(server, /url\.pathname === "\/api\/memory\/embed"/);
-  assert.match(server, /api\.groq\.com\/openai\/v1\/embeddings/);
-  assert.match(server, /nomic-embed-text-v1_5/);
+  assert.match(server, /api\.deepseek\.com\/chat\/completions/);
+  assert.match(server, /deepseek-flash/);
+  assert.doesNotMatch(server, /api\.groq\.com/);
+  assert.doesNotMatch(server, /url\.pathname === "\/api\/memory\/embed"/);
   assert.match(server, /url\.pathname === "\/api\/memory\/extract"/);
   const frontend = await readFile(new URL("../src/synqme.js", import.meta.url), "utf8");
-  assert.match(frontend, /match_synqme_persona_memories/);
   assert.match(frontend, /textSearch\("search_document"/);
+  assert.doesNotMatch(frontend, /match_synqme_persona_memories/);
+});
+
+test("paraphrased clothing and laundry questions retrieve the same personal memory", () => {
+  const statement = "I prefer dark garments stored separately from light items.";
+  const memories = [{
+    id: "laundry-rule",
+    topic: "laundry",
+    kind: "preference",
+    statement,
+    search_keys: buildPersonaMemorySearchKeys(statement, [], "laundry"),
+    status: "user_confirmed",
+    confidence: 0.96
+  }];
+  const ranked = rankPersonaMemories("Where should my dark shirts go after washing?", memories);
+  assert.equal(ranked[0]?.id, "laundry-rule");
+});
+
+test("retrieval preserves conflicting memories when a paraphrased query touches the same concept", () => {
+  const memories = [
+    { id: "a", topic: "laundry", kind: "routine", statement: "Keep towels separate from clothing.", status: "conflicting", search_keys: buildPersonaMemorySearchKeys("Keep towels separate from clothing.", [], "laundry") },
+    { id: "b", topic: "laundry", kind: "routine", statement: "Wash towels together with light clothes.", status: "conflicting", search_keys: buildPersonaMemorySearchKeys("Wash towels together with light clothes.", [], "laundry") }
+  ];
+  const ranked = rankPersonaMemories("What is my rule for washing bath towels with shirts?", memories, { limit: 4 });
+  assert.equal(ranked.length, 2);
+  assert.ok(ranked.every((memory) => memory.status === "conflicting"));
 });
 
 test("task playbooks are selected separately from personal memories", () => {
