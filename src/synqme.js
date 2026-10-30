@@ -3928,6 +3928,9 @@ function handlePhonicVoiceEvent(event) {
       if (elements.conversationStatus) elements.conversationStatus.textContent = companion + " is listening";
       break;
     case "user_started_speaking":
+      // If the user interrupts an assistant turn, its intended text is already
+      // saved in chat. Do not let the next assistant transcript attach to it.
+      pendingPhonicAssistantMessageIndex = null;
       updateVoiceExperience("listening", "Listening to you…");
       if (elements.conversationStatus) elements.conversationStatus.textContent = "Listening";
       break;
