@@ -6,7 +6,8 @@ import {
   buildRoomProgressSnapshot,
   deriveCompletedRoomTasks,
   getRoomJourneySchedule,
-  getRoomTaskStates
+  getRoomTaskStates,
+  buildRoomJourneyConversationContext
 } from "../src/room-journey.js";
 
 test("each account unlocks rooms from its own start date", () => {
@@ -71,4 +72,34 @@ test("a completed task cannot remain marked as the current task", () => {
   const states = getRoomTaskStates(kitchen, ["dishwashing"], "dishwashing");
   assert.equal(states.find((task) => task.id === "dishwashing").status, "completed");
   assert.equal(states.some((task) => task.status === "current"), false);
+});
+
+
+test("conversation context carries the selected task and next pending task for the active room", () => {
+  const context = buildRoomJourneyConversationContext({
+    activeRoomId: "kitchen",
+    activeTaskId: "surfaces",
+    completedTaskIds: ["dishwashing"],
+    unlockedRoomCount: 1
+  });
+  assert.equal(context.activeRoomName, "Kitchen");
+  assert.equal(context.activeTaskId, "surfaces");
+  assert.equal(context.activeTaskTitle, "Worktops and surfaces");
+  assert.equal(context.nextPendingTaskId, "surfaces");
+  assert.equal(context.nextPendingTaskTitle, "Worktops and surfaces");
+  assert.equal(context.tasks.find((task) => task.id === "surfaces").current, true);
+  assert.equal(context.tasks.find((task) => task.id === "dishwashing").completed, true);
+});
+
+test("conversation context does not select a completed task as current", () => {
+  const context = buildRoomJourneyConversationContext({
+    activeRoomId: "kitchen",
+    activeTaskId: "dishwashing",
+    completedTaskIds: ["dishwashing"],
+    unlockedRoomCount: 2
+  });
+  assert.equal(context.activeTaskId, null);
+  assert.equal(context.activeTaskTitle, null);
+  assert.equal(context.nextPendingTaskId, "surfaces");
+  assert.equal(context.tasks.some((task) => task.current), false);
 });
