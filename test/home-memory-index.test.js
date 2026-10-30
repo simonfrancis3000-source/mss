@@ -63,7 +63,8 @@ test("concept retrieval connects different wording for laundry preferences", () 
   const archivedTurn = {
     role: "user",
     content: "I prefer dark garments stored separately from light items.",
-    timestamp: "2026-10-12T08:00:00.000Z"
+    timestamp: "2026-10-12T08:00:00.000Z",
+    search_keys: ["word:prefer", "word:dark", "word:garments", "word:stored", "word:separately"]
   };
   const query = "Where should my dark shirts go after washing?";
   assert.ok(extractHomeMemoryKeys(archivedTurn.content).includes("concept:laundry"));
