@@ -1,7 +1,7 @@
 import { buildSystemInstructions } from "./instructions.js";
 import { selectRelevantPreferences } from "./memory.js";
 import { selectModel } from "./router.js";
-import { formatSearchResults, searchWeb, shouldUseWebSearch } from "./search.js";
+import { fetchWebPage, formatSearchResults, searchWeb, shouldUseWebSearch } from "./search.js";
 
 export { searchWeb, fetchWebPage } from "./search.js";
 
@@ -35,6 +35,16 @@ export async function createAmiaReply({
           count: 5,
           originalQuestion: latestUserMessage
         });
+        if (results.length) {
+          const needsFetch = results.find((item) => !String(item.content || "").trim());
+          if (needsFetch?.url) {
+            try {
+              const page = await fetchWebPage(searchApiKey, needsFetch.url);
+              needsFetch.content = page.content || "";
+              if (!needsFetch.title && page.title) needsFetch.title = page.title;
+            } catch {}
+          }
+        }
         webContext = formatSearchResults(results);
         webSearchStatus = results.length ? "completed" : "no_results";
         if (!results.length) webContext = "The live search returned no results. Do not invent current facts or imply that the information was verified.";
