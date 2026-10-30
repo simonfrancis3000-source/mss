@@ -6,7 +6,7 @@ const DEFAULT_DEEPSEEK_MODEL_LABEL = "DeepSeek V4.1-Flash-1017";
 const ACCOUNT_DRAFT_KEY = "synqme-pending-account-migration-v1";
 const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
-const SYNQME_API_BASE_URL = String(import.meta.env.VITE_SYNQME_API_BASE_URL || "https://synqme-api.onrender.com").replace(/\/+$/, "");
+const SYNQME_API_BASE_URL = String(import.meta.env.VITE_SYNQME_API_BASE_URL || import.meta.env.VITE_PHONIC_API_BASE_URL || "https://synqme-api.onrender.com").replace(/\/+$/, "");
 const AUTH_REDIRECT_URL = (() => {
   const configured = String(import.meta.env.VITE_AUTH_REDIRECT_URL || "").trim();
   if (configured && !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(configured)) {
