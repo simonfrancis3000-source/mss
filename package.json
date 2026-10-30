@@ -13,13 +13,6 @@
     "vite": "8.3.5"
   },
   "dependencies": {
-    "@huggingface/transformers": "3.5.1",
-    "@supabase/supabase-js": "2.118.0",
-    "kokoro-js": "1.2.1"
-  },
-  "overrides": {
-    "kokoro-js": {
-      "@huggingface/transformers": "$@huggingface/transformers"
-    }
+    "@supabase/supabase-js": "2.118.0"
   }
 }
