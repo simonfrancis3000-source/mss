@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { createPhonicVoiceConversation } from "./phonic-voice.js";
 import { enforceFirstPersonTaskQuestions, normaliseVoicePreference, phonicVoiceIdForPreference } from "./voice-language.js";
+import { ROOM_JOURNEY_ROOMS, addMonthsAnchored, buildRoomProgressSnapshot, getRoomJourneySchedule } from "./room-journey.js";
 import {
   buildHomeMemoryIndexRows,
   extractHomeMemoryKeys,
@@ -287,7 +288,12 @@ const elements = {
   authForgotPassword: $("#authForgotPassword"),
   accountStatusLabel: $("#accountStatusLabel"),
   accountEmail: $("#accountEmail"),
-  signOutButton: $("#signOutButton")
+  signOutButton: $("#signOutButton"),
+  roomJourneyPanel: $("#roomJourneyPanel"),
+  roomJourneyIntro: $("#roomJourneyIntro"),
+  roomJourneyNextUnlock: $("#roomJourneyNextUnlock"),
+  roomJourneyFeature: $("#roomJourneyFeature"),
+  roomJourneyRoomGrid: $("#roomJourneyRoomGrid")
 };
 
 function defaultProfile() {
@@ -428,6 +434,12 @@ let taskRunning = false;
 let lastFocusedElement = null;
 let cloudUserId = null;
 let cloudUserEmail = "";
+let profileCreatedAt = null;
+let roomJourney = null;
+let roomJourneyLoadInFlight = false;
+let roomJourneyTableUnavailable = false;
+let roomJourneyWarningShown = false;
+let roomJourneySaveInFlight = false;
 let authMode = "signin";
 let authBusy = false;
 let authRecoveryInProgress = Boolean(/type=recovery/i.test(window.location.hash || ""));
@@ -2578,6 +2590,292 @@ function renderMessages() {
 elements.chatMessages?.addEventListener("scroll", updateChatScrollbar, { passive: true });
 window.addEventListener("resize", updateChatScrollbar);
 
+
+function roomJourneyEvidenceRecords() {
+  const rows = [
+    ...activeLegacyPreferences().map((item) => ({ text: item.text, status: item.status || item.preference_status || "user_stated" })),
+    ...activePersonaMemories().map((item) => ({ text: item.statement, status: item.status }))
+  ];
+  const seen = new Set();
+  return rows.filter((item) => {
+    const key = String(item.text || "").trim().toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return ["user_stated", "user_confirmed"].includes(String(item.status || "user_stated"));
+  });
+}
+
+function roomSchedule() {
+  if (!roomJourney?.journey_started_at) return null;
+  try { return getRoomJourneySchedule(roomJourney.journey_started_at, new Date()); }
+  catch (error) { console.info("Room journey schedule unavailable.", error); return null; }
+}
+
+function roomCompletedIds(room) {
+  const ids = roomJourney?.room_progress?.[room.id]?.completed_task_ids;
+  return Array.isArray(ids) ? ids : [];
+}
+
+function roomText(className, text) {
+  const node = document.createElement("div");
+  node.className = className;
+  node.textContent = text;
+  return node;
+}
+
+function renderRoomJourney() {
+  const featureTarget = elements.roomJourneyFeature;
+  const gridTarget = elements.roomJourneyRoomGrid;
+  if (!featureTarget || !gridTarget) return;
+  featureTarget.replaceChildren();
+  gridTarget.replaceChildren();
+
+  const message = (intro, status, body) => {
+    if (elements.roomJourneyIntro) elements.roomJourneyIntro.textContent = intro;
+    if (elements.roomJourneyNextUnlock) elements.roomJourneyNextUnlock.textContent = status;
+    featureTarget.append(roomText("room-journey-empty", body));
+  };
+
+  if (!cloudUserId || !profileComplete()) {
+    message("Complete your profile to begin your personal room-by-room journey.", "STARTS WITH KITCHEN", "Your Kitchen journey begins as soon as your profile is ready.");
+    return;
+  }
+  if (roomJourneyTableUnavailable) {
+    message("Your monthly room journey could not connect to account storage.", "ACCOUNT SYNC NEEDED", "Your conversations are still available. Room progress needs its private account storage before it can be saved.");
+    return;
+  }
+  if (!roomJourney) {
+    message("Preparing your personal room-by-room journey…", "STARTING WITH KITCHEN", "Your individual monthly release schedule is being prepared.");
+    return;
+  }
+
+  const schedule = roomSchedule();
+  if (!schedule?.unlockedRooms.length) {
+    message("Your personal room schedule is being prepared.", "STARTING WITH KITCHEN", "Your first room is being prepared.");
+    return;
+  }
+  const unlockedIds = new Set(schedule.unlockedRooms.map((room) => room.id));
+  const activeRoom = ROOM_JOURNEY_ROOMS.find((room) => room.id === roomJourney.active_room_id && unlockedIds.has(room.id)) || schedule.unlockedRooms[0];
+  const activeIndex = ROOM_JOURNEY_ROOMS.findIndex((room) => room.id === activeRoom.id);
+  const done = roomCompletedIds(activeRoom);
+  const doneCount = activeRoom.tasks.filter((task) => done.includes(task.id)).length;
+  const percent = Math.round(doneCount / activeRoom.tasks.length * 100);
+  const allDone = schedule.unlockedRooms.reduce((total, room) => total + room.tasks.filter((task) => roomCompletedIds(room).includes(task.id)).length, 0);
+  const allTasks = schedule.unlockedRooms.reduce((total, room) => total + room.tasks.length, 0);
+
+  if (elements.roomJourneyIntro) elements.roomJourneyIntro.textContent = "Rooms unlock on your own monthly anniversary. Saved preferences are recognised automatically, so you never need to repeat what you have already taught me.";
+  if (elements.roomJourneyNextUnlock) {
+    elements.roomJourneyNextUnlock.textContent = schedule.nextUnlockAt
+      ? "NEXT ROOM · " + schedule.nextUnlockAt.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })
+      : "ALL RELEASED ROOMS UNLOCKED";
+  }
+
+  const feature = document.createElement("div");
+  feature.className = "room-feature";
+  const top = document.createElement("div");
+  top.className = "room-feature-top";
+  const identity = document.createElement("div");
+  identity.className = "room-feature-identity";
+  identity.append(roomText("room-feature-icon", activeRoom.icon));
+  const labels = document.createElement("div");
+  labels.className = "room-feature-labels";
+  labels.append(roomText("room-feature-month", "MONTH " + (activeIndex + 1) + " · " + schedule.unlockedCount + " OF " + ROOM_JOURNEY_ROOMS.length + " RELEASED"));
+  const name = document.createElement("h3");
+  name.textContent = activeRoom.name;
+  labels.append(name);
+  identity.append(labels);
+  top.append(identity, roomText("room-feature-count", doneCount + " / " + activeRoom.tasks.length + " LEARNED"));
+  const summary = roomText("room-feature-summary", activeRoom.summary);
+  const meta = document.createElement("div");
+  meta.className = "room-progress-meta";
+  meta.append(roomText("", doneCount === activeRoom.tasks.length ? "Learning tasks covered" : "Learning progress"), roomText("", percent + "%"));
+  const track = document.createElement("div");
+  track.className = "room-progress-track";
+  const fill = document.createElement("span");
+  fill.style.width = percent + "%";
+  track.append(fill);
+  const taskList = document.createElement("div");
+  taskList.className = "room-task-list";
+
+  for (let week = 1; week <= 4; week += 1) {
+    const tasks = activeRoom.tasks.filter((task) => task.week === week);
+    if (!tasks.length) continue;
+    const group = document.createElement("section");
+    group.className = "room-task-week";
+    group.append(roomText("room-task-week-title", "WEEK " + week));
+    for (const task of tasks) {
+      const complete = done.includes(task.id);
+      const row = document.createElement("article");
+      row.className = "room-task-row" + (complete ? " is-complete" : "");
+      const copy = document.createElement("div");
+      copy.className = "room-task-copy";
+      const taskTitle = document.createElement("strong");
+      taskTitle.textContent = task.title;
+      const description = document.createElement("p");
+      description.textContent = task.description;
+      copy.append(taskTitle, description);
+      const action = document.createElement("button");
+      action.type = "button";
+      action.className = "room-task-action";
+      action.dataset.roomTaskPrompt = task.prompt;
+      action.textContent = complete ? "Review" : "Explore";
+      row.append(roomText("room-task-mark", complete ? "✓" : "○"), copy, action);
+      group.append(row);
+    }
+    taskList.append(group);
+  }
+  feature.append(top, summary, meta, track, taskList,
+    roomText("room-progress-foot", allDone + " of " + allTasks + " tasks covered across your " + schedule.unlockedCount + (schedule.unlockedCount === 1 ? " released room." : " released rooms.")));
+  featureTarget.append(feature);
+
+  ROOM_JOURNEY_ROOMS.forEach((room, index) => {
+    const unlocked = unlockedIds.has(room.id);
+    const selected = activeRoom.id === room.id;
+    const completed = room.tasks.filter((task) => roomCompletedIds(room).includes(task.id)).length;
+    const tile = document.createElement("button");
+    tile.type = "button";
+    tile.className = "room-tile" + (selected ? " is-active" : "") + (unlocked ? " is-unlocked" : " is-locked");
+    tile.disabled = !unlocked;
+    tile.dataset.roomSelect = room.id;
+    const tileTop = document.createElement("span");
+    tileTop.className = "room-tile-top";
+    tileTop.append(roomText("room-tile-icon", room.icon), roomText("room-tile-number", String(index + 1).padStart(2, "0")));
+    tile.append(tileTop, roomText("room-tile-name", room.name));
+    tile.append(roomText("room-tile-status", !unlocked
+      ? "UNLOCKS " + addMonthsAnchored(roomJourney.journey_started_at, index).toLocaleDateString(undefined, { day: "numeric", month: "short" })
+      : selected ? "CURRENT FOCUS" : completed === room.tasks.length ? "LEARNING COMPLETE" : "AVAILABLE"));
+    tile.append(roomText("room-tile-progress", unlocked ? completed + " / " + room.tasks.length + " tasks" : "Not yet available"));
+    gridTarget.append(tile);
+  });
+}
+
+async function persistRoomJourneyChanges(patch) {
+  if (!supabase || !cloudUserId || !roomJourney || !patch || roomJourneySaveInFlight) return false;
+  const userId = cloudUserId;
+  roomJourneySaveInFlight = true;
+  try {
+    const { data, error } = await supabase.from("synqme_room_journeys")
+      .update({ ...patch, updated_at: new Date().toISOString() })
+      .eq("user_id", userId).select("*").maybeSingle();
+    if (error) throw error;
+    if (userId !== cloudUserId) return false;
+    if (data) roomJourney = data;
+    renderRoomJourney();
+    return true;
+  } catch (error) {
+    console.info("SYNQ.ME could not save room journey progress.", error);
+    return false;
+  } finally {
+    roomJourneySaveInFlight = false;
+  }
+}
+
+async function refreshRoomJourneyProgress() {
+  if (!supabase || !cloudUserId || !roomJourney || roomJourney.user_id !== cloudUserId) {
+    renderRoomJourney();
+    return false;
+  }
+  const derived = buildRoomProgressSnapshot(ROOM_JOURNEY_ROOMS, roomJourneyEvidenceRecords());
+  const previous = roomJourney.room_progress && typeof roomJourney.room_progress === "object" ? roomJourney.room_progress : {};
+  const merged = {};
+  for (const room of ROOM_JOURNEY_ROOMS) {
+    const oldIds = Array.isArray(previous[room.id]?.completed_task_ids) ? previous[room.id].completed_task_ids : [];
+    const newIds = Array.isArray(derived[room.id]?.completed_task_ids) ? derived[room.id].completed_task_ids : [];
+    const valid = new Set(room.tasks.map((task) => task.id));
+    merged[room.id] = { completed_task_ids: [...new Set([...oldIds, ...newIds])].filter((id) => valid.has(id)) };
+  }
+  if (JSON.stringify(merged) !== JSON.stringify(previous)) {
+    roomJourney.room_progress = merged;
+    renderRoomJourney();
+    await persistRoomJourneyChanges({ room_progress: merged });
+    return true;
+  }
+  renderRoomJourney();
+  return false;
+}
+
+async function ensureRoomJourney() {
+  if (!supabase || !cloudUserId || !profileComplete() || roomJourneyLoadInFlight) return false;
+  if (roomJourney?.user_id === cloudUserId) {
+    await refreshRoomJourneyProgress();
+    return true;
+  }
+  roomJourneyLoadInFlight = true;
+  const userId = cloudUserId;
+  try {
+    if (!profileCreatedAt) {
+      const profileResult = await supabase.from("synqme_profiles").select("created_at").eq("user_id", userId).maybeSingle();
+      if (profileResult.error) throw profileResult.error;
+      profileCreatedAt = profileResult.data?.created_at || new Date().toISOString();
+    }
+    let result = await supabase.from("synqme_room_journeys").select("*").eq("user_id", userId).maybeSingle();
+    if (result.error) throw result.error;
+    if (!result.data) {
+      const inserted = await supabase.from("synqme_room_journeys").insert({
+        user_id: userId,
+        journey_started_at: profileCreatedAt || new Date().toISOString(),
+        active_room_id: "kitchen",
+        room_progress: {}
+      });
+      if (inserted.error && inserted.error.code !== "23505") throw inserted.error;
+      result = await supabase.from("synqme_room_journeys").select("*").eq("user_id", userId).maybeSingle();
+      if (result.error) throw result.error;
+    }
+    if (userId !== cloudUserId) return false;
+    if (!result.data) throw new Error("The room journey could not be created for this account.");
+    roomJourney = {
+      ...result.data,
+      room_progress: result.data.room_progress && typeof result.data.room_progress === "object" && !Array.isArray(result.data.room_progress)
+        ? result.data.room_progress : {}
+    };
+    roomJourneyTableUnavailable = false;
+    const schedule = getRoomJourneySchedule(roomJourney.journey_started_at);
+    if (!schedule.unlockedRooms.some((room) => room.id === roomJourney.active_room_id)) {
+      roomJourney.active_room_id = schedule.unlockedRooms[0]?.id || "kitchen";
+      await persistRoomJourneyChanges({ active_room_id: roomJourney.active_room_id });
+    }
+    await refreshRoomJourneyProgress();
+    renderRoomJourney();
+    return true;
+  } catch (error) {
+    const missing = error?.code === "42P01" || /synqme_room_journeys.*does not exist|could not find the table.*synqme_room_journeys/i.test(String(error?.message || ""));
+    if (missing) {
+      roomJourneyTableUnavailable = true;
+      if (!roomJourneyWarningShown) {
+        console.info("SYNQ.ME room journey storage is unavailable. Apply the room journey migration.", error);
+        roomJourneyWarningShown = true;
+      }
+    } else {
+      console.info("SYNQ.ME could not load this account's room journey.", error);
+    }
+    renderRoomJourney();
+    return false;
+  } finally {
+    roomJourneyLoadInFlight = false;
+  }
+}
+
+async function setRoomJourneyFocus(roomId) {
+  const schedule = roomSchedule();
+  if (!schedule?.unlockedRooms.some((room) => room.id === roomId)) return;
+  if (!roomJourney || roomJourney.active_room_id === roomId) return;
+  roomJourney.active_room_id = roomId;
+  renderRoomJourney();
+  await persistRoomJourneyChanges({ active_room_id: roomId });
+}
+
+function handleRoomJourneyClick(event) {
+  const task = event.target.closest("[data-room-task-prompt]");
+  if (task && elements.messageInput) {
+    elements.messageInput.value = task.dataset.roomTaskPrompt || "";
+    elements.messageInput.focus();
+    elements.messageInput.dispatchEvent(new Event("input", { bubbles: true }));
+    return;
+  }
+  const room = event.target.closest("[data-room-select]");
+  if (room && !room.disabled) void setRoomJourneyFocus(room.dataset.roomSelect);
+}
+
 function classifyPreference(message) {
   const text = message.toLowerCase();
   if (/glass|fragile|delicate|mug|cup|top rack|upper rack/.test(text)) return "Care & placement";
@@ -2674,6 +2972,7 @@ function savePreference(message) {
     state.preferences.unshift(preference);
   }
   state.preferences = state.preferences.slice(0, 24);
+  void refreshRoomJourneyProgress();
 }
 
 
@@ -3055,21 +3354,28 @@ function renderAll() {
   updateDecisionSummary();
   renderSettingsDetails();
   renderPexiReadiness();
+  renderRoomJourney();
 
   const name = state.profile.ownerName.trim();
   const robotName = state.profile.robotName.trim();
   const companionName = robotName || "your companion";
   if (elements.companionName) elements.companionName.textContent = companionName;
-  if (elements.messageInput) elements.messageInput.placeholder = "Tell " + selectedCompanionDisplayName() + " how you like things.";
+  if (elements.messageInput) {
+    const activeRoom = ROOM_JOURNEY_ROOMS.find((room) => room.id === roomJourney?.active_room_id);
+    elements.messageInput.placeholder = activeRoom
+      ? "Tell " + selectedCompanionDisplayName() + " how you like your " + activeRoom.label.toLowerCase() + " handled..."
+      : "Tell " + selectedCompanionDisplayName() + " how you like things.";
+  }
   if (elements.mobileOwnerTitle) elements.mobileOwnerTitle.textContent = name ? name + "’s SecondSelf" : "Your SecondSelf";
   const count = state.preferences.length;
   const functionsCount = state.functions.length;
   if (elements.mobileJourneyText) {
-    elements.mobileJourneyText.textContent = count
-      ? count + (count === 1 ? " preference" : " preferences") + " captured · " + functionsCount + (functionsCount === 1 ? " home interest" : " home interests")
-      : functionsCount
-        ? functionsCount + (functionsCount === 1 ? " home interest selected" : " home interests selected") + " · keep building"
-        : "Choose home interests and start your first conversation";
+    const activeRoom = ROOM_JOURNEY_ROOMS.find((room) => room.id === roomJourney?.active_room_id);
+    elements.mobileJourneyText.textContent = activeRoom
+      ? activeRoom.name + " · monthly room journey"
+      : count
+        ? count + (count === 1 ? " preference captured" : " preferences captured") + " · your SecondSelf is growing"
+        : "Your Kitchen journey starts here";
   }
   const achieved = MILESTONES.filter(milestoneUnlocked).length;
   const progress = Math.round((achieved / MILESTONES.length) * 100);
