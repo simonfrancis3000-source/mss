@@ -347,6 +347,12 @@ function betterFallbackFollowup(message, profile = {}, history = []) {
       "Do you tend to have a regular laundry day, or wash smaller loads as things need doing?"
     ]);
   }
+  if (/(bathroom|bath|shower|toilet|sink)/i.test(lower) && /(tell me|about|what|how|learn|preferences?)/i.test(lower)) {
+    return choose([
+      "Of course. In the bathroom, I’d learn how you want the sink, shower, bath and toilet cleaned, which products are safe for each surface, how towels and toiletries are handled, and what should remain private. Which part would you like to start with?",
+      "We can build your bathroom preferences around cleaning priorities, towels and linen, toiletries and storage, approved products, and privacy boundaries. What matters most to you in that room?"
+    ]);
+  }
   if (/(paper towels?|spray|cleaning product|surface cleaner|detergent)/i.test(text)) {
     return choose([
       "Are those your go-to supplies around the whole home, or do you switch products depending on the surface?",
