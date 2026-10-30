@@ -413,8 +413,6 @@ let voiceInputMuted = false;
 let phonicVoiceConversation = null;
 const phonicItemMap = new Map();
 const phonicTurnMetadata = new Map();
-const phonicCanonicalAssistantItemKeys = new Set();
-let pendingPhonicAssistantMessageIndex = null;
 let speechRecognition = null;
 let recognitionListening = false;
 let recognitionTranscript = "";
@@ -3840,69 +3838,49 @@ function normalisePhonicText(value) {
 function syncPhonicTranscriptItems(items) {
   let changed = false;
   let userAdded = false;
+
   for (const item of items || []) {
     const textValue = typeof item?.text === "string" ? item.text.trim() : "";
-    if (!textValue || (item.role !== "user" && item.role !== "assistant")) continue;
+
+    // Phonic's audio_chunk transcript is a live, partial speech fragment. It
+    // can arrive as a single token ("I") before the canonical AMÏA tool reply.
+    // Freya's complete assistant_text is committed by handlePhonicAmiaToolCall
+    // before audio playback, so never create chat messages from assistant
+    // transcript fragments. Only the user's completed/transcribed speech is
+    // synchronised from the provider item list.
+    if (!textValue || item.role !== "user") continue;
+
     const key = String(item.itemIdx);
     if (phonicItemMap.has(key)) {
       const index = phonicItemMap.get(key);
       const previous = state.messages[index];
-      if (previous && previous.role === item.role && previous.content !== textValue &&
-          !(item.role === "assistant" && phonicCanonicalAssistantItemKeys.has(key))) {
+      if (previous && previous.role === "user" && previous.content !== textValue) {
         previous.content = textValue;
         changed = true;
       }
       continue;
     }
 
-    // The exact assistant_text returned to Phonic is already committed to chat.
-    // Attach the provider's streamed transcript item to that message rather than
-    // waiting for a transcript chunk or creating a duplicate bubble.
-    if (item.role === "assistant" && Number.isInteger(pendingPhonicAssistantMessageIndex)) {
-      const pendingMessage = state.messages[pendingPhonicAssistantMessageIndex];
-      if (pendingMessage?.role === "assistant") {
-        phonicItemMap.set(key, pendingPhonicAssistantMessageIndex);
-        phonicCanonicalAssistantItemKeys.add(key);
-        pendingPhonicAssistantMessageIndex = null;
-        continue;
-      }
-      pendingPhonicAssistantMessageIndex = null;
-    }
-
-    if (item.role === "assistant" && isCompanionWelcomeMessage(textValue)) {
-      const norm = normalisePhonicText(textValue);
-      const existingWelcomeIndex = state.messages.findIndex((message) =>
-        message.role === "assistant" &&
-        isCompanionWelcomeMessage(message.content) &&
-        normalisePhonicText(message.content) === norm
-      );
-      if (existingWelcomeIndex >= 0) {
-        phonicItemMap.set(key, existingWelcomeIndex);
-        continue;
-      }
-    }
-
     const timestamp = new Date().toISOString();
-    state.messages.push({ role: item.role, content: textValue, timestamp });
+    state.messages.push({ role: "user", content: textValue, timestamp });
     phonicItemMap.set(key, state.messages.length - 1);
     changed = true;
+    userAdded = true;
 
-    if (item.role === "user") {
-      userAdded = true;
-      const clarificationRequest = isClarificationRequest(textValue);
-      const preferenceIdsBeforeTurn = new Set(state.preferences.map((preference) => String(preference.id)));
-      const answeredPendingClarification = resolvePendingClarification(textValue);
-      if (!answeredPendingClarification && !clarificationRequest) savePreference(textValue);
-      const preferenceWasAdded = state.preferences.some((preference) => !preferenceIdsBeforeTurn.has(String(preference.id)));
-      const shouldExtractStructuredMemory = shouldExtractPersonaMemory(textValue, preferenceWasAdded) ||
-        Boolean(answeredPendingClarification && textValue.length >= 4);
-      phonicTurnMetadata.set(key, {
-        timestamp,
-        shouldExtractStructuredMemory,
-        text: textValue
-      });
-    }
+    const clarificationRequest = isClarificationRequest(textValue);
+    const preferenceIdsBeforeTurn = new Set(state.preferences.map((preference) => String(preference.id)));
+    const answeredPendingClarification = resolvePendingClarification(textValue);
+    if (!answeredPendingClarification && !clarificationRequest) savePreference(textValue);
+    const preferenceWasAdded = state.preferences.some((preference) => !preferenceIdsBeforeTurn.has(String(preference.id)));
+    const shouldExtractStructuredMemory = shouldExtractPersonaMemory(textValue, preferenceWasAdded) ||
+      Boolean(answeredPendingClarification && textValue.length >= 4);
+    phonicTurnMetadata.set(key, {
+      timestamp,
+      shouldExtractStructuredMemory,
+      text: textValue
+    });
   }
+
   if (changed) {
     state.messages = state.messages.slice(-5000);
     persist();
@@ -3928,9 +3906,6 @@ function handlePhonicVoiceEvent(event) {
       if (elements.conversationStatus) elements.conversationStatus.textContent = companion + " is listening";
       break;
     case "user_started_speaking":
-      // If the user interrupts an assistant turn, its intended text is already
-      // saved in chat. Do not let the next assistant transcript attach to it.
-      pendingPhonicAssistantMessageIndex = null;
       updateVoiceExperience("listening", "Listening to you…");
       if (elements.conversationStatus) elements.conversationStatus.textContent = "Listening";
       break;
@@ -3960,7 +3935,6 @@ function handlePhonicVoiceEvent(event) {
       assistantIsSpeaking = false;
       const synced = syncPhonicTranscriptItems(event.items);
       if (synced.userAdded) void flushCloudSave();
-      pendingPhonicAssistantMessageIndex = null;
       const latestUser = [...state.messages].reverse().find((message) => message.role === "user")?.content || "";
       const latestAssistant = state.messages[state.messages.length - 1]?.role === "assistant"
         ? state.messages[state.messages.length - 1].content
@@ -4063,13 +4037,12 @@ async function handlePhonicAmiaToolCall({ name, parameters = {}, items = [] } = 
     phonicTurnMetadata.delete(latestKey || "fallback");
     if (state.profile.shareAnonymizedLearning === true) void contributeSharedKnowledgeFromTurn();
 
-    // Save the exact text that Phonic is about to speak. Its streamed transcript
-    // chunks are linked back to this bubble and never create a second copy.
+    // Save the exact text that Phonic is about to speak. Assistant audio
+    // transcript fragments are intentionally ignored by the chat synchroniser.
     const latestMessage = state.messages[state.messages.length - 1];
     if (!(latestMessage?.role === "assistant" &&
           normalisePhonicText(latestMessage.content) === normalisePhonicText(spokenReply))) {
       state.messages.push({ role: "assistant", content: spokenReply, timestamp: new Date().toISOString() });
-      pendingPhonicAssistantMessageIndex = state.messages.length - 1;
     }
     persist();
     renderAll();
@@ -4102,8 +4075,6 @@ async function openVoiceExperience() {
   assistantIsSpeaking = false;
   phonicItemMap.clear();
   phonicTurnMetadata.clear();
-  phonicCanonicalAssistantItemKeys.clear();
-  pendingPhonicAssistantMessageIndex = null;
   updateVoiceCompanionLabels();
   updateVoiceModeButton();
   if (elements.voiceRetrySpeechButton) elements.voiceRetrySpeechButton.hidden = true;
