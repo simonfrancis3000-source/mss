@@ -46,7 +46,13 @@ function firstPersonSubjectVerb(value) {
     "don't": "I don't", cannot: "I cannot", "can't": "I can't",
     will: "I will", "won't": "I won't", would: "I would",
     "wouldn't": "I wouldn't", should: "I should", "shouldn't": "I shouldn't",
-    could: "I could", might: "I might", may: "I may", must: "I must"
+    could: "I could", might: "I might", may: "I may", must: "I must",
+    cleans: "I clean", handles: "I handle", helps: "I help", learns: "I learn",
+    knows: "I know", understands: "I understand", remembers: "I remember",
+    uses: "I use", moves: "I move", asks: "I ask", checks: "I check",
+    works: "I work", keeps: "I keep", manages: "I manage", organises: "I organise",
+    organizes: "I organize", supports: "I support", notifies: "I notify",
+    starts: "I start", stops: "I stop", follows: "I follow", prepares: "I prepare"
   };
   return fixed[verb] || "I " + verb;
 }
@@ -74,7 +80,7 @@ function rewriteCompanionReferences(value, companionName = "Freya") {
   );
 
   const subject = new RegExp(
-    "\\\\b" + robot + "\\\\s+(can|could|will|would|should|must|might|may|is|are|was|were|has|have|needs|need|does|do|doesn't|can't|cannot|won't|wouldn't|shouldn't)\\\\b",
+    "\\\\b" + robot + "\\\\s+(can|could|will|would|should|must|might|may|is|are|was|were|has|have|needs|need|does|do|doesn't|can't|cannot|won't|wouldn't|shouldn't|cleans|handles|helps|learns|knows|understands|remembers|uses|moves|asks|checks|works|keeps|manages|organises|organizes|supports|notifies|starts|stops|follows|prepares)\\\\b",
     "gi"
   );
   reply = reply.replace(subject, (match, verb) =>
@@ -92,7 +98,7 @@ function rewriteCompanionReferences(value, companionName = "Freya") {
       (match) => preserveInitialCapital(match, match.split(/\\\\s+/)[0].toLowerCase() + " me")
     );
     reply = reply.replace(
-      new RegExp("\\\\b" + escapedName + "\\\\s+(can|could|will|would|should|must|might|may|is|are|was|were|has|have|needs|need|does|do|doesn't|can't|cannot|won't|wouldn't|shouldn't)\\\\b", "gi"),
+      new RegExp("\\\\b" + escapedName + "\\\\s+(can|could|will|would|should|must|might|may|is|are|was|were|has|have|needs|need|does|do|doesn't|can't|cannot|won't|wouldn't|shouldn't|cleans|handles|helps|learns|knows|understands|remembers|uses|moves|asks|checks|works|keeps|manages|organises|organizes|supports|notifies|starts|stops|follows|prepares)\\\\b", "gi"),
       (match, verb) => preserveInitialCapital(match, firstPersonSubjectVerb(verb))
     );
   }
