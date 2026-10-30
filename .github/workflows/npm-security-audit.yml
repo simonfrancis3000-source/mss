@@ -6,36 +6,41 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   audit-and-regression:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out pull request branch
+      - name: Check out source
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
-          fetch-depth: 0
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
-      - name: Reconcile lockfile with manifest
-        env:
-          PUSH_BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}
-        run: |
-          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
-          if ! git diff --quiet -- package-lock.json; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add package-lock.json
-            git commit -m "Regenerate lockfile after removing unused model dependencies"
-            git push origin "HEAD:$PUSH_BRANCH"
-          fi
       - name: Install locked dependencies
         run: npm ci --ignore-scripts
+      - name: Verify retired local-model dependencies are absent
+        run: |
+          node --input-type=commonjs <<'NODE'
+          const lock = require('./package-lock.json');
+          const retired = [
+            '@huggingface/transformers',
+            'kokoro-js',
+            'onnxruntime-node',
+            'onnxruntime-web',
+            'sharp',
+            'protobufjs',
+            'tar'
+          ];
+          const present = retired.filter((name) => lock.packages[`node_modules/${name}`]);
+          if (present.length) {
+            console.error('Unexpected retired packages in lockfile:', present.join(', '));
+            process.exit(1);
+          }
+          console.log('Retired local-model and vulnerable transitive packages are absent.');
+          NODE
       - name: Run npm audit and print package-level findings
         shell: bash
         run: |
