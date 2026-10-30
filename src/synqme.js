@@ -2623,6 +2623,18 @@ function roomSchedule() {
   catch (error) { console.info("Room journey schedule unavailable.", error); return null; }
 }
 
+function buildCurrentRoomJourneyContext() {
+  const schedule = roomSchedule();
+  if (!schedule || !roomJourney) return null;
+  const room = schedule.unlockedRooms.find((item) => item.id === roomJourney.active_room_id) || schedule.unlockedRooms[0];
+  if (!room) return null;
+  return {
+    activeRoomId: room.id,
+    completedTaskIds: roomCompletedIds(room),
+    unlockedRoomCount: schedule.unlockedCount
+  };
+}
+
 function roomCompletedIds(room) {
   const ids = roomJourney?.room_progress?.[room.id]?.completed_task_ids;
   return Array.isArray(ids) ? ids : [];
@@ -4523,6 +4535,7 @@ async function requestAIReply(repairMode = false) {
           askBeforeActions: state.profile.confirmActions
         },
         domesticFunctions,
+        roomJourney: buildCurrentRoomJourneyContext(),
         pendingClarification: state.pendingClarification,
         memoryReferences: memoryReferences.map(({ role, content, timestamp, topics }) => ({ role, content, timestamp, topics })),
         personaMemories: relevantPersonaMemories.map(({ memory_key, topic, kind, scope_key, statement, status, confidence, conditions, source_message, source_timestamp, conflict_group }) => ({
