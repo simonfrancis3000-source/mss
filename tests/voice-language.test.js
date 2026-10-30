@@ -88,3 +88,22 @@ test("detects repeated assistant answers and materially similar questions", () =
     { role: "assistant", content: "I can leave the parcel by the door and tell you when it arrives." }
   ]), true);
 });
+
+
+test("first-person rewriting covers capability, behaviour and reference statements", () => {
+  assert.equal(enforceFirstPersonTaskQuestions("The robot cleans the worktop every morning."), "I clean the worktop every morning.");
+  assert.equal(enforceFirstPersonTaskQuestions("Your robot handles the laundry."), "I handle the laundry.");
+  assert.equal(enforceFirstPersonTaskQuestions("The robot remembers your preferences."), "I remember your preferences.");
+  assert.equal(enforceFirstPersonTaskQuestions("The robot's schedule is stored here."), "My schedule is stored here.");
+  assert.equal(enforceFirstPersonTaskQuestions("You can ask the robot for help."), "You can ask me for help.");
+  assert.equal(enforceFirstPersonTaskQuestions("Freya is not connected to your home yet.", "Freya"), "I am not connected to your home yet.");
+});
+
+test("repeat detection checks semantically similar questions without flagging new topics", () => {
+  const history = [
+    { role: "assistant", content: "What should I do if a delivery arrives while you are out?" },
+    { role: "user", content: "Leave it by the door." }
+  ];
+  assert.equal(assistantReplyRepeatsRecentAssistant("What should I do when a delivery arrives while you are away?", history), true);
+  assert.equal(assistantReplyRepeatsRecentAssistant("How should I handle wet floors after cleaning?", history), false);
+});
