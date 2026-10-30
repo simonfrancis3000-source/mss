@@ -73,8 +73,8 @@
       <section class="hero">
         <div class="hero-copy">
           <div class="eyebrow">SYNQ.ME <span class="eyebrow-divider">/</span> YOUR PERSONALISATION LAYER</div>
-          <h1>A SecondSelf that<br /><span>knows you.</span></h1>
-          <p>Build your digital persona through a guided, room-by-room journey. Start with the Kitchen; a new room unlocks on your own monthly anniversary. No robot is needed to get started.</p>
+          <h1>A SecondSelf that<br /><span>understands how you live.</span></h1>
+          <p>Talk naturally about your routines, preferences and boundaries. A few minutes each week helps AMÏA build a more useful digital persona. You do not need to own or connect a robot.</p>
         </div>
         <div class="demo-stamp"><span class="stamp-dot"></span><span id="providerLabel">Checking AI connection</span></div>
       </section>
@@ -96,19 +96,6 @@
             <div class="panel-status"><span class="status-dot"></span><span id="conversationStatus">Ready to talk</span></div>
           </div>
 
-          <div class="local-ai-progress" id="localAIProgress" hidden aria-live="polite">
-            <div class="local-ai-progress-meta">
-              <span id="localAIProgressLabel">Downloading local AMÏA model</span>
-            </div>
-            <div class="local-ai-progress-row">
-              <div class="local-ai-progress-track" id="localAIProgressTrack" role="progressbar" aria-label="Local AMÏA model download progress" aria-valuemin="0" aria-valuemax="100">
-                <span class="local-ai-progress-fill" id="localAIProgressFill"></span>
-              </div>
-              <span class="local-ai-progress-percent" id="localAIProgressPercent" hidden aria-label="Download percentage"></span>
-            </div>
-            <div class="local-ai-progress-detail" id="localAIProgressDetail" hidden></div>
-          </div>
-
           <div class="chat-stage">
             <div class="chat-workspace">
               <div class="chat-transcript-shell" id="chatTranscriptShell">
@@ -117,7 +104,7 @@
                     <div class="message-avatar">E</div>
                     <div class="message-body">
                       <div class="message-meta">ELO</div>
-                      <p>Hi, I’m your SYNQ.ME guide. Let’s start building your SecondSelf. Which parts of home life would you like it to understand first?</p>
+                      <p>Hi, I’m your SYNQ.ME guide. We’ll shape a digital persona around your routines, preferences and boundaries. What part of home life would you like to start with?</p>
                     </div>
                   </article>
                 </div>
@@ -147,14 +134,26 @@
           </div>
         </section>
 
-        <aside class="side-stack">
+      </section>
+
+      <details class="persona-insights-drawer" id="personaInsights">
+        <summary class="persona-insights-summary">
+          <span class="insights-summary-mark" aria-hidden="true">S</span>
+          <span class="insights-summary-copy">
+            <strong>Your SecondSelf at a glance</strong>
+            <small>Saved preferences, persona progress and future-task preview</small>
+          </span>
+          <span class="mini-tag" id="memoryCount">0 MEMORIES</span>
+          <span class="insights-chevron" aria-hidden="true">+</span>
+        </summary>
+        <aside class="side-stack" id="personaInsightsPanels">
           <section class="panel persona-panel" aria-labelledby="personaTitle">
             <div class="panel-heading">
               <div>
                 <div class="section-kicker">02 / Digital persona</div>
                 <h2 id="personaTitle">Your SecondSelf</h2>
               </div>
-              <span class="mini-tag" id="memoryCount">0 MEMORIES</span>
+              <span class="mini-tag">LIVE PERSONA</span>
             </div>
             <div class="persona-profile">
               <div class="persona-mark" aria-hidden="true">
@@ -212,7 +211,7 @@
             </div>
           </section>
         </aside>
-      </section>
+      </details>
 
       <section class="panel room-journey-panel" id="roomJourneyPanel" aria-labelledby="roomJourneyTitle">
         <div class="panel-heading room-journey-heading">
@@ -264,7 +263,7 @@
             <div class="section-kicker">PERSONALISE YOUR APP</div>
             <h2 id="settingsTitle">Settings</h2>
             <p id="settingsIntro">Make SYNQ.ME feel like yours. Your profile, preferences and conversation history are saved to your account.</p>
-            <p id="profileSetupNotice" class="profile-setup-notice" hidden>First, add your name and choose a name for your future robot before beginning.</p>
+            <p id="profileSetupNotice" class="profile-setup-notice" hidden>Add your name to begin. Naming your future companion is optional.</p>
           </div>
           <button type="button" class="settings-close" id="closeSettings" aria-label="Close settings">×</button>
         </div>
@@ -447,7 +446,7 @@
             <span>End</span>
           </button>
         </div>
-        <p class="voice-privacy-note">Microphone access is used for this conversation. Browser voice quality varies by device.</p>
+        <p class="voice-privacy-note">Your microphone is used for the live conversation. Spoken words appear as text in this chat.</p>
       </div>
     </section>
   </body>
