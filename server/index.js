@@ -180,138 +180,6 @@ function focusedPreferenceFollowup(message, profile = {}) {
   return prefix + "Got it. What is the next important detail I should understand?";
 }
 
-function isClarificationRequest(message) {
-  const value = String(message || "").toLowerCase().replace(/[.!?]+$/g, "").trim();
-  return /^(such as what|like what|what do you mean|what do you mean by that|examples?|give me an example|can you give me an example|can you give me some examples|could you give me an example|could you give me some examples|what kind of things|what sort of things|can you explain that|could you explain that)$/.test(value);
-}
-
-function clarificationHelpReply(previousQuestion, latestPreference = "") {
-  const question = String(previousQuestion || "").toLowerCase();
-  const preference = String(latestPreference || "").trim();
-  if (/(avoid|prevent|left untouched|never happen|shouldn't|should not)/i.test(question)) {
-    return "For example, you might want your SecondSelf to ask before moving personal belongings, avoid touching fragile or private items, leave certain rooms alone, or check with you before throwing anything away. Those are only examples—do any apply to you, or is there something else?";
-  }
-  if (/(ask|permission|confirm|check with me)/i.test(question)) {
-    return "For example, asking before moving your belongings, using a new cleaning product, throwing something away, or entering a private room. Which, if any, would you want your SecondSelf to check with you first?";
-  }
-  if (/(time|timing|schedule|morning|evening|when)/i.test(question)) {
-    return "For example, you might prefer a task before breakfast, after you leave a room, at a set time each day, or only when needed. Is any of those closer to what you have in mind?";
-  }
-  if (/(order|sequence|first|before|after)/i.test(question)) {
-    return "For example, cleaning surfaces before floors, putting items away before wiping a counter, or finishing one room before moving to the next. Is there a particular order you prefer?";
-  }
-  if (/(clean|surface|floor|vacuum|tidy|kitchen)/i.test(question) || /(clean|surface|floor|vacuum|tidy|kitchen)/i.test(preference)) {
-    return "For example, protecting delicate surfaces, using only products you approve, leaving personal items where they are, or cleaning high-use areas first. Which detail matters in your home?";
-  }
-  return "For example, you can tell me about timing, task order, items that need special care, or things you want me to ask before changing. Is there one of those you want to explore first?";
-}
-
-function betterFallbackFollowup(message, profile = {}, history = []) {
-  const text = String(message || "").trim();
-  const lower = text.toLowerCase();
-  const robotName = String(profile.robotName || "").trim() || "robot";
-  const priorAssistant = [...history.slice(0, -1)].reverse().find((item) => item.role === "assistant")?.content || "";
-  const recentAssistant = history.filter((item) => item.role === "assistant").slice(-6).map((item) => item.content);
-  const normalise = (value) => String(value || "").toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
-  const repeated = (question) => recentAssistant.some((reply) => {
-    const a = normalise(reply), b = normalise(question);
-    return a === b || a.includes(b) || b.includes(a);
-  });
-  const choose = (options) => {
-    const fresh = options.find((option) => !repeated(option));
-    if (fresh) return fresh;
-    const newAngles = [
-      "Can you walk me through how that usually happens at home?",
-      "What tends to happen just before you need that done?",
-      "What small detail would make the biggest difference to you in that situation?",
-      "When this doesn’t go the way you like, what usually goes wrong?"
-    ];
-    return newAngles.find((option) => !repeated(option)) || "What does a typical day look like for you in that situation?";
-  };
-
-  if (/^(morning|in the morning|evening|in the evening|afternoon|at night)$/i.test(text) && /(morning and evening|what time|which times|when would|time of day)/i.test(priorAssistant)) {
-    if (/morning/i.test(text)) return "Morning sounds like a good fit. Is that because you’re usually up and about then, or would you prefer it done before you start using the kitchen?";
-    if (/evening|night/i.test(text)) return "Evening, then. Would you picture that happening after you’ve cooked or eaten, or at a set time regardless?";
-    return "That gives me a better picture. Is that time tied to something in your day, or does it simply suit you best?";
-  }
-  if (/^(washing|wash|washing and drying|wash and dry|laundering)$/i.test(text) && /(which part|sorting, washing|putting clothes away)/i.test(priorAssistant)) {
-    return choose([
-      "When you wash clothes, do you usually separate them by colour first, or pay more attention to fabric and care labels?",
-      "Are there any garments you treat differently from the rest—delicates, wool, work clothes, or anything you prefer to air-dry?",
-      "Do you tend to have a regular laundry day, or wash smaller loads as things need doing?"
-    ]);
-  }
-  if (/(paper towels?|spray|cleaning product|surface cleaner|detergent)/i.test(text)) {
-    return choose([
-      "Are those your go-to supplies around the whole home, or do you switch products depending on the surface?",
-      "Is there a surface you’re particularly careful with, where the wrong product could cause damage?",
-      "When you clean, do you prefer to keep your usual products close at hand, or have them brought out only when needed?"
-    ]);
-  }
-  if (/(twice|two times|2 times|daily|every day|each day)/i.test(text) && /(kitchen|counter|worktop|surface|clean|wipe)/i.test(text)) {
-    return choose([
-      "When you say twice a day, is one of those cleans usually after cooking or meals, or do you prefer set times?",
-      "Would you want the same quick clean each time, or a more thorough one at a particular point in the day?",
-      "Is the aim mainly to keep the surfaces hygienic, clear away crumbs and spills, or both?"
-    ]);
-  }
-  if (/(ask me|ask before|check with me|permission|confirm before|without asking|avoid|boundary)/i.test(text) ||
-      (/avoid|permission|boundary/i.test(priorAssistant) && text.length < 100)) {
-    return choose([
-      "That’s an important boundary. Are you most concerned about belongings being moved or damaged, private spaces, or decisions being made without checking with you?",
-      "What kinds of things should it never decide for itself—moving belongings, throwing something away, or using a product you haven’t approved?",
-      "Would you want it to check with you about every uncertain action, or only where there’s a real risk of damage, privacy, or an unwanted change?"
-    ]).replace(/\bthe robot\b/gi, robotName).replace(/\byour robot\b/gi, "your " + robotName);
-  }
-  if (/(laundry|washing|clothes|fold|drying|wardrobe)/i.test(lower)) {
-    return choose([
-      "What tends to matter most with laundry in your home: keeping colours separate, protecting delicate items, or having everything ready when you need it?",
-      "How do you like clean clothes left—folded, hung up, or put back in specific places?",
-      "Are there any laundry habits you already have that you’d definitely want your robot to follow?"
-    ]).replace(/\byour robot\b/gi, "your " + robotName);
-  }
-  if (/(vacuum|floor|carpet|tidy|cleaning|clean|surface|counter|worktop|kitchen)/i.test(lower)) {
-    return choose([
-      "When a room feels properly looked after to you, what do you notice first: clean surfaces, clear floors, or everything being back where it belongs?",
-      "Are there parts of the room you like to deal with first, or do you tend to work around whatever needs attention?",
-      "Is there anything in that space that should stay exactly where it is, even during a tidy-up?"
-    ]).replace(/\byour robot\b/gi, "your " + robotName);
-  }
-  if (/(cook|meal|food|recipe|ingredient|grocery|shopping)/i.test(lower)) {
-    return choose([
-      "When it comes to meals, do you prefer familiar favourites or a bit of variety during the week?",
-      "Are there ingredients you avoid for taste, preference, or practical reasons?",
-      "What usually makes meal planning easier for you: knowing what’s in the fridge, having a plan, or keeping things flexible?"
-    ]);
-  }
-  if (/(pet|dog|cat|plant|water|garden)/i.test(lower)) {
-    return choose([
-      "What little signs tell you your pet or plants need attention?",
-      "Are there any routines around that you’d want kept exactly as they are?",
-      "Is there anything you’d want the robot to check with you about rather than decide on its own?"
-    ]).replace(/\byour robot\b/gi, "your " + robotName);
-  }
-  if (/^(yes|yeah|yep|no|nope|probably|maybe|not sure|i don't know)$/i.test(text)) {
-    return "Fair enough. Would it help to think through a real example at home, or should we start with what usually happens today?";
-  }
-  if (text.endsWith("?") || /^(what|why|how|when|where|who|can you|could you|do you|would you|is it|are there)\b/i.test(text)) {
-    if (/(such as what|like what|what do you mean|examples?)/i.test(text)) return clarificationHelpReply(priorAssistant, "");
-    return "Good question. Let me make sure I answer what you’re actually asking: are you thinking about how SYNQ.ME learns the preference, or how a compatible robot might use it in future?";
-  }
-  if (priorAssistant) {
-    return choose([
-      "I’m getting a clearer picture now. What’s the part of that routine you’d be most particular about?",
-      "That helps. Is there a real example from your own home that would make this clearer?",
-      "I see. What would be the most frustrating thing for the robot to get wrong in that situation?"
-    ]);
-  }
-  return choose([
-    "Tell me a little more about how that works at home for you. What do you tend to do first?",
-    "I'm curious—what makes that feel right for you: convenience, consistency, or something else?",
-    "What would you notice first if your future robot really understood your way of doing that?"
-  ]);
-}
-
 function guardRobotExecutionClaims(reply, preferences, language = "en") {
   const claimPattern = /\b(?:the\s+)?robot\s+(?:will|would)\s+(?:automatically\s+)?(?:follow|place|put|handle|sort|load|unload|start|turn on|execute|perform|carry out)\b|\b(?:will happen automatically|automatically carry out)\b/i;
   if (!claimPattern.test(reply)) return reply;
@@ -483,17 +351,6 @@ const app = http.createServer(async (request, response) => {
     }
 
     const latestUserMessage = messages[messages.length - 1].content;
-    const previousAssistantMessage = messages.length > 1 && messages[messages.length - 2].role === "assistant"
-      ? messages[messages.length - 2].content
-      : "";
-    if (isClarificationRequest(latestUserMessage) && previousAssistantMessage && profile.preferredLanguage === "en") {
-      return json(response, 200, {
-        reply: clarificationHelpReply(previousAssistantMessage, messages[messages.length - 3]?.content || ""),
-        provider: PROVIDER,
-        model: MODEL
-      }, headers || {});
-    }
-
     const amiaResult = await createAmiaReply({
       apiKey: DEEPSEEK_PERSON_API_KEY,
       searchApiKey: DEEPSEEK_SEARCH_API_KEY,
@@ -514,22 +371,11 @@ const app = http.createServer(async (request, response) => {
     const safeReply = guardRobotExecutionClaims(namedReply, preferences, profile.preferredLanguage);
     const lowValueReply = /I've captured this preference for your browser-based SecondSelf|I've added it to your local digital persona|That's useful context for your SecondSelf|Let's make that preference more precise|What detail would matter most to get right|Can you walk me through how that usually happens at home|What is the next important detail I should understand/i.test(safeReply);
     const requiresRepair = lowValueReply || responseRepeatsUser(safeReply, latestUserMessage);
-    if (requiresRepair && repairMode) {
-      return json(response, 200, {
-        reply: safeReply,
-        model: selectedModel,
-        provider: PROVIDER,
-        responseNeedsReview: true
-      }, headers || {});
-    }
-    const finalReply = requiresRepair
-      ? betterFallbackFollowup(latestUserMessage, profile, messages)
-      : safeReply;
     return json(response, 200, {
-      reply: finalReply,
+      reply: safeReply,
       model: selectedModel,
       provider: PROVIDER,
-      usedFallback: requiresRepair
+      responseNeedsReview: requiresRepair
     }, headers || {});
   } catch (error) {
     const status = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
