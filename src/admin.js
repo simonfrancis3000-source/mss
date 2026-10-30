@@ -2,11 +2,9 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = String(import.meta.env.VITE_SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || "";
-const API_BASE = String(
-  import.meta.env.VITE_SYNQME_API_BASE_URL ||
-  import.meta.env.VITE_PHONIC_API_BASE_URL ||
-  "https://synqme-api.onrender.com"
-).replace(/\/+$/, "");
+const ADMIN_USAGE_URL = SUPABASE_URL
+  ? SUPABASE_URL + "/functions/v1/synqme-admin-usage"
+  : "";
 
 const supabase = SUPABASE_URL && SUPABASE_KEY
   ? createClient(SUPABASE_URL, SUPABASE_KEY, {
@@ -93,8 +91,12 @@ async function loadDashboard() {
   try {
     const token = await getAccessToken();
     const period = el("periodSelect").value;
-    const response = await fetch(API_BASE + "/api/admin/usage?period=" + encodeURIComponent(period), {
-      headers: { Authorization: "Bearer " + token },
+    if (!ADMIN_USAGE_URL) throw new Error("Supabase is not configured in this build. Check the frontend environment variables.");
+    const response = await fetch(ADMIN_USAGE_URL + "?period=" + encodeURIComponent(period), {
+      headers: {
+        Authorization: "Bearer " + token,
+        apikey: SUPABASE_KEY
+      },
       cache: "no-store"
     });
     const payload = await response.json().catch(() => ({}));
