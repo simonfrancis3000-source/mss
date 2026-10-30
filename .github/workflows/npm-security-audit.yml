@@ -1,0 +1,59 @@
+name: npm security audit
+
+on:
+  pull_request:
+    branches: [SYNQ.ME]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit-and-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Run npm audit and print package-level findings
+        shell: bash
+        run: |
+          set +e
+          npm audit --json > npm-audit.json
+          audit_status=$?
+          set -e
+          echo "npm audit exit code: $audit_status"
+          node --input-type=commonjs <<'NODE'
+          const fs = require('node:fs');
+          const report = JSON.parse(fs.readFileSync('npm-audit.json', 'utf8'));
+          console.log('Vulnerability totals:', JSON.stringify(report.metadata?.vulnerabilities ?? {}));
+          for (const [name, item] of Object.entries(report.vulnerabilities ?? {})) {
+            console.log(JSON.stringify({
+              package: name,
+              severity: item.severity,
+              direct: item.isDirect,
+              range: item.range,
+              via: item.via,
+              effects: item.effects,
+              fixAvailable: item.fixAvailable
+            }));
+          }
+          NODE
+      - name: Upload full npm audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-audit-report
+          path: npm-audit.json
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Run application tests
+        run: npm test
+      - name: Build production frontend
+        run: npm run build
