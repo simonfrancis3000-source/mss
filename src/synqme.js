@@ -2,7 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { createPhonicVoiceConversation } from "./phonic-voice.js";
 
 const STORAGE_KEY = "synqme-demo-v1";
-const LOCAL_MODEL_LABEL = "On-device AI";
+const LOCAL_MODEL_LABEL = "DeepSeek V4.1-Flash-1017";
 const ACCOUNT_DRAFT_KEY = "synqme-pending-account-migration-v1";
 const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
@@ -280,7 +280,7 @@ function initialState() {
     functions: [],
     pendingClarification: null,
     apiConnected: false,
-    apiProvider: "local",
+    apiProvider: "deepseek",
     apiModel: LOCAL_MODEL_LABEL,
     apiConfigured: true,
     apiError: "",
@@ -343,7 +343,7 @@ function loadState() {
       functions: Array.isArray(saved.functions) ? saved.functions.filter((id) => ACTIVITIES.some((a) => a.id === id)) : [],
       pendingClarification: saved.pendingClarification && typeof saved.pendingClarification === "object" ? saved.pendingClarification : null,
       apiConnected: false,
-      apiProvider: "local",
+      apiProvider: "deepseek",
       apiModel: LOCAL_MODEL_LABEL,
       apiConfigured: true,
       apiError: "",
@@ -2534,10 +2534,7 @@ async function openVoiceExperience() {
   updateVoiceExperience("connecting", "Requesting microphone access and connecting to Phonic…");
   if (elements.conversationStatus) elements.conversationStatus.textContent = "Connecting to Phonic";
 
-  // Warm the local AMÏA model while Phonic connects so the first spoken turn is faster.
-  void ensureLocalAIReady().catch((error) => {
-    console.info("SYNQ.ME is still preparing local AMÏA for voice.", error);
-  });
+  // Phonic handles the live audio connection; AMÏA generates every spoken reply through the backend.
 
   try {
     phonicVoiceConversation = createPhonicVoiceConversation({
@@ -3275,7 +3272,7 @@ function handleLocalAIWorkerMessage(event) {
   }
   if (data.type === "ready") {
     localAIReady = true;
-    state.apiProvider = "local";
+    state.apiProvider = "deepseek";
     state.apiModel = LOCAL_MODEL_LABEL;
     state.apiConfigured = true;
     state.apiConnected = true;
@@ -3294,7 +3291,7 @@ function handleLocalAIWorkerMessage(event) {
     localAIReady = false;
     state.apiConnected = false;
     state.apiConfigured = true;
-    state.apiProvider = "local";
+    state.apiProvider = "deepseek";
     state.apiModel = LOCAL_MODEL_LABEL;
     state.apiError = "local model unavailable";
     state.apiErrorDetail = error.message;
@@ -3333,7 +3330,7 @@ function workerFailure(error) {
 function ensureLocalAIReady() {
   if (localAIReady) return Promise.resolve();
   if (localAILoadPromise) return localAILoadPromise;
-  state.apiProvider = "local";
+  state.apiProvider = "deepseek";
   state.apiModel = LOCAL_MODEL_LABEL;
   state.apiError = "";
   state.apiErrorDetail = "";
@@ -3361,7 +3358,7 @@ function ensureLocalAIReady() {
     localAILoadPromise = null;
     localAIReady = false;
     state.apiConnected = false;
-    state.apiProvider = "local";
+    state.apiProvider = "deepseek";
     state.apiModel = LOCAL_MODEL_LABEL;
     state.apiError = "local model unavailable";
     state.apiErrorDetail = String(error?.message || "The local model could not be loaded.");
@@ -3387,14 +3384,16 @@ function runLocalAIRequest(payload) {
 
 async function requestAIReply(repairMode = false, outputMode = "text") {
   if (!repairMode) lastAIReplyUsedFallback = false;
-  state.apiProvider = "local";
-  state.apiModel = LOCAL_MODEL_LABEL;
+  state.apiProvider = "deepseek";
+  state.apiModel = "deepseek-flash";
   state.apiError = "";
   state.apiErrorDetail = "";
   try {
-    await ensureLocalAIReady();
-    if (elements.conversationStatus) elements.conversationStatus.textContent = "Your companion is thinking…";
-    const messages = state.messages.slice(-18).map((message) => ({ role: message.role, content: message.content }));
+    if (elements.conversationStatus) elements.conversationStatus.textContent = "AMÏA is thinking…";
+    const messages = state.messages.slice(-18).map((message) => ({
+      role: message.role,
+      content: message.content
+    }));
     const preferences = state.preferences.map((preference) => {
       const extracted = preferenceExtraction(preference);
       return {
@@ -3405,40 +3404,55 @@ async function requestAIReply(repairMode = false, outputMode = "text") {
         unresolvedFields: extracted.unresolvedFields
       };
     });
-    const reply = await runLocalAIRequest({
-      type: "generate",
-      messages,
-      preferences,
-      profile: {
-        ownerName: state.profile.ownerName,
-        robotName: state.profile.robotName,
-        robotType: state.profile.robotType,
-        robotVoice: state.profile.robotVoice || "female",
-        preferredLanguage: state.profile.preferredLanguage || "en",
-        askBeforeActions: state.profile.confirmActions
-      },
-      domesticFunctions: state.functions.map((id) => ACTIVITIES.find((activity) => activity.id === id)?.label).filter(Boolean),
-      outputMode,
-      repairMode
+    const response = await fetch(PHONIC_API_BASE_URL + "/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messages,
+        preferences,
+        profile: {
+          ownerName: state.profile.ownerName,
+          companionName: state.profile.robotName || "Freya",
+          robotName: state.profile.robotName,
+          robotType: state.profile.robotType,
+          robotVoice: state.profile.robotVoice || "female",
+          preferredLanguage: state.profile.preferredLanguage || "en",
+          askBeforeActions: state.profile.confirmActions
+        },
+        domesticFunctions: state.functions.map((id) => ACTIVITIES.find((activity) => activity.id === id)?.label).filter(Boolean),
+        outputMode,
+        repairMode
+      }),
+      signal: AbortSignal.timeout(40000)
     });
-    if (!reply.trim()) throw new Error("The local model returned an empty reply.");
+    let payload = {};
+    try { payload = await response.json(); } catch {}
+    if (!response.ok) {
+      const error = new Error(payload?.error || "AMÏA could not complete the request (HTTP " + response.status + ").");
+      error.apiStatus = response.status;
+      throw error;
+    }
+    const reply = typeof payload?.reply === "string" ? payload.reply.trim() : "";
+    if (!reply) throw new Error("AMÏA returned an empty response.");
+    state.apiProvider = payload.provider || "deepseek";
+    state.apiModel = payload.model || "deepseek-flash";
     state.apiConnected = true;
     state.apiConfigured = true;
     state.apiError = "";
     state.apiErrorDetail = "";
-    elements.providerLabel.textContent = "LOCAL AI · ON-DEVICE";
-    lastAIReplyUsedFallback = false;
-    return reply.trim();
+    if (elements.providerLabel) elements.providerLabel.textContent = "AMÏA · " + state.apiModel.toUpperCase();
+    lastAIReplyUsedFallback = Boolean(payload.usedFallback);
+    return reply;
   } catch (error) {
-    console.info("SYNQ.ME local Qwen generation failed.", error);
+    console.info("SYNQ.ME AMÏA request failed.", error);
     state.apiConnected = false;
-    state.apiError = "local model unavailable";
-    state.apiErrorDetail = String(error?.message || "Local generation failed. Check WebGPU support and available memory.");
-    elements.providerLabel.textContent = "LOCAL AI · MODEL NEEDS ATTENTION";
+    state.apiConfigured = true;
+    state.apiError = responseErrorLabel(error);
+    state.apiErrorDetail = String(error?.message || "Could not connect to the SYNQ.ME AI backend.");
+    if (elements.providerLabel) elements.providerLabel.textContent = "AMÏA · CONNECTION ISSUE";
     return null;
   }
 }
-
 function localizedAIUnavailable(language) {
   const messages = {
     es: "Ahora mismo no he podido generar una respuesta. Prefiero no inventar una; inténtalo de nuevo dentro de un momento.",
