@@ -99,7 +99,9 @@
               <div><span>Cached input tokens</span><strong id="cacheTokens">—</strong></div>
               <div><span>Output tokens</span><strong id="outputTokens">—</strong></div>
               <div><span>Chat requests</span><strong id="chatRequests">—</strong></div>
+              <div><span>Chat calls without token details</span><strong id="deepseekUnpricedRequests">—</strong></div>
             </div>
+            <p class="panel-note" id="deepseekPricingNote">Cost is calculated from provider usage and the rate card effective at request time.</p>
           </section>
           <section class="data-panel">
             <div class="panel-header">
@@ -139,9 +141,9 @@
           <div class="table-wrap">
             <table>
               <thead><tr>
-                <th>USER</th><th>CHAT</th><th>VOICE</th><th>VOICE MIN</th><th>DEEPSEEK</th><th>SEARCH / FETCH</th><th>PHONIC</th><th>TOTAL COST</th>
+                <th>USER</th><th>CHAT</th><th>VOICE</th><th>VOICE MIN</th><th>DEEPSEEK</th><th>UNPRICED CHAT</th><th>SEARCH / FETCH</th><th>PHONIC</th><th>TOTAL COST</th>
               </tr></thead>
-              <tbody id="userTableBody"><tr><td colspan="8" class="empty-cell">Loading accounts…</td></tr></tbody>
+              <tbody id="userTableBody"><tr><td colspan="9" class="empty-cell">Loading accounts…</td></tr></tbody>
             </table>
           </div>
           <div class="table-foot"><span id="userCount">—</span><span>All amounts shown in USD</span></div>
