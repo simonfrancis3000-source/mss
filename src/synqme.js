@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { createPhonicVoiceConversation } from "./phonic-voice.js";
+import { enforceFirstPersonTaskQuestions, normaliseVoicePreference, phonicVoiceIdForPreference } from "./voice-language.js";
 import {
   buildHomeMemoryIndexRows,
   extractHomeMemoryKeys,
@@ -377,7 +378,7 @@ function loadState() {
       preferences: saved.preferences.slice(0, 24)
         .map((p) => typeof p === "string" ? cleanPreference(p) : cleanPreference(p?.text, p))
         .filter(Boolean),
-      profile: { ...defaultProfile(), ...(saved.profile && typeof saved.profile === "object" ? saved.profile : {}) },
+      profile: { ...defaultProfile(), ...(saved.profile && typeof saved.profile === "object" ? saved.profile : {}), robotVoice: normaliseVoicePreference(saved.profile?.robotVoice) },
       functions: Array.isArray(saved.functions) ? saved.functions.filter((id) => ACTIVITIES.some((a) => a.id === id)) : [],
       pendingClarification: saved.pendingClarification && typeof saved.pendingClarification === "object" ? saved.pendingClarification : null,
       apiConnected: false,
@@ -1510,7 +1511,7 @@ async function saveCloudState() {
     owner_name: snapshot.profile.ownerName,
     future_robot_name: snapshot.profile.robotName,
     future_robot_type: snapshot.profile.robotType,
-    future_robot_voice: snapshot.profile.robotVoice || "female",
+    future_robot_voice: normaliseVoicePreference(snapshot.profile.robotVoice),
     preferred_language: snapshot.profile.preferredLanguage || "en",
     confirm_actions: snapshot.profile.confirmActions,
     share_anonymized_learning: snapshot.profile.shareAnonymizedLearning === true,
@@ -1685,7 +1686,7 @@ async function refreshCloudConversation() {
         ownerName: remoteProfile.owner_name || "",
         robotName: remoteProfile.future_robot_name || "",
         robotType: remoteProfile.future_robot_type || "Humanoid robot",
-        robotVoice: remoteProfile.future_robot_voice || "female",
+        robotVoice: normaliseVoicePreference(remoteProfile.future_robot_voice),
         preferredLanguage: remoteProfile.preferred_language || "en",
         confirmActions: Boolean(remoteProfile.confirm_actions),
         shareAnonymizedLearning: Boolean(remoteProfile.share_anonymized_learning),
@@ -2105,7 +2106,7 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
       ownerName: remoteProfile.owner_name || fallbackProfile.ownerName || "",
       robotName: remoteProfile.future_robot_name || fallbackProfile.robotName || "",
       robotType: remoteProfile.future_robot_type || fallbackProfile.robotType || "Humanoid robot",
-      robotVoice: remoteProfile.future_robot_voice || fallbackProfile.robotVoice || "female",
+      robotVoice: normaliseVoicePreference(remoteProfile.future_robot_voice || fallbackProfile.robotVoice),
       preferredLanguage: remoteProfile.preferred_language || fallbackProfile.preferredLanguage || "en",
       confirmActions: Boolean(remoteProfile.confirm_actions),
       shareAnonymizedLearning: Boolean(remoteProfile.share_anonymized_learning),
@@ -2280,7 +2281,7 @@ function populateSettingsForm() {
   elements.robotName.value = state.profile.robotName || "";
   elements.robotType.value = state.profile.robotType || "Humanoid robot";
   const voiceField = document.querySelector("#robotVoice");
-  if (voiceField) voiceField.value = state.profile.robotVoice || "female";
+  if (voiceField) voiceField.value = normaliseVoicePreference(state.profile.robotVoice);
   if (elements.preferredLanguage) elements.preferredLanguage.value = state.profile.preferredLanguage || "en";
   elements.confirmActions.checked = Boolean(state.profile.confirmActions);
   if (elements.shareAnonymizedLearning) {
@@ -2307,7 +2308,7 @@ elements.settingsForm?.addEventListener("submit", async (event) => {
     ownerName,
     robotName,
     robotType: elements.robotType.value || "Humanoid robot",
-    robotVoice: document.querySelector("#robotVoice")?.value || "female",
+    robotVoice: normaliseVoicePreference(document.querySelector("#robotVoice")?.value),
     preferredLanguage: elements.preferredLanguage?.value || "en",
     confirmActions: Boolean(elements.confirmActions.checked),
     shareAnonymizedLearning: Boolean(elements.shareAnonymizedLearning?.checked),
@@ -3391,18 +3392,22 @@ function buildPhonicConfig() {
   };
   const languageName = languageNames[language] || "English (US)";
   const companion = selectedCompanionDisplayName();
+  const voicePreference = normaliseVoicePreference(state.profile.robotVoice);
+  const voiceId = phonicVoiceIdForPreference(voicePreference);
   const systemPrompt = [
     "You are " + companion + ", the natural spoken voice inside SYNQ.ME. You help the user build a personal digital persona, called a SecondSelf, for a future compatible household robot.",
     "Speak naturally in " + languageName + ". Be warm, curious, practical and concise. Phonic handles voice delivery. AMÏA owns the decisions, answers and questions.",
     "MANDATORY TURN FLOW: After each completed user utterance, call amia_next_turn exactly once before speaking. Do not independently answer, acknowledge, or ask a follow-up while waiting. The tool calls SYNQ.ME's AMÏA conversation engine with the current transcript, saved preferences, relevant home memories, profile and selected household interests.",
     "AUTHORITATIVE RESPONSE: Speak only the tool's assistant_text, verbatim, in " + languageName + ". Do not paraphrase, add greetings, ask an extra question, or continue after that response. Never mention tools or internal decision logic.",
+    "FIRST-PERSON COMPANION RULE — NON-NEGOTIABLE: When discussing tasks you may eventually do, always speak as the user's SecondSelf using I/me. Ask, for example, “What would you like me to do?” or “How would you like me to handle that?” Never ask what the user wants their robot to do, what the robot should do, or any equivalent third-person task question. Apply this perspective naturally in the selected language.",
+    "VOICE SELECTION — NON-NEGOTIABLE: The user selected the " + voicePreference + " voice. Use the configured Phonic voice ID and do not substitute, alternate, or randomise the voice.",
     "Never claim a robot is physically connected or that a household task has happened. This conversation prepares a personal digital persona for a future compatible robot."
   ].join("\n\n");
   return {
     type: "config",
     system_prompt: systemPrompt,
     welcome_message: WELCOME_BY_LANGUAGE[language] || WELCOME,
-    voice_id: state.profile.robotVoice === "male" ? "grant" : "sabrina",
+    voice_id: voiceId,
     audio_speed: 1,
     input_format: "pcm_44100",
     output_format: "pcm_44100",
@@ -3515,7 +3520,7 @@ function handlePhonicVoiceEvent(event) {
       updateVoiceExperience("listening", companion + " is listening. Speak naturally.");
       if (elements.voiceStatus) {
         elements.voiceStatus.dataset.error = "";
-        elements.voiceStatus.textContent = "Voice on · Phonic audio + AMÏA";
+        elements.voiceStatus.textContent = "Voice on · Phonic " + normaliseVoicePreference(state.profile.robotVoice) + " voice + AMÏA";
       }
       if (elements.conversationStatus) elements.conversationStatus.textContent = "Listening · AMÏA directs each reply";
       break;
@@ -3550,7 +3555,7 @@ function handlePhonicVoiceEvent(event) {
       renderAll();
       void flushCloudSave();
       updateVoiceExperience("listening", companion + " is listening. Speak naturally.");
-      if (elements.voiceStatus) elements.voiceStatus.textContent = "Voice on · Phonic audio + AMÏA";
+      if (elements.voiceStatus) elements.voiceStatus.textContent = "Voice on · Phonic " + normaliseVoicePreference(state.profile.robotVoice) + " voice + AMÏA";
       if (elements.conversationStatus) elements.conversationStatus.textContent = "Phonic voice · AMÏA ready for the next turn";
       break;
     }
@@ -3640,7 +3645,8 @@ async function handlePhonicAmiaToolCall({ name, parameters = {}, items = [] } = 
     persist();
     renderAll();
     void flushCloudSave();
-    return { status: "ok", decision_owner: "AMÏA", assistant_text: reply.trim() || unavailable };
+    const spokenReply = enforceFirstPersonTaskQuestions(reply.trim() || unavailable);
+    return { status: "ok", decision_owner: "AMÏA", assistant_text: spokenReply };
   } catch (error) {
     console.info("SYNQ.ME AMÏA voice decision failed.", error);
     return { status: "error", assistant_text: state.apiErrorDetail || unavailable };
@@ -4193,7 +4199,7 @@ async function requestAIReply(repairMode = false) {
           ownerName: state.profile.ownerName,
           robotName: state.profile.robotName,
           robotType: state.profile.robotType,
-          robotVoice: state.profile.robotVoice || "female",
+          robotVoice: normaliseVoicePreference(state.profile.robotVoice),
           preferredLanguage: state.profile.preferredLanguage || "en",
           askBeforeActions: state.profile.confirmActions
         },
@@ -4516,7 +4522,7 @@ function buildPexiPersonaPackage() {
     companion_profile: {
       chosen_name: state.profile.robotName || "",
       target_robot_type: state.profile.robotType || "Humanoid robot",
-      preferred_voice: state.profile.robotVoice || "female",
+      preferred_voice: normaliseVoicePreference(state.profile.robotVoice),
       ask_before_actions: Boolean(state.profile.confirmActions)
     },
     domestic_functions: state.functions.map((id) => {
