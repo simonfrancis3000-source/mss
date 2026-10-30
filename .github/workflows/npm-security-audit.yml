@@ -1,0 +1,81 @@
+name: npm security audit
+
+on:
+  pull_request:
+    branches: [SYNQ.ME]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit-and-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+      - name: Verify retired local-model dependencies are absent
+        run: |
+          node --input-type=commonjs <<'NODE'
+          const lock = require('./package-lock.json');
+          const retired = [
+            '@huggingface/transformers',
+            'kokoro-js',
+            'onnxruntime-node',
+            'onnxruntime-web',
+            'sharp',
+            'protobufjs',
+            'tar'
+          ];
+          const present = retired.filter((name) => lock.packages[`node_modules/${name}`]);
+          if (present.length) {
+            console.error('Unexpected retired packages in lockfile:', present.join(', '));
+            process.exit(1);
+          }
+          console.log('Retired local-model and vulnerable transitive packages are absent.');
+          NODE
+      - name: Run npm audit and print package-level findings
+        shell: bash
+        run: |
+          set +e
+          npm audit --json > npm-audit.json
+          audit_status=$?
+          set -e
+          echo "npm audit exit code: $audit_status"
+          node --input-type=commonjs <<'NODE'
+          const fs = require('node:fs');
+          const report = JSON.parse(fs.readFileSync('npm-audit.json', 'utf8'));
+          const totals = report.metadata?.vulnerabilities ?? {};
+          console.log('Vulnerability totals:', JSON.stringify(totals));
+          for (const [name, item] of Object.entries(report.vulnerabilities ?? {})) {
+            console.log(JSON.stringify({
+              package: name,
+              severity: item.severity,
+              direct: item.isDirect,
+              range: item.range,
+              via: item.via,
+              effects: item.effects,
+              fixAvailable: item.fixAvailable
+            }));
+          }
+          if ((totals.total ?? 0) > 0 || report.error) process.exit(1);
+          NODE
+      - name: Upload full npm audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-audit-report
+          path: npm-audit.json
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Run application tests
+        run: npm test
+      - name: Build production frontend
+        run: npm run build
