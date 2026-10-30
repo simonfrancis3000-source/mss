@@ -137,7 +137,7 @@ export async function recordSearchFetchUsage({ userId, type }) {
   const isSearch = type === "search";
   const event = {
     user_id: userId,
-    event_type: "deepseek_chat",
+    event_type: isSearch ? "deepseek_search" : "deepseek_fetch",
     provider: isSearch ? "deepseek-search" : "deepseek-fetch",
     model: isSearch ? "search" : "fetch",
     request_id: randomUUID(),
@@ -316,7 +316,7 @@ export async function buildAdminUsageDashboard(period = "30d", phonicApiKey = ""
   const zero = () => ({
     chatRequests: 0, voiceSessions: 0, voiceMinutes: 0, userSpeechMinutes: 0, assistantSpeechMinutes: 0,
     inputTokens: 0, cacheHitTokens: 0, cacheMissTokens: 0, outputTokens: 0, searchRequests: 0, fetchRequests: 0,
-    deepseekCostUsd: 0, searchCostUsd: 0, fetchCostUsd: 0, phonicCostUsd: 0, phonicUnpricedSessions: 0,
+    deepseekCostUsd: 0, searchCostUsd: 0, fetchCostUsd: 0, deepseekUnpricedRequests: 0, phonicCostUsd: 0, phonicUnpricedSessions: 0,
     pendingVoiceSessions: 0, lastActivityAt: null
   });
   for (const user of authUsers) byUser.set(user.id, {
@@ -338,6 +338,13 @@ export async function buildAdminUsageDashboard(period = "30d", phonicApiKey = ""
       aggregate.deepseekCostUsd += Number(event.deepseek_cost_usd || 0);
       aggregate.searchCostUsd += Number(event.search_cost_usd || 0);
       aggregate.fetchCostUsd += Number(event.fetch_cost_usd || 0);
+      if (event.status === "estimated" || event.cost_method === "deepseek_usage_missing") aggregate.deepseekUnpricedRequests += 1;
+    } else if (event.event_type === "deepseek_search") {
+      aggregate.searchRequests += Number(event.search_requests || 0);
+      aggregate.searchCostUsd += Number(event.search_cost_usd || 0);
+    } else if (event.event_type === "deepseek_fetch") {
+      aggregate.fetchRequests += Number(event.fetch_requests || 0);
+      aggregate.fetchCostUsd += Number(event.fetch_cost_usd || 0);
     } else if (event.event_type === "phonic_voice") {
       aggregate.voiceSessions += 1;
       aggregate.voiceMinutes += Number(event.voice_duration_ms || 0) / 60000;
@@ -354,7 +361,7 @@ export async function buildAdminUsageDashboard(period = "30d", phonicApiKey = ""
     registeredUsers: authUsers.length,
     activeUsers: 0, chatRequests: 0, voiceSessions: 0, voiceMinutes: 0, userSpeechMinutes: 0, assistantSpeechMinutes: 0,
     inputTokens: 0, cacheHitTokens: 0, cacheMissTokens: 0, outputTokens: 0, searchRequests: 0, fetchRequests: 0,
-    deepseekCostUsd: 0, searchCostUsd: 0, fetchCostUsd: 0, phonicCostUsd: 0, phonicUnpricedSessions: 0, pendingVoiceSessions: 0
+    deepseekCostUsd: 0, searchCostUsd: 0, fetchCostUsd: 0, deepseekUnpricedRequests: 0, phonicCostUsd: 0, phonicUnpricedSessions: 0, pendingVoiceSessions: 0
   };
   for (const user of byUser.values()) {
     if (user.chatRequests || user.voiceSessions) totals.activeUsers += 1;
