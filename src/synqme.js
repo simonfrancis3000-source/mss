@@ -4492,10 +4492,7 @@ async function requestAIReply(repairMode = false) {
     if (data.model) state.apiModel = String(data.model);
     if (!response.ok) {
       state.apiConfigured = true;
-      let errorMessage = String(data.error || ("AI endpoint returned " + response.status));
-      if (responseProvider === "deepseek" && /gemini/i.test(errorMessage)) {
-        errorMessage = "DeepSeek has reached a usage limit or rate limit. Check your DeepSeek usage and limits, then try again.";
-      }
+      const errorMessage = String(data.error || ("AI endpoint returned " + response.status));
       const apiError = new Error(errorMessage);
       apiError.apiStatus = response.status;
       apiError.upstreamStatus = Number.isInteger(data.upstreamStatus) ? data.upstreamStatus : null;
