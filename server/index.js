@@ -422,6 +422,7 @@ const app = http.createServer(async (request, response) => {
     }
 
     const latestUserMessage = messages[messages.length - 1].content;
+    const requestTimestamp = new Date().toISOString();
     const amiaResult = await createAmiaReply({
       apiKey: DEEPSEEK_PERSON_API_KEY,
       searchApiKey: DEEPSEEK_SEARCH_API_KEY,
@@ -439,7 +440,7 @@ const app = http.createServer(async (request, response) => {
       userId: user.id,
       model: amiaResult.model,
       usage: { ...(amiaResult.usage || {}), searchRequests: amiaResult.searchRequests || 0, fetchRequests: amiaResult.fetchRequests || 0 },
-      timestamp: new Date().toISOString(),
+      timestamp: requestTimestamp,
       webSearchStatus: amiaResult.webSearchStatus || "not_requested",
       relevantPreferenceCount: amiaResult.relevantPreferenceCount || 0
     });
