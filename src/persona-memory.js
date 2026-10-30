@@ -159,9 +159,12 @@ export function rankPersonaMemories(query, memories, { limit = 8 } = {}) {
   const queryTopics = new Set(extractHomeMemoryTopics(queryText));
   const prepared = memories.map((memory) => {
     if (!memoryIsActive(memory) || typeof memory.statement !== "string" || !memory.statement.trim()) return null;
-    const keys = new Set(Array.isArray(memory.search_keys) && memory.search_keys.length
-      ? memory.search_keys
-      : buildPersonaMemorySearchKeys(memory.statement, memory.search_terms, memory.topic));
+    // Always derive current keys as well as using stored keys. This makes
+    // newer concept aliases work for older records without a database rewrite.
+    const keys = new Set([
+      ...(Array.isArray(memory.search_keys) ? memory.search_keys : []),
+      ...buildPersonaMemorySearchKeys(memory.statement, memory.search_terms, memory.topic)
+    ]);
     let overlaps = 0;
     for (const key of queryKeys) if (keys.has(key)) overlaps++;
     const topicHit = queryTopics.has(memory.topic) ? 1 : 0;
