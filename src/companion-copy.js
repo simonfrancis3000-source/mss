@@ -29,13 +29,13 @@ const LEGACY_WELCOME_MESSAGES = new Set([
 ]);
 
 export function companionWelcomeMessage(language = "en", companionName = "Freya") {
-  const safeName = String(companionName || "Freya").replace(/[\\r\\n\\u0000]/g, "").trim().slice(0, 60) || "Freya";
+  const safeName = String(companionName || "Freya").replace(/[\r\n\u0000]/g, "").trim().slice(0, 60) || "Freya";
   const template = WELCOME_TEMPLATES[language] || WELCOME_TEMPLATES.en;
   return template.replace("{companion}", safeName);
 }
 
 export function companionThinkingMessage(companionName = "Your robot") {
-  const safeName = String(companionName || "Your robot").replace(/[\\r\\n\\u0000]/g, "").trim().slice(0, 60) || "Your robot";
+  const safeName = String(companionName || "Your robot").replace(/[\r\n\u0000]/g, "").trim().slice(0, 60) || "Your robot";
   return safeName + " is thinking…";
 }
 
