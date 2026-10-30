@@ -57,8 +57,18 @@ jobs:
           node --check public/phonic-pcm-processor.worklet.js
       - name: Install dependencies and refresh the npm lockfile
         run: npm install --no-audit --no-fund
-      - name: Verify a single Transformers.js runtime
-        run: npm ls @huggingface/transformers
+      - name: Verify retired local-model dependencies are absent
+        run: |
+          node --input-type=commonjs <<'NODE'
+          const lock = require('./package-lock.json');
+          const retired = ['@huggingface/transformers', 'kokoro-js', 'onnxruntime-node', 'onnxruntime-web'];
+          const present = retired.filter((name) => lock.packages[`node_modules/${name}`]);
+          if (present.length) {
+            console.error('Unexpected retired packages in lockfile:', present.join(', '));
+            process.exit(1);
+          }
+          console.log('Phonic voice path has no legacy browser model runtime dependencies.');
+          NODE
       - name: Run persona and memory-index tests
         run: npm test
       - name: Build SYNQ.ME
