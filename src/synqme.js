@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { createPhonicVoiceConversation } from "./phonic-voice.js";
 import { enforceFirstPersonTaskQuestions, normaliseVoicePreference, phonicVoiceIdForPreference } from "./voice-language.js";
-import { ROOM_JOURNEY_ROOMS, addMonthsAnchored, buildRoomProgressSnapshot, getRoomJourneySchedule } from "./room-journey.js";
+import { ROOM_JOURNEY_ROOMS, addMonthsAnchored, buildRoomProgressSnapshot, getRoomJourneySchedule, getRoomTaskStates } from "./room-journey.js";
 import {
   buildHomeMemoryIndexRows,
   extractHomeMemoryKeys,
@@ -2682,7 +2682,10 @@ function renderRoomJourney() {
   const activeRoom = ROOM_JOURNEY_ROOMS.find((room) => room.id === roomJourney.active_room_id && unlockedIds.has(room.id)) || schedule.unlockedRooms[0];
   const activeIndex = ROOM_JOURNEY_ROOMS.findIndex((room) => room.id === activeRoom.id);
   const done = roomCompletedIds(activeRoom);
-  const doneCount = activeRoom.tasks.filter((task) => done.includes(task.id)).length;
+  const taskStates = getRoomTaskStates(activeRoom, done, roomJourney.active_task_id);
+  const currentTask = taskStates.find((task) => task.status === "current") || null;
+  const pendingTaskCount = taskStates.filter((task) => task.status === "pending").length;
+  const doneCount = taskStates.filter((task) => task.status === "completed").length;
   const percent = Math.round(doneCount / activeRoom.tasks.length * 100);
   const allDone = schedule.unlockedRooms.reduce((total, room) => total + room.tasks.filter((task) => roomCompletedIds(room).includes(task.id)).length, 0);
   const allTasks = schedule.unlockedRooms.reduce((total, room) => total + room.tasks.length, 0);
@@ -2718,37 +2721,66 @@ function renderRoomJourney() {
   const fill = document.createElement("span");
   fill.style.width = percent + "%";
   track.append(fill);
+  const taskOverview = document.createElement("div");
+  taskOverview.className = "room-task-overview";
+  const addTaskStat = (label, value, stateClass) => {
+    const stat = document.createElement("div");
+    stat.className = "room-task-stat " + stateClass;
+    stat.append(roomText("room-task-stat-value", String(value)), roomText("room-task-stat-label", label));
+    taskOverview.append(stat);
+  };
+  addTaskStat("COMPLETED", doneCount, "is-complete");
+  addTaskStat("CURRENT TASK", currentTask ? 1 : 0, "is-current");
+  addTaskStat("PENDING", pendingTaskCount, "is-pending");
+
+  const currentBanner = document.createElement("div");
+  currentBanner.className = "room-current-task-banner" + (currentTask ? "" : " is-empty");
+  currentBanner.append(roomText("room-current-task-kicker", currentTask ? "YOU ARE WORKING ON" : "NO TASK IN PROGRESS"));
+  currentBanner.append(roomText("room-current-task-title", currentTask ? currentTask.title : "Choose a pending task to make it your current task."));
+  if (currentTask) {
+    currentBanner.append(roomText("room-current-task-help", "This is your active focus. Select Continue to pick up the conversation where you left off."));
+  } else {
+    currentBanner.append(roomText("room-current-task-help", "Every unfinished item is marked Pending. Select Start on the task you want to work on first."));
+  }
+
   const taskList = document.createElement("div");
   taskList.className = "room-task-list";
 
   for (let week = 1; week <= 4; week += 1) {
-    const tasks = activeRoom.tasks.filter((task) => task.week === week);
+    const tasks = taskStates.filter((task) => task.week === week);
     if (!tasks.length) continue;
     const group = document.createElement("section");
     group.className = "room-task-week";
     group.append(roomText("room-task-week-title", "WEEK " + week));
     for (const task of tasks) {
-      const complete = done.includes(task.id);
+      const complete = task.status === "completed";
+      const current = task.status === "current";
       const row = document.createElement("article");
-      row.className = "room-task-row" + (complete ? " is-complete" : "");
+      row.className = "room-task-row" + (complete ? " is-complete" : current ? " is-current" : " is-pending");
+      if (current) row.setAttribute("aria-current", "step");
       const copy = document.createElement("div");
       copy.className = "room-task-copy";
+      const heading = document.createElement("div");
+      heading.className = "room-task-heading";
       const taskTitle = document.createElement("strong");
       taskTitle.textContent = task.title;
+      const state = roomText("room-task-state", complete ? "COMPLETED" : current ? "CURRENT TASK" : "PENDING");
+      heading.append(taskTitle, state);
       const description = document.createElement("p");
       description.textContent = task.description;
-      copy.append(taskTitle, description);
+      copy.append(heading, description);
       const action = document.createElement("button");
       action.type = "button";
-      action.className = "room-task-action";
+      action.className = "room-task-action" + (current ? " is-current" : complete ? " is-complete" : "");
+      action.dataset.roomTaskId = task.id;
       action.dataset.roomTaskPrompt = task.prompt;
-      action.textContent = complete ? "Review" : "Explore";
-      row.append(roomText("room-task-mark", complete ? "✓" : "○"), copy, action);
+      action.textContent = complete ? "Review" : current ? "Continue" : "Start";
+      row.append(roomText("room-task-mark", complete ? "✓" : current ? "●" : "○"), copy, action);
       group.append(row);
     }
     taskList.append(group);
   }
-  feature.append(top, summary, meta, track, taskList,
+  feature.append(top, summary, meta, track, taskOverview, currentBanner, taskList,
     roomText("room-progress-foot", allDone + " of " + allTasks + " tasks covered across your " + schedule.unlockedCount + (schedule.unlockedCount === 1 ? " released room." : " released rooms.")));
   featureTarget.append(feature);
 
@@ -2767,7 +2799,7 @@ function renderRoomJourney() {
     tile.append(tileTop, roomText("room-tile-name", room.name));
     tile.append(roomText("room-tile-status", !unlocked
       ? "UNLOCKS " + addMonthsAnchored(roomJourney.journey_started_at, index).toLocaleDateString(undefined, { day: "numeric", month: "short" })
-      : selected ? "CURRENT FOCUS" : completed === room.tasks.length ? "LEARNING COMPLETE" : "AVAILABLE"));
+      : selected && currentTask ? "TASK IN PROGRESS" : selected ? "CURRENT FOCUS" : completed === room.tasks.length ? "LEARNING COMPLETE" : "AVAILABLE"));
     tile.append(roomText("room-tile-progress", unlocked ? completed + " / " + room.tasks.length + " tasks" : "Not yet available"));
     gridTarget.append(tile);
   });
@@ -2808,10 +2840,18 @@ async function refreshRoomJourneyProgress() {
     const valid = new Set(room.tasks.map((task) => task.id));
     merged[room.id] = { completed_task_ids: [...new Set([...oldIds, ...newIds])].filter((id) => valid.has(id)) };
   }
-  if (JSON.stringify(merged) !== JSON.stringify(previous)) {
+  const focusedRoom = ROOM_JOURNEY_ROOMS.find((room) => room.id === roomJourney.active_room_id);
+  const activeTaskStillPending = focusedRoom?.tasks.some((task) =>
+    task.id === roomJourney.active_task_id && !merged[focusedRoom.id].completed_task_ids.includes(task.id)
+  );
+  const nextActiveTaskId = activeTaskStillPending ? roomJourney.active_task_id : null;
+  const progressChanged = JSON.stringify(merged) !== JSON.stringify(previous);
+  const activeTaskChanged = (roomJourney.active_task_id || null) !== nextActiveTaskId;
+  if (progressChanged || activeTaskChanged) {
     roomJourney.room_progress = merged;
+    roomJourney.active_task_id = nextActiveTaskId;
     renderRoomJourney();
-    await persistRoomJourneyChanges({ room_progress: merged });
+    await persistRoomJourneyChanges({ room_progress: merged, active_task_id: nextActiveTaskId });
     return true;
   }
   renderRoomJourney();
@@ -2884,13 +2924,27 @@ async function setRoomJourneyFocus(roomId) {
   if (!schedule?.unlockedRooms.some((room) => room.id === roomId)) return;
   if (!roomJourney || roomJourney.active_room_id === roomId) return;
   roomJourney.active_room_id = roomId;
+  roomJourney.active_task_id = null;
   renderRoomJourney();
-  await persistRoomJourneyChanges({ active_room_id: roomId });
+  await persistRoomJourneyChanges({ active_room_id: roomId, active_task_id: null });
+}
+
+async function setRoomJourneyTask(taskId) {
+  const schedule = roomSchedule();
+  const activeRoom = ROOM_JOURNEY_ROOMS.find((room) => room.id === roomJourney?.active_room_id);
+  if (!schedule?.unlockedRooms.some((room) => room.id === activeRoom?.id)) return;
+  const task = activeRoom.tasks.find((item) => item.id === taskId);
+  if (!task || roomCompletedIds(activeRoom).includes(task.id) || roomJourney.active_task_id === task.id) return;
+  roomJourney.active_task_id = task.id;
+  renderRoomJourney();
+  await persistRoomJourneyChanges({ active_task_id: task.id });
 }
 
 function handleRoomJourneyClick(event) {
   const task = event.target.closest("[data-room-task-prompt]");
   if (task && elements.messageInput) {
+    const taskId = task.dataset.roomTaskId;
+    if (taskId) void setRoomJourneyTask(taskId);
     elements.messageInput.value = task.dataset.roomTaskPrompt || "";
     elements.messageInput.focus();
     elements.messageInput.dispatchEvent(new Event("input", { bubbles: true }));
