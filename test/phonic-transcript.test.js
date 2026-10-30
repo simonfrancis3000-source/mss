@@ -9,11 +9,16 @@ test("voice input transcripts are committed to chat as soon as Phonic transcribe
   assert.match(inputCase, /if \(synced\.userAdded\) void flushCloudSave\(\)/);
 });
 
-test("the exact assistant text is saved before Phonic plays it and transcript chunks are linked to it", async () => {
+test("the exact assistant text is saved before Phonic plays it and partial assistant fragments are not persisted", async () => {
   const source = await readFile(new URL("../src/synqme.js", import.meta.url), "utf8");
-  assert.match(source, /state\.messages\.push\(\{ role: "assistant", content: spokenReply/);
-  assert.match(source, /pendingPhonicAssistantMessageIndex = state\.messages\.length - 1/);
-  assert.match(source, /phonicCanonicalAssistantItemKeys\.add\(key\)/);
+  const handler = source.match(/async function handlePhonicAmiaToolCall\([\s\S]*?\n\}/)?.[0] || "";
+  assert.match(handler, /const spokenReply = enforceFirstPersonTaskQuestions/);
+  assert.match(handler, /state\.messages\.push\(\{ role: "assistant", content: spokenReply/);
+  assert.match(handler, /persist\(\);[\s\S]*?renderAll\(\);[\s\S]*?return \{ status: "ok", decision_owner: "AMÏA", assistant_text: spokenReply \}/);
+  const synchroniser = source.match(/function syncPhonicTranscriptItems\(items\) \{([\s\S]*?)\n\}\n\nfunction handlePhonicVoiceEvent/)?.[1] || "";
+  assert.match(synchroniser, /item\.role !== "user"/);
+  assert.match(synchroniser, /phonicItemMap\.set\(key, state\.messages\.length - 1\)/);
+  assert.doesNotMatch(synchroniser, /role: item\.role/);
 });
 
 test("voice sessions do not replay an automatic self-introduction on every reconnect", async () => {
