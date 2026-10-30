@@ -44,6 +44,7 @@ test("first-run and restored chat state use a defined personalised welcome", asy
   assert.match(source, /content: companionWelcomeMessage\(profile\.preferredLanguage, companionNameForProfile\(profile\)\)/);
   assert.match(source, /state\.messages = personaliseWelcomeMessages\(state\.messages, state\.profile\)/);
   assert.match(source, /base\.messages = personaliseWelcomeMessages\(base\.messages, base\.profile\)/);
-  assert.match(source, /isCompanionWelcomeMessage\(textValue\)/);
+  assert.match(source, /isCompanionWelcomeMessage\(item\.content\)/);
+  assert.match(source, /item\?\.role === "assistant" && isCompanionWelcomeMessage\(item\.content\)/);
   assert.doesNotMatch(source, /KNOWN_WELCOME_MESSAGES/);
 });
