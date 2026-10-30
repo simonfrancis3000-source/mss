@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -34,4 +35,15 @@ test("thinking status uses the selected robot name", () => {
 test("companion names are trimmed and control characters are removed", () => {
   assert.equal(companionThinkingMessage(" Freya\n"), "Freya is thinking…");
   assert.doesNotMatch(companionWelcomeMessage("en", "Freya\n"), /\n/);
+});
+
+
+test("first-run and restored chat state use a defined personalised welcome", async () => {
+  const source = await readFile(new URL("../src/synqme.js", import.meta.url), "utf8");
+  assert.match(source, /const WELCOME = companionWelcomeMessage\("en", "Freya"\)/);
+  assert.match(source, /content: companionWelcomeMessage\(profile\.preferredLanguage, companionNameForProfile\(profile\)\)/);
+  assert.match(source, /state\.messages = personaliseWelcomeMessages\(state\.messages, state\.profile\)/);
+  assert.match(source, /base\.messages = personaliseWelcomeMessages\(base\.messages, base\.profile\)/);
+  assert.match(source, /isCompanionWelcomeMessage\(textValue\)/);
+  assert.doesNotMatch(source, /KNOWN_WELCOME_MESSAGES/);
 });
