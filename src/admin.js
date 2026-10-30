@@ -245,6 +245,7 @@ loginForm.addEventListener("submit", async (event) => {
     if (error || !data?.session) throw new Error(error?.message || "Sign-in failed.");
     currentSession = data.session;
     showDashboard();
+    setBusy(false);
     await loadDashboard();
   } catch (error) {
     setNotice(loginNotice, error?.message || "Could not sign in.", "error");
