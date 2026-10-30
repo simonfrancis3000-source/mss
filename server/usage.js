@@ -385,7 +385,11 @@ export async function buildAdminUsageDashboard(period = "30d", phonicApiKey = ""
       id: event.id, userId: event.user_id, type: event.event_type, provider: event.provider, model: event.model,
       status: event.status, createdAt: event.created_at, voiceDurationMs: event.voice_duration_ms,
       promptTokens: event.prompt_tokens, completionTokens: event.completion_tokens,
-      totalCostUsd: Number(event.deepseek_cost_usd || 0) + Number(event.search_cost_usd || 0) + Number(event.fetch_cost_usd || 0) + Number(event.phonic_cost_usd || 0),
+      totalCostUsd:
+        (event.event_type === "phonic_voice" && (event.phonic_cost_usd === null || event.phonic_cost_usd === undefined)) ||
+        (event.event_type === "deepseek_chat" && event.status === "estimated" && event.cost_method === "deepseek_usage_missing")
+          ? null
+          : Number(event.deepseek_cost_usd || 0) + Number(event.search_cost_usd || 0) + Number(event.fetch_cost_usd || 0) + Number(event.phonic_cost_usd || 0),
       costMethod: event.cost_method
     }))
   };
