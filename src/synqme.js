@@ -2060,6 +2060,10 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   const fallbackFunctions = draftState?.functions || [];
   cloudUserId = user.id;
   cloudUserEmail = user.email;
+  profileCreatedAt = null;
+  roomJourney = null;
+  roomJourneyTableUnavailable = false;
+  roomJourneyWarningShown = false;
   personaMemoryRecords = [];
   personaMemoryTableUnavailable = false;
   personaMemoryWarningShown = false;
@@ -2084,6 +2088,7 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   if (conversationResult.error) throw conversationResult.error;
 
   const remoteProfile = profileResult.data;
+  profileCreatedAt = remoteProfile?.created_at || null;
   if (remoteProfile?.owner_avatar_synced) {
     ownerAvatarData = typeof remoteProfile.owner_avatar_data === "string" ? remoteProfile.owner_avatar_data : "";
     ownerAvatarNeedsCloudSync = false;
@@ -2153,6 +2158,8 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   // write only their newest two messages, while the archive preserves older rows.
   await syncHomeMemoryIndex(state.messages, { backfill: true });
   await loadPersonaMemories({ backfillPreferences: true });
+  await ensureRoomJourney();
+  await refreshRoomJourneyProgress();
   if (draft) {
     try { localStorage.removeItem(ACCOUNT_DRAFT_KEY); } catch {}
   }
@@ -2334,6 +2341,7 @@ elements.settingsForm?.addEventListener("submit", async (event) => {
   persist();
   renderAll();
   const savedToAccount = await flushCloudSave();
+  if (profileComplete()) await ensureRoomJourney();
   if (wasSharingAnonymizedLearning && state.profile.shareAnonymizedLearning !== true) {
     await deletePendingSharedKnowledgeCandidates();
   }
@@ -2588,6 +2596,10 @@ function renderMessages() {
 }
 
 elements.chatMessages?.addEventListener("scroll", updateChatScrollbar, { passive: true });
+elements.roomJourneyPanel?.addEventListener("click", handleRoomJourneyClick);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && cloudUserId && profileComplete()) void ensureRoomJourney();
+});
 window.addEventListener("resize", updateChatScrollbar);
 
 
@@ -3945,6 +3957,7 @@ async function handlePhonicAmiaToolCall({ name, parameters = {}, items = [] } = 
     }
 
     state.pendingClarification = detectPendingClarification(latestUserText, reply);
+    void refreshRoomJourneyProgress();
     void processStructuredMemoryTurn(latestUserText, metadata.timestamp, metadata.shouldExtractStructuredMemory);
     phonicTurnMetadata.delete(latestKey || "fallback");
     if (state.profile.shareAnonymizedLearning === true) void contributeSharedKnowledgeFromTurn();
