@@ -32,7 +32,7 @@ test("robot task questions are rewritten from the companion's first-person persp
 });
 
 test("ordinary factual references to a robot are not rewritten", () => {
-  const statement = "Your robot may eventually be compatible with PEXI.";
+  const statement = "Some robots may eventually be compatible with PEXI.";
   assert.equal(enforceFirstPersonTaskQuestions(statement), statement);
 });
 
