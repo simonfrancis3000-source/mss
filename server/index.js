@@ -5,6 +5,7 @@ import { cleanKnowledgeCandidate } from "../src/shared-knowledge-validation.js";
 import { cleanPersonaMemoryCandidate, MEMORY_TOPICS } from "../src/persona-memory.js";
 import { selectHouseholdSkills } from "../src/household-skills.js";
 import { enforceFirstPersonTaskQuestions, normaliseVoicePreference } from "../src/voice-language.js";
+import { ROOM_JOURNEY_ROOMS } from "../src/room-journey.js";
 
 const PORT = Number.parseInt(process.env.PORT || "10000", 10);
 // SYNQ.ME uses Groq exclusively. No other AI provider is supported.
@@ -19,7 +20,8 @@ const MODEL = !configuredGroqModel || configuredGroqModel === "openai/gpt-oss-20
   : configuredGroqModel;
 const GROQ_EMBEDDING_MODEL = String(process.env.GROQ_EMBEDDING_MODEL || "nomic-embed-text-v1_5").trim();
 const EXPECTED_EMBEDDING_DIMENSIONS = 768;
-const REASONING_EFFORT = "low"; // Short conversational turns must leave tokens for the visible reply.
+const requestedReasoningEffort = String(process.env.GROQ_REASONING_EFFORT || "low").trim().toLowerCase();
+const REASONING_EFFORT = ["low", "medium", "high"].includes(requestedReasoningEffort) ? requestedReasoningEffort : "low"; // Short conversational turns must leave tokens for the visible reply.
 // Render deployments need CORS to work even when FRONTEND_ORIGIN has not
 // been populated. Keep the known SYNQ.ME origins as safe defaults and allow
 // additional exact origins through FRONTEND_ORIGIN (comma-separated).
@@ -211,6 +213,30 @@ function cleanProfile(input) {
     askBeforeActions: Boolean(input.askBeforeActions),
     robotVoice: normaliseVoicePreference(input.robotVoice),
     preferredLanguage: SUPPORTED_CONVERSATION_LANGUAGES.has(input.preferredLanguage) ? input.preferredLanguage : "en"
+  };
+}
+
+function cleanRoomJourney(input) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return null;
+  const room = ROOM_JOURNEY_ROOMS.find((item) => item.id === input.activeRoomId);
+  if (!room) return null;
+  const completedIds = new Set(
+    Array.isArray(input.completedTaskIds)
+      ? input.completedTaskIds.filter((id) => room.tasks.some((task) => task.id === id))
+      : []
+  );
+  const unlockedCount = Number.isInteger(input.unlockedRoomCount)
+    ? Math.max(1, Math.min(ROOM_JOURNEY_ROOMS.length, input.unlockedRoomCount))
+    : 1;
+  return {
+    activeRoomId: room.id,
+    activeRoomName: room.name,
+    unlockedRoomCount: unlockedCount,
+    tasks: room.tasks.map((task) => ({
+      id: task.id,
+      title: task.title,
+      completed: completedIds.has(task.id)
+    }))
   };
 }
 
@@ -943,6 +969,7 @@ const app = http.createServer(async (request, response) => {
     });
     const preferences = cleanPreferences(body?.preferences);
     const profile = cleanProfile(body?.profile);
+    const roomJourney = cleanRoomJourney(body?.roomJourney);
     const responseLanguage = CONVERSATION_LANGUAGE_NAMES[profile.preferredLanguage] || "English (US)";
     const domesticFunctions = cleanFunctions(body?.domesticFunctions);
     const memoryReferences = cleanMemoryReferences(body?.memoryReferences);
@@ -1016,9 +1043,20 @@ const app = http.createServer(async (request, response) => {
           "Shared reference patterns: " + JSON.stringify(sharedKnowledgeReferences)
         ].join(" ")
       : "";
+    const roomJourneyContext = roomJourney
+      ? [
+          "MONTHLY ROOM JOURNEY — ACTIVE PERSONAL FOCUS: The user's current room is " + roomJourney.activeRoomName + ". " +
+            "This room is the focus of the user's current monthly learning programme. Do not jump to a different room or unrelated household area unless the user explicitly asks.",
+          "Room tasks already learned: " + JSON.stringify(roomJourney.tasks.filter((task) => task.completed).map((task) => task.title)) + ". " +
+            "Outstanding room tasks: " + JSON.stringify(roomJourney.tasks.filter((task) => !task.completed).map((task) => task.title)) + ". " +
+            "Use these as learning objectives, not as a rigid questionnaire. Never ask again about a task already learned. Choose one useful outstanding detail at a time, and acknowledge new information naturally.",
+          "New rooms unlock on this individual user's monthly anniversary; " + roomJourney.unlockedRoomCount + " room(s) are currently released. The user may revisit earlier rooms. Do not claim an unreleased room is available, and do not imply a physical robot is connected or performing tasks."
+        ].join(" ")
+      : "";
     const combinedSystemPrompt = systemPrompt + "\n\n" + homePersonaSystemPrompt +
       (memoryContext ? "\n\n" + memoryContext : "") +
-      (sharedKnowledgeContext ? "\n\n" + sharedKnowledgeContext : "");
+      (sharedKnowledgeContext ? "\n\n" + sharedKnowledgeContext : "") +
+      (roomJourneyContext ? "\n\n" + roomJourneyContext : "");
 
     const upstream = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
