@@ -168,7 +168,7 @@ const ACTIVITIES = [
 
 const MILESTONES = [
   { id: "first-spark", title: "First spark", reward: "Starter badge", description: "Set your name, choose a home interest, or share your first preference.", unlocked: (s) => Boolean(s.profile.ownerName.trim() || s.functions.length || s.preferences.length) },
-  { id: "home-explorer", title: "Home explorer", reward: "Explorer badge", description: "Choose three domestic functions for your SecondSelf to learn about.", unlocked: (s) => s.functions.length >= 3 },
+  { id: "home-explorer", title: "Home explorer", reward: "Explorer badge", description: "Capture three personal preferences through your monthly room journey.", unlocked: (s) => s.preferences.length >= 3 },
   { id: "first-memory", title: "First memory", reward: "Memory badge", description: "Capture your first personal preference in conversation.", unlocked: (s) => s.preferences.length >= 1 },
   { id: "pattern-finder", title: "Pattern finder", reward: "Personalisation badge", description: "Share five preferences and begin to form recognisable patterns.", unlocked: (s) => s.preferences.length >= 5 },
   { id: "secondself-builder", title: "SecondSelf builder", reward: "Foundation badge", description: "Choose three functions and capture eight preferences.", unlocked: (s) => s.functions.length >= 3 && s.preferences.length >= 8 }
@@ -3356,7 +3356,7 @@ function renderSettingsDetails() {
 function updateDecisionSummary() {
   const preferences = state.preferences;
   if (!preferences.length && !state.functions.length) {
-    elements.decisionSummary.textContent = "Choose the home activities that matter to you, then share preferences with ELO. Your SecondSelf grows one step at a time.";
+    elements.decisionSummary.textContent = "Your monthly room journey gives you one clear focus at a time. Start with the Kitchen and build your SecondSelf through natural conversation.";
     elements.amyaState.textContent = "Getting started";
     elements.pexiState.textContent = "Not connected";
     elements.amyaState.classList.remove("ready");
