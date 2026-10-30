@@ -2,11 +2,11 @@ import { createClient } from "@supabase/supabase-js";
 import { createPhonicVoiceConversation } from "./phonic-voice.js";
 
 const STORAGE_KEY = "synqme-demo-v1";
-const LOCAL_MODEL_LABEL = "On-device AI";
+const DEFAULT_DEEPSEEK_MODEL_LABEL = "DeepSeek V4.1-Flash-1017";
 const ACCOUNT_DRAFT_KEY = "synqme-pending-account-migration-v1";
 const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
-const PHONIC_API_BASE_URL = String(import.meta.env.VITE_PHONIC_API_BASE_URL || "https://synqme-api.onrender.com").replace(/\/+$/, "");
+const SYNQME_API_BASE_URL = String(import.meta.env.VITE_SYNQME_API_BASE_URL || import.meta.env.VITE_PHONIC_API_BASE_URL || "https://synqme-api.onrender.com").replace(/\/+$/, "");
 const AUTH_REDIRECT_URL = (() => {
   const configured = String(import.meta.env.VITE_AUTH_REDIRECT_URL || "").trim();
   if (configured && !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(configured)) {
@@ -69,6 +69,17 @@ const supabase = SUPABASE_URL && SUPABASE_KEY
       }
     })
   : null;
+
+async function getApiAuthHeaders() {
+  if (!supabase) throw new Error("Your account connection is unavailable. Refresh SYNQ.ME and sign in again.");
+  const { data, error } = await supabase.auth.getSession();
+  if (error || !data?.session?.access_token) throw new Error("Your session has expired. Sign in again to continue.");
+  return {
+    "Content-Type": "application/json",
+    "Authorization": "Bearer " + data.session.access_token
+  };
+}
+
 const WELCOME = "Hi, I’m here to help you build your SecondSelf. Speak naturally, and we’ll work out what matters to you.";
 const WELCOME_BY_LANGUAGE = {
   en: WELCOME,
@@ -158,10 +169,6 @@ const elements = {
   providerLabel: $("#providerLabel"),
   preferredLanguage: $("#preferredLanguage"),
   conversationStatus: $("#conversationStatus"),
-  localAIProgress: $("#localAIProgress"),
-  localAIProgressLabel: $("#localAIProgressLabel"),
-  localAIProgressFill: $("#localAIProgressFill"),
-  localAIProgressTrack: $("#localAIProgressTrack"),
   chatTranscriptShell: $("#chatTranscriptShell"),
   chatMessages: $("#chatMessages"),
   chatScrollbarTrack: $("#chatScrollbarTrack"),
@@ -280,8 +287,8 @@ function initialState() {
     functions: [],
     pendingClarification: null,
     apiConnected: false,
-    apiProvider: "local",
-    apiModel: LOCAL_MODEL_LABEL,
+    apiProvider: "deepseek",
+    apiModel: DEFAULT_DEEPSEEK_MODEL_LABEL,
     apiConfigured: true,
     apiError: "",
     apiErrorDetail: ""
@@ -343,8 +350,8 @@ function loadState() {
       functions: Array.isArray(saved.functions) ? saved.functions.filter((id) => ACTIVITIES.some((a) => a.id === id)) : [],
       pendingClarification: saved.pendingClarification && typeof saved.pendingClarification === "object" ? saved.pendingClarification : null,
       apiConnected: false,
-      apiProvider: "local",
-      apiModel: LOCAL_MODEL_LABEL,
+      apiProvider: "deepseek",
+      apiModel: DEFAULT_DEEPSEEK_MODEL_LABEL,
       apiConfigured: true,
       apiError: "",
       apiErrorDetail: ""
@@ -356,13 +363,6 @@ function loadState() {
 }
 
 let state = loadState();
-let localAIWorker = null;
-let localAIReady = false;
-let localAILoadPromise = null;
-let localAILoadResolve = null;
-let localAILoadReject = null;
-let localAIRequestSequence = 0;
-const localAIPendingRequests = new Map();
 let isSending = false;
 let sendSequence = 0;
 let lastAIReplyUsedFallback = false;
@@ -371,6 +371,7 @@ const speechSynthesisAvailable = "speechSynthesis" in window && "SpeechSynthesis
 let voiceModeActive = false;
 let voiceInputMuted = false;
 let phonicVoiceConversation = null;
+let phonicSessionMeta = null;
 const phonicItemMap = new Map();
 let speechRecognition = null;
 let recognitionListening = false;
@@ -1086,11 +1087,7 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   if (!profileComplete()) openSettings();
   else updateSettingsMode();
   startCloudConversationSync();
-  // AMÏA runs locally, but Phonic provides voice output. Do not download
-  // the legacy Kokoro text-to-speech model in the background.
-  void ensureLocalAIReady().catch((error) =>
-    console.info("SYNQ.ME local model warm-up did not complete.", error)
-  );
+  // AMÏA now runs in the backend; Phonic remains the live voice transport.
   return true;
 }
 
@@ -1948,11 +1945,11 @@ function renderAll() {
   const progress = Math.round((achieved / MILESTONES.length) * 100);
   if (elements.mobileProgressValue) elements.mobileProgressValue.textContent = progress + "%";
   if (state.apiConnected) {
-    elements.providerLabel.textContent = "LOCAL AI · ON-DEVICE";
+    elements.providerLabel.textContent = "AMÏA · " + String(state.apiModel || "deepseek-flash").toUpperCase();
   } else if (state.apiError) {
-    elements.providerLabel.textContent = "LOCAL AI · MODEL NEEDS ATTENTION";
+    elements.providerLabel.textContent = "AMÏA · CONNECTION ISSUE";
   } else {
-    elements.providerLabel.textContent = "LOCAL AI · FIRST-TIME SETUP";
+    elements.providerLabel.textContent = "AMÏA · DEEPSEEK FLASH";
   }
   document.title = name ? "SYNQ.ME | " + name + "’s SecondSelf" : "SYNQ.ME | Build Your SecondSelf";
   const intro = $(".conversation-intro p");
@@ -2272,7 +2269,7 @@ function buildPhonicConfig() {
   const systemPrompt = [
     "You are " + companion + ", the natural spoken voice interface inside SYNQ.ME. You help the user build a personal digital persona, called a SecondSelf, for a future compatible household robot.",
     "Speak naturally in " + languageName + ". Be warm, attentive, practical and concise. Your job is voice delivery, not deciding what to ask or what topic to explore.",
-    "MANDATORY TURN FLOW: After every completed user utterance, call the amia_next_turn tool exactly once before speaking. Do not independently answer, acknowledge, ask a follow-up, fill the silence or generate any conversational content while waiting for the tool. The tool runs AMÏA's on-device decision engine using the full SYNQ.ME history, profile and saved preferences.",
+    "MANDATORY TURN FLOW: After every completed user utterance, call the amia_next_turn tool exactly once before speaking. Do not independently answer, acknowledge, ask a follow-up, fill the silence or generate any conversational content while waiting for the tool. The tool runs AMÏA's backend decision engine using the full SYNQ.ME history, profile and saved preferences.",
     "AUTHORITATIVE RESPONSE: The tool returns assistant_text. Speak only that value, verbatim, in " + languageName + ". Do not paraphrase, shorten, embellish, add a greeting, add another question, or continue after it. Then listen for the user's next turn. The returned text may be an answer, a single question, a clarification, a transition or a natural stopping point.",
     "If the tool returns status error, still speak its assistant_text exactly and do not improvise a different answer. Never mention tools, prompts, models, or internal decision logic.",
     "This is preparation for a future robot, not control of a physical robot. Never claim a household action has physically happened, a device is connected, or a preference has been saved."
@@ -2282,7 +2279,7 @@ function buildPhonicConfig() {
     type: "config",
     system_prompt: systemPrompt,
     welcome_message: WELCOME_BY_LANGUAGE[language] || WELCOME,
-    voice_id: state.profile.robotVoice === "male" ? "grant" : "sabrina",
+    voice_id: state.profile.robotVoice === "male" ? "grant" : "eloise",
     audio_speed: 1,
     input_format: "pcm_44100",
     output_format: "pcm_44100",
@@ -2293,7 +2290,7 @@ function buildPhonicConfig() {
           type: "function",
           function: {
             name: "amia_next_turn",
-            description: "Mandatory decision handoff for every user turn. Call exactly once after each completed user utterance and before any spoken response. AMÏA will decide the response and next question using SYNQ.ME's on-device decision engine, conversation history, persona preferences, selected household interests and consent boundaries. Do not answer or ask a question yourself.",
+            description: "Mandatory decision handoff for every user turn. Call exactly once after each completed user utterance and before any spoken response. AMÏA will decide the response and next question using its backend intelligence engine, conversation history, persona preferences, selected household interests and consent boundaries. Do not answer or ask a question yourself.",
             parameters: {
               type: "object",
               properties: {
@@ -2370,10 +2367,62 @@ function syncPhonicTranscriptItems(items) {
   return changed;
 }
 
+async function linkPhonicConversationUsage(conversationId) {
+  const session = phonicSessionMeta;
+  if (!session?.usageId || !conversationId) return;
+  try {
+    const headers = await getApiAuthHeaders();
+    const response = await fetch(SYNQME_API_BASE_URL + "/api/phonic/link", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ usageId: session.usageId, conversationId })
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload?.error || "Could not link Phonic conversation usage.");
+    }
+  } catch (error) {
+    console.info("SYNQ.ME could not link the Phonic conversation for usage reporting.", error);
+  }
+}
+
+async function completePhonicUsageSession(session) {
+  if (!session?.usageId) return;
+  const clientDurationMs = Math.max(0, Date.now() - Number(session.connectedAt || session.startedAt || Date.now()));
+  try {
+    const headers = await getApiAuthHeaders();
+    const response = await fetch(SYNQME_API_BASE_URL + "/api/phonic/complete", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        usageId: session.usageId,
+        conversationId: session.conversationId || "",
+        clientDurationMs
+      })
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload?.error || "Could not finalise Phonic usage reporting.");
+    }
+  } catch (error) {
+    console.info("SYNQ.ME could not finalise the Phonic usage record.", error);
+  }
+}
+
 function handlePhonicVoiceEvent(event) {
   const companion = selectedCompanionDisplayName();
   switch (event.type) {
+    case "conversation_created": {
+      const conversationId = String(event.conversationId || "").trim();
+      if (conversationId && phonicSessionMeta?.usageId) {
+        phonicSessionMeta.conversationId = conversationId;
+        void linkPhonicConversationUsage(conversationId);
+      }
+      break;
+    }
+
     case "open":
+      if (phonicSessionMeta && !phonicSessionMeta.connectedAt) phonicSessionMeta.connectedAt = Date.now();
       updateVoiceExperience("connecting", "Connected to Phonic. Preparing your conversation…");
       if (elements.conversationStatus) elements.conversationStatus.textContent = "Connected to Phonic";
       break;
@@ -2534,17 +2583,15 @@ async function openVoiceExperience() {
   updateVoiceExperience("connecting", "Requesting microphone access and connecting to Phonic…");
   if (elements.conversationStatus) elements.conversationStatus.textContent = "Connecting to Phonic";
 
-  // Warm the local AMÏA model while Phonic connects so the first spoken turn is faster.
-  void ensureLocalAIReady().catch((error) => {
-    console.info("SYNQ.ME is still preparing local AMÏA for voice.", error);
-  });
+  // Phonic handles the live audio connection; AMÏA generates every spoken reply through the backend.
 
   try {
     phonicVoiceConversation = createPhonicVoiceConversation({
       getSession: async () => {
-        const response = await fetch(PHONIC_API_BASE_URL + "/api/phonic/session", {
+        const authHeaders = await getApiAuthHeaders();
+        const response = await fetch(SYNQME_API_BASE_URL + "/api/phonic/session", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: authHeaders,
           body: JSON.stringify({})
         });
         let payload = {};
@@ -2552,6 +2599,12 @@ async function openVoiceExperience() {
         if (!response.ok) {
           throw new Error(payload?.error || "Could not create a Phonic session (HTTP " + response.status + ").");
         }
+        phonicSessionMeta = {
+          usageId: String(payload.usageId || ""),
+          startedAt: Date.now(),
+          connectedAt: null,
+          conversationId: ""
+        };
         return payload;
       },
       getConfig: () => buildPhonicConfig(),
@@ -2679,7 +2732,15 @@ function stopVoiceConversation(statusMessage = "Voice conversation stopped.") {
   voiceInputMuted = false;
   const activePhonicVoice = phonicVoiceConversation;
   phonicVoiceConversation = null;
-  if (activePhonicVoice) void activePhonicVoice.stop();
+  const completedPhonicSession = phonicSessionMeta;
+  phonicSessionMeta = null;
+  if (activePhonicVoice) {
+    void activePhonicVoice.stop().finally(() => {
+      if (completedPhonicSession) void completePhonicUsageSession(completedPhonicSession);
+    });
+  } else if (completedPhonicSession) {
+    void completePhonicUsageSession(completedPhonicSession);
+  }
   stopKokoroAudio();
   updateVoiceExperience("idle", statusMessage);
   if (voiceRestartTimer) window.clearTimeout(voiceRestartTimer);
@@ -3222,179 +3283,18 @@ function responseRepeatsUser(reply, userMessage) {
   return overlap >= 0.78;
 }
 
-function setLocalAIProgress({ label = "", progress = null, visible = true, indeterminate = false } = {}) {
-  if (!elements.localAIProgress) return;
-  elements.localAIProgress.hidden = !visible;
-  if (elements.localAIProgressLabel) elements.localAIProgressLabel.textContent = label;
-  const knownProgress = Number.isFinite(progress);
-  if (elements.localAIProgressFill) {
-    elements.localAIProgressFill.style.width = knownProgress ? Math.max(0, Math.min(100, progress)) + "%" : (indeterminate ? "18%" : "0%");
-    elements.localAIProgressFill.classList.toggle("is-indeterminate", Boolean(indeterminate && !knownProgress));
-  }
-  if (elements.localAIProgressTrack) {
-    if (knownProgress) elements.localAIProgressTrack.setAttribute("aria-valuenow", String(Math.round(progress)));
-    else elements.localAIProgressTrack.removeAttribute("aria-valuenow");
-    if (label) elements.localAIProgressTrack.setAttribute("aria-valuetext", label);
-    else elements.localAIProgressTrack.removeAttribute("aria-valuetext");
-  }
-  if (!isSending && elements.conversationStatus && label) elements.conversationStatus.textContent = label;
-}
-
-function rejectPendingLocalAIRequests(error) {
-  for (const [id, pending] of localAIPendingRequests.entries()) {
-    pending.reject(error);
-    localAIPendingRequests.delete(id);
-  }
-}
-
-function handleLocalAIWorkerMessage(event) {
-  const data = event.data || {};
-  if (data.type === "status") {
-    setLocalAIProgress({
-      label: String(data.label || "Loading local AMÏA model"),
-      progress: null,
-      indeterminate: true
-    });
-    return;
-  }
-  if (data.type === "progress") {
-    const progress = Number.isFinite(data.progress) ? data.progress : null;
-    const label = data.status === "done"
-      ? "Starting local AMÏA model"
-      : data.cached
-        ? "Loading local AMÏA model"
-        : data.status === "initiate"
-          ? "Preparing local AMÏA model download"
-          : "Downloading local AMÏA model";
-    setLocalAIProgress({
-      label,
-      progress,
-      indeterminate: progress === null
-    });
-    return;
-  }
-  if (data.type === "ready") {
-    localAIReady = true;
-    state.apiProvider = "local";
-    state.apiModel = LOCAL_MODEL_LABEL;
-    state.apiConfigured = true;
-    state.apiConnected = true;
-    state.apiError = "";
-    state.apiErrorDetail = "";
-    setLocalAIProgress({ label: "Local AI ready", progress: 100 });
-    if (localAILoadResolve) localAILoadResolve();
-    localAILoadResolve = null;
-    localAILoadReject = null;
-    renderAll();
-    window.setTimeout(() => setLocalAIProgress({ visible: false }), 6000);
-    return;
-  }
-  if (data.type === "load-error") {
-    const error = new Error(String(data.message || "The local model could not be loaded."));
-    localAIReady = false;
-    state.apiConnected = false;
-    state.apiConfigured = true;
-    state.apiProvider = "local";
-    state.apiModel = LOCAL_MODEL_LABEL;
-    state.apiError = "local model unavailable";
-    state.apiErrorDetail = error.message;
-    setLocalAIProgress({ label: error.message, progress: null, indeterminate: false });
-    if (localAILoadReject) localAILoadReject(error);
-    localAILoadResolve = null;
-    localAILoadReject = null;
-    renderAll();
-    return;
-  }
-  if (data.type === "reply" || data.type === "reply-error") {
-    const pending = localAIPendingRequests.get(data.id);
-    if (!pending) return;
-    localAIPendingRequests.delete(data.id);
-    if (data.type === "reply-error") pending.reject(new Error(String(data.message || "Local generation failed.")));
-    else pending.resolve(String(data.text || ""));
-  }
-}
-
-function workerFailure(error) {
-  const message = error?.message || "The local AI worker stopped unexpectedly.";
-  localAIReady = false;
-  localAIWorker = null;
-  localAILoadPromise = null;
-  state.apiConnected = false;
-  state.apiError = "local model unavailable";
-  state.apiErrorDetail = message;
-  setLocalAIProgress({ label: message });
-  if (localAILoadReject) localAILoadReject(new Error(message));
-  localAILoadResolve = null;
-  localAILoadReject = null;
-  rejectPendingLocalAIRequests(new Error(message));
-  renderAll();
-}
-
-function ensureLocalAIReady() {
-  if (localAIReady) return Promise.resolve();
-  if (localAILoadPromise) return localAILoadPromise;
-  state.apiProvider = "local";
-  state.apiModel = LOCAL_MODEL_LABEL;
-  state.apiError = "";
-  state.apiErrorDetail = "";
-  setLocalAIProgress({ label: "Checking local AMÏA model cache", progress: null, indeterminate: true });
-  localAILoadPromise = new Promise((resolve, reject) => {
-    localAILoadResolve = resolve;
-    localAILoadReject = reject;
-    (async () => {
-      try {
-        // Ask for persistent origin storage before starting a large model load.
-        // Browsers may decline; Cache API caching still remains enabled.
-        try { await navigator.storage?.persist?.(); } catch {}
-        if (!localAIWorker) {
-          localAIWorker = new Worker(new URL("./local-ai.worker.js", import.meta.url), { type: "module" });
-          localAIWorker.addEventListener("message", handleLocalAIWorkerMessage);
-          localAIWorker.addEventListener("error", (error) => workerFailure(error));
-          localAIWorker.addEventListener("messageerror", () => workerFailure(new Error("Local AI worker returned an unreadable message.")));
-        }
-        localAIWorker.postMessage({ type: "load" });
-      } catch (error) {
-        reject(error);
-      }
-    })();
-  }).catch((error) => {
-    localAILoadPromise = null;
-    localAIReady = false;
-    state.apiConnected = false;
-    state.apiProvider = "local";
-    state.apiModel = LOCAL_MODEL_LABEL;
-    state.apiError = "local model unavailable";
-    state.apiErrorDetail = String(error?.message || "The local model could not be loaded.");
-    setLocalAIProgress({ label: state.apiErrorDetail });
-    renderAll();
-    throw error;
-  });
-  return localAILoadPromise;
-}
-
-function runLocalAIRequest(payload) {
-  const id = ++localAIRequestSequence;
-  return new Promise((resolve, reject) => {
-    localAIPendingRequests.set(id, { resolve, reject });
-    try {
-      localAIWorker.postMessage({ ...payload, id });
-    } catch (error) {
-      localAIPendingRequests.delete(id);
-      reject(error);
-    }
-  });
-}
-
 async function requestAIReply(repairMode = false, outputMode = "text") {
   if (!repairMode) lastAIReplyUsedFallback = false;
-  state.apiProvider = "local";
-  state.apiModel = LOCAL_MODEL_LABEL;
+  state.apiProvider = "deepseek";
+  state.apiModel = "deepseek-flash";
   state.apiError = "";
   state.apiErrorDetail = "";
   try {
-    await ensureLocalAIReady();
-    if (elements.conversationStatus) elements.conversationStatus.textContent = "Your companion is thinking…";
-    const messages = state.messages.slice(-18).map((message) => ({ role: message.role, content: message.content }));
+    if (elements.conversationStatus) elements.conversationStatus.textContent = "AMÏA is thinking…";
+    const messages = state.messages.slice(-18).map((message) => ({
+      role: message.role,
+      content: message.content
+    }));
     const preferences = state.preferences.map((preference) => {
       const extracted = preferenceExtraction(preference);
       return {
@@ -3405,40 +3305,56 @@ async function requestAIReply(repairMode = false, outputMode = "text") {
         unresolvedFields: extracted.unresolvedFields
       };
     });
-    const reply = await runLocalAIRequest({
-      type: "generate",
-      messages,
-      preferences,
-      profile: {
-        ownerName: state.profile.ownerName,
-        robotName: state.profile.robotName,
-        robotType: state.profile.robotType,
-        robotVoice: state.profile.robotVoice || "female",
-        preferredLanguage: state.profile.preferredLanguage || "en",
-        askBeforeActions: state.profile.confirmActions
-      },
-      domesticFunctions: state.functions.map((id) => ACTIVITIES.find((activity) => activity.id === id)?.label).filter(Boolean),
-      outputMode,
-      repairMode
+    const authHeaders = await getApiAuthHeaders();
+    const response = await fetch(SYNQME_API_BASE_URL + "/api/chat", {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({
+        messages,
+        preferences,
+        profile: {
+          ownerName: state.profile.ownerName,
+          companionName: "Freya",
+          robotName: state.profile.robotName,
+          robotType: state.profile.robotType,
+          robotVoice: state.profile.robotVoice || "female",
+          preferredLanguage: state.profile.preferredLanguage || "en",
+          askBeforeActions: state.profile.confirmActions
+        },
+        domesticFunctions: state.functions.map((id) => ACTIVITIES.find((activity) => activity.id === id)?.label).filter(Boolean),
+        outputMode,
+        repairMode
+      }),
+      signal: AbortSignal.timeout(40000)
     });
-    if (!reply.trim()) throw new Error("The local model returned an empty reply.");
+    let payload = {};
+    try { payload = await response.json(); } catch {}
+    if (!response.ok) {
+      const error = new Error(payload?.error || "AMÏA could not complete the request (HTTP " + response.status + ").");
+      error.apiStatus = response.status;
+      throw error;
+    }
+    const reply = typeof payload?.reply === "string" ? payload.reply.trim() : "";
+    if (!reply) throw new Error("AMÏA returned an empty response.");
+    state.apiProvider = payload.provider || "deepseek";
+    state.apiModel = payload.model || "deepseek-flash";
     state.apiConnected = true;
     state.apiConfigured = true;
     state.apiError = "";
     state.apiErrorDetail = "";
-    elements.providerLabel.textContent = "LOCAL AI · ON-DEVICE";
-    lastAIReplyUsedFallback = false;
-    return reply.trim();
+    if (elements.providerLabel) elements.providerLabel.textContent = "AMÏA · " + state.apiModel.toUpperCase();
+    lastAIReplyUsedFallback = Boolean(payload.usedFallback);
+    return reply;
   } catch (error) {
-    console.info("SYNQ.ME local Qwen generation failed.", error);
+    console.info("SYNQ.ME AMÏA request failed.", error);
     state.apiConnected = false;
-    state.apiError = "local model unavailable";
-    state.apiErrorDetail = String(error?.message || "Local generation failed. Check WebGPU support and available memory.");
-    elements.providerLabel.textContent = "LOCAL AI · MODEL NEEDS ATTENTION";
+    state.apiConfigured = true;
+    state.apiError = responseErrorLabel(error);
+    state.apiErrorDetail = String(error?.message || "Could not connect to the SYNQ.ME AI backend.");
+    if (elements.providerLabel) elements.providerLabel.textContent = "AMÏA · CONNECTION ISSUE";
     return null;
   }
 }
-
 function localizedAIUnavailable(language) {
   const messages = {
     es: "Ahora mismo no he podido generar una respuesta. Prefiero no inventar una; inténtalo de nuevo dentro de un momento.",

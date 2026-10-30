@@ -1,12 +1,25 @@
 import http from "node:http";
+import { createAmiaReply, searchWeb, fetchWebPage } from "./amia/index.js";
+import {
+  requireAuthenticatedUser,
+  requireAdminUser,
+  usageTrackingConfigured,
+  buildAdminUsageDashboard,
+  createPhonicUsageSession,
+  linkPhonicConversation,
+  completePhonicUsageSession,
+  recordDeepseekUsage,
+  recordSearchFetchUsage,
+  httpError
+} from "./usage.js";
 
 const PORT = Number.parseInt(process.env.PORT || "10000", 10);
-// Local/on-device AI remains the text-chat path; Phonic powers real-time speech-to-speech voice sessions.
-const GROQ_API_KEY = process.env.GROQ_API_KEY || "";
+const DEEPSEEK_PERSON_API_KEY = process.env.DEEPSEEK_PERSON_API_KEY || "";
+const DEEPSEEK_SEARCH_API_KEY = process.env.DEEPSEEK_SEARCH_API_KEY || "";
 const PHONIC_API_KEY = process.env.PHONIC_API_KEY || "";
-const PROVIDER = "groq";
-const API_KEY = GROQ_API_KEY;
-const MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-20b";
+const PROVIDER = "deepseek";
+const API_KEY = DEEPSEEK_PERSON_API_KEY;
+const MODEL = process.env.DEEPSEEK_FLASH_MODEL || "deepseek-flash";
 // Render deployments need CORS to work even when FRONTEND_ORIGIN has not
 // been populated. Keep the known SYNQ.ME origins as safe defaults and allow
 // additional exact origins through FRONTEND_ORIGIN (comma-separated).
@@ -27,19 +40,7 @@ const ALLOWED_ORIGINS = new Set([
 const requestHistory = new Map();
 const MAX_REQUESTS_PER_MINUTE = 12;
 const MAX_BODY_BYTES = 48 * 1024;
-const MAX_AUDIO_BODY_BYTES = 8 * 1024 * 1024;
 const SUPPORTED_CONVERSATION_LANGUAGES = new Set(["en", "es", "fr", "it", "pt", "hi", "ja", "zh"]);
-const CONVERSATION_LANGUAGE_NAMES = {
-  en: "English (US)",
-  es: "Spanish",
-  fr: "French",
-  it: "Italian",
-  pt: "Brazilian Portuguese",
-  hi: "Hindi",
-  ja: "Japanese",
-  zh: "Mandarin Chinese"
-};
-
 function json(response, status, body, headers = {}) {
   response.writeHead(status, {
     "Content-Type": "application/json; charset=utf-8",
@@ -58,7 +59,7 @@ function corsHeaders(origin) {
     "Access-Control-Allow-Origin": origin,
     "Vary": "Origin",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type"
+    "Access-Control-Allow-Headers": "Content-Type, Authorization"
   };
 }
 
@@ -136,6 +137,7 @@ function cleanProfile(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) return {};
   return {
     ownerName: typeof input.ownerName === "string" ? input.ownerName.trim().slice(0, 60) : "",
+    companionName: typeof input.companionName === "string" ? input.companionName.trim().slice(0, 60) : "Freya",
     robotName: typeof input.robotName === "string" ? input.robotName.trim().slice(0, 60) : "",
     robotType: typeof input.robotType === "string" ? input.robotType.slice(0, 80) : "Home assistant",
     askBeforeActions: Boolean(input.askBeforeActions),
@@ -190,138 +192,6 @@ function focusedPreferenceFollowup(message, profile = {}) {
   return prefix + "Got it. What is the next important detail I should understand?";
 }
 
-function isClarificationRequest(message) {
-  const value = String(message || "").toLowerCase().replace(/[.!?]+$/g, "").trim();
-  return /^(such as what|like what|what do you mean|what do you mean by that|examples?|give me an example|can you give me an example|can you give me some examples|could you give me an example|could you give me some examples|what kind of things|what sort of things|can you explain that|could you explain that)$/.test(value);
-}
-
-function clarificationHelpReply(previousQuestion, latestPreference = "") {
-  const question = String(previousQuestion || "").toLowerCase();
-  const preference = String(latestPreference || "").trim();
-  if (/(avoid|prevent|left untouched|never happen|shouldn't|should not)/i.test(question)) {
-    return "For example, you might want your SecondSelf to ask before moving personal belongings, avoid touching fragile or private items, leave certain rooms alone, or check with you before throwing anything away. Those are only examples—do any apply to you, or is there something else?";
-  }
-  if (/(ask|permission|confirm|check with me)/i.test(question)) {
-    return "For example, asking before moving your belongings, using a new cleaning product, throwing something away, or entering a private room. Which, if any, would you want your SecondSelf to check with you first?";
-  }
-  if (/(time|timing|schedule|morning|evening|when)/i.test(question)) {
-    return "For example, you might prefer a task before breakfast, after you leave a room, at a set time each day, or only when needed. Is any of those closer to what you have in mind?";
-  }
-  if (/(order|sequence|first|before|after)/i.test(question)) {
-    return "For example, cleaning surfaces before floors, putting items away before wiping a counter, or finishing one room before moving to the next. Is there a particular order you prefer?";
-  }
-  if (/(clean|surface|floor|vacuum|tidy|kitchen)/i.test(question) || /(clean|surface|floor|vacuum|tidy|kitchen)/i.test(preference)) {
-    return "For example, protecting delicate surfaces, using only products you approve, leaving personal items where they are, or cleaning high-use areas first. Which detail matters in your home?";
-  }
-  return "For example, you can tell me about timing, task order, items that need special care, or things you want me to ask before changing. Is there one of those you want to explore first?";
-}
-
-function betterFallbackFollowup(message, profile = {}, history = []) {
-  const text = String(message || "").trim();
-  const lower = text.toLowerCase();
-  const robotName = String(profile.robotName || "").trim() || "robot";
-  const priorAssistant = [...history.slice(0, -1)].reverse().find((item) => item.role === "assistant")?.content || "";
-  const recentAssistant = history.filter((item) => item.role === "assistant").slice(-6).map((item) => item.content);
-  const normalise = (value) => String(value || "").toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
-  const repeated = (question) => recentAssistant.some((reply) => {
-    const a = normalise(reply), b = normalise(question);
-    return a === b || a.includes(b) || b.includes(a);
-  });
-  const choose = (options) => {
-    const fresh = options.find((option) => !repeated(option));
-    if (fresh) return fresh;
-    const newAngles = [
-      "Can you walk me through how that usually happens at home?",
-      "What tends to happen just before you need that done?",
-      "What small detail would make the biggest difference to you in that situation?",
-      "When this doesn’t go the way you like, what usually goes wrong?"
-    ];
-    return newAngles.find((option) => !repeated(option)) || "What does a typical day look like for you in that situation?";
-  };
-
-  if (/^(morning|in the morning|evening|in the evening|afternoon|at night)$/i.test(text) && /(morning and evening|what time|which times|when would|time of day)/i.test(priorAssistant)) {
-    if (/morning/i.test(text)) return "Morning sounds like a good fit. Is that because you’re usually up and about then, or would you prefer it done before you start using the kitchen?";
-    if (/evening|night/i.test(text)) return "Evening, then. Would you picture that happening after you’ve cooked or eaten, or at a set time regardless?";
-    return "That gives me a better picture. Is that time tied to something in your day, or does it simply suit you best?";
-  }
-  if (/^(washing|wash|washing and drying|wash and dry|laundering)$/i.test(text) && /(which part|sorting, washing|putting clothes away)/i.test(priorAssistant)) {
-    return choose([
-      "When you wash clothes, do you usually separate them by colour first, or pay more attention to fabric and care labels?",
-      "Are there any garments you treat differently from the rest—delicates, wool, work clothes, or anything you prefer to air-dry?",
-      "Do you tend to have a regular laundry day, or wash smaller loads as things need doing?"
-    ]);
-  }
-  if (/(paper towels?|spray|cleaning product|surface cleaner|detergent)/i.test(text)) {
-    return choose([
-      "Are those your go-to supplies around the whole home, or do you switch products depending on the surface?",
-      "Is there a surface you’re particularly careful with, where the wrong product could cause damage?",
-      "When you clean, do you prefer to keep your usual products close at hand, or have them brought out only when needed?"
-    ]);
-  }
-  if (/(twice|two times|2 times|daily|every day|each day)/i.test(text) && /(kitchen|counter|worktop|surface|clean|wipe)/i.test(text)) {
-    return choose([
-      "When you say twice a day, is one of those cleans usually after cooking or meals, or do you prefer set times?",
-      "Would you want the same quick clean each time, or a more thorough one at a particular point in the day?",
-      "Is the aim mainly to keep the surfaces hygienic, clear away crumbs and spills, or both?"
-    ]);
-  }
-  if (/(ask me|ask before|check with me|permission|confirm before|without asking|avoid|boundary)/i.test(text) ||
-      (/avoid|permission|boundary/i.test(priorAssistant) && text.length < 100)) {
-    return choose([
-      "That’s an important boundary. Are you most concerned about belongings being moved or damaged, private spaces, or decisions being made without checking with you?",
-      "What kinds of things should it never decide for itself—moving belongings, throwing something away, or using a product you haven’t approved?",
-      "Would you want it to check with you about every uncertain action, or only where there’s a real risk of damage, privacy, or an unwanted change?"
-    ]).replace(/\bthe robot\b/gi, robotName).replace(/\byour robot\b/gi, "your " + robotName);
-  }
-  if (/(laundry|washing|clothes|fold|drying|wardrobe)/i.test(lower)) {
-    return choose([
-      "What tends to matter most with laundry in your home: keeping colours separate, protecting delicate items, or having everything ready when you need it?",
-      "How do you like clean clothes left—folded, hung up, or put back in specific places?",
-      "Are there any laundry habits you already have that you’d definitely want your robot to follow?"
-    ]).replace(/\byour robot\b/gi, "your " + robotName);
-  }
-  if (/(vacuum|floor|carpet|tidy|cleaning|clean|surface|counter|worktop|kitchen)/i.test(lower)) {
-    return choose([
-      "When a room feels properly looked after to you, what do you notice first: clean surfaces, clear floors, or everything being back where it belongs?",
-      "Are there parts of the room you like to deal with first, or do you tend to work around whatever needs attention?",
-      "Is there anything in that space that should stay exactly where it is, even during a tidy-up?"
-    ]).replace(/\byour robot\b/gi, "your " + robotName);
-  }
-  if (/(cook|meal|food|recipe|ingredient|grocery|shopping)/i.test(lower)) {
-    return choose([
-      "When it comes to meals, do you prefer familiar favourites or a bit of variety during the week?",
-      "Are there ingredients you avoid for taste, preference, or practical reasons?",
-      "What usually makes meal planning easier for you: knowing what’s in the fridge, having a plan, or keeping things flexible?"
-    ]);
-  }
-  if (/(pet|dog|cat|plant|water|garden)/i.test(lower)) {
-    return choose([
-      "What little signs tell you your pet or plants need attention?",
-      "Are there any routines around that you’d want kept exactly as they are?",
-      "Is there anything you’d want the robot to check with you about rather than decide on its own?"
-    ]).replace(/\byour robot\b/gi, "your " + robotName);
-  }
-  if (/^(yes|yeah|yep|no|nope|probably|maybe|not sure|i don't know)$/i.test(text)) {
-    return "Fair enough. Would it help to think through a real example at home, or should we start with what usually happens today?";
-  }
-  if (text.endsWith("?") || /^(what|why|how|when|where|who|can you|could you|do you|would you|is it|are there)\b/i.test(text)) {
-    if (/(such as what|like what|what do you mean|examples?)/i.test(text)) return clarificationHelpReply(priorAssistant, "");
-    return "Good question. Let me make sure I answer what you’re actually asking: are you thinking about how SYNQ.ME learns the preference, or how a compatible robot might use it in future?";
-  }
-  if (priorAssistant) {
-    return choose([
-      "I’m getting a clearer picture now. What’s the part of that routine you’d be most particular about?",
-      "That helps. Is there a real example from your own home that would make this clearer?",
-      "I see. What would be the most frustrating thing for the robot to get wrong in that situation?"
-    ]);
-  }
-  return choose([
-    "Tell me a little more about how that works at home for you. What do you tend to do first?",
-    "I'm curious—what makes that feel right for you: convenience, consistency, or something else?",
-    "What would you notice first if your future robot really understood your way of doing that?"
-  ]);
-}
-
 function guardRobotExecutionClaims(reply, preferences, language = "en") {
   const claimPattern = /\b(?:the\s+)?robot\s+(?:will|would)\s+(?:automatically\s+)?(?:follow|place|put|handle|sort|load|unload|start|turn on|execute|perform|carry out)\b|\b(?:will happen automatically|automatically carry out)\b/i;
   if (!claimPattern.test(reply)) return reply;
@@ -357,9 +227,29 @@ const app = http.createServer(async (request, response) => {
       provider: PROVIDER,
       configured: Boolean(API_KEY),
       model: MODEL,
-      diagnosticsVersion: "groq-whisper-transcription-v2",
-      phonicConfigured: Boolean(PHONIC_API_KEY)
+      diagnosticsVersion: "amia-deepseek-v1",
+      searchConfigured: Boolean(DEEPSEEK_SEARCH_API_KEY),
+      phonicConfigured: Boolean(PHONIC_API_KEY),
+      usageTrackingConfigured,
+      adminAllowlistConfigured: Boolean(process.env.ADMIN_EMAILS || process.env.ADMIN_USER_IDS),
+      phonicRateConfigured: Boolean(process.env.PHONIC_COST_PER_MINUTE_USD)
     }, headers || {});
+  }
+
+
+  if (request.method === "GET" && url.pathname === "/api/admin/usage") {
+    if (origin && headers === null) return json(response, 403, { error: "Origin not allowed." }, headers || {});
+    try {
+      const user = await requireAuthenticatedUser(request);
+      requireAdminUser(user);
+      if (!usageTrackingConfigured) throw httpError("The usage database is not configured. Add SUPABASE_SECRET_KEY to the Render API service.", 503);
+      const requestedPeriod = url.searchParams.get("period") || "30d";
+      const period = ["7d", "30d", "90d", "all"].includes(requestedPeriod) ? requestedPeriod : "30d";
+      const dashboard = await buildAdminUsageDashboard(period, PHONIC_API_KEY);
+      return json(response, 200, dashboard, headers || {});
+    } catch (error) {
+      return json(response, Number.isInteger(error?.statusCode) ? error.statusCode : 500, { error: error.message || "Could not load administration data." }, headers || {});
+    }
   }
 
   if (request.method === "POST" && url.pathname === "/api/phonic/session") {
@@ -374,8 +264,8 @@ const app = http.createServer(async (request, response) => {
     }
 
     try {
-      // Consume the small JSON request body so this endpoint behaves consistently
-      // with other API routes. The Phonic API key never leaves this server.
+      const user = await requireAuthenticatedUser(request);
+      // The Phonic API key never leaves this server.
       await readJson(request, 1024);
       const upstream = await fetch("https://api.phonic.ai/v1/auth/session_token", {
         method: "POST",
@@ -410,9 +300,12 @@ const app = http.createServer(async (request, response) => {
         return json(response, 502, { error: "Phonic did not return a session token." }, headers || {});
       }
 
+      const usageSession = await createPhonicUsageSession(user.id);
       return json(response, 200, {
         sessionToken: payload.session_token,
-        websocketUrl: "wss://api.phonic.ai/v1/sts/ws"
+        websocketUrl: "wss://api.phonic.ai/v1/sts/ws",
+        usageId: usageSession.usageId,
+        startedAt: usageSession.startedAt
       }, headers || {});
     } catch (error) {
       const status = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
@@ -432,138 +325,71 @@ const app = http.createServer(async (request, response) => {
     }
   }
 
-  if (request.method === "POST" && url.pathname === "/api/transcribe") {
-    if (origin && headers === null) return json(response, 403, { error: "Origin not allowed." });
 
-    // Voice transcription must use the same Groq provider family as chat.
-    // The API key stays server-side; audio never goes directly from the browser to Groq.
-    if (!GROQ_API_KEY) {
-      return json(response, 503, {
-        error: "Groq voice transcription is not configured. Add GROQ_API_KEY to the Render API environment.",
-        provider: "groq"
-      }, headers || {});
-    }
-    if (limitReached(request)) {
-      return json(response, 429, { error: "Too many voice requests. Wait a minute, then try again.", provider: "groq" }, headers || {});
-    }
 
+  if (request.method === "POST" && url.pathname === "/api/phonic/link") {
+    if (origin && headers === null) return json(response, 403, { error: "Origin not allowed." }, headers || {});
     try {
-      const body = await readJson(request, MAX_AUDIO_BODY_BYTES);
-      const audioBase64 = typeof body?.audioBase64 === "string"
-        ? body.audioBase64.replace(/^data:[^,]+,/, "")
-        : "";
-      const suppliedMime = typeof body?.mimeType === "string"
-        ? body.mimeType.split(";")[0].trim().toLowerCase()
-        : "";
-      const mimeType = suppliedMime === "audio/x-wav" ? "audio/wav" : suppliedMime;
-      const allowedMimeTypes = new Set([
-        "audio/webm", "audio/mp4", "audio/m4a", "audio/wav", "audio/mpeg",
-        "audio/mp3", "audio/aac", "audio/ogg", "audio/flac", "audio/opus"
-      ]);
-      if (!audioBase64 || !allowedMimeTypes.has(mimeType) || audioBase64.length > 7_500_000) {
-        return json(response, 400, {
-          error: "Unsupported or oversized audio recording. Please try a shorter recording.",
-          provider: "groq"
-        }, headers || {});
-      }
-
-      const language = SUPPORTED_CONVERSATION_LANGUAGES.has(body?.language) ? body.language : "en";
-      const model = process.env.GROQ_TRANSCRIPTION_MODEL || "whisper-large-v3-turbo";
-      const extension = ({
-        "audio/webm": "webm",
-        "audio/mp4": "mp4",
-        "audio/m4a": "m4a",
-        "audio/wav": "wav",
-        "audio/mpeg": "mp3",
-        "audio/mp3": "mp3",
-        "audio/aac": "aac",
-        "audio/ogg": "ogg",
-        "audio/flac": "flac",
-        "audio/opus": "opus"
-      })[mimeType] || "webm";
-
-      // Groq's Whisper endpoint accepts multipart/form-data.
-      // Node's FormData adds the multipart boundary automatically.
-      const audioBytes = Buffer.from(audioBase64, "base64");
-      const form = new FormData();
-      form.append("file", new Blob([audioBytes], { type: mimeType }), "synqme-recording." + extension);
-      form.append("model", model);
-      form.append("language", language);
-      form.append("response_format", "json");
-      form.append("temperature", "0");
-
-      const upstream = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
-        method: "POST",
-        headers: { "Authorization": "Bearer " + GROQ_API_KEY },
-        body: form,
-        signal: AbortSignal.timeout(45_000)
-      });
-
-      if (!upstream.ok) {
-        const errorCode = "groq-transcription-" + Date.now().toString(36);
-        let providerDetail = "";
-        try {
-          const payload = await upstream.json();
-          providerDetail = String(payload?.error?.message || payload?.message || "").slice(0, 220);
-        } catch {}
-        console.error("Groq transcription failed", {
-          status: upstream.status,
-          model,
-          language,
-          errorCode,
-          detail: providerDetail
-        });
-
-        let friendly;
-        if (upstream.status === 429) {
-          friendly = "Groq voice transcription has reached a rate or usage limit. Check your Groq usage and try again shortly.";
-        } else if (upstream.status === 401 || upstream.status === 403) {
-          friendly = "Groq rejected the transcription API key or access. Check GROQ_API_KEY and that speech-to-text is available for the project.";
-        } else if (upstream.status === 400 || upstream.status === 413) {
-          friendly = "Groq could not accept this audio recording. Try recording a shorter sentence and check microphone permissions.";
-        } else if (upstream.status === 404) {
-          friendly = "Groq could not find the configured transcription model. Check GROQ_TRANSCRIPTION_MODEL.";
-        } else {
-          friendly = "Groq could not transcribe that recording. Try again, or type your message instead.";
-        }
-
-        return json(response, upstream.status === 429 ? 429 : 502, {
-          error: friendly,
-          provider: "groq",
-          model,
-          upstreamStatus: upstream.status,
-          errorCode,
-          detail: providerDetail || undefined
-        }, headers || {});
-      }
-
-      const result = await upstream.json();
-      const transcript = typeof result?.text === "string" ? result.text.trim() : "";
-      if (!transcript) {
-        return json(response, 422, {
-          error: "Groq did not detect any clear speech in that recording. Please try again or type your message.",
-          provider: "groq",
-          model
-        }, headers || {});
-      }
-      return json(response, 200, { text: transcript, model, provider: "groq", language }, headers || {});
+      const user = await requireAuthenticatedUser(request);
+      const body = await readJson(request, 4 * 1024);
+      const usageId = String(body?.usageId || "");
+      const conversationId = String(body?.conversationId || "").trim();
+      if (!usageId || !conversationId || conversationId.length > 160) throw httpError("A valid usage ID and Phonic conversation ID are required.", 400);
+      await linkPhonicConversation(user.id, usageId, conversationId);
+      return json(response, 200, { ok: true }, headers || {});
     } catch (error) {
-      const status = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
-      if (status === 400 || status === 413) return json(response, status, {
-        error: error.message,
-        provider: "groq"
-      }, headers || {});
-      const errorCode = "groq-transcription-" + Date.now().toString(36);
-      console.error("SYNQ.ME Groq transcription handler error", {
-        name: error?.name || "Error",
-        message: String(error?.message || "Unknown server error").slice(0, 220),
-        errorCode
+      return json(response, Number.isInteger(error?.statusCode) ? error.statusCode : 500, { error: error.message || "Could not link voice session." }, headers || {});
+    }
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/phonic/complete") {
+    if (origin && headers === null) return json(response, 403, { error: "Origin not allowed." }, headers || {});
+    try {
+      const user = await requireAuthenticatedUser(request);
+      const body = await readJson(request, 4 * 1024);
+      const result = await completePhonicUsageSession(user.id, PHONIC_API_KEY, {
+        usageId: String(body?.usageId || ""),
+        conversationId: String(body?.conversationId || "").trim(),
+        clientDurationMs: Math.max(0, Math.min(6 * 60 * 60 * 1000, Number(body?.clientDurationMs || 0)))
       });
-      return json(response, 500, {
-        error: "The Groq voice transcription request failed before it could be completed. Try again, or type your message instead.",
-        provider: "groq",
-        errorCode
-      }, headers || {});
+      return json(response, 200, { ok: true, durationSource: result.source, durationMs: result.durationMs }, headers || {});
+    } catch (error) {
+      return json(response, Number.isInteger(error?.statusCode) ? error.statusCode : 500, { error: error.message || "Could not finalise voice usage." }, headers || {});
+    }
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/amia/search") {
+    if (origin && headers === null) return json(response, 403, { error: "Origin not allowed." });
+    if (!DEEPSEEK_SEARCH_API_KEY) return json(response, 503, { error: "DeepSeek Search is not configured. Add DEEPSEEK_SEARCH_API_KEY to the backend environment." }, headers || {});
+    if (limitReached(request)) return json(response, 429, { error: "Too many requests. Wait a minute, then try again." }, headers || {});
+    try {
+      const user = await requireAuthenticatedUser(request);
+      const body = await readJson(request, 8 * 1024);
+      const results = await searchWeb(DEEPSEEK_SEARCH_API_KEY, body?.query, {
+        count: body?.count,
+        originalQuestion: body?.originalQuestion
+      });
+      await recordSearchFetchUsage({ userId: user.id, type: "search" });
+      return json(response, 200, { results, provider: "deepseek-search" }, headers || {});
+    } catch (error) {
+      const status = Number.isInteger(error?.statusCode) ? error.statusCode : 502;
+      return json(response, status, { error: String(error?.message || "DeepSeek Search failed.") }, headers || {});
+    }
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/amia/fetch") {
+    if (origin && headers === null) return json(response, 403, { error: "Origin not allowed." });
+    if (!DEEPSEEK_SEARCH_API_KEY) return json(response, 503, { error: "DeepSeek Fetch is not configured. Add DEEPSEEK_SEARCH_API_KEY to the backend environment." }, headers || {});
+    if (limitReached(request)) return json(response, 429, { error: "Too many requests. Wait a minute, then try again." }, headers || {});
+    try {
+      const user = await requireAuthenticatedUser(request);
+      const body = await readJson(request, 8 * 1024);
+      const page = await fetchWebPage(DEEPSEEK_SEARCH_API_KEY, body?.url);
+      await recordSearchFetchUsage({ userId: user.id, type: "fetch" });
+      return json(response, 200, { ...page, provider: "deepseek-fetch" }, headers || {});
+    } catch (error) {
+      const status = Number.isInteger(error?.statusCode) ? error.statusCode : 502;
+      return json(response, status, { error: String(error?.message || "DeepSeek Fetch failed.") }, headers || {});
     }
   }
 
@@ -575,20 +401,20 @@ const app = http.createServer(async (request, response) => {
     return json(response, 403, { error: "Origin not allowed." });
   }
   if (!API_KEY) {
-    const requiredKey = "GROQ_API_KEY";
-    return json(response, 503, { error: "AI is not configured. Add " + requiredKey + " to the Render backend environment." }, headers || {});
+    const requiredKey = "DEEPSEEK_PERSON_API_KEY";
+    return json(response, 503, { error: "AMÏA is not configured. Add " + requiredKey + " to the Render backend environment." }, headers || {});
   }
   if (limitReached(request)) {
     return json(response, 429, { error: "Too many requests. Wait a minute, then try again." }, headers || {});
   }
 
   try {
+    const user = await requireAuthenticatedUser(request);
     const body = await readJson(request);
     const repairMode = body?.repairMode === true;
     const messages = cleanMessages(body?.messages);
     const preferences = cleanPreferences(body?.preferences);
     const profile = cleanProfile(body?.profile);
-    const responseLanguage = CONVERSATION_LANGUAGE_NAMES[profile.preferredLanguage] || "English (US)";
     const domesticFunctions = cleanFunctions(body?.domesticFunctions);
 
     if (!messages.length || messages[messages.length - 1].role !== "user") {
@@ -596,117 +422,28 @@ const app = http.createServer(async (request, response) => {
     }
 
     const latestUserMessage = messages[messages.length - 1].content;
-    const previousAssistantMessage = messages.length > 1 && messages[messages.length - 2].role === "assistant"
-      ? messages[messages.length - 2].content
-      : "";
-    if (isClarificationRequest(latestUserMessage) && previousAssistantMessage && profile.preferredLanguage === "en") {
-      return json(response, 200, {
-        reply: clarificationHelpReply(previousAssistantMessage, messages[messages.length - 3]?.content || ""),
-        provider: PROVIDER,
-        model: MODEL
-      }, headers || {});
-    }
-
-    const systemPrompt = [
-      "You are SYNQ.ME, the user's conversational future-robot companion and guide for building their MySecondSelf digital persona. Follow the interaction style of the reference dishwasher conversation: grounded, attentive, useful, specific and naturally inquisitive. It should feel like a thoughtful companion getting to know a home, not a bot running a questionnaire.",
-      "VOICE AND IDENTITY: You are Freya, the conversational companion shown in the interface as 'Freya · SYNQ.ME'. Speak directly to the user in the first person as 'I', 'me' and 'my'. Never refer to yourself as 'Freya' in the third person (for example, never ask 'Would you like Freya to help?' or say 'Freya can...'). Say 'Would you like me to...' instead. Keep your identity as the conversational guide distinct from the name of the user's future physical robot, which may be different. You are helping the user define preferences for a future compatible robot; do not imply a physical robot is connected or can currently carry out an action.",
-      "LANGUAGE: Respond in " + responseLanguage + " in every assistant turn, including acknowledgements, follow-up questions, clarifications, summaries and corrections. Keep the actual response text in this language because it is displayed in the conversation and saved to the user's account. Do not switch to English unless the user changes the language setting or explicitly asks you to switch. Preserve personal names and product names; use natural, conversational wording for the selected language. If the user's latest message is in another language, understand it and still answer in the selected language.",
-
-      "Your goal is to understand how the person wants everyday tasks handled, what they care about, how they make decisions, which exceptions matter, and when you should ask rather than guess. Learn by following the meaning of the conversation, not by marching through a predefined list of dimensions.",
-      "CORE TURN PATTERN: listen carefully; identify the practical rule, reason or exception in the user's answer; briefly reflect what that changes; then ask the single next question that most naturally follows. The reflection may be a conclusion ('So ordinary scraps go in the caddy, but coffee grounds have their own container') or a useful implication ('That means the normal evening schedule should give way if you need dishes before guests arrive'). Do not force every turn into this structure—some turns should simply acknowledge, explain, or clarify.",
-      "MULTI-PART RULES AND CONDITIONALS: When the user gives two or more instructions, acknowledge each distinct rule and preserve its condition. Never merge an if/then instruction into an unconditional one or omit the alternative branch. For example, if the bedroom window should open only when weather is warm and dry but close when rain is forecast, state both conditions; separately preserve any always-on rule such as keeping the bedroom door closed. Before answering, check that your reply accounts for every distinct instruction in the latest user message. Finish the response naturally and do not leave an unfinished thought.",
-      "CURIOUS, CASUAL, FRIENDLY: Sound like a thoughtful, easy-going person chatting with someone at home—not a form, interviewer or customer-service script. Use contractions, everyday words and a little warmth. Do not begin every reply with 'Got it', 'That makes sense' or a summary. Vary the rhythm; sometimes respond with a quick natural observation, sometimes a light reaction, and sometimes a question. Avoid gushy praise, forced jokes and over-familiarity.",
-      "PROACTIVE FOLLOW-UP: After reading the whole recent conversation, actively think one step ahead: what relevant practical detail has the user not mentioned that could change how their rule should work? Ask about a likely exception, dependency or boundary only when it follows naturally from what they just said. Examples: after a weather-dependent window rule, ask whether it should close overnight or when they leave; after a bed-first tidying rule, ask what to do if the bed has not been made; after a quiet-hours rule, consider a delivery or urgent need. Pick the single most useful missing detail—not a list of possibilities. Do not ask a question just to keep the conversation going if the rule is already complete.",
-      "MAKE THE CONNECTION: Explain briefly why the next question follows from what the user said, without repeating their whole message. Preserve every separate instruction and every if/then condition before asking about a related gap. For example: 'So the door stays shut, and the window opens a little only when the forecast is warm and dry; if rain is coming, it closes. Should it also stay closed overnight?' If weather monitoring, sensors, or physical control are not actually connected, frame these as preferences for a future compatible robot—not actions already being performed.",
-      "PERSONALISATION, NOT A CHECKLIST: The purpose is to discover how a future domestic robot should fit around the user's actual life. Be relaxed and conversational, while staying curious about household routines. Don't drift into unrelated trivia. When the user mentions a routine that connects to a previous preference, make that connection and ask about the practical consequence. Don't make assumptions about unsupported robot capabilities.",
-      "When two preferences may conflict, gently test the trade-off with a realistic scenario: for example, efficiency versus cleaning quality, a quiet evening schedule versus needing something sooner, or autonomy versus asking permission. Make the scenario relevant to something the user has actually said. Do not invent worries or bring in unrelated hypotheticals.",
-      "Follow the reference script's progression: gather the real context; establish the normal rule; test plausible exceptions; ask about decision thresholds and consent; connect related preferences; then, when enough has been learned, give a concise integrated summary of the person's actual preferences and the underlying principle. Invite correction with a direct question such as 'Have I understood you correctly?' Do not produce a long summary every few turns—wait until there is enough substance.",
-      "When a person tells you a preference, treat it as a meaningful contribution. Do not immediately respond with generic filler. For example, if they say they prefer an efficient wash to save water, recognise both the practical rule and the value it serves, then ask about the next relevant edge case. If they give a specific exception, preserve it distinctly from the general rule and ask where it applies if that is still unclear.",
-      "READ THE FULL RECENT CONVERSATION. A short answer such as 'morning', 'washing', 'just the kitchen', 'yes', or 'no' usually answers the question immediately before it. Accept that answer explicitly, connect it to the existing preference, and continue from there. Never restart the topic, ask the same question again, or treat an answer as unrelated.",
-      "DEFERRED INSTRUCTIONS AND ITEM BOUNDARIES: If the user says they will show you something when they arrive, get home, or are available later, treat that as a clear decision to defer identifying the items. Acknowledge it and do not ask them to list those items again right now. For example: 'That works. When you’re there, you can show me which things may be put away. Until those items are identified, the safe rule is to leave anything uncertain where it is and ask before moving it.' Preserve every named protected item exactly as given; do not quietly add, remove or substitute items between turns. Do not invent implausible examples (such as putting a vacuum in a cupboard), infer that a general cleaning instruction authorises moving personal belongings, or expand 'put away items' to every object not explicitly protected. Ask about the one unresolved decision that matters, such as what to do if the user is unavailable and an item is in the way. Keep the capability boundary clear: this is planning a future routine, not a claim that the digital Freya can arrive, see the kitchen or physically wait and act.",
-
-      "Keep the exchange natural and varied. Never use the same acknowledgement-plus-question formula on every turn. Some replies can simply acknowledge a clear preference; others should gently explore one relevant exception or missing detail. Never ask for information the user has already provided.",
-      "Never use generic filler such as 'What matters most to you when getting that right?', 'What is the next important detail I should understand?', 'Could you give me a simple example?', or 'Is there anything else?' when a specific question is available. Avoid stock prompts, repetitive interview patterns, and re-asking things that the user has already answered. Review the prior several assistant turns before choosing the next question.",
-      "Do not repeat or paraphrase the user's whole sentence. Reflect only the important implication or rule in natural language. Keep the spoken style concise but not clipped: a short, meaningful observation followed by one relevant question is better than empty praise or a bare follow-up.",
-      "Ask one main question at a time. Offer two or three concrete options only when they help someone decide; don't turn every question into a menu. If an answer is already clear, don't keep drilling down just to fill a checklist. Move forward to the next relevant part of the person's routine.",
-      "Answer direct questions directly. If the user asks 'such as what?', 'like what?', 'examples?', or what you mean, explain with relevant examples from the immediately preceding topic. Do not treat a request for explanation as a new preference.",
-      "Be specific to the subject. Ask about the actual item, room, timing, frequency, workflow, quality threshold, supplies, safety boundary, exception or desired result that follows from the user's answer. If a model number, product identity, manual, or capability is essential, ask for it instead of assuming. Do not claim to have checked a manual, looked up a product, verified a capability, or accessed a connected device unless the application has actually done so.",
-      "Use careful decision reasoning internally: distinguish confirmed preferences from assumptions, detect where a new detail changes an earlier rule, preserve exceptions and their scope, and only ask about uncertainty that can materially change the outcome. If something is inferred rather than directly stated, phrase it as a possibility and check before treating it as fact.",
-      "The user's name is " + (profile.ownerName || "not specified") + ". Use it sparingly. Their chosen future robot name is " + (profile.robotName || "not chosen") + ". Use that exact name naturally when discussing the future robot's behaviour, actions or boundaries. 'SecondSelf' means the digital persona being developed; do not call the robot 'your SecondSelf' in a question about what it should do. Do not call it ELO if another name has been chosen.",
-      "Their selected interests are: " + (domesticFunctions.length ? domesticFunctions.join(", ") : "none selected yet") + ". Existing preference records: " + JSON.stringify(preferences) + ". Use these as context, not as a script to recite. Never ask for information already provided.",
-      "Be transparent about the demo boundary. No physical robot is connected or controlled. You may speak naturally in first person about how you would approach a future task ('I'd treat that as the normal rule'), but do not claim the physical task has happened, that you checked a device, or that a robot will definitely perform it. Actual execution would require a compatible robot, verified capabilities and user authorisation. Do not claim that preferences synced or saved unless the app confirms that state.",
-      "Use AMÏA-style decision intelligence internally, but do not explain platform concepts in the conversation. Do not mention Veyra or make unsupported claims about simulation, deployment or production capability.",
-      "REPLY LENGTH AND COMPLETENESS: Usually use two to four short conversational sentences, around 35–75 words. Acknowledge the key rule(s), preserve all conditions, then ask at most one useful follow-up when it adds value. End with a complete sentence. Never stop mid-thought or trail off. Plain text only: no Markdown, headings, lists or corporate language.",
-      repairMode ? "RETRY: your previous draft was rejected as generic or repetitive. Do not use any canned fallback. Read the latest user message as part of the full conversation and respond to the detail they actually introduced. If they mention getting up at 7 and going to the kitchen for coffee after a question about tidying, recognise they have introduced their morning routine; do not ask them to walk through it generically or repeat the tidying question. Make one natural connection to their stated routine and ask only a useful next question." : ""
-    ].join(" ");
-
-    const upstream = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": "Bearer " + GROQ_API_KEY,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        messages: [{ role: "system", content: systemPrompt }, ...messages],
-        temperature: 0.72,
-        reasoning_effort: "low",
-        include_reasoning: false,
-        max_completion_tokens: 1000,
-        stream: false
-      }),
-      signal: AbortSignal.timeout(30_000)
+    const requestTimestamp = new Date().toISOString();
+    const amiaResult = await createAmiaReply({
+      apiKey: DEEPSEEK_PERSON_API_KEY,
+      searchApiKey: DEEPSEEK_SEARCH_API_KEY,
+      messages,
+      preferences,
+      profile,
+      domesticFunctions,
+      repairMode,
+      outputMode: body?.outputMode || "text",
+      taskMode: body?.taskMode || ""
     });
-
-    if (!upstream.ok) {
-      const errorCode = PROVIDER + "-" + Date.now().toString(36);
-      let upstreamDetail = "";
-      try {
-        const upstreamError = await upstream.json();
-        upstreamDetail = String(upstreamError?.error?.message || upstreamError?.message || "").slice(0, 500);
-      } catch {}
-      // Log the provider's error message for diagnosis, never the API key or request body.
-      console.error(PROVIDER + " API request failed", {
-        errorCode,
-        status: upstream.status,
-        detail: upstreamDetail || "No provider error detail returned"
-      });
-
-      let friendly;
-      if (upstream.status === 429) {
-        friendly = "Groq has reached a usage limit or rate limit. Check your Groq usage and limits, then try again.";
-      } else if (upstream.status === 401 || upstream.status === 403) {
-        friendly = "Groq rejected the API key or project access. Check GROQ_API_KEY and your Groq project permissions.";
-      } else if (upstream.status === 404) {
-        friendly = "Groq could not find the configured model. Check GROQ_MODEL and model access for this API key.";
-      } else if (upstream.status >= 500) {
-        friendly = "Groq is temporarily returning a server error. Check Render logs and retry shortly.";
-      } else {
-        friendly = "Groq could not complete the reply. Check the provider error in Render logs and try again.";
-      }
-      return json(response, upstream.status === 429 ? 429 : 502, {
-        error: friendly,
-        errorCode,
-        provider: PROVIDER,
-        upstreamStatus: upstream.status
-      }, headers || {});
-    }
-
-    const result = await upstream.json();
-    const finishReason = result?.choices?.[0]?.finish_reason;
-    if (finishReason === "length") {
-      console.warn("Groq reply reached the completion token limit", { model: MODEL, finishReason });
-      return json(response, 502, {
-        error: "The AI reply reached its length limit before finishing. Please try again.",
-        provider: PROVIDER,
-        model: MODEL,
-        finishReason
-      }, headers || {});
-    }
-    const reply = result?.choices?.[0]?.message?.content;
-    if (typeof reply !== "string" || !reply.trim()) {
-      return json(response, 502, { error: "The AI service returned an empty reply." }, headers || {});
-    }
+    const reply = amiaResult.reply;
+    const selectedModel = amiaResult.model;
+    const usageRecorded = await recordDeepseekUsage({
+      userId: user.id,
+      model: amiaResult.model,
+      usage: { ...(amiaResult.usage || {}), searchRequests: amiaResult.searchRequests || 0, fetchRequests: amiaResult.fetchRequests || 0 },
+      timestamp: requestTimestamp,
+      webSearchStatus: amiaResult.webSearchStatus || "not_requested",
+      relevantPreferenceCount: amiaResult.relevantPreferenceCount || 0
+    });
     const robotName = String(profile.robotName || "").trim();
     const namedReply = robotName
       ? reply.trim().replace(/\byour SecondSelf(?=\s+(?:to avoid|should avoid|avoid))/gi, "your " + robotName)
@@ -714,22 +451,12 @@ const app = http.createServer(async (request, response) => {
     const safeReply = guardRobotExecutionClaims(namedReply, preferences, profile.preferredLanguage);
     const lowValueReply = /I've captured this preference for your browser-based SecondSelf|I've added it to your local digital persona|That's useful context for your SecondSelf|Let's make that preference more precise|What detail would matter most to get right|Can you walk me through how that usually happens at home|What is the next important detail I should understand/i.test(safeReply);
     const requiresRepair = lowValueReply || responseRepeatsUser(safeReply, latestUserMessage);
-    if (requiresRepair && repairMode) {
-      return json(response, 200, {
-        reply: safeReply,
-        model: MODEL,
-        provider: PROVIDER,
-        responseNeedsReview: true
-      }, headers || {});
-    }
-    const finalReply = requiresRepair
-      ? betterFallbackFollowup(latestUserMessage, profile, messages)
-      : safeReply;
     return json(response, 200, {
-      reply: finalReply,
-      model: MODEL,
+      reply: safeReply,
+      model: selectedModel,
       provider: PROVIDER,
-      usedFallback: requiresRepair
+      responseNeedsReview: requiresRepair,
+      usageRecorded
     }, headers || {});
   } catch (error) {
     const status = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
@@ -741,7 +468,7 @@ const app = http.createServer(async (request, response) => {
       message: String(error?.message || "Unknown server error").slice(0, 300)
     });
     return json(response, 502, {
-      error: "The SYNQ.ME backend could not complete the request to Groq. Check the backend logs for the diagnostic error.",
+      error: "The SYNQ.ME backend could not complete the request to DeepSeek. Check the backend logs for the diagnostic error.",
       provider: PROVIDER
     }, headers || {});
   }

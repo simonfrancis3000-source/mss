@@ -2,18 +2,26 @@ name: SYNQ.ME UI build
 
 on:
   push:
-    branches: [main, feature/synqme-robot-voice-ui, feature/phonic-voice-chat]
+    branches: [main, feature/synqme-robot-voice-ui, feature/phonic-voice-chat, feature/amia-deepseek-engine]
     paths:
       - "index.html"
       - "src/**"
+      - "server/**"
+      - "admin/**"
+      - "vite.config.js"
+      - "supabase/migrations/**"
       - "package.json"
       - "package-lock.json"
       - ".github/workflows/synqme-ui-build.yml"
   pull_request:
-    branches: [main, SYNQ.ME, feature/synqme-robot-voice-ui]
+    branches: [main, SYNQ.ME, feature/synqme-robot-voice-ui, feature/amia-deepseek-engine]
     paths:
       - "index.html"
       - "src/**"
+      - "server/**"
+      - "admin/**"
+      - "vite.config.js"
+      - "supabase/migrations/**"
       - "package.json"
       - "package-lock.json"
       - ".github/workflows/synqme-ui-build.yml"
@@ -42,7 +50,14 @@ jobs:
       - name: Check JavaScript syntax
         run: |
           node --check server/index.js
+          node --check server/usage.js
+          node --check server/amia/instructions.js
+          node --check server/amia/memory.js
+          node --check server/amia/router.js
+          node --check server/amia/search.js
+          node --check server/amia/index.js
           node --check src/synqme.js
+          node --check src/admin.js
           node --check src/phonic-voice.js
           node --check public/phonic-pcm-processor.worklet.js
       - name: Install dependencies and refresh the npm lockfile

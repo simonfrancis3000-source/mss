@@ -155,7 +155,31 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
       return;
     }
 
+    const eventConversationId = String(
+      message.conversation_id ||
+      message.conversation?.id ||
+      message.data?.conversation_id ||
+      message.data?.conversation?.id ||
+      ""
+    ).trim();
+    if (eventConversationId && message.type !== "conversation_created") {
+      emit({ type: "conversation_created", conversationId: eventConversationId });
+    }
+
     switch (message.type) {
+      case "conversation_created": {
+        const conversationId = String(
+          message.conversation_id ||
+          message.conversation?.id ||
+          message.data?.conversation_id ||
+          message.data?.conversation?.id ||
+          message.id ||
+          ""
+        ).trim();
+        emit({ type: "conversation_created", conversationId });
+        break;
+      }
+
       case "ready_to_start_conversation":
         emit({ type: "ready" });
         break;
