@@ -242,3 +242,38 @@ export function getRoomTaskStates(room, completedTaskIds = [], activeTaskId = nu
     status: completed.has(task.id) ? "completed" : task.id === currentId ? "current" : "pending"
   }));
 }
+
+export function buildRoomJourneyConversationContext(input, rooms = ROOM_JOURNEY_ROOMS) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return null;
+  const room = rooms.find((item) => item.id === input.activeRoomId);
+  if (!room) return null;
+
+  const completedIds = new Set(
+    Array.isArray(input.completedTaskIds)
+      ? input.completedTaskIds.filter((id) => room.tasks.some((task) => task.id === id))
+      : []
+  );
+  const activeTask = room.tasks.find((task) =>
+    task.id === input.activeTaskId && !completedIds.has(task.id)
+  ) || null;
+  const nextPendingTask = room.tasks.find((task) => !completedIds.has(task.id)) || null;
+  const unlockedCount = Number.isInteger(input.unlockedRoomCount)
+    ? Math.max(1, Math.min(rooms.length, input.unlockedRoomCount))
+    : 1;
+
+  return {
+    activeRoomId: room.id,
+    activeRoomName: room.name,
+    unlockedRoomCount: unlockedCount,
+    activeTaskId: activeTask?.id || null,
+    activeTaskTitle: activeTask?.title || null,
+    nextPendingTaskId: nextPendingTask?.id || null,
+    nextPendingTaskTitle: nextPendingTask?.title || null,
+    tasks: room.tasks.map((task) => ({
+      id: task.id,
+      title: task.title,
+      completed: completedIds.has(task.id),
+      current: activeTask?.id === task.id
+    }))
+  };
+}

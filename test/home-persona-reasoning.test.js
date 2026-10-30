@@ -32,6 +32,7 @@ test("builds a contextual, proactive home-robot reasoning prompt", () => {
   assert.match(prompt, /VALUE OF INFORMATION/i);
   assert.match(prompt, /Lucie/);
   assert.match(prompt, /ELO/);
+  assert.match(prompt, /I am your future robot, ELO/);
   assert.match(prompt, /Clean the kitchen each evening/);
   assert.match(prompt, /desk blocks access/);
   assert.match(prompt, /Kitchen cleaning/);
@@ -109,6 +110,8 @@ test("server injects the reasoning prompt and defaults to the larger Groq reason
   const server = await readFile(new URL("../server/index.js", import.meta.url), "utf8");
   assert.match(server, /buildHomePersonaSystemPrompt/);
   assert.match(server, /combinedSystemPrompt/);
+  assert.match(server, /STRICT CURRENT ROOM FOCUS/);
+  assert.match(server, /activeTaskTitle/);
   assert.match(server, /openai\/gpt-oss-120b/);
   assert.match(server, /GROQ_REASONING_EFFORT/);
   assert.match(server, /reasoning_effort: REASONING_EFFORT/);
