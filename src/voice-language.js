@@ -59,12 +59,12 @@ function firstPersonSubjectVerb(value) {
 
 function rewriteCompanionReferences(value, companionName = "Freya") {
   let reply = String(value || "");
-  const robot = "(?:(?:your|the|our|this|that)\\\\s+)?(?:(?:future|home|household|compatible|personal|domestic)\\\\s+)*robot";
-  const possessiveRobot = new RegExp("\\\\b" + robot + "(?:'s|’s)\\\\b", "gi");
+  const robot = "(?:(?:your|the|our|this|that)\\s+)?(?:(?:future|home|household|compatible|personal|domestic)\\s+)*robot";
+  const possessiveRobot = new RegExp("\\b" + robot + "(?:'s|’s)\\b", "gi");
   reply = reply.replace(possessiveRobot, (match) => preserveInitialCapital(match, "my"));
 
   const infinitiveTarget = new RegExp(
-    "\\\\b((?:want|need|expect|ask|tell|allow|help|teach|remind|prefer|invite|encourage|would like|would prefer)\\\\s+)" + robot + "\\\\s+to\\\\b",
+    "\\b((?:want|need|expect|ask|tell|allow|help|teach|remind|prefer|invite|encourage|would like|would prefer)\\s+)" + robot + "\\s+to\\b",
     "gi"
   );
   reply = reply.replace(infinitiveTarget, (match, prefix) =>
@@ -72,17 +72,15 @@ function rewriteCompanionReferences(value, companionName = "Freya") {
   );
 
   const objectTarget = new RegExp(
-    "\\\\b(to|for|with|from|about|by|ask|tell|contact|trust|rely on|depend on)\\\\s+" + robot + "\\\\b",
+    "\\b(to|for|with|from|about|by|ask|tell|contact|trust|rely on|depend on)\\s+" + robot + "\\b",
     "gi"
   );
   reply = reply.replace(objectTarget, (match, prep) =>
     preserveInitialCapital(match, prep.toLowerCase() + " me")
   );
 
-  const subject = new RegExp(
-    "\\\\b" + robot + "\\\\s+(can|could|will|would|should|must|might|may|is|are|was|were|has|have|needs|need|does|do|doesn't|can't|cannot|won't|wouldn't|shouldn't|cleans|handles|helps|learns|knows|understands|remembers|uses|moves|asks|checks|works|keeps|manages|organises|organizes|supports|notifies|starts|stops|follows|prepares)\\\\b",
-    "gi"
-  );
+  const subjectVerbs = "can|could|will|would|should|must|might|may|is|are|was|were|has|have|needs|need|does|do|doesn't|can't|cannot|won't|wouldn't|shouldn't|cleans|handles|helps|learns|knows|understands|remembers|uses|moves|asks|checks|works|keeps|manages|organises|organizes|supports|notifies|starts|stops|follows|prepares";
+  const subject = new RegExp("\\b" + robot + "\\s+(" + subjectVerbs + ")\\b", "gi");
   reply = reply.replace(subject, (match, verb) =>
     preserveInitialCapital(match, firstPersonSubjectVerb(verb))
   );
@@ -90,15 +88,15 @@ function rewriteCompanionReferences(value, companionName = "Freya") {
   const name = String(companionName || "").trim();
   if (name) {
     const escapedName = escapeRegExp(name);
-    reply = reply.replace(new RegExp("\\\\b" + escapedName + "(?:'s|’s)\\\\b", "gi"), (match) =>
+    reply = reply.replace(new RegExp("\\b" + escapedName + "(?:'s|’s)\\b", "gi"), (match) =>
       preserveInitialCapital(match, "my")
     );
     reply = reply.replace(
-      new RegExp("\\\\b(?:to|for|with|from|about|by|ask|tell|contact|trust)\\\\s+" + escapedName + "\\\\b", "gi"),
-      (match) => preserveInitialCapital(match, match.split(/\\\\s+/)[0].toLowerCase() + " me")
+      new RegExp("\\b(?:to|for|with|from|about|by|ask|tell|contact|trust)\\s+" + escapedName + "\\b", "gi"),
+      (match) => preserveInitialCapital(match, match.split(/\s+/)[0].toLowerCase() + " me")
     );
     reply = reply.replace(
-      new RegExp("\\\\b" + escapedName + "\\\\s+(can|could|will|would|should|must|might|may|is|are|was|were|has|have|needs|need|does|do|doesn't|can't|cannot|won't|wouldn't|shouldn't|cleans|handles|helps|learns|knows|understands|remembers|uses|moves|asks|checks|works|keeps|manages|organises|organizes|supports|notifies|starts|stops|follows|prepares)\\\\b", "gi"),
+      new RegExp("\\b" + escapedName + "\\s+(" + subjectVerbs + ")\\b", "gi"),
       (match, verb) => preserveInitialCapital(match, firstPersonSubjectVerb(verb))
     );
   }
@@ -113,8 +111,8 @@ export function assistantReplyRepeatsRecentAssistant(value, recentMessages = [])
   const normalise = (text) => String(text || "")
     .toLowerCase()
     .normalize("NFKC")
-    .replace(/[^\\\\p{L}\\\\p{N}\\\\s]/gu, " ")
-    .replace(/\\\\s+/g, " ")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
     .trim();
   const stop = new Set([
     "a","an","and","are","as","at","be","but","by","can","could","do","does","for",
@@ -131,12 +129,12 @@ export function assistantReplyRepeatsRecentAssistant(value, recentMessages = [])
     .map((item) => typeof item === "string" ? item : item.content)
     .filter((text) => typeof text === "string" && normalise(text).length >= 9);
 
-  const currentQuestions = (String(value || "").match(/[^?]{8,}\\\\?/g) || []).map(normalise);
+  const currentQuestions = (String(value || "").match(/[^?]{8,}\?/g) || []).map(normalise);
   for (const oldReply of prior) {
     const old = normalise(oldReply);
     if (old === current) return true;
 
-    const oldQuestions = (String(oldReply).match(/[^?]{8,}\\\\?/g) || []).map(normalise);
+    const oldQuestions = (String(oldReply).match(/[^?]{8,}\?/g) || []).map(normalise);
     for (const question of currentQuestions) {
       const a = tokens(question);
       if (a.length < 3) continue;
