@@ -182,17 +182,6 @@ const elements = {
   voiceOrbCore: $("#voiceOrbCore"),
   voiceExperienceStatus: $("#voiceExperienceStatus"),
   voiceCompanionName: $("#voiceCompanionName"),
-  voiceRetrySpeechButton: $("#voiceRetrySpeechButton"),
-  voiceModelProgress: $("#voiceModelProgress"),
-  voiceModelProgressTrack: $("#voiceModelProgressTrack"),
-  voiceModelProgressFill: $("#voiceModelProgressFill"),
-  voiceModelProgressLabel: $("#voiceModelProgressLabel"),
-  voiceModelProgressPercent: $("#voiceModelProgressPercent"),
-  voiceModelProgressMain: $("#voiceModelProgressMain"),
-  voiceModelProgressTrackMain: $("#voiceModelProgressTrackMain"),
-  voiceModelProgressFillMain: $("#voiceModelProgressFillMain"),
-  voiceModelProgressLabelMain: $("#voiceModelProgressLabelMain"),
-  voiceModelProgressPercentMain: $("#voiceModelProgressPercentMain"),
   voiceMuteButton: $("#voiceMuteButton"),
   voiceMuteControlButton: $("#voiceMuteControlButton"),
   voiceMuteControlLabel: $("#voiceMuteControlLabel"),
@@ -410,32 +399,12 @@ let state = loadState();
 let isSending = false;
 let sendSequence = 0;
 let lastAIReplyUsedFallback = false;
-const SpeechRecognitionConstructor = window.SpeechRecognition || window.webkitSpeechRecognition || null;
-const speechSynthesisAvailable = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
 let voiceModeActive = false;
 let voiceInputMuted = false;
 let phonicVoiceConversation = null;
 const phonicItemMap = new Map();
 const phonicTurnMetadata = new Map();
-let speechRecognition = null;
-let recognitionListening = false;
-let recognitionTranscript = "";
-let voiceRestartTimer = null;
 let assistantIsSpeaking = false;
-let currentSpeechUtterance = null;
-let lastAssistantReplyForSpeech = "";
-const SPEECH_LOCALES = { en: "en-US", es: "es-ES", fr: "fr-FR", it: "it-IT", pt: "pt-BR", hi: "hi-IN", ja: "ja-JP", zh: "zh-CN" };
-let voiceMediaStream = null;
-let voiceAudioContext = null;
-let voiceAnalyser = null;
-let voiceAnalysisBuffer = null;
-let voiceMonitorFrame = 0;
-let activeMediaRecorder = null;
-let voiceAudioChunks = [];
-let voiceSpeechDetected = false;
-let voiceLastSpeechAt = 0;
-let voiceRecordingStartedAt = 0;
-let voiceTranscribing = false;
 let taskRunning = false;
 let lastFocusedElement = null;
 let cloudUserId = null;
@@ -3620,24 +3589,6 @@ function updateVoiceExperience(mode, message) {
   if (elements.voiceMuteControlLabel) elements.voiceMuteControlLabel.textContent = voiceInputMuted ? "Unmute" : "Mute";
 }
 
-function primeBrowserSpeechForSession() {
-  if (!speechSynthesisAvailable) return;
-  try {
-    const synth = window.speechSynthesis;
-    synth.cancel();
-    synth.resume();
-    // A silent utterance inside the user's Voice-button gesture helps unlock
-    // browser speech on stricter mobile browsers before the first AI reply.
-    const primer = new SpeechSynthesisUtterance(" ");
-    primer.volume = 0;
-    primer.rate = 10;
-    primer.onend = () => { try { synth.resume(); } catch {} };
-    synth.speak(primer);
-  } catch (error) {
-    console.info("Browser speech could not be primed; the retry control remains available.", error);
-  }
-}
-
 function buildPhonicConfig() {
   const language = state.profile.preferredLanguage || "en";
   const languageNames = {
@@ -3946,7 +3897,6 @@ async function openVoiceExperience() {
   phonicTurnMetadata.clear();
   updateVoiceCompanionLabels();
   updateVoiceModeButton();
-  if (elements.voiceRetrySpeechButton) elements.voiceRetrySpeechButton.hidden = true;
   if (elements.voiceStatus) {
     elements.voiceStatus.dataset.error = "";
     elements.voiceStatus.textContent = "Connecting your voice…";
@@ -3989,7 +3939,6 @@ async function openVoiceExperience() {
 
 function closeVoiceExperience(statusMessage) {
   stopVoiceConversation(statusMessage || "Voice conversation stopped.");
-  if (elements.voiceRetrySpeechButton) elements.voiceRetrySpeechButton.hidden = true;
   voiceInputMuted = false;
   if (elements.voiceExperience) elements.voiceExperience.hidden = true;
   document.body.classList.remove("voice-experience-open");
@@ -4109,23 +4058,11 @@ function updateVoiceModeButton() {
 function stopVoiceConversation(statusMessage = "Voice conversation stopped.") {
   voiceModeActive = false;
   voiceInputMuted = false;
+  assistantIsSpeaking = false;
   const activePhonic = phonicVoiceConversation;
   phonicVoiceConversation = null;
   if (activePhonic) void activePhonic.stop();
   updateVoiceExperience("idle", statusMessage);
-  if (voiceRestartTimer) window.clearTimeout(voiceRestartTimer);
-  voiceRestartTimer = null;
-  recognitionTranscript = "";
-  voiceTranscribing = false;
-  if (speechRecognition && recognitionListening) {
-    try { speechRecognition.abort(); } catch {}
-  }
-  recognitionListening = false;
-  if (speechSynthesisAvailable) {
-    currentSpeechUtterance = null;
-    assistantIsSpeaking = false;
-    window.speechSynthesis.cancel();
-  }
   if (elements.voiceStatus) {
     elements.voiceStatus.dataset.error = statusMessage === "Voice conversation stopped." ? "" : "true";
     elements.voiceStatus.textContent = statusMessage;
@@ -4133,232 +4070,6 @@ function stopVoiceConversation(statusMessage = "Voice conversation stopped.") {
   updateVoiceModeButton();
   if (elements.conversationStatus) elements.conversationStatus.textContent = "Ready to talk";
 }
-
-function scheduleVoiceListening(delay = 350) {
-  if (!voiceModeActive || voiceInputMuted || isSending || assistantIsSpeaking) return;
-  if (voiceRestartTimer) window.clearTimeout(voiceRestartTimer);
-  voiceRestartTimer = window.setTimeout(() => {
-    voiceRestartTimer = null;
-    startVoiceListening();
-  }, delay);
-}
-
-
-function createSpeechRecognition() {
-  if (!SpeechRecognitionConstructor) return null;
-  try {
-    const recognizer = new SpeechRecognitionConstructor();
-    recognizer.lang = ({"en":"en-US","es":"es-ES","fr":"fr-FR","it":"it-IT","pt":"pt-BR","hi":"hi-IN","ja":"ja-JP","zh":"zh-CN"})[state.profile.preferredLanguage || "en"] || "en-US";
-    recognizer.continuous = false;
-    recognizer.interimResults = true;
-    recognizer.maxAlternatives = 1;
-    recognizer.onstart = () => {
-      recognitionListening = true;
-      updateVoiceExperience("listening", selectedCompanionDisplayName() + " is listening. Speak naturally.");
-      if (elements.conversationStatus) elements.conversationStatus.textContent = "Listening · speak naturally";
-      if (elements.voiceStatus) {
-        elements.voiceStatus.dataset.error = "";
-        elements.voiceStatus.textContent = "Voice on · say a sentence at a time";
-      }
-    };
-    recognizer.onresult = (event) => {
-      let finalText = "";
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const result = event.results[i];
-        const transcript = String(result?.[0]?.transcript || "").trim();
-        if (result.isFinal && transcript) finalText += (finalText ? " " : "") + transcript;
-      }
-      if (finalText) recognitionTranscript = [recognitionTranscript, finalText].filter(Boolean).join(" ").trim();
-    };
-    recognizer.onerror = (event) => {
-      if (event.error === "not-allowed" || event.error === "service-not-allowed") {
-        stopVoiceConversation("Microphone blocked. Allow microphone access in your browser settings, then try again.");
-      } else if (event.error === "audio-capture") {
-        stopVoiceConversation("No microphone was found. Connect or enable a microphone, then try again.");
-      } else if (event.error === "network") {
-        stopVoiceConversation("The browser speech service is unavailable. You can continue by typing.");
-      } else if (event.error !== "no-speech" && elements.voiceStatus) {
-        elements.voiceStatus.textContent = "Voice input stopped · you can try again or type";
-      }
-    };
-    recognizer.onend = () => {
-      recognitionListening = false;
-      const transcript = recognitionTranscript.trim();
-      recognitionTranscript = "";
-      if (!voiceModeActive) return;
-      if (transcript) {
-        if (elements.messageInput) elements.messageInput.value = "";
-        if (elements.conversationStatus) elements.conversationStatus.textContent = "Heard you · preparing a reply";
-        void sendMessage(transcript);
-        return;
-      }
-      scheduleVoiceListening(350);
-    };
-    return recognizer;
-  } catch (error) {
-    console.info("SYNQ.ME speech recognition could not be initialised.", error);
-    return null;
-  }
-}
-
-async function startVoiceListening() {
-  if (!voiceModeActive || voiceInputMuted || isSending || assistantIsSpeaking || voiceTranscribing || recognitionListening) return;
-  if (!speechRecognition) speechRecognition = createSpeechRecognition();
-  if (!speechRecognition) {
-    stopVoiceConversation("Voice input isn't supported by this browser. Try a current version of Chrome or use typing.");
-    return;
-  }
-  recognitionTranscript = "";
-  try {
-    recognitionListening = true;
-    speechRecognition.start();
-  } catch (error) {
-    recognitionListening = false;
-    if (voiceModeActive) {
-      if (elements.voiceStatus) elements.voiceStatus.textContent = "Starting microphone…";
-      scheduleVoiceListening(700);
-    }
-  }
-}
-
-function speakAssistantReplyWithBrowser(reply, retryAttempt = 0, userInitiated = false) {
-  const spokenText = String(reply || "");
-  if (!speechSynthesisAvailable) {
-    if (elements.voiceStatus) elements.voiceStatus.textContent = "Speech output is unavailable in this browser.";
-    updateVoiceExperience("listening", "Your reply is visible in chat. Spoken replies are not supported here.");
-    return;
-  }
-
-  const synth = window.speechSynthesis;
-  // Clear any stale utterance before resetting Chrome/Safari's speech queue.
-  currentSpeechUtterance = null;
-  assistantIsSpeaking = false;
-  try {
-    synth.cancel();
-    synth.resume();
-  } catch (error) {
-    console.info("Browser speech queue reset was not available.", error);
-  }
-
-  const language = state.profile.preferredLanguage || "en";
-  const locale = SPEECH_LOCALES[language] || "en-US";
-  const utterance = new SpeechSynthesisUtterance(spokenText);
-  utterance.lang = locale;
-  utterance.rate = 1;
-  utterance.pitch = state.profile.robotVoice === "male" ? 0.96 : 1.03;
-  utterance.volume = 1;
-
-  const voices = synth.getVoices();
-  const languageCode = locale.split("-")[0].toLowerCase();
-  const localeVoices = voices.filter((voice) => String(voice.lang || "").toLowerCase().startsWith(languageCode));
-  const namePattern = state.profile.robotVoice === "male"
-    ? /(male|daniel|fred|alex|george|oliver|aaron|david|michael|liam|jorge|thomas)/i
-    : /(female|samantha|victoria|serena|karen|moira|fiona|libby|susan|kate|ava|zira|sara|monica)/i;
-  const preferredVoice = localeVoices.find((voice) => namePattern.test(voice.name));
-  const selectedVoice = preferredVoice || localeVoices.find((voice) => voice.default) || localeVoices[0] || voices.find((voice) => voice.default) || voices[0];
-  if (selectedVoice) utterance.voice = selectedVoice;
-
-  let didStart = false;
-  let watchdog = null;
-  const clearWatchdog = () => {
-    if (watchdog !== null) {
-      window.clearTimeout(watchdog);
-      watchdog = null;
-    }
-  };
-
-  const reportSpeechFailure = (reason) => {
-    if (currentSpeechUtterance !== utterance) return;
-    clearWatchdog();
-    currentSpeechUtterance = null;
-    assistantIsSpeaking = false;
-    try { synth.cancel(); } catch {}
-
-    console.info("SYNQ.ME browser speech did not complete.", reason);
-    if (retryAttempt < 1 && voiceModeActive) {
-      if (elements.voiceStatus) elements.voiceStatus.textContent = "Restarting your device’s speech service…";
-      window.setTimeout(() => {
-        if (voiceModeActive && lastAssistantReplyForSpeech === spokenText) {
-          speakAssistantReplyWithBrowser(spokenText, retryAttempt + 1);
-        }
-      }, 220);
-      return;
-    }
-
-    if (elements.voiceStatus) elements.voiceStatus.textContent = "Device speech did not start. Your reply is still in chat.";
-    updateVoiceExperience("listening", selectedCompanionDisplayName() + " couldn’t start audio automatically. Your reply is in chat—tap below to hear it.");
-    if (elements.voiceRetrySpeechButton) {
-      elements.voiceRetrySpeechButton.textContent = "Tap to hear " + selectedCompanionDisplayName() + "’s reply";
-      elements.voiceRetrySpeechButton.hidden = false;
-    }
-    if (voiceModeActive) scheduleVoiceListening(500);
-  };
-
-  currentSpeechUtterance = utterance;
-  assistantIsSpeaking = true;
-  utterance.onstart = () => {
-    if (currentSpeechUtterance !== utterance) return;
-    didStart = true;
-    clearWatchdog();
-    if (elements.voiceRetrySpeechButton) elements.voiceRetrySpeechButton.hidden = true;
-    const companion = selectedCompanionDisplayName();
-    updateVoiceExperience("speaking", companion + " is speaking.");
-    if (elements.conversationStatus) elements.conversationStatus.textContent = companion + " is speaking";
-    if (elements.voiceStatus) elements.voiceStatus.textContent = "Voice on · device speech";
-  };
-  utterance.onend = () => {
-    if (currentSpeechUtterance !== utterance) return;
-    clearWatchdog();
-    currentSpeechUtterance = null;
-    assistantIsSpeaking = false;
-    if (elements.voiceRetrySpeechButton) elements.voiceRetrySpeechButton.hidden = true;
-    if (voiceModeActive && !voiceInputMuted) updateVoiceExperience("listening", selectedCompanionDisplayName() + " is listening. Speak naturally.");
-    if (voiceModeActive) scheduleVoiceListening(250);
-  };
-  utterance.onerror = (event) => {
-    reportSpeechFailure(event?.error || "speech synthesis error");
-  };
-
-  const beginSpeaking = () => {
-    if (currentSpeechUtterance !== utterance || !voiceModeActive) return;
-    try {
-      // resume() is important on browsers that leave speechSynthesis paused
-      // after a cancelled or interrupted utterance.
-      synth.resume();
-      synth.speak(utterance);
-    } catch (error) {
-      reportSpeechFailure(error?.message || "speech synthesis threw an exception");
-    }
-  };
-
-  watchdog = window.setTimeout(() => {
-    if (currentSpeechUtterance === utterance && !didStart) {
-      reportSpeechFailure("speech start timeout");
-    }
-  }, 3200);
-
-  // If the user presses the retry button, speak in the same gesture stack so
-  // browsers with stricter audio policies can unlock their speech service.
-  if (userInitiated) beginSpeaking();
-  else window.setTimeout(beginSpeaking, 80);
-}
-
-async function speakAssistantReply(reply) {
-  if (!voiceModeActive || phonicVoiceConversation) return;
-  lastAssistantReplyForSpeech = String(reply || "");
-  if (elements.voiceRetrySpeechButton) elements.voiceRetrySpeechButton.hidden = true;
-  if (!lastAssistantReplyForSpeech) return;
-  if (!speechSynthesisAvailable) {
-    if (elements.voiceStatus) elements.voiceStatus.textContent = "Speech output is unavailable in this browser.";
-    return;
-  }
-  speakAssistantReplyWithBrowser(lastAssistantReplyForSpeech);
-}
-elements.voiceRetrySpeechButton?.addEventListener("click", () => {
-  if (!lastAssistantReplyForSpeech || !voiceModeActive) return;
-  elements.voiceRetrySpeechButton.hidden = true;
-  void speakAssistantReply(lastAssistantReplyForSpeech);
-});
 
 elements.voiceModeButton?.addEventListener("click", () => {
   if (voiceModeActive && elements.voiceExperience && !elements.voiceExperience.hidden) {
@@ -4670,8 +4381,7 @@ async function sendMessage(rawText) {
   elements.conversationStatus.textContent = sentToAIThisTurn && state.apiConnected
     ? responseProviderLabel + " · reply received · saving to account…"
     : "Reply received · saving to account…";
-  if (voiceModeActive) speakAssistantReply(reply);
-  else elements.messageInput.focus();
+  if (!voiceModeActive) elements.messageInput.focus();
 
   void flushCloudSave().then((conversationSaved) => {
     // An older save must not overwrite the status for a newer user turn.
