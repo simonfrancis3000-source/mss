@@ -24,6 +24,8 @@ export async function createAmiaReply({
   const relevantPreferences = selectRelevantPreferences(preferences, conversation);
   let webContext = "";
   let webSearchStatus = "not_requested";
+  let searchRequests = 0;
+  let fetchRequests = 0;
 
   if (shouldUseWebSearch(latestUserMessage)) {
     if (!searchApiKey) {
@@ -35,11 +37,13 @@ export async function createAmiaReply({
           count: 5,
           originalQuestion: latestUserMessage
         });
+        searchRequests += 1;
         if (results.length) {
           const needsFetch = results.find((item) => !String(item.content || "").trim());
           if (needsFetch?.url) {
             try {
               const page = await fetchWebPage(searchApiKey, needsFetch.url);
+              fetchRequests += 1;
               needsFetch.content = page.content || "";
               if (!needsFetch.title && page.title) needsFetch.title = page.title;
             } catch {}
@@ -100,6 +104,16 @@ export async function createAmiaReply({
     provider: "deepseek",
     model,
     webSearchStatus,
-    relevantPreferenceCount: relevantPreferences.length
+    relevantPreferenceCount: relevantPreferences.length,
+    usage: {
+      promptTokens: Number(result?.usage?.prompt_tokens || 0),
+      cacheHitTokens: Number(result?.usage?.prompt_cache_hit_tokens ?? result?.usage?.prompt_tokens_details?.cached_tokens ?? 0),
+      cacheMissTokens: Number(result?.usage?.prompt_cache_miss_tokens ?? Math.max(0, Number(result?.usage?.prompt_tokens || 0) - Number(result?.usage?.prompt_cache_hit_tokens ?? result?.usage?.prompt_tokens_details?.cached_tokens ?? 0))),
+      completionTokens: Number(result?.usage?.completion_tokens || 0),
+      totalTokens: Number(result?.usage?.total_tokens || 0),
+      providerModel: String(result?.model || model)
+    },
+    searchRequests,
+    fetchRequests
   };
 }
