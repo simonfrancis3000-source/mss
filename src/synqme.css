@@ -2188,3 +2188,136 @@ body:not(.auth-required):not(.profile-setup-required) {
   .room-task-list { grid-template-columns: minmax(0, 1fr); gap: 9px; }
   .room-journey-room-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+
+/* Clear task-state hierarchy: completed, in progress, and pending */
+.room-task-overview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 16px;
+}
+.room-task-stat {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid #303b49;
+  border-radius: 9px;
+  background: #111923;
+}
+.room-task-stat-value {
+  color: #e8eef7;
+  font-size: 14px;
+  font-weight: 750;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.room-task-stat-label {
+  color: #94a1b2;
+  font-size: 8px;
+  font-weight: 750;
+  letter-spacing: .45px;
+}
+.room-task-stat.is-complete { border-color: #355442; }
+.room-task-stat.is-complete .room-task-stat-value { color: #a9d9bc; }
+.room-task-stat.is-current { border-color: #476990; background: #132033; }
+.room-task-stat.is-current .room-task-stat-value { color: #b9d7fa; }
+.room-task-stat.is-pending .room-task-stat-value { color: #c0c8d3; }
+.room-current-task-banner {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border: 1px solid #4d7099;
+  border-radius: 10px;
+  background: linear-gradient(105deg, #162942 0%, #111b29 80%);
+}
+.room-current-task-banner.is-empty {
+  border-color: #364252;
+  background: #111720;
+}
+.room-current-task-kicker {
+  color: #a6c7ee;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: .85px;
+}
+.room-current-task-banner.is-empty .room-current-task-kicker { color: #9aa7b7; }
+.room-current-task-title {
+  margin-top: 4px;
+  color: #f0f5fc;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+.room-current-task-help {
+  margin-top: 4px;
+  color: #aab7c7;
+  font-size: 9px;
+  line-height: 1.5;
+}
+.room-task-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 9px;
+}
+.room-task-state {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 3px 6px;
+  border: 1px solid #394554;
+  border-radius: 999px;
+  color: #aeb8c6;
+  background: #171f2a;
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: .45px;
+  line-height: 1.2;
+}
+.room-task-row.is-current {
+  margin: 5px -5px;
+  padding: 10px 5px;
+  border: 1px solid #4c719d;
+  border-radius: 8px;
+  background: #152438;
+}
+.room-task-row.is-current .room-task-state {
+  border-color: #547ca9;
+  color: #c8e0ff;
+  background: #1d3857;
+}
+.room-task-row.is-pending .room-task-state {
+  color: #a8b2bf;
+}
+.room-task-row.is-complete .room-task-state {
+  border-color: #3d634e;
+  color: #b8e1c7;
+  background: #14241b;
+}
+.room-task-row.is-current .room-task-mark { color: #b7d8ff; }
+.room-task-action.is-current {
+  border-color: #6088b6;
+  color: #d2e5ff;
+  background: #203c5d;
+}
+.room-task-action.is-complete {
+  border-color: #3e5c4e;
+  background: #14241c;
+  color: #b5dfc5;
+}
+@media (max-width: 620px) {
+  .room-task-overview { gap: 5px; }
+  .room-task-stat {
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 4px;
+  }
+  .room-task-stat-value { font-size: 13px; }
+  .room-task-stat-label { font-size: 7px; text-align: center; }
+  .room-current-task-banner { padding: 11px; }
+  .room-task-row { grid-template-columns: 18px minmax(0, 1fr) auto; gap: 7px; }
+  .room-task-action { min-width: 58px; }
+}
