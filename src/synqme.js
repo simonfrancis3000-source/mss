@@ -2388,7 +2388,7 @@ async function linkPhonicConversationUsage(conversationId) {
 
 async function completePhonicUsageSession(session) {
   if (!session?.usageId) return;
-  const clientDurationMs = Math.max(0, Date.now() - Number(session.startedAt || Date.now()));
+  const clientDurationMs = Math.max(0, Date.now() - Number(session.connectedAt || session.startedAt || Date.now()));
   try {
     const headers = await getApiAuthHeaders();
     const response = await fetch(SYNQME_API_BASE_URL + "/api/phonic/complete", {
@@ -2422,6 +2422,7 @@ function handlePhonicVoiceEvent(event) {
     }
 
     case "open":
+      if (phonicSessionMeta && !phonicSessionMeta.connectedAt) phonicSessionMeta.connectedAt = Date.now();
       updateVoiceExperience("connecting", "Connected to Phonic. Preparing your conversation…");
       if (elements.conversationStatus) elements.conversationStatus.textContent = "Connected to Phonic";
       break;
@@ -2601,6 +2602,7 @@ async function openVoiceExperience() {
         phonicSessionMeta = {
           usageId: String(payload.usageId || ""),
           startedAt: Date.now(),
+          connectedAt: null,
           conversationId: ""
         };
         return payload;
