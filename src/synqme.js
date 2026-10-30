@@ -69,6 +69,17 @@ const supabase = SUPABASE_URL && SUPABASE_KEY
       }
     })
   : null;
+
+async function getApiAuthHeaders() {
+  if (!supabase) throw new Error("Your account connection is unavailable. Refresh SYNQ.ME and sign in again.");
+  const { data, error } = await supabase.auth.getSession();
+  if (error || !data?.session?.access_token) throw new Error("Your session has expired. Sign in again to continue.");
+  return {
+    "Content-Type": "application/json",
+    "Authorization": "Bearer " + data.session.access_token
+  };
+}
+
 const WELCOME = "Hi, I’m here to help you build your SecondSelf. Speak naturally, and we’ll work out what matters to you.";
 const WELCOME_BY_LANGUAGE = {
   en: WELCOME,
@@ -360,6 +371,7 @@ const speechSynthesisAvailable = "speechSynthesis" in window && "SpeechSynthesis
 let voiceModeActive = false;
 let voiceInputMuted = false;
 let phonicVoiceConversation = null;
+let phonicSessionMeta = null;
 const phonicItemMap = new Map();
 let speechRecognition = null;
 let recognitionListening = false;
@@ -2355,9 +2367,60 @@ function syncPhonicTranscriptItems(items) {
   return changed;
 }
 
+async function linkPhonicConversationUsage(conversationId) {
+  const session = phonicSessionMeta;
+  if (!session?.usageId || !conversationId) return;
+  try {
+    const headers = await getApiAuthHeaders();
+    const response = await fetch(SYNQME_API_BASE_URL + "/api/phonic/link", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ usageId: session.usageId, conversationId })
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload?.error || "Could not link Phonic conversation usage.");
+    }
+  } catch (error) {
+    console.info("SYNQ.ME could not link the Phonic conversation for usage reporting.", error);
+  }
+}
+
+async function completePhonicUsageSession(session) {
+  if (!session?.usageId) return;
+  const clientDurationMs = Math.max(0, Date.now() - Number(session.startedAt || Date.now()));
+  try {
+    const headers = await getApiAuthHeaders();
+    const response = await fetch(SYNQME_API_BASE_URL + "/api/phonic/complete", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        usageId: session.usageId,
+        conversationId: session.conversationId || "",
+        clientDurationMs
+      })
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload?.error || "Could not finalise Phonic usage reporting.");
+    }
+  } catch (error) {
+    console.info("SYNQ.ME could not finalise the Phonic usage record.", error);
+  }
+}
+
 function handlePhonicVoiceEvent(event) {
   const companion = selectedCompanionDisplayName();
   switch (event.type) {
+    case "conversation_created": {
+      const conversationId = String(event.conversationId || "").trim();
+      if (conversationId && phonicSessionMeta?.usageId) {
+        phonicSessionMeta.conversationId = conversationId;
+        void linkPhonicConversationUsage(conversationId);
+      }
+      break;
+    }
+
     case "open":
       updateVoiceExperience("connecting", "Connected to Phonic. Preparing your conversation…");
       if (elements.conversationStatus) elements.conversationStatus.textContent = "Connected to Phonic";
@@ -2524,9 +2587,10 @@ async function openVoiceExperience() {
   try {
     phonicVoiceConversation = createPhonicVoiceConversation({
       getSession: async () => {
+        const authHeaders = await getApiAuthHeaders();
         const response = await fetch(SYNQME_API_BASE_URL + "/api/phonic/session", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: authHeaders,
           body: JSON.stringify({})
         });
         let payload = {};
@@ -2534,6 +2598,11 @@ async function openVoiceExperience() {
         if (!response.ok) {
           throw new Error(payload?.error || "Could not create a Phonic session (HTTP " + response.status + ").");
         }
+        phonicSessionMeta = {
+          usageId: String(payload.usageId || ""),
+          startedAt: Date.now(),
+          conversationId: ""
+        };
         return payload;
       },
       getConfig: () => buildPhonicConfig(),
@@ -2661,7 +2730,15 @@ function stopVoiceConversation(statusMessage = "Voice conversation stopped.") {
   voiceInputMuted = false;
   const activePhonicVoice = phonicVoiceConversation;
   phonicVoiceConversation = null;
-  if (activePhonicVoice) void activePhonicVoice.stop();
+  const completedPhonicSession = phonicSessionMeta;
+  phonicSessionMeta = null;
+  if (activePhonicVoice) {
+    void activePhonicVoice.stop().finally(() => {
+      if (completedPhonicSession) void completePhonicUsageSession(completedPhonicSession);
+    });
+  } else if (completedPhonicSession) {
+    void completePhonicUsageSession(completedPhonicSession);
+  }
   stopKokoroAudio();
   updateVoiceExperience("idle", statusMessage);
   if (voiceRestartTimer) window.clearTimeout(voiceRestartTimer);
@@ -3226,15 +3303,16 @@ async function requestAIReply(repairMode = false, outputMode = "text") {
         unresolvedFields: extracted.unresolvedFields
       };
     });
+    const authHeaders = await getApiAuthHeaders();
     const response = await fetch(SYNQME_API_BASE_URL + "/api/chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders,
       body: JSON.stringify({
         messages,
         preferences,
         profile: {
           ownerName: state.profile.ownerName,
-          companionName: state.profile.robotName || "Freya",
+          companionName: "Freya",
           robotName: state.profile.robotName,
           robotType: state.profile.robotType,
           robotVoice: state.profile.robotVoice || "female",
