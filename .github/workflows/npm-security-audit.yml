@@ -6,21 +6,36 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   audit-and-regression:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
+      - name: Check out pull request branch
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
+          fetch-depth: 0
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
+      - name: Reconcile lockfile with manifest
+        env:
+          PUSH_BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}
+        run: |
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          if ! git diff --quiet -- package-lock.json; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add package-lock.json
+            git commit -m "Regenerate lockfile after removing unused model dependencies"
+            git push origin "HEAD:$PUSH_BRANCH"
+          fi
       - name: Install locked dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts
       - name: Run npm audit and print package-level findings
         shell: bash
         run: |
@@ -32,7 +47,8 @@ jobs:
           node --input-type=commonjs <<'NODE'
           const fs = require('node:fs');
           const report = JSON.parse(fs.readFileSync('npm-audit.json', 'utf8'));
-          console.log('Vulnerability totals:', JSON.stringify(report.metadata?.vulnerabilities ?? {}));
+          const totals = report.metadata?.vulnerabilities ?? {};
+          console.log('Vulnerability totals:', JSON.stringify(totals));
           for (const [name, item] of Object.entries(report.vulnerabilities ?? {})) {
             console.log(JSON.stringify({
               package: name,
@@ -44,6 +60,7 @@ jobs:
               fixAvailable: item.fixAvailable
             }));
           }
+          if ((totals.total ?? 0) > 0 || report.error) process.exit(1);
           NODE
       - name: Upload full npm audit report
         if: always()
