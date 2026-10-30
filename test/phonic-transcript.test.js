@@ -28,3 +28,21 @@ test("Phonic forwards transcript-bearing input and output audio events to the UI
   assert.match(source, /emit\(\{ type: "input_text", text \}\)/);
   assert.match(source, /emit\(\{ type: "audio_chunk", audio: message\.audio \|\| "", text \}\)/);
 });
+
+
+test("partial assistant audio transcript fragments are ignored instead of becoming chat bubbles", async () => {
+  const source = await readFile(new URL("../src/synqme.js", import.meta.url), "utf8");
+  const synchroniser = source.match(/function syncPhonicTranscriptItems\(items\) \{([\s\S]*?)\n\}\n\nfunction handlePhonicVoiceEvent/)?.[1] || "";
+  assert.match(synchroniser, /item\.role !== "user"/);
+  assert.doesNotMatch(synchroniser, /role: item\.role/);
+  assert.doesNotMatch(synchroniser, /role === "assistant"/);
+  assert.match(source, /state\.messages\.push\(\{ role: "assistant", content: spokenReply/);
+});
+
+test("user voice transcripts continue to be synchronised and saved", async () => {
+  const source = await readFile(new URL("../src/synqme.js", import.meta.url), "utf8");
+  const synchroniser = source.match(/function syncPhonicTranscriptItems\(items\) \{([\s\S]*?)\n\}\n\nfunction handlePhonicVoiceEvent/)?.[1] || "";
+  assert.match(synchroniser, /state\.messages\.push\(\{ role: "user", content: textValue/);
+  assert.match(source, /case "input_text": \{[\s\S]*?syncPhonicTranscriptItems\(event\.items\)/);
+  assert.match(source, /case "audio_chunk": \{[\s\S]*?syncPhonicTranscriptItems\(event\.items\)/);
+});
