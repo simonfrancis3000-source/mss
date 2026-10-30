@@ -466,9 +466,6 @@ let personaMemoryRecords = [];
 let personaMemoryTableUnavailable = false;
 let personaMemoryWarningShown = false;
 let personaMemoryWriteInFlight = false;
-let personaEmbeddingUnavailable = false;
-let personaEmbeddingWarningShown = false;
-let personaEmbeddingBackfillInFlight = false;
 let showArchivedPersonaMemories = false;
 let sharedKnowledgeUnavailable = false;
 let sharedKnowledgeWarningShown = false;
@@ -684,92 +681,6 @@ async function queryPersonaMemoryRecords() {
   return Array.isArray(data) ? data : [];
 }
 
-function embeddingVectorLiteral(vector) {
-  if (!Array.isArray(vector) || vector.length !== 768 || vector.some((value) => !Number.isFinite(value))) return "";
-  return "[" + vector.map((value) => Number(value).toString()).join(",") + "]";
-}
-
-async function requestPersonaEmbeddings(texts, purpose = "document") {
-  if (!API_BASE || personaEmbeddingUnavailable || !Array.isArray(texts) || !texts.length) return null;
-  try {
-    const response = await fetch(API_BASE + "/api/memory/embed", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ texts: texts.slice(0, 16), purpose: purpose === "query" ? "query" : "document" })
-    });
-    let data = {};
-    try { data = await response.json(); } catch {}
-    if (!response.ok || String(data.provider || "").toLowerCase() !== "groq" ||
-        data.dimensions !== 768 || !Array.isArray(data.embeddings) ||
-        data.embeddings.length !== Math.min(texts.length, 16)) {
-      throw new Error(String(data.error || "Groq returned an incompatible embedding response."));
-    }
-    const vectors = data.embeddings.map((vector) =>
-      Array.isArray(vector) && vector.length === 768 && vector.every(Number.isFinite)
-        ? vector.map(Number)
-        : null
-    );
-    if (vectors.some((vector) => !vector)) throw new Error("Groq returned an invalid 768-dimensional vector.");
-    return vectors;
-  } catch (error) {
-    personaEmbeddingUnavailable = true;
-    if (!personaEmbeddingWarningShown) {
-      console.info("SYNQ.ME semantic memory search is unavailable for this session; topic, keyword and full-text retrieval remain active.", error);
-      personaEmbeddingWarningShown = true;
-    }
-    return null;
-  }
-}
-
-async function backfillPersonaMemoryEmbeddings({ limit = 16 } = {}) {
-  if (!supabase || !cloudUserId || personaMemoryTableUnavailable || personaEmbeddingUnavailable || personaEmbeddingBackfillInFlight) return false;
-  personaEmbeddingBackfillInFlight = true;
-  try {
-    const activeStatuses = ["user_stated", "user_confirmed", "inferred_pending_confirmation", "conflicting"];
-    const { data, error } = await supabase
-      .from("synqme_persona_memories")
-      .select("id,statement,search_terms")
-      .eq("user_id", cloudUserId)
-      .is("embedding", null)
-      .in("status", activeStatuses)
-      .order("updated_at", { ascending: false })
-      .limit(Math.max(1, Math.min(32, limit)));
-    if (error) throw error;
-    const rows = Array.isArray(data) ? data : [];
-    if (!rows.length) return true;
-
-    for (let start = 0; start < rows.length; start += 16) {
-      const batch = rows.slice(start, start + 16);
-      const texts = batch.map((row) =>
-        [row.statement, ...(Array.isArray(row.search_terms) ? row.search_terms : [])]
-          .filter(Boolean).join(". ").slice(0, 1800)
-      );
-      const vectors = await requestPersonaEmbeddings(texts, "document");
-      if (!vectors) return false;
-      for (let index = 0; index < batch.length; index++) {
-        const literal = embeddingVectorLiteral(vectors[index]);
-        if (!literal) continue;
-        const { error: updateError } = await supabase
-          .from("synqme_persona_memories")
-          .update({ embedding: literal })
-          .eq("user_id", cloudUserId)
-          .eq("id", batch[index].id)
-          .is("embedding", null);
-        if (updateError) throw updateError;
-      }
-    }
-    return true;
-  } catch (error) {
-    if (!personaEmbeddingWarningShown) {
-      console.info("SYNQ.ME could not backfill some semantic memory embeddings; keyword and full-text search will remain available.", error);
-      personaEmbeddingWarningShown = true;
-    }
-    return false;
-  } finally {
-    personaEmbeddingBackfillInFlight = false;
-  }
-}
-
 async function backfillPersonaMemoriesFromPreferences() {
   if (!supabase || !cloudUserId || personaMemoryTableUnavailable) return false;
   const rows = activeLegacyPreferences()
@@ -803,7 +714,6 @@ async function loadPersonaMemories({ backfillPreferences = false } = {}) {
     }
     personaMemoryTableUnavailable = false;
     renderPersonaMemoryLibrary();
-    if (backfillPreferences) void backfillPersonaMemoryEmbeddings({ limit: 32 });
     return true;
   } catch (error) {
     if (isMissingHomeMemoryIndexError(error)) {
@@ -862,49 +772,8 @@ async function getRelevantPersonaMemories(query) {
           }
         }
 
-        // Semantic search is an additional ranking signal, never a replacement
-        // for the explainable topic/keyword/full-text paths above.
-        let semanticData = [];
-        if (!personaEmbeddingUnavailable && API_BASE) {
-          const vectors = await requestPersonaEmbeddings([String(query).slice(0, 1800)], "query");
-          const queryVector = vectors?.[0];
-          const literal = embeddingVectorLiteral(queryVector);
-          if (literal) {
-            try {
-              const { data: matches, error: vectorError } = await supabase.rpc(
-                "match_synqme_persona_memories",
-                { query_embedding: literal, match_count: 12 }
-              );
-              if (vectorError) throw vectorError;
-              const scoreById = new Map((Array.isArray(matches) ? matches : [])
-                .filter((item) => item && typeof item.id === "string" && Number.isFinite(Number(item.score)))
-                .map((item) => [item.id, Number(item.score)]));
-              const ids = [...scoreById.keys()];
-              if (ids.length) {
-                const { data, error } = await supabase
-                  .from("synqme_persona_memories")
-                  .select(PERSONA_MEMORY_SELECT_COLUMNS)
-                  .eq("user_id", cloudUserId)
-                  .in("status", activeStatuses)
-                  .in("id", ids);
-                if (error) throw error;
-                semanticData = (Array.isArray(data) ? data : []).map((item) => ({
-                  ...item,
-                  vector_score: scoreById.get(item.id) || 0
-                }));
-              }
-            } catch (vectorError) {
-              personaEmbeddingUnavailable = true;
-              if (!personaEmbeddingWarningShown) {
-                console.info("SYNQ.ME semantic retrieval is unavailable; using topic, keyword and full-text ranking.", vectorError);
-                personaEmbeddingWarningShown = true;
-              }
-            }
-          }
-        }
-
         const byId = new Map();
-        for (const item of [...personaMemoryRecords, ...(keyData || []), ...textData, ...semanticData]) {
+        for (const item of [...personaMemoryRecords, ...(keyData || []), ...textData]) {
           if (!item || !item.id) continue;
           const previous = byId.get(item.id);
           byId.set(item.id, previous ? { ...previous, ...item } : item);
@@ -995,8 +864,8 @@ async function processStructuredMemoryTurn(userMessage, userTimestamp, shouldExt
     });
     let data = {};
     try { data = await response.json(); } catch {}
-    if (!response.ok || String(data.provider || "").toLowerCase() !== "groq") {
-      throw new Error(String(data.error || "Groq memory extraction did not complete."));
+    if (!response.ok || String(data.provider || "").toLowerCase() !== "deepseek") {
+      throw new Error(String(data.error || "DeepSeek memory extraction did not complete."));
     }
     const candidates = (Array.isArray(data.memories) ? data.memories : [])
       .map(cleanPersonaMemoryCandidate).filter(Boolean).slice(0, 5);
@@ -1088,7 +957,6 @@ async function processStructuredMemoryTurn(userMessage, userTimestamp, shouldExt
 
     await backfillPersonaMemoriesFromPreferences();
     personaMemoryRecords = await queryPersonaMemoryRecords();
-    void backfillPersonaMemoryEmbeddings({ limit: 16 });
     renderPersonaMemoryLibrary();
     if (candidates.length && elements.personaMemoryStatus) {
       elements.personaMemoryStatus.textContent = "Saved " + candidates.length + (candidates.length === 1 ? " memory." : " memories.") + " You can edit or forget them here.";
@@ -2075,9 +1943,6 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   personaMemoryTableUnavailable = false;
   personaMemoryWarningShown = false;
   personaMemoryWriteInFlight = false;
-  personaEmbeddingUnavailable = false;
-  personaEmbeddingWarningShown = false;
-  personaEmbeddingBackfillInFlight = false;
   showArchivedPersonaMemories = false;
   homeMemoryIndexUnavailable = false;
   homeMemoryIndexBackfilledUserId = null;
@@ -3472,7 +3337,7 @@ function renderAll() {
   } else if (state.apiConfigured === true && state.apiProvider) {
     elements.providerLabel.textContent = state.apiProvider.toUpperCase() + " · " + (state.apiModel || "model") + " · READY";
   } else {
-    elements.providerLabel.textContent = API_BASE ? "CHECKING AI SERVICE" : "GROQ SERVICE NOT CONFIGURED";
+    elements.providerLabel.textContent = API_BASE ? "CHECKING AI SERVICE" : "AI SERVICE NOT CONFIGURED";
   }
   document.title = name ? "SYNQ.ME | " + name + "’s SecondSelf" : "SYNQ.ME | Build Your SecondSelf";
   const intro = $(".conversation-intro p");
@@ -4555,13 +4420,13 @@ function responseRepeatsUser(reply, userMessage) {
 async function requestAIReply(repairMode = false) {
   if (!API_BASE) return null;
   if (!state.apiProvider) await checkAIBackend();
-  if (state.apiProvider !== "groq") {
+  if (state.apiProvider !== "deepseek") {
     state.apiConnected = false;
-    state.apiError = "groq-only policy";
+    state.apiError = "deepseek-only policy";
     state.apiErrorDetail = state.apiProvider
-      ? "AI request blocked: SYNQ.ME is configured for Groq only, but the connected backend reported a different provider. Redeploy the Groq-only backend."
-      : "AI request blocked because the backend provider could not be verified as Groq. Redeploy or restore the Groq-only backend.";
-    elements.providerLabel.textContent = "GROQ ONLY · BACKEND CHECK REQUIRED";
+      ? "AI request blocked: SYNQ.ME is configured for DeepSeek only, but the connected backend reported a different provider. Redeploy the DeepSeek-only backend."
+      : "AI request blocked because the backend provider could not be verified as DeepSeek. Redeploy or restore the DeepSeek-only backend.";
+    elements.providerLabel.textContent = "DEEPSEEK ONLY · BACKEND CHECK REQUIRED";
     return null;
   }
   if (!repairMode) lastAIReplyUsedFallback = false;
@@ -4620,17 +4485,14 @@ async function requestAIReply(repairMode = false) {
     let data = {};
     try { data = await response.json(); } catch {}
     const responseProvider = typeof data.provider === "string" ? data.provider.toLowerCase() : state.apiProvider;
-    if (responseProvider && responseProvider !== "groq") {
-      throw new Error("SYNQ.ME is configured for Groq only. The backend response was rejected because its provider did not match the Groq-only policy. Redeploy the Groq-only backend.");
+    if (responseProvider && responseProvider !== "deepseek") {
+      throw new Error("SYNQ.ME is configured for DeepSeek only. The backend response was rejected because its provider did not match the DeepSeek-only policy. Redeploy the DeepSeek-only backend.");
     }
     if (data.provider) state.apiProvider = responseProvider;
     if (data.model) state.apiModel = String(data.model);
     if (!response.ok) {
       state.apiConfigured = true;
-      let errorMessage = String(data.error || ("AI endpoint returned " + response.status));
-      if (responseProvider === "groq" && /gemini/i.test(errorMessage)) {
-        errorMessage = "Groq has reached a usage limit or rate limit. Check your Groq usage and limits, then try again.";
-      }
+      const errorMessage = String(data.error || ("AI endpoint returned " + response.status));
       const apiError = new Error(errorMessage);
       apiError.apiStatus = response.status;
       apiError.upstreamStatus = Number.isInteger(data.upstreamStatus) ? data.upstreamStatus : null;
@@ -5176,9 +5038,6 @@ elements.signOutButton?.addEventListener("click", async () => {
     personaMemoryTableUnavailable = false;
     personaMemoryWarningShown = false;
     personaMemoryWriteInFlight = false;
-    personaEmbeddingUnavailable = false;
-    personaEmbeddingWarningShown = false;
-    personaEmbeddingBackfillInFlight = false;
     showArchivedPersonaMemories = false;
     personaMemoryEditingId = null;
     renderPersonaMemoryLibrary();
