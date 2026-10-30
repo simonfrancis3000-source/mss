@@ -130,6 +130,10 @@ function renderDashboard(data) {
   el("cacheTokens").textContent = number(totals.cacheHitTokens);
   el("outputTokens").textContent = number(totals.outputTokens);
   el("chatRequests").textContent = number(totals.chatRequests);
+  el("deepseekUnpricedRequests").textContent = number(totals.deepseekUnpricedRequests);
+  el("deepseekPricingNote").textContent = Number(totals.deepseekUnpricedRequests || 0)
+    ? Number(totals.deepseekUnpricedRequests) + " chat responses did not include token details. Their DeepSeek inference cost is not calculated."
+    : "DeepSeek cost is calculated from provider-returned token usage and the rate card effective at request time.";
   el("voiceMinutes").textContent = minutes(totals.voiceMinutes);
   el("userSpeechMinutes").textContent = minutes(totals.userSpeechMinutes);
   el("assistantSpeechMinutes").textContent = minutes(totals.assistantSpeechMinutes);
@@ -182,6 +186,7 @@ function renderUsers(users) {
       <td>${number(user.voiceSessions)}</td>
       <td>${minutes(user.voiceMinutes)}</td>
       <td>${money(user.deepseekCostUsd)}</td>
+      <td>${number(user.deepseekUnpricedRequests)}</td>
       <td>${money(Number(user.searchCostUsd || 0) + Number(user.fetchCostUsd || 0))}</td>
       <td>${escapeHtml(phonicCost)}</td>
       <td class="cost-cell">${money(cost)}</td>
@@ -207,7 +212,7 @@ function renderEvents(events) {
 
 function exportCsv() {
   if (!currentData) return;
-  const rows = [["Name", "Email", "User ID", "Registered At", "Chat Requests", "Voice Sessions", "Voice Minutes", "User Speech Minutes", "Assistant Speech Minutes", "Input Tokens", "Cached Input Tokens", "Output Tokens", "Search Requests", "Fetch Requests", "DeepSeek Cost USD", "Search Cost USD", "Fetch Cost USD", "Phonic Cost USD", "Phonic Unpriced Sessions", "Known Total Cost USD"]];
+  const rows = [["Name", "Email", "User ID", "Registered At", "Chat Requests", "Voice Sessions", "Voice Minutes", "User Speech Minutes", "Assistant Speech Minutes", "Input Tokens", "Cached Input Tokens", "Output Tokens", "DeepSeek Unpriced Requests", "Search Requests", "Fetch Requests", "DeepSeek Cost USD", "Search Cost USD", "Fetch Cost USD", "Phonic Cost USD", "Phonic Unpriced Sessions", "Known Total Cost USD"]];
   const query = String(userSearch.value || "").trim().toLowerCase();
   for (const user of currentData.users || []) {
     if (query && ![user.email, user.ownerName, user.userId].some((value) => String(value || "").toLowerCase().includes(query))) continue;
@@ -215,7 +220,7 @@ function exportCsv() {
       user.ownerName || "", user.email || "", user.userId || "", user.createdAt || "",
       user.chatRequests || 0, user.voiceSessions || 0, user.voiceMinutes || 0, user.userSpeechMinutes || 0,
       user.assistantSpeechMinutes || 0, user.inputTokens || 0, user.cacheHitTokens || 0, user.outputTokens || 0,
-      user.searchRequests || 0, user.fetchRequests || 0, user.deepseekCostUsd || 0, user.searchCostUsd || 0,
+      user.deepseekUnpricedRequests || 0, user.searchRequests || 0, user.fetchRequests || 0, user.deepseekCostUsd || 0, user.searchCostUsd || 0,
       user.fetchCostUsd || 0, user.phonicUnpricedSessions ? "" : (user.phonicCostUsd || 0), user.phonicUnpricedSessions || 0, totalUserCost(user)
     ]);
   }
