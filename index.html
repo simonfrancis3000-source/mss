@@ -74,7 +74,7 @@
         <div class="hero-copy">
           <div class="eyebrow">SYNQ.ME <span class="eyebrow-divider">/</span> YOUR PERSONALISATION LAYER</div>
           <h1>A SecondSelf that<br /><span>knows you.</span></h1>
-          <p>Build your digital persona through natural conversation. Choose the parts of home life you want your SecondSelf to understand, one preference at a time. No robot is needed to get started.</p>
+          <p>Build your digital persona through a guided, room-by-room journey. Start with the Kitchen; a new room unlocks on your own monthly anniversary. No robot is needed to get started.</p>
         </div>
         <div class="demo-stamp"><span class="stamp-dot"></span><span id="providerLabel">Checking AI connection</span></div>
       </section>
@@ -194,12 +194,12 @@
             <div class="panel-heading">
               <div>
                 <div class="section-kicker">03 / PERSONA JOURNEY</div>
-                <h2 id="decisionTitle">Every step builds you</h2>
+                <h2 id="decisionTitle">Your persona journey</h2>
               </div>
               <span class="mini-tag">DEMO</span>
             </div>
             <div class="decision-body">
-              <div class="decision-summary" id="decisionSummary">Choose the home activities that matter to you, then share preferences with ELO. Your SecondSelf grows one step at a time.</div>
+              <div class="decision-summary" id="decisionSummary">Your monthly room journey gives you one clear focus at a time. AMÏA captures the preferences you share and avoids asking you to repeat them.</div>
               <div class="decision-route">
                 <div class="route-node">
                   <span class="route-icon">01</span>
@@ -221,6 +221,22 @@
             </div>
           </section>
         </aside>
+      </section>
+
+      <section class="panel room-journey-panel" id="roomJourneyPanel" aria-labelledby="roomJourneyTitle">
+        <div class="panel-heading room-journey-heading">
+          <div>
+            <div class="section-kicker">04 / YOUR MONTHLY HOME JOURNEY</div>
+            <h2 id="roomJourneyTitle">One room at a time.</h2>
+          </div>
+          <span class="mini-tag room-journey-next" id="roomJourneyNextUnlock">STARTING WITH KITCHEN</span>
+        </div>
+        <p class="room-journey-intro" id="roomJourneyIntro">Your personal journey starts with the Kitchen. A new room unlocks on your own monthly anniversary.</p>
+        <div id="roomJourneyFeature" class="room-journey-feature" aria-live="polite">
+          <p class="room-journey-empty">Complete your profile to begin your room-by-room journey.</p>
+        </div>
+        <div class="room-journey-room-grid" id="roomJourneyRoomGrid" aria-label="Your released and upcoming rooms"></div>
+        <p class="room-journey-footnote">Your schedule is individual to your account. New rooms unlock automatically each month, and you can revisit any room that has already opened.</p>
       </section>
 
       <section class="task-result panel" id="taskResult" hidden aria-labelledby="taskResultTitle">
@@ -337,8 +353,8 @@
             <span class="toggle-ui" aria-hidden="true"></span>
           </label>
           <div class="settings-section">
-            <div class="settings-subhead function-section-head"><span>DOMESTIC FUNCTIONS</span><div class="function-section-controls"><span id="functionCount">0 SELECTED</span><button type="button" id="toggleAllFunctions" class="select-all-functions">Select all</button></div></div>
-            <p class="settings-section-copy">Choose the parts of everyday life you want your SecondSelf to learn about. You can change these at any time.</p>
+            <div class="settings-subhead function-section-head"><span>OPTIONAL HOME INTERESTS</span><div class="function-section-controls"><span id="functionCount">0 SELECTED</span><button type="button" id="toggleAllFunctions" class="select-all-functions">Select all</button></div></div>
+            <p class="settings-section-copy">These optional interests add background context. Your monthly room journey guides what we explore first.</p>
             <div class="function-grid" id="functionGrid">
               <label class="function-option"><input type="checkbox" value="dishwashing"><span class="function-symbol">01</span><span class="function-label"><strong>Dishwashing</strong><small>Loading, unloading, preferences</small></span></label>
               <label class="function-option"><input type="checkbox" value="vacuuming"><span class="function-symbol">02</span><span class="function-label"><strong>Vacuuming & floors</strong><small>Rooms, timing, floor types</small></span></label>
