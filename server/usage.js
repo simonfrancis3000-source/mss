@@ -364,7 +364,7 @@ export async function buildAdminUsageDashboard(period = "30d", phonicApiKey = ""
     deepseekCostUsd: 0, searchCostUsd: 0, fetchCostUsd: 0, deepseekUnpricedRequests: 0, phonicCostUsd: 0, phonicUnpricedSessions: 0, pendingVoiceSessions: 0
   };
   for (const user of byUser.values()) {
-    if (user.chatRequests || user.voiceSessions) totals.activeUsers += 1;
+    if (user.chatRequests || user.voiceSessions || user.searchRequests || user.fetchRequests) totals.activeUsers += 1;
     for (const key of Object.keys(totals)) {
       if (key === "registeredUsers" || key === "activeUsers") continue;
       if (Object.prototype.hasOwnProperty.call(user, key)) totals[key] += user[key];
