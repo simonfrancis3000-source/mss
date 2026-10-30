@@ -29,3 +29,9 @@ test("thinking status uses the selected robot name", () => {
   assert.equal(companionThinkingMessage("Freya"), "Freya is thinking…");
   assert.equal(companionThinkingMessage("ELO"), "ELO is thinking…");
 });
+
+
+test("companion names are trimmed and control characters are removed", () => {
+  assert.equal(companionThinkingMessage(" Freya\n"), "Freya is thinking…");
+  assert.doesNotMatch(companionWelcomeMessage("en", "Freya\n"), /\n/);
+});
