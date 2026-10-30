@@ -3853,11 +3853,11 @@ function syncPhonicTranscriptItems(items) {
       continue;
     }
 
-    if (item.role === "assistant" && KNOWN_WELCOME_MESSAGES.has(textValue)) {
+    if (item.role === "assistant" && isCompanionWelcomeMessage(textValue)) {
       const norm = normalisePhonicText(textValue);
       const existingWelcomeIndex = state.messages.findIndex((message) =>
         message.role === "assistant" &&
-        KNOWN_WELCOME_MESSAGES.has(message.content) &&
+        isCompanionWelcomeMessage(message.content) &&
         normalisePhonicText(message.content) === norm
       );
       if (existingWelcomeIndex >= 0) {
