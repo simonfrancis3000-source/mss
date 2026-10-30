@@ -42,6 +42,11 @@ jobs:
       - name: Check JavaScript syntax
         run: |
           node --check server/index.js
+          node --check server/amia/instructions.js
+          node --check server/amia/memory.js
+          node --check server/amia/router.js
+          node --check server/amia/search.js
+          node --check server/amia/index.js
           node --check src/synqme.js
           node --check src/phonic-voice.js
           node --check public/phonic-pcm-processor.worklet.js
