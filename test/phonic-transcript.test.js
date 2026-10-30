@@ -46,3 +46,12 @@ test("user voice transcripts continue to be synchronised and saved", async () =>
   assert.match(source, /case "input_text": \{[\s\S]*?syncPhonicTranscriptItems\(event\.items\)/);
   assert.match(source, /case "audio_chunk": \{[\s\S]*?syncPhonicTranscriptItems\(event\.items\)/);
 });
+
+
+test("legacy one-word assistant audio fragments are removed when transcripts are restored", async () => {
+  const source = await readFile(new URL("../src/synqme.js", import.meta.url), "utf8");
+  const sanitiser = source.match(/function sanitiseConversationMessage\(item\) \{([\s\S]*?)\n\}/)?.[1] || "";
+  assert.match(sanitiser, /item\.role === "assistant"/);
+  assert.match(sanitiser, /\^i\(\?:\['’\]m\| am\)\?\$/);
+  assert.match(source, /return sanitiseConversationMessage\(m\);\s*\}\)\s*\.filter\(Boolean\)/);
+});
