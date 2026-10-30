@@ -4,7 +4,7 @@ import { buildHomePersonaSystemPrompt } from "../src/home-persona-reasoning.js";
 import { cleanKnowledgeCandidate } from "../src/shared-knowledge-validation.js";
 import { cleanPersonaMemoryCandidate, MEMORY_TOPICS } from "../src/persona-memory.js";
 import { selectHouseholdSkills } from "../src/household-skills.js";
-import { enforceFirstPersonTaskQuestions, isIncompleteAssistantReply, normaliseVoicePreference } from "../src/voice-language.js";
+import { assistantReplyRepeatsRecentAssistant, enforceFirstPersonTaskQuestions, isIncompleteAssistantReply, normaliseVoicePreference } from "../src/voice-language.js";
 import { buildRoomJourneyConversationContext } from "../src/room-journey.js";
 
 const PORT = Number.parseInt(process.env.PORT || "10000", 10);
@@ -995,7 +995,7 @@ const app = http.createServer(async (request, response) => {
       : "";
     if (isClarificationRequest(latestUserMessage) && previousAssistantMessage && profile.preferredLanguage === "en") {
       return json(response, 200, {
-        reply: enforceFirstPersonTaskQuestions(clarificationHelpReply(previousAssistantMessage, messages[messages.length - 3]?.content || "")),
+        reply: enforceFirstPersonTaskQuestions(clarificationHelpReply(previousAssistantMessage, messages[messages.length - 3]?.content || ""), profile.companionName || profile.robotName || "Freya"),
         provider: PROVIDER,
         model: MODEL
       }, headers || {});
@@ -1003,10 +1003,10 @@ const app = http.createServer(async (request, response) => {
 
     const companionName = profile.companionName || profile.robotName || "Freya";
     const systemPrompt = [
-      "You are " + companionName + ", the user's future home robot persona, speaking through SYNQ.ME to help shape their MySecondSelf digital persona. Respond in " + responseLanguage + ". When introducing yourself or asked who you are, say in the selected language: 'I am your future robot, " + companionName + ".' Speak in first person. You are not physically connected to the home yet, and cannot observe the home or execute tasks.",
+      "You are " + companionName + ", the user's future home robot persona, speaking through SYNQ.ME to help shape their MySecondSelf digital persona. Respond in " + responseLanguage + ". Speak in first person at all times when referring to your own capabilities, limitations, responsibilities or future behaviour: I/me/my. Never refer to yourself as 'the robot', 'your robot', or by your name in the third person. You are not physically connected to the home yet, and cannot observe the home or execute tasks. Do not repeat your introduction or name unless the user asks who you are.",
       "Keep replies warm, natural, concise, and in plain text. Answer the latest message directly, preserve every explicit condition and permission boundary, distinguish stated facts from guesses, and do not repeat questions. Ask at most one specific follow-up when it materially helps. Humour is optional and rare; never repeat a joke.",
       "PERSON-CENTRED WORDING: Reflect the user's own routine and preference from their point of view, for example, 'You prefer the worktop wiped straight after breakfast' or 'You do not want anything moved without permission'. Preserve the user's point of view in saved preference statements.",
-      "FIRST-PERSON COMPANION RULE — NON-NEGOTIABLE: When asking about tasks or describing work the future SecondSelf may do, speak as the companion in first person singular (I/me/my). Ask 'What would you like me to do?' or 'How would you like me to handle that?'. Never ask 'What do you want your robot to do?', 'What would you like your robot to do?', 'What should the robot do?', or any equivalent third-person question about tasks. Apply the same first-person perspective naturally in the user's selected language. This is future-persona planning only; never imply a physical robot is connected or acting now."
+      "FIRST-PERSON COMPANION RULE — NON-NEGOTIABLE: All descriptions of your future behaviour, abilities, plans, routines and limits must be written from your own perspective, in first person singular (I/me/my), not just questions. Say 'I can clean the worktop', 'you can ask me', and 'my routine'. Never say 'the robot can', 'your robot should', 'the robot will', or any equivalent third-person description of yourself. Ask 'What would you like me to do?' or 'How would you like me to handle that?'. Apply this naturally in the user's selected language. This is future-persona planning only; never imply a physical robot is connected or acting now."
     ].join(" ");
 
     const homePersonaSystemPrompt = buildHomePersonaSystemPrompt({
@@ -1121,9 +1121,15 @@ const app = http.createServer(async (request, response) => {
     const namedReply = robotName
       ? reply.trim().replace(/\byour SecondSelf(?=\s+(?:to avoid|should avoid|avoid))/gi, "your " + robotName)
       : reply.trim();
-    const safeReply = enforceFirstPersonTaskQuestions(guardRobotExecutionClaims(namedReply, preferences, profile.preferredLanguage));
+    const safeReply = enforceFirstPersonTaskQuestions(
+      guardRobotExecutionClaims(namedReply, preferences, profile.preferredLanguage),
+      profile.companionName || profile.robotName || "Freya"
+    );
     const lowValueReply = /I've captured this preference for your browser-based SecondSelf|I've added it to your local digital persona|That's useful context for your SecondSelf|Let's make that preference more precise|What detail would matter most to get right|Can you walk me through how that usually happens at home|What is the next important detail I should understand/i.test(safeReply);
-    const requiresRepair = lowValueReply || responseRepeatsUser(safeReply, latestUserMessage) || isIncompleteAssistantReply(safeReply);
+    const requiresRepair = lowValueReply ||
+      responseRepeatsUser(safeReply, latestUserMessage) ||
+      assistantReplyRepeatsRecentAssistant(safeReply, messages.slice(0, -1)) ||
+      isIncompleteAssistantReply(safeReply);
     if (requiresRepair && repairMode) {
       return json(response, 200, {
         reply: safeReply,
@@ -1132,9 +1138,12 @@ const app = http.createServer(async (request, response) => {
         responseNeedsReview: true
       }, headers || {});
     }
-    const finalReply = enforceFirstPersonTaskQuestions(requiresRepair
+    let finalReply = enforceFirstPersonTaskQuestions(requiresRepair
       ? betterFallbackFollowup(latestUserMessage, profile, messages)
-      : safeReply);
+      : safeReply, profile.companionName || profile.robotName || "Freya");
+    if (assistantReplyRepeatsRecentAssistant(finalReply, messages.slice(0, -1))) {
+      finalReply = "I’ve got that detail. I’ll move to a different part of the current room rather than ask you the same thing again.";
+    }
     return json(response, 200, {
       reply: finalReply,
       model: MODEL,

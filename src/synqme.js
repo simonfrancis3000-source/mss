@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { createPhonicVoiceConversation } from "./phonic-voice.js";
 import { companionThinkingMessage, companionWelcomeMessage, isCompanionWelcomeMessage } from "./companion-copy.js";
-import { enforceFirstPersonTaskQuestions, normaliseVoicePreference, phonicVoiceIdForPreference } from "./voice-language.js";
+import { assistantReplyRepeatsRecentAssistant, enforceFirstPersonTaskQuestions, normaliseVoicePreference, phonicVoiceIdForPreference } from "./voice-language.js";
 import { ROOM_JOURNEY_ROOMS, addMonthsAnchored, buildRoomProgressSnapshot, getRoomJourneySchedule, getRoomTaskStates } from "./room-journey.js";
 import {
   buildHomeMemoryIndexRows,
@@ -413,6 +413,8 @@ let voiceInputMuted = false;
 let phonicVoiceConversation = null;
 const phonicItemMap = new Map();
 const phonicTurnMetadata = new Map();
+const phonicCanonicalAssistantItemKeys = new Set();
+let pendingPhonicAssistantMessageIndex = null;
 let speechRecognition = null;
 let recognitionListening = false;
 let recognitionTranscript = "";
@@ -3781,8 +3783,8 @@ function buildPhonicConfig() {
   const voiceId = phonicVoiceIdForPreference(voicePreference);
   const systemPrompt = [
     "You are " + companion + ", the user's future home robot persona, speaking through SYNQ.ME while they build their SecondSelf. You are not a physical robot connected to the home yet.",
-    "When you introduce yourself or the user asks who you are, say: I am your future robot, " + companion + ". Use the same meaning naturally in " + languageName + ".",
-    "Speak naturally in " + languageName + ". Be warm, curious, practical and concise. The voice system handles speech; the conversation engine supplies your decisions, answers and questions.",
+    "Do not introduce yourself again at the start of each voice session or repeat your name unless the user asks who you are. If explicitly asked, say: I am your future robot, " + companion + ".",
+    "Always speak about your own future capabilities, limitations and behaviour in first person: I/me/my. Never describe yourself as 'the robot', 'your robot', or by your name in the third person. The voice system handles speech; the conversation engine supplies your decisions, answers and questions.",
     "MANDATORY TURN FLOW: After each completed user utterance, call amia_next_turn exactly once before speaking. Do not independently answer, acknowledge, or ask a follow-up while waiting. The tool calls SYNQ.ME's AMÏA conversation engine with the current transcript, saved preferences, relevant home memories, profile and selected household interests.",
     "AUTHORITATIVE RESPONSE: Speak only the tool's assistant_text, verbatim, in " + languageName + ". Do not paraphrase, add greetings, ask an extra question, or continue after that response. Never mention tools or internal decision logic.",
     "FIRST-PERSON COMPANION RULE — NON-NEGOTIABLE: When discussing tasks you may eventually do, always speak as the user's SecondSelf using I/me. Ask, for example, “What would you like me to do?” or “How would you like me to handle that?” Never ask what the user wants their robot to do, what the robot should do, or any equivalent third-person task question. Apply this perspective naturally in the selected language.",
@@ -3792,7 +3794,6 @@ function buildPhonicConfig() {
   return {
     type: "config",
     system_prompt: systemPrompt,
-    welcome_message: companionWelcomeMessage(language, companion),
     voice_id: voiceId,
     audio_speed: 1,
     input_format: "pcm_44100",
@@ -3846,11 +3847,26 @@ function syncPhonicTranscriptItems(items) {
     if (phonicItemMap.has(key)) {
       const index = phonicItemMap.get(key);
       const previous = state.messages[index];
-      if (previous && previous.role === item.role && previous.content !== textValue) {
+      if (previous && previous.role === item.role && previous.content !== textValue &&
+          !(item.role === "assistant" && phonicCanonicalAssistantItemKeys.has(key))) {
         previous.content = textValue;
         changed = true;
       }
       continue;
+    }
+
+    // The exact assistant_text returned to Phonic is already committed to chat.
+    // Attach the provider's streamed transcript item to that message rather than
+    // waiting for a transcript chunk or creating a duplicate bubble.
+    if (item.role === "assistant" && Number.isInteger(pendingPhonicAssistantMessageIndex)) {
+      const pendingMessage = state.messages[pendingPhonicAssistantMessageIndex];
+      if (pendingMessage?.role === "assistant") {
+        phonicItemMap.set(key, pendingPhonicAssistantMessageIndex);
+        phonicCanonicalAssistantItemKeys.add(key);
+        pendingPhonicAssistantMessageIndex = null;
+        continue;
+      }
+      pendingPhonicAssistantMessageIndex = null;
     }
 
     if (item.role === "assistant" && isCompanionWelcomeMessage(textValue)) {
@@ -3912,6 +3928,9 @@ function handlePhonicVoiceEvent(event) {
       if (elements.conversationStatus) elements.conversationStatus.textContent = companion + " is listening";
       break;
     case "user_started_speaking":
+      // If the user interrupts an assistant turn, its intended text is already
+      // saved in chat. Do not let the next assistant transcript attach to it.
+      pendingPhonicAssistantMessageIndex = null;
       updateVoiceExperience("listening", "Listening to you…");
       if (elements.conversationStatus) elements.conversationStatus.textContent = "Listening";
       break;
@@ -3919,20 +3938,29 @@ function handlePhonicVoiceEvent(event) {
       updateVoiceExperience("thinking", companionThinkingMessage(companion));
       if (elements.conversationStatus) elements.conversationStatus.textContent = companionThinkingMessage(companion);
       break;
-    case "input_text":
+    case "input_text": {
+      // Save the user's live speech transcription immediately, not only when
+      // the subsequent assistant tool call arrives.
+      const synced = syncPhonicTranscriptItems(event.items);
+      if (synced.userAdded) void flushCloudSave();
       if (elements.conversationStatus) elements.conversationStatus.textContent = companionThinkingMessage(companion);
       break;
+    }
     case "assistant_started_speaking":
       assistantIsSpeaking = true;
       updateVoiceExperience("speaking", companion + " is speaking.");
       if (elements.conversationStatus) elements.conversationStatus.textContent = companion + " is speaking";
       break;
-    case "audio_chunk":
-      syncPhonicTranscriptItems(event.items);
+    case "audio_chunk": {
+      const synced = syncPhonicTranscriptItems(event.items);
+      if (synced.userAdded) void flushCloudSave();
       break;
+    }
     case "assistant_finished_speaking": {
       assistantIsSpeaking = false;
-      syncPhonicTranscriptItems(event.items);
+      const synced = syncPhonicTranscriptItems(event.items);
+      if (synced.userAdded) void flushCloudSave();
+      pendingPhonicAssistantMessageIndex = null;
       const latestUser = [...state.messages].reverse().find((message) => message.role === "user")?.content || "";
       const latestAssistant = state.messages[state.messages.length - 1]?.role === "assistant"
         ? state.messages[state.messages.length - 1].content
@@ -4025,15 +4053,27 @@ async function handlePhonicAmiaToolCall({ name, parameters = {}, items = [] } = 
       reply = unavailable;
     }
 
-    state.pendingClarification = detectPendingClarification(latestUserText, reply);
+    const spokenReply = enforceFirstPersonTaskQuestions(
+      reply.trim() || unavailable,
+      selectedCompanionDisplayName()
+    );
+    state.pendingClarification = detectPendingClarification(latestUserText, spokenReply);
     void refreshRoomJourneyProgress();
     void processStructuredMemoryTurn(latestUserText, metadata.timestamp, metadata.shouldExtractStructuredMemory);
     phonicTurnMetadata.delete(latestKey || "fallback");
     if (state.profile.shareAnonymizedLearning === true) void contributeSharedKnowledgeFromTurn();
+
+    // Save the exact text that Phonic is about to speak. Its streamed transcript
+    // chunks are linked back to this bubble and never create a second copy.
+    const latestMessage = state.messages[state.messages.length - 1];
+    if (!(latestMessage?.role === "assistant" &&
+          normalisePhonicText(latestMessage.content) === normalisePhonicText(spokenReply))) {
+      state.messages.push({ role: "assistant", content: spokenReply, timestamp: new Date().toISOString() });
+      pendingPhonicAssistantMessageIndex = state.messages.length - 1;
+    }
     persist();
     renderAll();
     void flushCloudSave();
-    const spokenReply = enforceFirstPersonTaskQuestions(reply.trim() || unavailable);
     return { status: "ok", decision_owner: "AMÏA", assistant_text: spokenReply };
   } catch (error) {
     console.info("SYNQ.ME AMÏA voice decision failed.", error);
@@ -4062,6 +4102,8 @@ async function openVoiceExperience() {
   assistantIsSpeaking = false;
   phonicItemMap.clear();
   phonicTurnMetadata.clear();
+  phonicCanonicalAssistantItemKeys.clear();
+  pendingPhonicAssistantMessageIndex = null;
   updateVoiceCompanionLabels();
   updateVoiceModeButton();
   if (elements.voiceRetrySpeechButton) elements.voiceRetrySpeechButton.hidden = true;
@@ -4516,13 +4558,8 @@ function clarificationHelpReply(previousAssistantMessage, previousUserMessage = 
 }
 
 function responseRepeatsRecentAssistant(reply) {
-  const normalise = (value) => String(value || "").toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
-  const current = normalise(reply);
-  if (/what matters most to you when getting that right/.test(current)) return true;
-  return state.messages
-    .filter((item) => item.role === "assistant")
-    .slice(-4)
-    .some((item) => normalise(item.content) === current && current.length > 8);
+  if (/what matters most to you when getting that right/i.test(String(reply || ""))) return true;
+  return assistantReplyRepeatsRecentAssistant(reply, state.messages);
 }
 
 function responseRepeatsUser(reply, userMessage) {
@@ -4776,6 +4813,7 @@ async function sendMessage(rawText) {
       ? "I’m having trouble making a useful connection from that answer. I’ve understood the detail you shared; please try once more, or tell me which part of your routine you’d like to explore."
       : localizedAIUnavailable(state.profile.preferredLanguage);
   }
+  reply = enforceFirstPersonTaskQuestions(reply, selectedCompanionDisplayName());
   state.messages.push({ role: "assistant", content: reply, timestamp: new Date().toISOString() });
   state.pendingClarification = detectPendingClarification(message, reply);
   void processStructuredMemoryTurn(message, userMessageTimestamp, shouldExtractStructuredMemory);
