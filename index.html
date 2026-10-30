@@ -290,6 +290,8 @@
           <input id="robotName" name="robotName" maxlength="60" placeholder="Optional — you can name it later" />
           <p class="field-help">You can leave this blank. Your robot image does not need a name to use SYNQ.ME.</p>
 
+          <details class="settings-disclosure">
+            <summary><span>Companion appearance</span><small>OPTIONAL</small></summary>
           <section class="settings-section robot-appearance-settings" aria-labelledby="robotAppearanceTitle">
             <div class="settings-subhead" id="robotAppearanceTitle"><span>ROBOT APPEARANCE</span><span>OPTIONAL</span></div>
             <p class="settings-section-copy">Choose the image shown beside SYNQ.ME replies, or upload your own. You can change this at any time.</p>
@@ -307,6 +309,7 @@
             <p class="robot-upload-note">Your image stays in this browser.</p>
           </section>
 
+          </details>
           <label for="robotType">Robot you may want to personalise in the future</label>
           <select id="robotType" name="robotType">
             <option value="Humanoid robot" selected>Humanoid robot</option>
@@ -342,6 +345,8 @@
             <input type="checkbox" id="shareAnonymizedLearning" name="shareAnonymizedLearning" />
             <span class="toggle-ui" aria-hidden="true"></span>
           </label>
+          <details class="settings-disclosure">
+            <summary><span>Home interests</span><small>OPTIONAL</small></summary>
           <div class="settings-section">
             <div class="settings-subhead function-section-head"><span>OPTIONAL HOME INTERESTS</span><div class="function-section-controls"><span id="functionCount">0 SELECTED</span><button type="button" id="toggleAllFunctions" class="select-all-functions">Select all</button></div></div>
             <p class="settings-section-copy">These optional interests add background context. Your monthly room journey guides what we explore first.</p>
@@ -360,15 +365,21 @@
               <label class="function-option"><input type="checkbox" value="recycling"><span class="function-symbol">12</span><span class="function-label"><strong>Waste & recycling</strong><small>Sorting and collection routines</small></span></label>
             </div>
           </div>
+          </details>
           <div class="settings-actions">
             <button type="submit" class="settings-save">Save settings</button>
             <button type="button" class="settings-cancel" id="cancelSettings">Close</button>
           </div>
         </form>
+        <details class="settings-disclosure">
+          <summary><span>Learned preferences</span><small>REVIEW OR UPDATE</small></summary>
         <div class="settings-preferences">
           <div class="settings-subhead"><span>YOUR LEARNED PREFERENCES</span><span id="settingsPreferenceCount">0</span></div>
           <div id="settingsPreferenceList"><p class="settings-empty">As you chat with ELO, your preferences will appear here.</p></div>
         </div>
+        </details>
+        <details class="settings-disclosure">
+          <summary><span>AMÏA memory library</span><small>REVIEW, CORRECT OR REMOVE</small></summary>
         <section class="persona-memory-library settings-preferences" aria-labelledby="personaMemoryTitle">
           <div class="settings-subhead">
             <span id="personaMemoryTitle">YOUR MEMORY LIBRARY</span>
@@ -380,6 +391,7 @@
           <button type="button" class="settings-task-link" id="toggleArchivedPersonaMemories">Show superseded and forgotten memories <span>↗</span></button>
           <p class="settings-note">Removing a saved memory stops it being used as a structured preference. The original conversation remains in your chat history unless you remove that conversation separately.</p>
         </section>
+        </details>
         <div class="settings-milestones">
           <div class="settings-subhead"><span>PERSONA MILESTONES</span><span id="milestoneCount">0 OF 5</span></div>
           <p class="settings-section-copy">Small steps that show your SecondSelf taking shape. Rewards are profile achievements, not payments or robot capabilities.</p>
