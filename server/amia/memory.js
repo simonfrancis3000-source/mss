@@ -59,5 +59,6 @@ export function selectRelevantPreferences(preferences = [], messages = []) {
     .slice(0, 8)
     .sort((a, b) => a.index - b.index)
     .map((item) => item.preference);
-  return selected.length ? selected : preferences.slice(-4);
+  if (selected.length) return selected;
+  return activeRoom ? [] : preferences.slice(-4);
 }
