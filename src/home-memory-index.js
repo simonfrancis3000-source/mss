@@ -152,9 +152,12 @@ export function rankHomeMemoryCandidates(query, messages, { limit = 6 } = {}) {
     const ownContent = typeof message?.content === "string" ? message.content.trim() : "";
     const precomputedKeys = message?.search_keys || message?.searchKeys;
     const neighbourMessages = relatedContextMessages(messages, index);
-    const candidateKeys = new Set(Array.isArray(precomputedKeys) && precomputedKeys.length
-      ? precomputedKeys
-      : neighbourMessages.flatMap((neighbour) => extractHomeMemoryKeys(neighbour?.content)));
+    // Combine persisted keys with current keys so older archive rows benefit
+    // from new concept aliases without requiring a backfill job.
+    const candidateKeys = new Set([
+      ...(Array.isArray(precomputedKeys) ? precomputedKeys : []),
+      ...neighbourMessages.flatMap((neighbour) => extractHomeMemoryKeys(neighbour?.content))
+    ]);
     const candidateTopics = new Set([
       ...(Array.isArray(message?.topics) ? message.topics : []),
       ...neighbourMessages.flatMap((neighbour) => extractHomeMemoryTopics(neighbour?.content))
