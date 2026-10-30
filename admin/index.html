@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#090b10" />
+    <title>SYNQ.ME | Administration</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/src/admin.css" />
+    <script type="module" src="/src/admin.js"></script>
+  </head>
+  <body>
+    <main class="admin-shell">
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="SYNQ.ME home">
+          <span class="brand-mark">S</span>
+          <span><strong>SYNQ.ME</strong><small>ADMINISTRATION</small></span>
+        </a>
+        <div class="topbar-right">
+          <span class="secure-label"><i></i> PRIVATE CONSOLE</span>
+          <button class="text-button" id="signOutButton" type="button" hidden>Sign out</button>
+        </div>
+      </header>
+
+      <section class="login-panel" id="loginPanel">
+        <div class="eyebrow">ADMINISTRATOR ACCESS</div>
+        <h1>Usage &amp; cost<br /><span>intelligence.</span></h1>
+        <p class="lede">Sign in with your SYNQ.ME administrator account to view registered users, platform activity and provider usage.</p>
+        <form id="loginForm" class="login-form">
+          <label for="emailInput">Email address</label>
+          <input id="emailInput" name="email" type="email" autocomplete="username" required placeholder="admin@company.com" />
+          <label for="passwordInput">Password</label>
+          <input id="passwordInput" name="password" type="password" autocomplete="current-password" required placeholder="Your account password" />
+          <p class="notice" id="loginNotice" role="status" aria-live="polite"></p>
+          <button class="primary-button" id="loginButton" type="submit">Sign in securely <span>↗</span></button>
+        </form>
+        <div class="login-foot"><span class="lock-icon">⌑</span> Access is restricted to the server-side administrator allowlist.</div>
+      </section>
+
+      <section class="dashboard" id="dashboard" hidden>
+        <div class="page-heading">
+          <div>
+            <div class="eyebrow">PLATFORM OPERATIONS / COST CONTROL</div>
+            <h1>Usage overview</h1>
+            <p class="lede">A live view of registered accounts and recorded variable usage across AMÏA, DeepSeek and Phonic.</p>
+          </div>
+          <div class="toolbar">
+            <label class="sr-only" for="periodSelect">Reporting period</label>
+            <select id="periodSelect">
+              <option value="7d">Last 7 days</option>
+              <option value="30d" selected>Last 30 days</option>
+              <option value="90d">Last 90 days</option>
+              <option value="all">All recorded usage</option>
+            </select>
+            <button class="icon-button" id="refreshButton" type="button" aria-label="Refresh dashboard" title="Refresh">↻</button>
+          </div>
+        </div>
+
+        <div class="status-line" id="statusLine" role="status" aria-live="polite">Loading usage data…</div>
+
+        <div class="kpi-grid">
+          <article class="metric-card">
+            <span class="metric-label">REGISTERED USERS</span>
+            <strong class="metric-value" id="registeredUsers">—</strong>
+            <span class="metric-foot">Supabase Auth accounts</span>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">ACTIVE USERS</span>
+            <strong class="metric-value" id="activeUsers">—</strong>
+            <span class="metric-foot">Users with recorded usage in period</span>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">DEEPSEEK + SEARCH</span>
+            <strong class="metric-value" id="deepseekCost">$—</strong>
+            <span class="metric-foot">Token and successful request rate-card estimate</span>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">PHONIC VOICE</span>
+            <strong class="metric-value" id="phonicMinutes">—</strong>
+            <span class="metric-foot">Connected conversation minutes</span>
+          </article>
+          <article class="metric-card metric-card-highlight">
+            <span class="metric-label">KNOWN VARIABLE COST</span>
+            <strong class="metric-value" id="knownCost">$—</strong>
+            <span class="metric-foot">DeepSeek, Search, Fetch and priced Phonic usage</span>
+          </article>
+        </div>
+
+        <div class="detail-grid">
+          <section class="data-panel">
+            <div class="panel-header">
+              <div><div class="eyebrow">MODEL CONSUMPTION</div><h2>Token usage</h2></div>
+              <span class="panel-tag">DEEPSEEK</span>
+            </div>
+            <div class="consumption-list">
+              <div><span>Input tokens</span><strong id="inputTokens">—</strong></div>
+              <div><span>Cached input tokens</span><strong id="cacheTokens">—</strong></div>
+              <div><span>Output tokens</span><strong id="outputTokens">—</strong></div>
+              <div><span>Chat requests</span><strong id="chatRequests">—</strong></div>
+            </div>
+          </section>
+          <section class="data-panel">
+            <div class="panel-header">
+              <div><div class="eyebrow">REAL-TIME VOICE</div><h2>Conversation minutes</h2></div>
+              <span class="panel-tag">PHONIC</span>
+            </div>
+            <div class="consumption-list">
+              <div><span>Total connected time</span><strong id="voiceMinutes">—</strong></div>
+              <div><span>User speaking time</span><strong id="userSpeechMinutes">—</strong></div>
+              <div><span>Assistant speaking time</span><strong id="assistantSpeechMinutes">—</strong></div>
+              <div><span>Voice sessions</span><strong id="voiceSessions">—</strong></div>
+            </div>
+            <p class="panel-note" id="phonicPricingNote">Phonic cost requires your actual workspace rate.</p>
+          </section>
+          <section class="data-panel">
+            <div class="panel-header">
+              <div><div class="eyebrow">SEARCH ACTIVITY</div><h2>Search &amp; Fetch</h2></div>
+              <span class="panel-tag">DEEPSEEK</span>
+            </div>
+            <div class="consumption-list">
+              <div><span>Successful Search calls</span><strong id="searchRequests">—</strong></div>
+              <div><span>Successful Fetch calls</span><strong id="fetchRequests">—</strong></div>
+              <div><span>Search cost</span><strong id="searchCost">—</strong></div>
+              <div><span>Fetch cost</span><strong id="fetchCost">—</strong></div>
+            </div>
+          </section>
+        </div>
+
+        <section class="data-panel users-panel">
+          <div class="panel-header users-heading">
+            <div><div class="eyebrow">ACCOUNT LEVEL DETAIL</div><h2>Users &amp; usage</h2><p>Ranked by recorded variable cost within the selected period.</p></div>
+            <div class="user-tools">
+              <input id="userSearch" type="search" placeholder="Find a user…" aria-label="Search users" />
+              <button class="secondary-button" id="exportButton" type="button">Export CSV ↧</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr>
+                <th>USER</th><th>CHAT</th><th>VOICE</th><th>VOICE MIN</th><th>DEEPSEEK</th><th>SEARCH / FETCH</th><th>PHONIC</th><th>TOTAL COST</th>
+              </tr></thead>
+              <tbody id="userTableBody"><tr><td colspan="8" class="empty-cell">Loading accounts…</td></tr></tbody>
+            </table>
+          </div>
+          <div class="table-foot"><span id="userCount">—</span><span>All amounts shown in USD</span></div>
+        </section>
+
+        <section class="data-panel recent-panel">
+          <div class="panel-header"><div><div class="eyebrow">AUDIT TRAIL</div><h2>Recent usage events</h2></div></div>
+          <div class="table-wrap">
+            <table class="events-table">
+              <thead><tr><th>TIME</th><th>USER ID</th><th>PROVIDER</th><th>TYPE</th><th>MODEL</th><th>STATUS</th><th>RECORDED COST</th></tr></thead>
+              <tbody id="eventTableBody"><tr><td colspan="7" class="empty-cell">Loading events…</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+
+        <footer class="dashboard-footer">
+          <span id="trackingNote">Usage tracking start date will appear here.</span>
+          <span>Private SYNQ.ME operations console</span>
+        </footer>
+      </section>
+    </main>
+  </body>
+</html>
