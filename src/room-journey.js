@@ -230,3 +230,15 @@ export function buildRoomProgressSnapshot(rooms = ROOM_JOURNEY_ROOMS, evidenceRe
     { completed_task_ids: deriveCompletedRoomTasks(room, evidenceRecords) }
   ]));
 }
+
+export function getRoomTaskStates(room, completedTaskIds = [], activeTaskId = null) {
+  if (!room || !Array.isArray(room.tasks)) return [];
+  const completed = new Set(completedTaskIds);
+  const currentId = room.tasks.some((task) => task.id === activeTaskId && !completed.has(task.id))
+    ? activeTaskId
+    : null;
+  return room.tasks.map((task) => ({
+    ...task,
+    status: completed.has(task.id) ? "completed" : task.id === currentId ? "current" : "pending"
+  }));
+}

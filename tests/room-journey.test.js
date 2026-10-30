@@ -5,7 +5,8 @@ import {
   addMonthsAnchored,
   buildRoomProgressSnapshot,
   deriveCompletedRoomTasks,
-  getRoomJourneySchedule
+  getRoomJourneySchedule,
+  getRoomTaskStates
 } from "../src/room-journey.js";
 
 test("each account unlocks rooms from its own start date", () => {
@@ -50,4 +51,24 @@ test("room progress can be derived across the released curriculum", () => {
   assert.deepEqual(snapshot.laundry_utility.completed_task_ids, ["washing"]);
   assert.deepEqual(snapshot.balcony_patio.completed_task_ids, ["weather"]);
   assert.equal(Object.keys(snapshot).length, 12);
+});
+
+
+test("room tasks distinguish the current task, completed tasks and pending tasks", () => {
+  const kitchen = ROOM_JOURNEY_ROOMS.find((room) => room.id === "kitchen");
+  const states = getRoomTaskStates(kitchen, ["dishwashing"], "surfaces");
+  assert.deepEqual(states.map((task) => [task.id, task.status]), [
+    ["dishwashing", "completed"],
+    ["surfaces", "current"],
+    ["products", "pending"],
+    ["food-prep", "pending"],
+    ["boundaries", "pending"]
+  ]);
+});
+
+test("a completed task cannot remain marked as the current task", () => {
+  const kitchen = ROOM_JOURNEY_ROOMS.find((room) => room.id === "kitchen");
+  const states = getRoomTaskStates(kitchen, ["dishwashing"], "dishwashing");
+  assert.equal(states.find((task) => task.id === "dishwashing").status, "completed");
+  assert.equal(states.some((task) => task.status === "current"), false);
 });
