@@ -352,6 +352,9 @@ function normaliseMessageTimestamp(item) {
 
 function sanitiseConversationMessage(item) {
   if (!item || (item.role !== "assistant" && item.role !== "user") || typeof item.content !== "string") return null;
+  // A single "I" (or an unfinished "I'm"/"I am") is a captured audio token,
+  // not a complete assistant message. Remove this legacy artefact on restore.
+  if (item.role === "assistant" && /^i(?:['’]m| am)?$/i.test(item.content.trim())) return null;
   const timestamp = normaliseMessageTimestamp(item);
   if (item.role === "assistant" && /what matters most to you when getting that right\?|what detail would matter most to get right\?|let'?s make that preference more precise/i.test(item.content)) {
     return { role: "assistant", content: "Let’s focus on one practical detail at a time.", timestamp };
@@ -381,7 +384,8 @@ function loadState() {
             return { role: "assistant", content: WELCOME };
           }
           return sanitiseConversationMessage(m);
-        }),
+        })
+        .filter(Boolean),
       preferences: saved.preferences.slice(0, 24)
         .map((p) => typeof p === "string" ? cleanPreference(p) : cleanPreference(p?.text, p))
         .filter(Boolean),
