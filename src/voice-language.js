@@ -1,3 +1,17 @@
+/**
+ * Catch obvious unfinished openings from the language model before they reach
+ * the transcript. A one-word lead-in such as "Here's" is not a complete reply.
+ * Short complete answers (for example "Yes.") remain valid.
+ */
+export function isIncompleteAssistantReply(value) {
+  const reply = String(value || "").trim();
+  if (!reply) return true;
+  if (/[.!?…][\s"'”’)}\]]*$/.test(reply)) return false;
+  const words = reply.split(/\s+/).filter(Boolean);
+  if (words.length > 12) return false;
+  return /^(?:here(?:['’]s| is)|there(?:['’]s| is| are)|this is|that is|it is|for example|such as|because|so|and|but|or|with|including|first|next|to start|let me|i(?:['’]m| am| can| could| will| would| should)|you(?: can| could| should| would)|we(?: can| could| should| would))\b/i.test(reply);
+}
+
 export function normaliseVoicePreference(value) {
   return String(value || "").trim().toLowerCase() === "male" ? "male" : "female";
 }

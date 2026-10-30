@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   enforceFirstPersonTaskQuestions,
+  isIncompleteAssistantReply,
   normaliseVoicePreference,
   phonicVoiceIdForPreference
 } from "../src/voice-language.js";
@@ -41,4 +42,20 @@ test("male and female preferences resolve to one fixed Phonic voice", () => {
   assert.equal(phonicVoiceIdForPreference("male"), "grant");
   assert.equal(phonicVoiceIdForPreference("female"), "sabrina");
   assert.equal(phonicVoiceIdForPreference("invalid"), "sabrina");
+});
+
+
+test("obvious unfinished assistant openings are rejected before display", () => {
+  assert.equal(isIncompleteAssistantReply("Here's"), true);
+  assert.equal(isIncompleteAssistantReply("Here is"), true);
+  assert.equal(isIncompleteAssistantReply("For example"), true);
+  assert.equal(isIncompleteAssistantReply("Let me"), true);
+  assert.equal(isIncompleteAssistantReply("Here's what I would suggest"), true);
+});
+
+test("complete short replies remain valid", () => {
+  assert.equal(isIncompleteAssistantReply("Yes."), false);
+  assert.equal(isIncompleteAssistantReply("No!"), false);
+  assert.equal(isIncompleteAssistantReply("Absolutely."), false);
+  assert.equal(isIncompleteAssistantReply("Here's the answer."), false);
 });

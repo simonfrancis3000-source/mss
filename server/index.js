@@ -4,7 +4,7 @@ import { buildHomePersonaSystemPrompt } from "../src/home-persona-reasoning.js";
 import { cleanKnowledgeCandidate } from "../src/shared-knowledge-validation.js";
 import { cleanPersonaMemoryCandidate, MEMORY_TOPICS } from "../src/persona-memory.js";
 import { selectHouseholdSkills } from "../src/household-skills.js";
-import { enforceFirstPersonTaskQuestions, normaliseVoicePreference } from "../src/voice-language.js";
+import { enforceFirstPersonTaskQuestions, isIncompleteAssistantReply, normaliseVoicePreference } from "../src/voice-language.js";
 import { ROOM_JOURNEY_ROOMS } from "../src/room-journey.js";
 
 const PORT = Number.parseInt(process.env.PORT || "10000", 10);
@@ -345,6 +345,12 @@ function betterFallbackFollowup(message, profile = {}, history = []) {
       "When you wash clothes, do you usually separate them by colour first, or pay more attention to fabric and care labels?",
       "Are there any garments you treat differently from the rest—delicates, wool, work clothes, or anything you prefer to air-dry?",
       "Do you tend to have a regular laundry day, or wash smaller loads as things need doing?"
+    ]);
+  }
+  if (/(bathroom|bath|shower|toilet|sink)/i.test(lower) && /(tell me|about|what|how|learn|preferences?)/i.test(lower)) {
+    return choose([
+      "Of course. In the bathroom, I’d learn how you want the sink, shower, bath and toilet cleaned, which products are safe for each surface, how towels and toiletries are handled, and what should remain private. Which part would you like to start with?",
+      "We can build your bathroom preferences around cleaning priorities, towels and linen, toiletries and storage, approved products, and privacy boundaries. What matters most to you in that room?"
     ]);
   }
   if (/(paper towels?|spray|cleaning product|surface cleaner|detergent)/i.test(text)) {
@@ -1133,7 +1139,7 @@ const app = http.createServer(async (request, response) => {
       : reply.trim();
     const safeReply = enforceFirstPersonTaskQuestions(guardRobotExecutionClaims(namedReply, preferences, profile.preferredLanguage));
     const lowValueReply = /I've captured this preference for your browser-based SecondSelf|I've added it to your local digital persona|That's useful context for your SecondSelf|Let's make that preference more precise|What detail would matter most to get right|Can you walk me through how that usually happens at home|What is the next important detail I should understand/i.test(safeReply);
-    const requiresRepair = lowValueReply || responseRepeatsUser(safeReply, latestUserMessage);
+    const requiresRepair = lowValueReply || responseRepeatsUser(safeReply, latestUserMessage) || isIncompleteAssistantReply(safeReply);
     if (requiresRepair && repairMode) {
       return json(response, 200, {
         reply: safeReply,
