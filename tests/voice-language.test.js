@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  assistantReplyRepeatsRecentAssistant,
   enforceFirstPersonTaskQuestions,
   isIncompleteAssistantReply,
   normaliseVoicePreference,
@@ -58,4 +59,32 @@ test("complete short replies remain valid", () => {
   assert.equal(isIncompleteAssistantReply("No!"), false);
   assert.equal(isIncompleteAssistantReply("Absolutely."), false);
   assert.equal(isIncompleteAssistantReply("Here's the answer."), false);
+});
+
+
+test("companion speaks in first person in statements, instructions and descriptions", () => {
+  assert.equal(enforceFirstPersonTaskQuestions("The robot can clean the kitchen."), "I can clean the kitchen.");
+  assert.equal(enforceFirstPersonTaskQuestions("Your future robot will learn your routine."), "I will learn your routine.");
+  assert.equal(enforceFirstPersonTaskQuestions("The robot is not connected yet."), "I am not connected yet.");
+  assert.equal(enforceFirstPersonTaskQuestions("Your robot's preferences are stored in your account."), "My preferences are stored in your account.");
+  assert.equal(enforceFirstPersonTaskQuestions("You can talk to the robot whenever you need help."), "You can talk to me whenever you need help.");
+  assert.equal(enforceFirstPersonTaskQuestions("You want the robot to remember that."), "You want me to remember that.");
+  assert.equal(enforceFirstPersonTaskQuestions("Freya can help you with laundry.", "Freya"), "I can help you with laundry.");
+});
+
+test("generic facts about robots remain third-person when not referring to the companion", () => {
+  const statement = "Some robots use lidar and depth cameras to navigate.";
+  assert.equal(enforceFirstPersonTaskQuestions(statement), statement);
+});
+
+test("detects repeated assistant answers and materially similar questions", () => {
+  const history = [
+    { role: "assistant", content: "What should I do if a delivery arrives while you are out?" },
+    { role: "user", content: "Leave it by the door." }
+  ];
+  assert.equal(assistantReplyRepeatsRecentAssistant("What should I do when a delivery arrives while you are away?", history), true);
+  assert.equal(assistantReplyRepeatsRecentAssistant("How should I handle wet floors after cleaning?", history), false);
+  assert.equal(assistantReplyRepeatsRecentAssistant("I can leave the parcel by the door and tell you when it arrives.", [
+    { role: "assistant", content: "I can leave the parcel by the door and tell you when it arrives." }
+  ]), true);
 });
