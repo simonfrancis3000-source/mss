@@ -156,6 +156,19 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
     }
 
     switch (message.type) {
+      case "conversation_created": {
+        const conversationId = String(
+          message.conversation_id ||
+          message.conversation?.id ||
+          message.data?.conversation_id ||
+          message.data?.conversation?.id ||
+          message.id ||
+          ""
+        ).trim();
+        emit({ type: "conversation_created", conversationId });
+        break;
+      }
+
       case "ready_to_start_conversation":
         emit({ type: "ready" });
         break;
