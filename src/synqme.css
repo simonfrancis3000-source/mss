@@ -2326,7 +2326,7 @@ body:not(.auth-required):not(.profile-setup-required) {
 /* Assistant replies must grow to fit all returned text, never clip vertically. */
 .chat-messages .assistant-message {
   align-self: flex-start;
-  width: auto;
+  width: 100%;
   max-width: 100%;
 }
 .chat-messages .assistant-message .message-body {
