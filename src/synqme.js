@@ -90,6 +90,8 @@ const supabase = SUPABASE_URL && SUPABASE_KEY
       }
     })
   : null;
+const WELCOME = companionWelcomeMessage("en", "Freya");
+
 function localizeWelcomeMessage(language) {
   const welcome = companionWelcomeMessage(language, selectedCompanionDisplayName());
   state.messages = state.messages.map((item) =>
@@ -288,11 +290,31 @@ function defaultProfile() {
   };
 }
 
+function companionNameForProfile(profile = {}) {
+  const configuredName = String(profile.robotName || "").trim();
+  if (configuredName) return configuredName;
+  if (robotAppearance.customImageData) return "Your robot";
+  return (ROBOT_OPTIONS.find((item) => item.id === robotAppearance.robotId) || ROBOT_OPTIONS[0]).name;
+}
+
+function personaliseWelcomeMessages(messages, profile = {}) {
+  const welcome = companionWelcomeMessage(
+    profile.preferredLanguage || "en",
+    companionNameForProfile(profile)
+  );
+  return (Array.isArray(messages) ? messages : []).map((item) =>
+    item?.role === "assistant" && isCompanionWelcomeMessage(item.content)
+      ? { ...item, content: welcome }
+      : item
+  );
+}
+
 function initialState() {
+  const profile = defaultProfile();
   return {
-    messages: [{ role: "assistant", content: WELCOME, timestamp: new Date().toISOString() }],
+    messages: [{ role: "assistant", content: companionWelcomeMessage(profile.preferredLanguage, companionNameForProfile(profile)), timestamp: new Date().toISOString() }],
     preferences: [],
-    profile: defaultProfile(),
+    profile,
     functions: [],
     pendingClarification: null,
     apiConnected: false,
@@ -373,6 +395,7 @@ function loadState() {
       apiError: "",
       apiErrorDetail: ""
     };
+    state.messages = personaliseWelcomeMessages(state.messages, state.profile);
     return state;
   } catch {
     return initialState();
@@ -1827,6 +1850,7 @@ function stateFromSnapshot(snapshot) {
     ? snapshot.preferences.slice(0, 24).map((item) => typeof item === "string" ? cleanPreference(item) : cleanPreference(item?.text, item)).filter(Boolean)
     : [];
   base.profile = { ...defaultProfile(), ...(snapshot.profile && typeof snapshot.profile === "object" ? snapshot.profile : {}) };
+  base.messages = personaliseWelcomeMessages(base.messages, base.profile);
   base.functions = Array.isArray(snapshot.functions)
     ? snapshot.functions.filter((id) => ACTIVITIES.some((activity) => activity.id === id))
     : [];
@@ -2370,10 +2394,7 @@ elements.openTaskFromSettings?.addEventListener("click", () => {
 });
 
 function selectedCompanionDisplayName() {
-  const configuredName = (state.profile.robotName || "").trim();
-  if (configuredName) return configuredName;
-  if (robotAppearance.customImageData) return "Your robot";
-  return (ROBOT_OPTIONS.find((item) => item.id === robotAppearance.robotId) || ROBOT_OPTIONS[0]).name;
+  return companionNameForProfile(state.profile);
 }
 
 function updateVoiceCompanionLabels() {
@@ -3832,11 +3853,11 @@ function syncPhonicTranscriptItems(items) {
       continue;
     }
 
-    if (item.role === "assistant" && KNOWN_WELCOME_MESSAGES.has(textValue)) {
+    if (item.role === "assistant" && isCompanionWelcomeMessage(textValue)) {
       const norm = normalisePhonicText(textValue);
       const existingWelcomeIndex = state.messages.findIndex((message) =>
         message.role === "assistant" &&
-        KNOWN_WELCOME_MESSAGES.has(message.content) &&
+        isCompanionWelcomeMessage(message.content) &&
         normalisePhonicText(message.content) === norm
       );
       if (existingWelcomeIndex >= 0) {
