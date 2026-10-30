@@ -5,7 +5,7 @@ import { cleanKnowledgeCandidate } from "../src/shared-knowledge-validation.js";
 import { cleanPersonaMemoryCandidate, MEMORY_TOPICS } from "../src/persona-memory.js";
 import { selectHouseholdSkills } from "../src/household-skills.js";
 import { enforceFirstPersonTaskQuestions, isIncompleteAssistantReply, normaliseVoicePreference } from "../src/voice-language.js";
-import { ROOM_JOURNEY_ROOMS } from "../src/room-journey.js";
+import { buildRoomJourneyConversationContext } from "../src/room-journey.js";
 
 const PORT = Number.parseInt(process.env.PORT || "10000", 10);
 // SYNQ.ME uses Groq exclusively. No other AI provider is supported.
@@ -209,6 +209,7 @@ function cleanProfile(input) {
   return {
     ownerName: typeof input.ownerName === "string" ? input.ownerName.trim().slice(0, 60) : "",
     robotName: typeof input.robotName === "string" ? input.robotName.trim().slice(0, 60) : "",
+    companionName: typeof input.companionName === "string" ? input.companionName.trim().slice(0, 60) : "",
     robotType: typeof input.robotType === "string" ? input.robotType.slice(0, 80) : "Home assistant",
     askBeforeActions: Boolean(input.askBeforeActions),
     robotVoice: normaliseVoicePreference(input.robotVoice),
@@ -217,27 +218,7 @@ function cleanProfile(input) {
 }
 
 function cleanRoomJourney(input) {
-  if (!input || typeof input !== "object" || Array.isArray(input)) return null;
-  const room = ROOM_JOURNEY_ROOMS.find((item) => item.id === input.activeRoomId);
-  if (!room) return null;
-  const completedIds = new Set(
-    Array.isArray(input.completedTaskIds)
-      ? input.completedTaskIds.filter((id) => room.tasks.some((task) => task.id === id))
-      : []
-  );
-  const unlockedCount = Number.isInteger(input.unlockedRoomCount)
-    ? Math.max(1, Math.min(ROOM_JOURNEY_ROOMS.length, input.unlockedRoomCount))
-    : 1;
-  return {
-    activeRoomId: room.id,
-    activeRoomName: room.name,
-    unlockedRoomCount: unlockedCount,
-    tasks: room.tasks.map((task) => ({
-      id: task.id,
-      title: task.title,
-      completed: completedIds.has(task.id)
-    }))
-  };
+  return buildRoomJourneyConversationContext(input);
 }
 
 function cleanFunctions(input) {
@@ -1020,8 +1001,9 @@ const app = http.createServer(async (request, response) => {
       }, headers || {});
     }
 
+    const companionName = profile.companionName || profile.robotName || "Freya";
     const systemPrompt = [
-      "You are Freya, SYNQ.ME's conversational companion helping the user shape their MySecondSelf digital persona for a future compatible home robot. Respond in " + responseLanguage + ". Speak in first person; do not refer to yourself as Freya in the third person. No physical robot is connected, and you cannot observe the home or execute tasks.",
+      "You are " + companionName + ", the user's future home robot persona, speaking through SYNQ.ME to help shape their MySecondSelf digital persona. Respond in " + responseLanguage + ". When introducing yourself or asked who you are, say in the selected language: 'I am your future robot, " + companionName + ".' Speak in first person. You are not physically connected to the home yet, and cannot observe the home or execute tasks.",
       "Keep replies warm, natural, concise, and in plain text. Answer the latest message directly, preserve every explicit condition and permission boundary, distinguish stated facts from guesses, and do not repeat questions. Ask at most one specific follow-up when it materially helps. Humour is optional and rare; never repeat a joke.",
       "PERSON-CENTRED WORDING: Reflect the user's own routine and preference from their point of view, for example, 'You prefer the worktop wiped straight after breakfast' or 'You do not want anything moved without permission'. Preserve the user's point of view in saved preference statements.",
       "FIRST-PERSON COMPANION RULE — NON-NEGOTIABLE: When asking about tasks or describing work the future SecondSelf may do, speak as the companion in first person singular (I/me/my). Ask 'What would you like me to do?' or 'How would you like me to handle that?'. Never ask 'What do you want your robot to do?', 'What would you like your robot to do?', 'What should the robot do?', or any equivalent third-person question about tasks. Apply the same first-person perspective naturally in the user's selected language. This is future-persona planning only; never imply a physical robot is connected or acting now."
@@ -1051,11 +1033,13 @@ const app = http.createServer(async (request, response) => {
       : "";
     const roomJourneyContext = roomJourney
       ? [
-          "MONTHLY ROOM JOURNEY — ACTIVE PERSONAL FOCUS: The user's current room is " + roomJourney.activeRoomName + ". " +
-            "This room is the focus of the user's current monthly learning programme. Do not jump to a different room or unrelated household area unless the user explicitly asks.",
+          "STRICT CURRENT ROOM FOCUS: The active room for this conversation is " + roomJourney.activeRoomName + ". This is the only room to advance in the monthly journey unless the user explicitly asks to switch rooms or directly asks about another room. Never pivot to another room because older memories or preferences mention it. Ignore out-of-room memories for the current learning question unless the user brings that room up.",
+          roomJourney.activeTaskTitle
+            ? "CURRENT TASK: The user has selected " + roomJourney.activeTaskTitle + " in the " + roomJourney.activeRoomName + ". Treat that as the task currently being worked on. If asked what we are working on, answer directly that we are working on " + roomJourney.activeTaskTitle + " in the " + roomJourney.activeRoomName + ". Do not replace it with a different room or task."
+            : "CURRENT ROOM: The user is working through the " + roomJourney.activeRoomName + " journey. No task has been explicitly selected as in progress. The next pending task is " + (roomJourney.nextPendingTaskTitle || "not available") + ". If asked what we are working on, identify the " + roomJourney.activeRoomName + " journey and describe that next pending task as the next task, not as already in progress.",
           "Room tasks already learned: " + JSON.stringify(roomJourney.tasks.filter((task) => task.completed).map((task) => task.title)) + ". " +
             "Outstanding room tasks: " + JSON.stringify(roomJourney.tasks.filter((task) => !task.completed).map((task) => task.title)) + ". " +
-            "Use these as learning objectives, not as a rigid questionnaire. Never ask again about a task already learned. Choose one useful outstanding detail at a time, and acknowledge new information naturally.",
+            "Use these as learning objectives, not as a rigid questionnaire. Never ask again about a task already learned. Choose one useful outstanding detail at a time, and acknowledge new information naturally. Ask only about this active room unless the user explicitly broadens the topic.",
           "New rooms unlock on this individual user's monthly anniversary; " + roomJourney.unlockedRoomCount + " room(s) are currently released. The user may revisit earlier rooms. Do not claim an unreleased room is available, and do not imply a physical robot is connected or performing tasks."
         ].join(" ")
       : "";
