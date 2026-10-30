@@ -1,5 +1,17 @@
 import http from "node:http";
 import { createAmiaReply, searchWeb, fetchWebPage } from "./amia/index.js";
+import {
+  requireAuthenticatedUser,
+  requireAdminUser,
+  usageTrackingConfigured,
+  buildAdminUsageDashboard,
+  createPhonicUsageSession,
+  linkPhonicConversation,
+  completePhonicUsageSession,
+  recordDeepseekUsage,
+  recordSearchFetchUsage,
+  httpError
+} from "./usage.js";
 
 const PORT = Number.parseInt(process.env.PORT || "10000", 10);
 const DEEPSEEK_PERSON_API_KEY = process.env.DEEPSEEK_PERSON_API_KEY || "";
@@ -47,7 +59,7 @@ function corsHeaders(origin) {
     "Access-Control-Allow-Origin": origin,
     "Vary": "Origin",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type"
+    "Access-Control-Allow-Headers": "Content-Type, Authorization"
   };
 }
 
@@ -217,8 +229,27 @@ const app = http.createServer(async (request, response) => {
       model: MODEL,
       diagnosticsVersion: "amia-deepseek-v1",
       searchConfigured: Boolean(DEEPSEEK_SEARCH_API_KEY),
-      phonicConfigured: Boolean(PHONIC_API_KEY)
+      phonicConfigured: Boolean(PHONIC_API_KEY),
+      usageTrackingConfigured,
+      adminAllowlistConfigured: Boolean(process.env.ADMIN_EMAILS || process.env.ADMIN_USER_IDS),
+      phonicRateConfigured: Boolean(process.env.PHONIC_COST_PER_MINUTE_USD)
     }, headers || {});
+  }
+
+
+  if (request.method === "GET" && url.pathname === "/api/admin/usage") {
+    if (origin && headers === null) return json(response, 403, { error: "Origin not allowed." }, headers || {});
+    try {
+      const user = await requireAuthenticatedUser(request);
+      requireAdminUser(user);
+      if (!usageTrackingConfigured) throw httpError("The usage database is not configured. Add SUPABASE_SECRET_KEY to the Render API service.", 503);
+      const requestedPeriod = url.searchParams.get("period") || "30d";
+      const period = ["7d", "30d", "90d", "all"].includes(requestedPeriod) ? requestedPeriod : "30d";
+      const dashboard = await buildAdminUsageDashboard(period, PHONIC_API_KEY);
+      return json(response, 200, dashboard, headers || {});
+    } catch (error) {
+      return json(response, Number.isInteger(error?.statusCode) ? error.statusCode : 500, { error: error.message || "Could not load administration data." }, headers || {});
+    }
   }
 
   if (request.method === "POST" && url.pathname === "/api/phonic/session") {
@@ -233,8 +264,8 @@ const app = http.createServer(async (request, response) => {
     }
 
     try {
-      // Consume the small JSON request body so this endpoint behaves consistently
-      // with other API routes. The Phonic API key never leaves this server.
+      const user = await requireAuthenticatedUser(request);
+      // The Phonic API key never leaves this server.
       await readJson(request, 1024);
       const upstream = await fetch("https://api.phonic.ai/v1/auth/session_token", {
         method: "POST",
@@ -269,9 +300,12 @@ const app = http.createServer(async (request, response) => {
         return json(response, 502, { error: "Phonic did not return a session token." }, headers || {});
       }
 
+      const usageSession = await createPhonicUsageSession(user.id);
       return json(response, 200, {
         sessionToken: payload.session_token,
-        websocketUrl: "wss://api.phonic.ai/v1/sts/ws"
+        websocketUrl: "wss://api.phonic.ai/v1/sts/ws",
+        usageId: usageSession.usageId,
+        startedAt: usageSession.startedAt
       }, headers || {});
     } catch (error) {
       const status = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
@@ -292,16 +326,50 @@ const app = http.createServer(async (request, response) => {
   }
 
 
+
+  if (request.method === "POST" && url.pathname === "/api/phonic/link") {
+    if (origin && headers === null) return json(response, 403, { error: "Origin not allowed." }, headers || {});
+    try {
+      const user = await requireAuthenticatedUser(request);
+      const body = await readJson(request, 4 * 1024);
+      const usageId = String(body?.usageId || "");
+      const conversationId = String(body?.conversationId || "").trim();
+      if (!usageId || !conversationId || conversationId.length > 160) throw httpError("A valid usage ID and Phonic conversation ID are required.", 400);
+      await linkPhonicConversation(user.id, usageId, conversationId);
+      return json(response, 200, { ok: true }, headers || {});
+    } catch (error) {
+      return json(response, Number.isInteger(error?.statusCode) ? error.statusCode : 500, { error: error.message || "Could not link voice session." }, headers || {});
+    }
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/phonic/complete") {
+    if (origin && headers === null) return json(response, 403, { error: "Origin not allowed." }, headers || {});
+    try {
+      const user = await requireAuthenticatedUser(request);
+      const body = await readJson(request, 4 * 1024);
+      const result = await completePhonicUsageSession(user.id, PHONIC_API_KEY, {
+        usageId: String(body?.usageId || ""),
+        conversationId: String(body?.conversationId || "").trim(),
+        clientDurationMs: Math.max(0, Math.min(6 * 60 * 60 * 1000, Number(body?.clientDurationMs || 0)))
+      });
+      return json(response, 200, { ok: true, durationSource: result.source, durationMs: result.durationMs }, headers || {});
+    } catch (error) {
+      return json(response, Number.isInteger(error?.statusCode) ? error.statusCode : 500, { error: error.message || "Could not finalise voice usage." }, headers || {});
+    }
+  }
+
   if (request.method === "POST" && url.pathname === "/api/amia/search") {
     if (origin && headers === null) return json(response, 403, { error: "Origin not allowed." });
     if (!DEEPSEEK_SEARCH_API_KEY) return json(response, 503, { error: "DeepSeek Search is not configured. Add DEEPSEEK_SEARCH_API_KEY to the backend environment." }, headers || {});
     if (limitReached(request)) return json(response, 429, { error: "Too many requests. Wait a minute, then try again." }, headers || {});
     try {
+      const user = await requireAuthenticatedUser(request);
       const body = await readJson(request, 8 * 1024);
       const results = await searchWeb(DEEPSEEK_SEARCH_API_KEY, body?.query, {
         count: body?.count,
         originalQuestion: body?.originalQuestion
       });
+      await recordSearchFetchUsage({ userId: user.id, type: "search" });
       return json(response, 200, { results, provider: "deepseek-search" }, headers || {});
     } catch (error) {
       const status = Number.isInteger(error?.statusCode) ? error.statusCode : 502;
@@ -314,8 +382,10 @@ const app = http.createServer(async (request, response) => {
     if (!DEEPSEEK_SEARCH_API_KEY) return json(response, 503, { error: "DeepSeek Fetch is not configured. Add DEEPSEEK_SEARCH_API_KEY to the backend environment." }, headers || {});
     if (limitReached(request)) return json(response, 429, { error: "Too many requests. Wait a minute, then try again." }, headers || {});
     try {
+      const user = await requireAuthenticatedUser(request);
       const body = await readJson(request, 8 * 1024);
       const page = await fetchWebPage(DEEPSEEK_SEARCH_API_KEY, body?.url);
+      await recordSearchFetchUsage({ userId: user.id, type: "fetch" });
       return json(response, 200, { ...page, provider: "deepseek-fetch" }, headers || {});
     } catch (error) {
       const status = Number.isInteger(error?.statusCode) ? error.statusCode : 502;
@@ -339,6 +409,7 @@ const app = http.createServer(async (request, response) => {
   }
 
   try {
+    const user = await requireAuthenticatedUser(request);
     const body = await readJson(request);
     const repairMode = body?.repairMode === true;
     const messages = cleanMessages(body?.messages);
@@ -364,6 +435,14 @@ const app = http.createServer(async (request, response) => {
     });
     const reply = amiaResult.reply;
     const selectedModel = amiaResult.model;
+    const usageRecorded = await recordDeepseekUsage({
+      userId: user.id,
+      model: amiaResult.model,
+      usage: { ...(amiaResult.usage || {}), searchRequests: amiaResult.searchRequests || 0, fetchRequests: amiaResult.fetchRequests || 0 },
+      timestamp: new Date().toISOString(),
+      webSearchStatus: amiaResult.webSearchStatus || "not_requested",
+      relevantPreferenceCount: amiaResult.relevantPreferenceCount || 0
+    });
     const robotName = String(profile.robotName || "").trim();
     const namedReply = robotName
       ? reply.trim().replace(/\byour SecondSelf(?=\s+(?:to avoid|should avoid|avoid))/gi, "your " + robotName)
@@ -375,7 +454,8 @@ const app = http.createServer(async (request, response) => {
       reply: safeReply,
       model: selectedModel,
       provider: PROVIDER,
-      responseNeedsReview: requiresRepair
+      responseNeedsReview: requiresRepair,
+      usageRecorded
     }, headers || {});
   } catch (error) {
     const status = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
