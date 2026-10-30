@@ -4,7 +4,7 @@ import { buildHomePersonaSystemPrompt } from "../src/home-persona-reasoning.js";
 import { cleanKnowledgeCandidate } from "../src/shared-knowledge-validation.js";
 import { cleanPersonaMemoryCandidate, MEMORY_TOPICS } from "../src/persona-memory.js";
 import { selectHouseholdSkills } from "../src/household-skills.js";
-import { enforceFirstPersonTaskQuestions, normaliseVoicePreference } from "../src/voice-language.js";
+import { enforceFirstPersonTaskQuestions, isIncompleteAssistantReply, normaliseVoicePreference } from "../src/voice-language.js";
 import { ROOM_JOURNEY_ROOMS } from "../src/room-journey.js";
 
 const PORT = Number.parseInt(process.env.PORT || "10000", 10);
@@ -1133,7 +1133,7 @@ const app = http.createServer(async (request, response) => {
       : reply.trim();
     const safeReply = enforceFirstPersonTaskQuestions(guardRobotExecutionClaims(namedReply, preferences, profile.preferredLanguage));
     const lowValueReply = /I've captured this preference for your browser-based SecondSelf|I've added it to your local digital persona|That's useful context for your SecondSelf|Let's make that preference more precise|What detail would matter most to get right|Can you walk me through how that usually happens at home|What is the next important detail I should understand/i.test(safeReply);
-    const requiresRepair = lowValueReply || responseRepeatsUser(safeReply, latestUserMessage);
+    const requiresRepair = lowValueReply || responseRepeatsUser(safeReply, latestUserMessage) || isIncompleteAssistantReply(safeReply);
     if (requiresRepair && repairMode) {
       return json(response, 200, {
         reply: safeReply,
