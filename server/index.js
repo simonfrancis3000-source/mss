@@ -556,8 +556,6 @@ const app = http.createServer(async (request, response) => {
             { role: "user", content: JSON.stringify({ messages, existingMemories }) }
           ],
           temperature: 0.1,
-          
-          
           max_tokens: 700,
           response_format: { type: "json_object" },
           stream: false
@@ -638,8 +636,6 @@ const app = http.createServer(async (request, response) => {
             { role: "user", content: JSON.stringify(sourceMessages) }
           ],
           temperature: 0.1,
-          
-          
           max_tokens: 1200,
           response_format: { type: "json_object" },
           stream: false
@@ -815,10 +811,9 @@ const app = http.createServer(async (request, response) => {
       },
       body: JSON.stringify({
         model: MODEL,
+        thinking: { type: "disabled" },
         messages: [{ role: "system", content: combinedSystemPrompt }, ...messages],
         temperature: 0.72,
-        
-        
         max_tokens: 1200,
         stream: false
       }),
@@ -843,7 +838,7 @@ const app = http.createServer(async (request, response) => {
       if (upstream.status === 429) {
         friendly = "DeepSeek has reached a usage limit or rate limit. Check your DeepSeek usage and limits, then try again.";
       } else if (upstream.status === 401 || upstream.status === 403) {
-        friendly = "DeepSeek rejected the API key or project access. Check DEEPSEEK_API_KEY and your DeepSeek project permissions.";
+        friendly = "DeepSeek rejected the API key or project access. Check DEEPSEEK_PERSON_API_KEY and your DeepSeek project permissions.";
       } else if (upstream.status === 404) {
         friendly = "DeepSeek could not find the configured model. Check DEEPSEEK_CHAT_MODEL and model access for this API key.";
       } else if (upstream.status === 413 && /tokens per minute|\\bTPM\\b|request too large/i.test(upstreamDetail)) {
