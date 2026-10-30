@@ -188,6 +188,20 @@ test("paraphrased clothing and laundry questions retrieve the same personal memo
   assert.equal(ranked[0]?.id, "laundry-rule");
 });
 
+test("new concept aliases are derived even when a saved memory has older search keys", () => {
+  const statement = "I prefer dark garments stored separately from light items.";
+  const legacyKeys = ["word:prefer", "word:dark", "word:garments", "word:stored", "word:separately"];
+  const ranked = rankPersonaMemories("Where should my dark shirts go after washing?", [{
+    id: "legacy-laundry-rule",
+    topic: "laundry",
+    statement,
+    search_keys: legacyKeys,
+    status: "user_confirmed",
+    confidence: 0.95
+  }]);
+  assert.equal(ranked[0]?.id, "legacy-laundry-rule");
+});
+
 test("retrieval preserves conflicting memories when a paraphrased query touches the same concept", () => {
   const memories = [
     { id: "a", topic: "laundry", kind: "routine", statement: "Keep towels separate from clothing.", status: "conflicting", search_keys: buildPersonaMemorySearchKeys("Keep towels separate from clothing.", [], "laundry") },
