@@ -1850,6 +1850,7 @@ function stateFromSnapshot(snapshot) {
     ? snapshot.preferences.slice(0, 24).map((item) => typeof item === "string" ? cleanPreference(item) : cleanPreference(item?.text, item)).filter(Boolean)
     : [];
   base.profile = { ...defaultProfile(), ...(snapshot.profile && typeof snapshot.profile === "object" ? snapshot.profile : {}) };
+  base.messages = personaliseWelcomeMessages(base.messages, base.profile);
   base.functions = Array.isArray(snapshot.functions)
     ? snapshot.functions.filter((id) => ACTIVITIES.some((activity) => activity.id === id))
     : [];
