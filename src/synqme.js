@@ -90,6 +90,8 @@ const supabase = SUPABASE_URL && SUPABASE_KEY
       }
     })
   : null;
+const WELCOME = companionWelcomeMessage("en", "Freya");
+
 function localizeWelcomeMessage(language) {
   const welcome = companionWelcomeMessage(language, selectedCompanionDisplayName());
   state.messages = state.messages.map((item) =>
@@ -288,11 +290,31 @@ function defaultProfile() {
   };
 }
 
+function companionNameForProfile(profile = {}) {
+  const configuredName = String(profile.robotName || "").trim();
+  if (configuredName) return configuredName;
+  if (robotAppearance.customImageData) return "Your robot";
+  return (ROBOT_OPTIONS.find((item) => item.id === robotAppearance.robotId) || ROBOT_OPTIONS[0]).name;
+}
+
+function personaliseWelcomeMessages(messages, profile = {}) {
+  const welcome = companionWelcomeMessage(
+    profile.preferredLanguage || "en",
+    companionNameForProfile(profile)
+  );
+  return (Array.isArray(messages) ? messages : []).map((item) =>
+    item?.role === "assistant" && isCompanionWelcomeMessage(item.content)
+      ? { ...item, content: welcome }
+      : item
+  );
+}
+
 function initialState() {
+  const profile = defaultProfile();
   return {
-    messages: [{ role: "assistant", content: WELCOME, timestamp: new Date().toISOString() }],
+    messages: [{ role: "assistant", content: companionWelcomeMessage(profile.preferredLanguage, companionNameForProfile(profile)), timestamp: new Date().toISOString() }],
     preferences: [],
-    profile: defaultProfile(),
+    profile,
     functions: [],
     pendingClarification: null,
     apiConnected: false,
@@ -373,6 +395,7 @@ function loadState() {
       apiError: "",
       apiErrorDetail: ""
     };
+    state.messages = personaliseWelcomeMessages(state.messages, state.profile);
     return state;
   } catch {
     return initialState();
@@ -2370,10 +2393,7 @@ elements.openTaskFromSettings?.addEventListener("click", () => {
 });
 
 function selectedCompanionDisplayName() {
-  const configuredName = (state.profile.robotName || "").trim();
-  if (configuredName) return configuredName;
-  if (robotAppearance.customImageData) return "Your robot";
-  return (ROBOT_OPTIONS.find((item) => item.id === robotAppearance.robotId) || ROBOT_OPTIONS[0]).name;
+  return companionNameForProfile(state.profile);
 }
 
 function updateVoiceCompanionLabels() {
