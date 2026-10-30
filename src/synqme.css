@@ -2321,3 +2321,29 @@ body:not(.auth-required):not(.profile-setup-required) {
   .room-task-row { grid-template-columns: 18px minmax(0, 1fr) auto; gap: 7px; }
   .room-task-action { min-width: 58px; }
 }
+
+
+/* Assistant replies must grow to fit all returned text, never clip vertically. */
+.chat-messages .assistant-message {
+  align-self: flex-start;
+  width: auto;
+  max-width: 100%;
+}
+.chat-messages .assistant-message .message-body {
+  flex: 0 1 auto;
+  width: fit-content;
+  min-width: 80px;
+  max-width: min(78ch, calc(100% - 38px));
+  height: auto;
+  max-height: none;
+  overflow: visible;
+}
+.chat-messages .assistant-message .message-body p {
+  display: block;
+  width: auto;
+  height: auto;
+  max-height: none;
+  overflow: visible;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
