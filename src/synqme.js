@@ -3939,7 +3939,6 @@ async function openVoiceExperience() {
 
 function closeVoiceExperience(statusMessage) {
   stopVoiceConversation(statusMessage || "Voice conversation stopped.");
-  if (elements.voiceRetrySpeechButton) elements.voiceRetrySpeechButton.hidden = true;
   voiceInputMuted = false;
   if (elements.voiceExperience) elements.voiceExperience.hidden = true;
   document.body.classList.remove("voice-experience-open");
