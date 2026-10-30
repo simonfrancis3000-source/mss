@@ -187,22 +187,22 @@ async function fetchPhonicConversation(apiKey, conversationId) {
   if (!apiKey || !conversationId) return null;
   const response = await fetch("https://api.phonic.ai/v1/conversations/" + encodeURIComponent(conversationId), {
     headers: { Authorization: "Bearer " + apiKey },
-    signal: AbortSignal.timeout(12000)
+    signal: AbortSignal.timeout(6000)
   });
   if (!response.ok) return null;
   const payload = await response.json();
   return payload?.conversation || payload?.data?.conversation || payload?.data || payload;
 }
 
-async function reconcilePhonicEvent(event, apiKey, fallbackDurationMs = null) {
+async function reconcilePhonicEvent(event, apiKey, fallbackDurationMs = null, maxAttempts = 4) {
   if (!adminDb || !event?.id) return null;
   let conversation = null;
   if (event.provider_conversation_id) {
-    for (let attempt = 0; attempt < 4; attempt += 1) {
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       conversation = await fetchPhonicConversation(apiKey, event.provider_conversation_id).catch(() => null);
       if (conversation && Number(conversation.duration_ms) >= 0 && conversation.ended_at) break;
       conversation = null;
-      if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 650));
+      if (attempt + 1 < maxAttempts) await new Promise((resolve) => setTimeout(resolve, 650));
     }
   }
 
@@ -300,15 +300,16 @@ export async function buildAdminUsageDashboard(period = "30d", phonicApiKey = ""
   const pendingQuery = await adminDb.from("synqme_usage_events")
     .select("id,user_id,event_type,provider_conversation_id,started_at,status")
     .eq("event_type", "phonic_voice").in("status", ["pending", "estimated"])
-    .not("provider_conversation_id", "is", null).order("created_at", { ascending: false }).limit(25);
+    .not("provider_conversation_id", "is", null).order("created_at", { ascending: false }).limit(10);
   if (!pendingQuery.error) {
-    for (const event of pendingQuery.data || []) await reconcilePhonicEvent(event, phonicApiKey);
+    await Promise.all((pendingQuery.data || []).map((event) => reconcilePhonicEvent(event, phonicApiKey, null, 1)));
   }
 
-  const [authUsers, events, profileResult] = await Promise.all([
+  const [authUsers, events, profileResult, oldestEvent] = await Promise.all([
     listAllAuthUsers(),
     readUsageRows(fromDate, toDate),
-    adminDb.from("synqme_profiles").select("user_id,owner_name")
+    adminDb.from("synqme_profiles").select("user_id,owner_name"),
+    adminDb.from("synqme_usage_events").select("created_at").order("created_at", { ascending: true }).limit(1).maybeSingle()
   ]);
   const profileNames = new Map((profileResult.data || []).map((profile) => [profile.user_id, profile.owner_name || ""]));
   const byUser = new Map();
@@ -369,7 +370,7 @@ export async function buildAdminUsageDashboard(period = "30d", phonicApiKey = ""
   );
   return {
     period: { key: period, from: fromDate, to: toDate },
-    trackingStartedAt: events.length ? events.reduce((min, event) => event.created_at && (!min || event.created_at < min) ? event.created_at : min, null) : null,
+    trackingStartedAt: oldestEvent?.data?.created_at || null,
     phonicRatePerMinuteUsd: PHONIC_COST_PER_MINUTE_USD,
     totals,
     users,
