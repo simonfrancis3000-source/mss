@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { createPhonicVoiceConversation } from "./phonic-voice.js";
+import { companionThinkingMessage, companionWelcomeMessage, isCompanionWelcomeMessage } from "./companion-copy.js";
 import { enforceFirstPersonTaskQuestions, normaliseVoicePreference, phonicVoiceIdForPreference } from "./voice-language.js";
 import { ROOM_JOURNEY_ROOMS, addMonthsAnchored, buildRoomProgressSnapshot, getRoomJourneySchedule, getRoomTaskStates } from "./room-journey.js";
 import {
@@ -89,32 +90,10 @@ const supabase = SUPABASE_URL && SUPABASE_KEY
       }
     })
   : null;
-const WELCOME = "Hi, I’m here to help you build your SecondSelf. Speak naturally, and we’ll work out what matters to you.";
-const WELCOME_BY_LANGUAGE = {
-  en: WELCOME,
-  es: "Hola, estoy aquí para ayudarte a crear tu SecondSelf. Habla con naturalidad y descubriremos qué es importante para ti.",
-  fr: "Bonjour, je suis là pour t’aider à créer ton SecondSelf. Parle naturellement et nous verrons ce qui compte pour toi.",
-  it: "Ciao, sono qui per aiutarti a creare il tuo SecondSelf. Parla liberamente e capiremo cosa conta per te.",
-  pt: "Olá, estou aqui para te ajudar a criar o teu SecondSelf. Fala com naturalidade e vamos perceber o que é importante para ti.",
-  hi: "नमस्ते, मैं आपका SecondSelf बनाने में मदद करने के लिए यहाँ हूँ। स्वाभाविक रूप से बात करें, ताकि हम समझ सकें कि आपके लिए क्या महत्वपूर्ण है।",
-  ja: "こんにちは。あなたのSecondSelfづくりをお手伝いします。自然に話してくれれば、何が大切かを一緒に整理していきます。",
-  zh: "你好，我会帮助你建立自己的 SecondSelf。你可以自然地说，我们会一起了解什么对你最重要。"
-};
-const LEGACY_WELCOME_MESSAGES = new Set([
-  "Hi, I’m here to help you build your SecondSelf. Which parts of home life would you like it to understand first?",
-  "Hola, estoy aquí para ayudarte a crear tu SecondSelf. ¿Qué aspectos de la vida en casa te gustaría que aprendiera primero?",
-  "Bonjour, je suis là pour t’aider à construire ton SecondSelf. Quels aspects de la vie à la maison aimerais-tu que je comprenne en premier ?",
-  "Ciao, sono qui per aiutarti a costruire il tuo SecondSelf. Quali aspetti della vita a casa vorresti che imparassi per primi?",
-  "Olá, estou aqui para te ajudar a construir o teu SecondSelf. Que aspetos da vida em casa gostarias que aprendesse primeiro?",
-  "नमस्ते, मैं आपका SecondSelf बनाने में मदद करने के लिए यहाँ हूँ। आप चाहेंगे कि मैं घर की दिनचर्या के किन पहलुओं को सबसे पहले समझूँ?",
-  "こんにちは。あなたのSecondSelfづくりをお手伝いします。家での暮らしのどんなことを、まず理解してほしいですか？",
-  "你好，我来帮你建立自己的 SecondSelf。你希望我先了解家庭生活中的哪些方面？"
-]);
-const KNOWN_WELCOME_MESSAGES = new Set([...Object.values(WELCOME_BY_LANGUAGE), ...LEGACY_WELCOME_MESSAGES]);
 function localizeWelcomeMessage(language) {
-  const welcome = WELCOME_BY_LANGUAGE[language] || WELCOME;
+  const welcome = companionWelcomeMessage(language, selectedCompanionDisplayName());
   state.messages = state.messages.map((item) =>
-    item?.role === "assistant" && KNOWN_WELCOME_MESSAGES.has(item.content)
+    item?.role === "assistant" && isCompanionWelcomeMessage(item.content)
       ? { ...item, content: welcome }
       : item
   );
@@ -2630,6 +2609,7 @@ function buildCurrentRoomJourneyContext() {
   if (!room) return null;
   return {
     activeRoomId: room.id,
+    activeTaskId: roomJourney.active_task_id || null,
     completedTaskIds: roomCompletedIds(room),
     unlockedRoomCount: schedule.unlockedCount
   };
@@ -3779,18 +3759,19 @@ function buildPhonicConfig() {
   const voicePreference = normaliseVoicePreference(state.profile.robotVoice);
   const voiceId = phonicVoiceIdForPreference(voicePreference);
   const systemPrompt = [
-    "You are " + companion + ", the natural spoken voice inside SYNQ.ME. You help the user build a personal digital persona, called a SecondSelf, for a future compatible household robot.",
-    "Speak naturally in " + languageName + ". Be warm, curious, practical and concise. Phonic handles voice delivery. AMÏA owns the decisions, answers and questions.",
+    "You are " + companion + ", the user's future home robot persona, speaking through SYNQ.ME while they build their SecondSelf. You are not a physical robot connected to the home yet.",
+    "When you introduce yourself or the user asks who you are, say: I am your future robot, " + companion + ". Use the same meaning naturally in " + languageName + ".",
+    "Speak naturally in " + languageName + ". Be warm, curious, practical and concise. The voice system handles speech; the conversation engine supplies your decisions, answers and questions.",
     "MANDATORY TURN FLOW: After each completed user utterance, call amia_next_turn exactly once before speaking. Do not independently answer, acknowledge, or ask a follow-up while waiting. The tool calls SYNQ.ME's AMÏA conversation engine with the current transcript, saved preferences, relevant home memories, profile and selected household interests.",
     "AUTHORITATIVE RESPONSE: Speak only the tool's assistant_text, verbatim, in " + languageName + ". Do not paraphrase, add greetings, ask an extra question, or continue after that response. Never mention tools or internal decision logic.",
     "FIRST-PERSON COMPANION RULE — NON-NEGOTIABLE: When discussing tasks you may eventually do, always speak as the user's SecondSelf using I/me. Ask, for example, “What would you like me to do?” or “How would you like me to handle that?” Never ask what the user wants their robot to do, what the robot should do, or any equivalent third-person task question. Apply this perspective naturally in the selected language.",
-    "VOICE SELECTION — NON-NEGOTIABLE: The user selected the " + voicePreference + " voice. Use the configured Phonic voice ID and do not substitute, alternate, or randomise the voice.",
+    "VOICE SELECTION — NON-NEGOTIABLE: The user selected the " + voicePreference + " voice. Use the configured voice consistently and do not substitute, alternate, or randomise it.",
     "Never claim a robot is physically connected or that a household task has happened. This conversation prepares a personal digital persona for a future compatible robot."
   ].join("\n\n");
   return {
     type: "config",
     system_prompt: systemPrompt,
-    welcome_message: WELCOME_BY_LANGUAGE[language] || WELCOME,
+    welcome_message: companionWelcomeMessage(language, companion),
     voice_id: voiceId,
     audio_speed: 1,
     input_format: "pcm_44100",
@@ -3897,27 +3878,28 @@ function handlePhonicVoiceEvent(event) {
   const companion = selectedCompanionDisplayName();
   switch (event.type) {
     case "open":
-      updateVoiceExperience("connecting", "Connected to Phonic. Preparing your conversation…");
-      if (elements.conversationStatus) elements.conversationStatus.textContent = "Connected to Phonic";
+      updateVoiceExperience("connecting", "Getting your voice connection ready…");
+      if (elements.voiceStatus) elements.voiceStatus.textContent = "Connecting your voice…";
+      if (elements.conversationStatus) elements.conversationStatus.textContent = "Getting ready to listen";
       break;
     case "ready":
       updateVoiceExperience("listening", companion + " is listening. Speak naturally.");
       if (elements.voiceStatus) {
         elements.voiceStatus.dataset.error = "";
-        elements.voiceStatus.textContent = "Voice on · Phonic " + normaliseVoicePreference(state.profile.robotVoice) + " voice + AMÏA";
+        elements.voiceStatus.textContent = "Voice ready · " + normaliseVoicePreference(state.profile.robotVoice) + " voice";
       }
-      if (elements.conversationStatus) elements.conversationStatus.textContent = "Listening · AMÏA directs each reply";
+      if (elements.conversationStatus) elements.conversationStatus.textContent = companion + " is listening";
       break;
     case "user_started_speaking":
       updateVoiceExperience("listening", "Listening to you…");
       if (elements.conversationStatus) elements.conversationStatus.textContent = "Listening";
       break;
     case "user_finished_speaking":
-      updateVoiceExperience("thinking", "AMÏA is deciding the next response…");
-      if (elements.conversationStatus) elements.conversationStatus.textContent = "AMÏA is deciding the next response";
+      updateVoiceExperience("thinking", companionThinkingMessage(companion));
+      if (elements.conversationStatus) elements.conversationStatus.textContent = companionThinkingMessage(companion);
       break;
     case "input_text":
-      if (elements.conversationStatus) elements.conversationStatus.textContent = "AMÏA is deciding the next response";
+      if (elements.conversationStatus) elements.conversationStatus.textContent = companionThinkingMessage(companion);
       break;
     case "assistant_started_speaking":
       assistantIsSpeaking = true;
@@ -3939,13 +3921,13 @@ function handlePhonicVoiceEvent(event) {
       renderAll();
       void flushCloudSave();
       updateVoiceExperience("listening", companion + " is listening. Speak naturally.");
-      if (elements.voiceStatus) elements.voiceStatus.textContent = "Voice on · Phonic " + normaliseVoicePreference(state.profile.robotVoice) + " voice + AMÏA";
-      if (elements.conversationStatus) elements.conversationStatus.textContent = "Phonic voice · AMÏA ready for the next turn";
+      if (elements.voiceStatus) elements.voiceStatus.textContent = "Voice ready";
+      if (elements.conversationStatus) elements.conversationStatus.textContent = companion + " is ready for your next turn";
       break;
     }
     case "error": {
-      const detail = typeof event.error === "string" ? event.error : "Phonic reported a voice-session error.";
-      stopVoiceConversation("Phonic voice error.");
+      const detail = "Your voice connection was interrupted. Please try again.";
+      stopVoiceConversation(detail);
       if (elements.voiceStatus) {
         elements.voiceStatus.dataset.error = "true";
         elements.voiceStatus.textContent = detail;
@@ -3955,7 +3937,7 @@ function handlePhonicVoiceEvent(event) {
     }
     case "close":
       assistantIsSpeaking = false;
-      if (voiceModeActive) stopVoiceConversation("Phonic voice connection closed.");
+      if (voiceModeActive) stopVoiceConversation("Your voice session has ended.");
       break;
     default:
       break;
@@ -4064,10 +4046,10 @@ async function openVoiceExperience() {
   if (elements.voiceRetrySpeechButton) elements.voiceRetrySpeechButton.hidden = true;
   if (elements.voiceStatus) {
     elements.voiceStatus.dataset.error = "";
-    elements.voiceStatus.textContent = "Connecting to Phonic…";
+    elements.voiceStatus.textContent = "Connecting your voice…";
   }
-  updateVoiceExperience("connecting", "Requesting microphone access and connecting to Phonic…");
-  if (elements.conversationStatus) elements.conversationStatus.textContent = "Connecting to Phonic";
+  updateVoiceExperience("connecting", "Requesting microphone access and preparing your voice…");
+  if (elements.conversationStatus) elements.conversationStatus.textContent = "Connecting your voice";
 
   try {
     void checkAIBackend();
@@ -4080,7 +4062,7 @@ async function openVoiceExperience() {
         });
         let payload = {};
         try { payload = await response.json(); } catch {}
-        if (!response.ok) throw new Error(payload?.error || "Could not create a Phonic session (HTTP " + response.status + ").");
+        if (!response.ok) throw new Error("Voice session could not be created (HTTP " + response.status + ").");
         return payload;
       },
       getConfig: () => buildPhonicConfig(),
@@ -4089,8 +4071,10 @@ async function openVoiceExperience() {
     });
     await phonicVoiceConversation.start();
   } catch (error) {
-    const detail = String(error?.message || "Phonic voice could not start.");
-    stopVoiceConversation("Phonic voice could not start.");
+    const detail = /microphone|permission|denied/i.test(String(error?.message || ""))
+      ? "Microphone access is needed to start a voice conversation."
+      : "Your voice connection could not be started. Please try again.";
+    stopVoiceConversation(detail);
     if (elements.voiceStatus) {
       elements.voiceStatus.dataset.error = "true";
       elements.voiceStatus.textContent = detail;
@@ -4583,6 +4567,7 @@ async function requestAIReply(repairMode = false) {
         profile: {
           ownerName: state.profile.ownerName,
           robotName: state.profile.robotName,
+          companionName: selectedCompanionDisplayName(),
           robotType: state.profile.robotType,
           robotVoice: normaliseVoicePreference(state.profile.robotVoice),
           preferredLanguage: state.profile.preferredLanguage || "en",
@@ -4713,10 +4698,12 @@ async function sendMessage(rawText) {
   const clarificationRequest = isClarificationRequest(message);
   const turnId = ++sendSequence;
   isSending = true;
-  if (voiceModeActive) updateVoiceExperience("thinking", "AMÏA is thinking…");
+  if (voiceModeActive) updateVoiceExperience("thinking", companionThinkingMessage(selectedCompanionDisplayName()));
   elements.sendButton.disabled = true;
   elements.messageInput.disabled = true;
-  elements.conversationStatus.textContent = "Sending to Groq…";
+  elements.conversationStatus.textContent = voiceModeActive
+    ? companionThinkingMessage(selectedCompanionDisplayName())
+    : "Sending your message…";
   const userMessageTimestamp = new Date().toISOString();
   state.messages.push({ role: "user", content: message, timestamp: userMessageTimestamp });
   const previousAssistantMessage = state.messages.length > 1 && state.messages[state.messages.length - 2]?.role === "assistant"
