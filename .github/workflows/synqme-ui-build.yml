@@ -2,7 +2,7 @@ name: SYNQ.ME UI build
 
 on:
   push:
-    branches: [main, feature/synqme-robot-voice-ui, feature/phonic-voice-chat]
+    branches: [main, feature/synqme-robot-voice-ui, feature/phonic-voice-chat, feature/amia-deepseek-engine]
     paths:
       - "index.html"
       - "src/**"
@@ -10,7 +10,7 @@ on:
       - "package-lock.json"
       - ".github/workflows/synqme-ui-build.yml"
   pull_request:
-    branches: [main, SYNQ.ME, feature/synqme-robot-voice-ui]
+    branches: [main, SYNQ.ME, feature/synqme-robot-voice-ui, feature/amia-deepseek-engine]
     paths:
       - "index.html"
       - "src/**"
