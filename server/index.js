@@ -8,20 +8,11 @@ import { assistantReplyRepeatsRecentAssistant, enforceFirstPersonTaskQuestions, 
 import { buildRoomJourneyConversationContext } from "../src/room-journey.js";
 
 const PORT = Number.parseInt(process.env.PORT || "10000", 10);
-// SYNQ.ME uses Groq exclusively. No other AI provider is supported.
-const GROQ_API_KEY = process.env.GROQ_API_KEY || "";
+const DEEPSEEK_API_KEY = process.env.DEEPSEEK_PERSON_API_KEY || process.env.DEEPSEEK_API_KEY || "";
 const PHONIC_API_KEY = process.env.PHONIC_API_KEY || "";
-const PROVIDER = "groq";
-const API_KEY = GROQ_API_KEY;
-const configuredGroqModel = String(process.env.GROQ_MODEL || "").trim();
-// Upgrade the previous 20B default while preserving an intentional custom model.
-const MODEL = !configuredGroqModel || configuredGroqModel === "openai/gpt-oss-20b"
-  ? "openai/gpt-oss-120b"
-  : configuredGroqModel;
-const GROQ_EMBEDDING_MODEL = String(process.env.GROQ_EMBEDDING_MODEL || "nomic-embed-text-v1_5").trim();
-const EXPECTED_EMBEDDING_DIMENSIONS = 768;
-const requestedReasoningEffort = String(process.env.GROQ_REASONING_EFFORT || "low").trim().toLowerCase();
-const REASONING_EFFORT = ["low", "medium", "high"].includes(requestedReasoningEffort) ? requestedReasoningEffort : "low"; // Short conversational turns must leave tokens for the visible reply.
+const PROVIDER = "deepseek";
+const API_KEY = DEEPSEEK_API_KEY;
+const MODEL = String(process.env.DEEPSEEK_CHAT_MODEL || process.env.DEEPSEEK_FLASH_MODEL || "deepseek-flash").trim() || "deepseek-flash";
 // Render deployments need CORS to work even when FRONTEND_ORIGIN has not
 // been populated. Keep the known SYNQ.ME origins as safe defaults and allow
 // additional exact origins through FRONTEND_ORIGIN (comma-separated).
@@ -42,13 +33,10 @@ const ALLOWED_ORIGINS = new Set([
 const requestHistory = new Map();
 const knowledgeRequestHistory = new Map();
 const personaMemoryRequestHistory = new Map();
-const personaEmbeddingRequestHistory = new Map();
 const MAX_REQUESTS_PER_MINUTE = 12;
 const MAX_KNOWLEDGE_EXTRACTIONS_PER_MINUTE = 6;
 const MAX_PERSONA_MEMORY_EXTRACTIONS_PER_MINUTE = 8;
-const MAX_PERSONA_MEMORY_EMBEDDINGS_PER_MINUTE = 40;
 const MAX_BODY_BYTES = 48 * 1024;
-const MAX_AUDIO_BODY_BYTES = 8 * 1024 * 1024;
 const SUPPORTED_CONVERSATION_LANGUAGES = new Set(["en", "es", "fr", "it", "pt", "hi", "ja", "zh"]);
 const CONVERSATION_LANGUAGE_NAMES = {
   en: "English (US)",
@@ -440,7 +428,7 @@ const app = http.createServer(async (request, response) => {
       provider: PROVIDER,
       configured: Boolean(API_KEY),
       model: MODEL,
-      diagnosticsVersion: "groq-whisper-transcription-v2",
+      diagnosticsVersion: "deepseek-flash-chat-v1",
       phonicConfigured: Boolean(PHONIC_API_KEY)
     }, headers || {});
   }
@@ -513,249 +501,18 @@ const app = http.createServer(async (request, response) => {
     }
   }
 
-  if (request.method === "POST" && url.pathname === "/api/transcribe") {
-    if (origin && headers === null) return json(response, 403, { error: "Origin not allowed." });
-
-    // Voice transcription must use the same Groq provider family as chat.
-    // The API key stays server-side; audio never goes directly from the browser to Groq.
-    if (!GROQ_API_KEY) {
-      return json(response, 503, {
-        error: "Groq voice transcription is not configured. Add GROQ_API_KEY to the Render API environment.",
-        provider: "groq"
-      }, headers || {});
-    }
-    if (limitReached(request)) {
-      return json(response, 429, { error: "Too many voice requests. Wait a minute, then try again.", provider: "groq" }, headers || {});
-    }
-
-    try {
-      const body = await readJson(request, MAX_AUDIO_BODY_BYTES);
-      const audioBase64 = typeof body?.audioBase64 === "string"
-        ? body.audioBase64.replace(/^data:[^,]+,/, "")
-        : "";
-      const suppliedMime = typeof body?.mimeType === "string"
-        ? body.mimeType.split(";")[0].trim().toLowerCase()
-        : "";
-      const mimeType = suppliedMime === "audio/x-wav" ? "audio/wav" : suppliedMime;
-      const allowedMimeTypes = new Set([
-        "audio/webm", "audio/mp4", "audio/m4a", "audio/wav", "audio/mpeg",
-        "audio/mp3", "audio/aac", "audio/ogg", "audio/flac", "audio/opus"
-      ]);
-      if (!audioBase64 || !allowedMimeTypes.has(mimeType) || audioBase64.length > 7_500_000) {
-        return json(response, 400, {
-          error: "Unsupported or oversized audio recording. Please try a shorter recording.",
-          provider: "groq"
-        }, headers || {});
-      }
-
-      const language = SUPPORTED_CONVERSATION_LANGUAGES.has(body?.language) ? body.language : "en";
-      const model = process.env.GROQ_TRANSCRIPTION_MODEL || "whisper-large-v3-turbo";
-      const extension = ({
-        "audio/webm": "webm",
-        "audio/mp4": "mp4",
-        "audio/m4a": "m4a",
-        "audio/wav": "wav",
-        "audio/mpeg": "mp3",
-        "audio/mp3": "mp3",
-        "audio/aac": "aac",
-        "audio/ogg": "ogg",
-        "audio/flac": "flac",
-        "audio/opus": "opus"
-      })[mimeType] || "webm";
-
-      // Groq's Whisper endpoint accepts multipart/form-data.
-      // Node's FormData adds the multipart boundary automatically.
-      const audioBytes = Buffer.from(audioBase64, "base64");
-      const form = new FormData();
-      form.append("file", new Blob([audioBytes], { type: mimeType }), "synqme-recording." + extension);
-      form.append("model", model);
-      form.append("language", language);
-      form.append("response_format", "json");
-      form.append("temperature", "0");
-
-      const upstream = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
-        method: "POST",
-        headers: { "Authorization": "Bearer " + GROQ_API_KEY },
-        body: form,
-        signal: AbortSignal.timeout(45_000)
-      });
-
-      if (!upstream.ok) {
-        const errorCode = "groq-transcription-" + Date.now().toString(36);
-        let providerDetail = "";
-        try {
-          const payload = await upstream.json();
-          providerDetail = String(payload?.error?.message || payload?.message || "").slice(0, 220);
-        } catch {}
-        console.error("Groq transcription failed", {
-          status: upstream.status,
-          model,
-          language,
-          errorCode,
-          detail: providerDetail
-        });
-
-        let friendly;
-        if (upstream.status === 429) {
-          friendly = "Groq voice transcription has reached a rate or usage limit. Check your Groq usage and try again shortly.";
-        } else if (upstream.status === 401 || upstream.status === 403) {
-          friendly = "Groq rejected the transcription API key or access. Check GROQ_API_KEY and that speech-to-text is available for the project.";
-        } else if (upstream.status === 400 || upstream.status === 413) {
-          friendly = "Groq could not accept this audio recording. Try recording a shorter sentence and check microphone permissions.";
-        } else if (upstream.status === 404) {
-          friendly = "Groq could not find the configured transcription model. Check GROQ_TRANSCRIPTION_MODEL.";
-        } else {
-          friendly = "Groq could not transcribe that recording. Try again, or type your message instead.";
-        }
-
-        return json(response, upstream.status === 429 ? 429 : 502, {
-          error: friendly,
-          provider: "groq",
-          model,
-          upstreamStatus: upstream.status,
-          errorCode,
-          detail: providerDetail || undefined
-        }, headers || {});
-      }
-
-      const result = await upstream.json();
-      const transcript = typeof result?.text === "string" ? result.text.trim() : "";
-      if (!transcript) {
-        return json(response, 422, {
-          error: "Groq did not detect any clear speech in that recording. Please try again or type your message.",
-          provider: "groq",
-          model
-        }, headers || {});
-      }
-      return json(response, 200, { text: transcript, model, provider: "groq", language }, headers || {});
-    } catch (error) {
-      const status = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
-      if (status === 400 || status === 413) return json(response, status, {
-        error: error.message,
-        provider: "groq"
-      }, headers || {});
-      const errorCode = "groq-transcription-" + Date.now().toString(36);
-      console.error("SYNQ.ME Groq transcription handler error", {
-        name: error?.name || "Error",
-        message: String(error?.message || "Unknown server error").slice(0, 220),
-        errorCode
-      });
-      return json(response, 500, {
-        error: "The Groq voice transcription request failed before it could be completed. Try again, or type your message instead.",
-        provider: "groq",
-        errorCode
-      }, headers || {});
-    }
-  }
-
-  if (request.method === "POST" && url.pathname === "/api/memory/embed") {
-    if (origin && headers === null) return json(response, 403, { error: "Origin not allowed.", provider: "groq" }, headers || {});
-    if (!GROQ_API_KEY) return json(response, 503, { error: "Groq embeddings are not configured.", provider: "groq" }, headers || {});
-    if (limitReached(request, personaEmbeddingRequestHistory, MAX_PERSONA_MEMORY_EMBEDDINGS_PER_MINUTE)) {
-      return json(response, 429, { error: "Memory embedding rate limit reached. Keyword retrieval remains available.", provider: "groq" }, headers || {});
-    }
-
-    try {
-      const body = await readJson(request);
-      const sourceTexts = Array.isArray(body?.texts) ? body.texts.slice(0, 16) : [];
-      const purpose = body?.purpose === "query" ? "query" : "document";
-      const texts = sourceTexts
-        .filter((value) => typeof value === "string")
-        .map((value) => value.replace(/\u0000/g, "").trim().slice(0, 1800))
-        .filter(Boolean);
-      if (!texts.length) {
-        return json(response, 400, { error: "Provide at least one non-empty text to embed.", provider: "groq" }, headers || {});
-      }
-
-      // Nomic retrieval embeddings use asymmetric prefixes so query text and
-      // memory statements are placed in the appropriate embedding space.
-      const prefixedTexts = texts.map((value) => (purpose === "query" ? "search_query: " : "search_document: ") + value);
-      const upstream = await fetch("https://api.groq.com/openai/v1/embeddings", {
-        method: "POST",
-        headers: {
-          "Authorization": "Bearer " + GROQ_API_KEY,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          input: prefixedTexts,
-          model: GROQ_EMBEDDING_MODEL,
-          encoding_format: "float"
-        }),
-        signal: AbortSignal.timeout(20_000)
-      });
-
-      if (!upstream.ok) {
-        const errorCode = "memory-embedding-" + Date.now().toString(36);
-        let detail = "";
-        try {
-          const failure = await upstream.json();
-          detail = String(failure?.error?.message || failure?.message || "").slice(0, 260);
-        } catch {}
-        console.info("Groq memory embeddings are unavailable; text search remains active.", {
-          status: upstream.status,
-          errorCode,
-          detail
-        });
-        return json(response, 502, {
-          provider: "groq",
-          error: "Semantic memory search is temporarily unavailable.",
-          errorCode
-        }, headers || {});
-      }
-
-      const result = await upstream.json();
-      const ordered = Array.isArray(result?.data) ? [...result.data].sort((a, b) => a.index - b.index) : [];
-      if (ordered.length !== texts.length || ordered.some((item) =>
-        !Array.isArray(item.embedding) ||
-        item.embedding.length !== EXPECTED_EMBEDDING_DIMENSIONS ||
-        item.embedding.some((number) => !Number.isFinite(number))
-      )) {
-        console.info("Groq returned an unexpected memory embedding shape.", {
-          model: GROQ_EMBEDDING_MODEL,
-          expectedDimensions: EXPECTED_EMBEDDING_DIMENSIONS,
-          receivedCount: ordered.length
-        });
-        return json(response, 502, {
-          provider: "groq",
-          error: "The embedding model returned an incompatible vector shape."
-        }, headers || {});
-      }
-
-      return json(response, 200, {
-        provider: "groq",
-        model: GROQ_EMBEDDING_MODEL,
-        dimensions: EXPECTED_EMBEDDING_DIMENSIONS,
-        embeddings: ordered.map((item) => item.embedding)
-      }, headers || {});
-    } catch (error) {
-      const status = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
-      if (status === 400 || status === 413) return json(response, status, { error: error.message, provider: "groq" }, headers || {});
-      const errorCode = "memory-embedding-" + Date.now().toString(36);
-      console.error("SYNQ.ME memory embedding request failed.", {
-        errorCode,
-        name: error?.name || "Error",
-        message: String(error?.message || "Unknown embedding error").slice(0, 180)
-      });
-      return json(response, 500, {
-        provider: "groq",
-        error: "Could not create semantic memory embeddings.",
-        errorCode
-      }, headers || {});
-    }
-  }
-
   if (request.method === "POST" && url.pathname === "/api/memory/extract") {
     if (origin && headers === null) return json(response, 403, { error: "Origin not allowed." }, headers || {});
-    if (!GROQ_API_KEY) return json(response, 503, { error: "Groq memory extraction is not configured.", provider: "groq" }, headers || {});
+    if (!DEEPSEEK_API_KEY) return json(response, 503, { error: "DeepSeek memory extraction is not configured.", provider: "deepseek" }, headers || {});
     if (limitReached(request, personaMemoryRequestHistory, MAX_PERSONA_MEMORY_EXTRACTIONS_PER_MINUTE)) {
-      return json(response, 429, { error: "Memory extraction rate limit reached. Your conversation is unaffected.", provider: "groq" }, headers || {});
+      return json(response, 429, { error: "Memory extraction rate limit reached. Your conversation is unaffected.", provider: "deepseek" }, headers || {});
     }
 
     try {
       const body = await readJson(request);
       const messages = cleanMessages(body?.messages).slice(-4);
       if (!messages.length || messages[messages.length - 1].role !== "user") {
-        return json(response, 400, { error: "A latest user message is required.", provider: "groq" }, headers || {});
+        return json(response, 400, { error: "A latest user message is required.", provider: "deepseek" }, headers || {});
       }
       const allowedTopics = [...MEMORY_TOPICS];
       const existingMemories = (Array.isArray(body?.existingMemories) ? body.existingMemories : [])
@@ -785,22 +542,23 @@ const app = http.createServer(async (request, response) => {
         "If nothing qualifies, return { eligible: false, memories: [] }. Be conservative."
       ].join(" ");
 
-      const upstream = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      const upstream = await fetch("https://api.deepseek.com/chat/completions", {
         method: "POST",
         headers: {
-          "Authorization": "Bearer " + GROQ_API_KEY,
+          "Authorization": "Bearer " + DEEPSEEK_API_KEY,
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
           model: MODEL,
+          thinking: { type: "disabled" },
           messages: [
             { role: "system", content: extractionPrompt },
             { role: "user", content: JSON.stringify({ messages, existingMemories }) }
           ],
           temperature: 0.1,
-          reasoning_effort: "low",
-          include_reasoning: false,
-          max_completion_tokens: 700,
+          
+          
+          max_tokens: 700,
           response_format: { type: "json_object" },
           stream: false
         }),
@@ -809,8 +567,8 @@ const app = http.createServer(async (request, response) => {
 
       if (!upstream.ok) {
         const errorCode = "memory-extract-" + Date.now().toString(36);
-        console.warn("Groq persona memory extraction request failed", { status: upstream.status, errorCode });
-        return json(response, 502, { error: "Groq could not extract a structured memory this turn.", provider: "groq", errorCode }, headers || {});
+        console.warn("DeepSeek persona memory extraction request failed", { status: upstream.status, errorCode });
+        return json(response, 502, { error: "DeepSeek could not extract a structured memory this turn.", provider: "deepseek", errorCode }, headers || {});
       }
 
       const result = await upstream.json();
@@ -829,14 +587,14 @@ const app = http.createServer(async (request, response) => {
       }, headers || {});
     } catch (error) {
       const status = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
-      if (status === 400 || status === 413) return json(response, status, { error: error.message, provider: "groq" }, headers || {});
+      if (status === 400 || status === 413) return json(response, status, { error: error.message, provider: "deepseek" }, headers || {});
       const errorCode = "memory-extract-" + Date.now().toString(36);
       console.error("SYNQ.ME persona memory extraction failed", {
         errorCode,
         name: error?.name || "Error",
         message: String(error?.message || "Unknown extraction error").slice(0, 180)
       });
-      return json(response, 500, { error: "Structured memory extraction failed.", provider: "groq", errorCode }, headers || {});
+      return json(response, 500, { error: "Structured memory extraction failed.", provider: "deepseek", errorCode }, headers || {});
     }
   }
 
@@ -866,22 +624,23 @@ const app = http.createServer(async (request, response) => {
         "If unsure about generalisability, privacy, safety or whether the user actually expressed a durable preference, return eligible=false."
       ].join(" ");
 
-      const upstream = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      const upstream = await fetch("https://api.deepseek.com/chat/completions", {
         method: "POST",
         headers: {
-          "Authorization": "Bearer " + GROQ_API_KEY,
+          "Authorization": "Bearer " + DEEPSEEK_API_KEY,
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
           model: MODEL,
+          thinking: { type: "disabled" },
           messages: [
             { role: "system", content: extractionPrompt },
             { role: "user", content: JSON.stringify(sourceMessages) }
           ],
           temperature: 0.1,
-          reasoning_effort: "low",
-          include_reasoning: false,
-          max_completion_tokens: 1200,
+          
+          
+          max_tokens: 1200,
           response_format: { type: "json_object" },
           stream: false
         }),
@@ -933,7 +692,7 @@ const app = http.createServer(async (request, response) => {
     return json(response, 403, { error: "Origin not allowed." });
   }
   if (!API_KEY) {
-    const requiredKey = "GROQ_API_KEY";
+    const requiredKey = "DEEPSEEK_PERSON_API_KEY";
     return json(response, 503, { error: "AI is not configured. Add " + requiredKey + " to the Render backend environment." }, headers || {});
   }
   if (limitReached(request)) {
@@ -1048,19 +807,19 @@ const app = http.createServer(async (request, response) => {
       (sharedKnowledgeContext ? "\n\n" + sharedKnowledgeContext : "") +
       (roomJourneyContext ? "\n\n" + roomJourneyContext : "");
 
-    const upstream = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    const upstream = await fetch("https://api.deepseek.com/chat/completions", {
       method: "POST",
       headers: {
-        "Authorization": "Bearer " + GROQ_API_KEY,
+        "Authorization": "Bearer " + DEEPSEEK_API_KEY,
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
         model: MODEL,
         messages: [{ role: "system", content: combinedSystemPrompt }, ...messages],
         temperature: 0.72,
-        reasoning_effort: REASONING_EFFORT,
-        include_reasoning: false,
-        max_completion_tokens: 1200,
+        
+        
+        max_tokens: 1200,
         stream: false
       }),
       signal: AbortSignal.timeout(30_000)
@@ -1082,17 +841,17 @@ const app = http.createServer(async (request, response) => {
 
       let friendly;
       if (upstream.status === 429) {
-        friendly = "Groq has reached a usage limit or rate limit. Check your Groq usage and limits, then try again.";
+        friendly = "DeepSeek has reached a usage limit or rate limit. Check your DeepSeek usage and limits, then try again.";
       } else if (upstream.status === 401 || upstream.status === 403) {
-        friendly = "Groq rejected the API key or project access. Check GROQ_API_KEY and your Groq project permissions.";
+        friendly = "DeepSeek rejected the API key or project access. Check DEEPSEEK_API_KEY and your DeepSeek project permissions.";
       } else if (upstream.status === 404) {
-        friendly = "Groq could not find the configured model. Check GROQ_MODEL and model access for this API key.";
+        friendly = "DeepSeek could not find the configured model. Check DEEPSEEK_CHAT_MODEL and model access for this API key.";
       } else if (upstream.status === 413 && /tokens per minute|\\bTPM\\b|request too large/i.test(upstreamDetail)) {
-        friendly = "This turn exceeds Groq's current token budget. SYNQ.ME has shortened old conversation context; start a new chat if the problem continues.";
+        friendly = "This turn exceeds DeepSeek's current token budget. SYNQ.ME has shortened old conversation context; start a new chat if the problem continues.";
       } else if (upstream.status >= 500) {
-        friendly = "Groq is temporarily returning a server error. Check Render logs and retry shortly.";
+        friendly = "DeepSeek is temporarily returning a server error. Check Render logs and retry shortly.";
       } else {
-        friendly = "Groq could not complete the reply. Check the provider error in Render logs and try again.";
+        friendly = "DeepSeek could not complete the reply. Check the provider error in Render logs and try again.";
       }
       return json(response, upstream.status === 429 ? 429 : (upstream.status === 413 ? 413 : 502), {
         error: friendly,
@@ -1105,7 +864,7 @@ const app = http.createServer(async (request, response) => {
     const result = await upstream.json();
     const finishReason = result?.choices?.[0]?.finish_reason;
     if (finishReason === "length") {
-      console.warn("Groq reply reached the completion token limit", { model: MODEL, finishReason });
+      console.warn("DeepSeek reply reached the completion token limit", { model: MODEL, finishReason });
       return json(response, 502, {
         error: "The AI reply reached its length limit before finishing. Please try again.",
         provider: PROVIDER,
@@ -1160,7 +919,7 @@ const app = http.createServer(async (request, response) => {
       message: String(error?.message || "Unknown server error").slice(0, 300)
     });
     return json(response, 502, {
-      error: "The SYNQ.ME backend could not complete the request to Groq. Check the backend logs for the diagnostic error.",
+      error: "The SYNQ.ME backend could not complete the request to DeepSeek. Check the backend logs for the diagnostic error.",
       provider: PROVIDER
     }, headers || {});
   }
