@@ -150,7 +150,7 @@ function renderDashboard(data) {
   const pending = Number(totals.pendingVoiceSessions || 0);
   const phonicParts = [];
   if (rate) phonicParts.push("Rate card: " + money(rate) + " per minute.");
-  else phonicParts.push("Phonic rate not configured. Set PHONIC_COST_PER_MINUTE_USD on the API service.");
+  else phonicParts.push("Phonic rate not configured. Set PHONIC_COST_PER_MINUTE_USD on the Supabase usage function.");
   if (unpriced) phonicParts.push(unpriced + " sessions currently have no priced Phonic amount.");
   if (pending) phonicParts.push(pending + " sessions are pending provider reconciliation.");
   el("phonicPricingNote").textContent = phonicParts.join(" ");
