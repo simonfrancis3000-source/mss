@@ -10,6 +10,11 @@ const WELCOME_TEMPLATES = Object.freeze({
 });
 
 const LEGACY_WELCOME_MESSAGES = new Set([
+  "I am your future robot, {companion}. I am here to help you build your SecondSelf, learn your routines and understand how you like things done.",
+  "Soy tu futuro robot, {companion}. Estoy aquí para ayudarte a crear tu SecondSelf, conocer tus rutinas y entender cómo te gusta que se hagan las cosas.",
+  "Je suis ton futur robot, {companion}. Je suis là pour t'aider à créer ton SecondSelf, à découvrir tes habitudes et à comprendre comment tu aimes que les choses soient faites.",
+  "Sono il tuo futuro robot, {companion}. Sono qui per aiutarti a creare il tuo SecondSelf, conoscere le tue abitudini e capire come preferisci che vengano fatte le cose.",
+  "Sou o teu futuro robô, {companion}. Estou aqui para te ajudar a criar o teu SecondSelf, conhecer as tuas rotinas e perceber como gostas que as coisas sejam feitas.",
   "Hi, I’m here to help you build your SecondSelf. Speak naturally, and we’ll work out what matters to you.",
   "Hola, estoy aquí para ayudarte a crear tu SecondSelf. Habla con naturalidad y descubriremos qué es importante para ti.",
   "Bonjour, je suis là pour t’aider à créer ton SecondSelf. Parle naturellement et nous verrons ce qui compte pour toi.",
