@@ -31,7 +31,7 @@ const HOME_TOPICS = [
 const OUT_OF_HOME_TOPICS = [
   { id: "public_interactions", pattern: /\b(strangers?|passers?by|adults?|children|child|kids?|approach(?:es|ed|ing)?|introduc(?:e|es|ed|tion|ing)|greet(?:s|ed|ing)?|touch(?:es|ed|ing)?|hug(?:s|ged|ging)?|photograph(?:s|ed|ing)?|bystanders?|first contact)\b/i },
   { id: "social_relationships", pattern: /\b(friends?|family members?|relatives?|colleagues?|clients?|introductions?|remember(?:ing)? names?|known people|meeting people again|social circle)\b/i },
-  { id: "public_mobility", pattern: /\b(pavements?|sidewalks?|pedestrians?|crosswalks?|pedestrian crossings?|road crossings?|crowds?|queues?|lifts?|elevators?|public transport|buses?|trains?|trams?|metros?|stations?|airports?|shopping centres?|shopping centers?|public parks?|shared paths?)\b/i },
+  { id: "public_mobility", pattern: /\b(pavements?|sidewalks?|pedestrians?|crosswalks?|pedestrian crossings?|road crossings?|crowds?|crowded|queues?|lifts?|elevators?|public transport|buses?|trains?|trams?|metros?|stations?|airports?|shopping centres?|shopping centers?|public parks?|shared paths?|busy public spaces?)\b/i },
   { id: "out_of_home_safety", pattern: /\b(emergenc(?:y|ies)|falls?|incapacitated|aggressive|aggression|threats?|theft|stolen|security guards?|connectivity loss|low battery|obstacles?|restricted areas?|unsafe areas?|road safety|collision|separated|lost in public)\b/i },
   { id: "animal_interactions", pattern: /\b(dogs?|puppies|cats?|kittens|animals?|wildlife|off[- ]lead|dog parks?|animal handlers?|injured animals?)\b/i },
   { id: "public_venues", pattern: /\b(shops?|stores?|caf[eé]s?|restaurants?|hotels?|venues?|supermarkets?|receptions?|banks?|clinics?|medical appointments?|service counters?|retailers?|hospitality)\b/i },
