@@ -134,8 +134,8 @@ function renderDashboard(data) {
   el("chatRequests").textContent = number(totals.chatRequests);
   el("deepseekUnpricedRequests").textContent = number(totals.deepseekUnpricedRequests);
   el("deepseekPricingNote").textContent = Number(totals.deepseekUnpricedRequests || 0)
-    ? Number(totals.deepseekUnpricedRequests) + " chat responses did not include token details. Their DeepSeek inference cost is not calculated."
-    : "DeepSeek cost is calculated from provider-returned token usage and the rate card effective at request time.";
+    ? Number(totals.deepseekUnpricedRequests) + " DeepSeek requests did not include token details. Their inference cost is not calculated."
+    : "DeepSeek cost is estimated from provider token usage and the rate card effective at request time. Peak/off-peak estimates use UTC time; Chinese public-holiday exceptions are not applied.";
   el("voiceMinutes").textContent = minutes(totals.voiceMinutes);
   el("userSpeechMinutes").textContent = minutes(totals.userSpeechMinutes);
   el("assistantSpeechMinutes").textContent = minutes(totals.assistantSpeechMinutes);
