@@ -29,3 +29,15 @@ test("settings keep advanced persona review sections collapsible", async () => {
   assert.match(html, /AMÏA memory library/);
   assert.match(html, /Home interests/);
 });
+
+
+test("PEXI offers a target robot capability manifest import", async () => {
+  const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
+  assert.match(html, /id="pexiManifestInput"/);
+  assert.match(html, /id="pexiManifestStatus"/);
+  assert.match(html, /id="removePexiManifest"/);
+  const source = await readFile(new URL("../src/synqme.js", import.meta.url), "utf8");
+  assert.match(source, /cleanPexiCapabilityManifest/);
+  assert.match(source, /PEXI_CAPABILITY_MANIFEST_KEY/);
+  assert.match(source, /capabilityManifest: pexiCapabilityManifest/);
+});
