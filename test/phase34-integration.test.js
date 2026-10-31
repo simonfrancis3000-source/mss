@@ -46,5 +46,5 @@ test("PEXI export contains the generic capability plan and never claims physical
   assert.match(plan, /compatibility_claimed: false/);
   assert.match(plan, /physical_actions_enabled: false/);
   assert.match(source, /AWAITING ROBOT SPEC/);
-  assert.match(source, /pexiCapabilityPlan\.tasks/);
+  assert.match(plan, /const tasks = selected\.map/);
 });
