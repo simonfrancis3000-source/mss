@@ -2452,3 +2452,56 @@ body:not(.auth-required):not(.profile-setup-required) {
   .persona-insights-summary .mini-tag { padding: 4px 6px; font-size: 7px; }
   .settings-disclosure > summary { align-items: flex-start; }
 }
+
+
+/* PEXI manufacturer capability manifest import. */
+.pexi-manifest-import {
+  display: grid;
+  gap: 7px;
+  margin-top: 13px;
+  padding-top: 12px;
+  border-top: 1px solid #2b3543;
+}
+.pexi-manifest-import label {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  color: #c9d5e5;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .55px;
+  text-transform: uppercase;
+}
+.pexi-manifest-import label span {
+  color: #8ea6c6;
+  font-size: 7px;
+  letter-spacing: .8px;
+}
+.pexi-manifest-import input[type="file"] {
+  width: 100%;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #364253;
+  border-radius: 4px;
+  background: #0c1016;
+  color: #aebaca;
+  font-family: system-ui, sans-serif;
+  font-size: 9px;
+}
+.pexi-manifest-import input[type="file"]::file-selector-button {
+  margin-right: 9px;
+  padding: 6px 8px;
+  border: 1px solid #44556e;
+  border-radius: 3px;
+  background: #172235;
+  color: #d6e5fa;
+  font: inherit;
+  cursor: pointer;
+}
+.pexi-manifest-import p {
+  font-size: 9px;
+  overflow-wrap: anywhere;
+}
+.pexi-manifest-import p[data-kind="error"] { color: #e0a5a5; }
+.pexi-manifest-import p[data-kind="success"] { color: #a6d9be; }
