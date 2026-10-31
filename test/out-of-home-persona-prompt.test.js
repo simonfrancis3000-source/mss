@@ -58,7 +58,7 @@ test("AMÏA switches to public companion behaviour and keeps hardware claims beh
 test("the server validates scenario context by catalogue ID and excludes the home-room prompt", async () => {
   const { readFile } = await import("node:fs/promises");
   const server = await readFile(new URL("../server/index.js", import.meta.url), "utf8");
-  assert.match(server, /cleanOutOfHomeScenarioContext\\(body\\.outOfHomeScenarioContext\\)/);
+  assert.ok(server.includes("cleanOutOfHomeScenarioContext(body.outOfHomeScenarioContext)"));
   assert.match(server, /buildOutOfHomePersonaSystemPrompt/);
   assert.match(server, /const roomJourneyContext = !outOfHomeScenario && roomJourney/);
   assert.match(server, /!outOfHomeScenario && isClarificationRequest/);
