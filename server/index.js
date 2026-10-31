@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { authenticateSupabaseRequest, rateLimitIdentity } from "./supabase-auth.js";
 import { buildDeepSeekUsageEvent, createPhonicUsageSession, verifyPhonicUsageSession, clampVoiceDuration } from "./usage.js";
 import { buildHomePersonaSystemPrompt } from "../src/home-persona-reasoning.js";
-import { buildOutOfHomePersonaSystemPrompt, findOutOfHomeScenarioContext } from "../src/out-of-home-persona-prompt.js";
+import { buildOutOfHomePersonaSystemPrompt, cleanOutOfHomeScenarioContext, findOutOfHomeScenarioContext } from "../src/out-of-home-persona-prompt.js";
 import { cleanKnowledgeCandidate } from "../src/shared-knowledge-validation.js";
 import { cleanPersonaMemoryCandidate, MEMORY_TOPICS } from "../src/persona-memory.js";
 import { selectHouseholdSkills } from "../src/household-skills.js";
@@ -874,7 +874,11 @@ const app = http.createServer(async (request, response) => {
       : "";
     const latestTurnText = messages[messages.length - 1]?.content || "";
     const explicitTrainingTopicChange = /\b(change (?:the )?topic|change subject|different topic|something unrelated|back to (?:my )?(?:home|household)|switch to (?:my )?(?:home|household)|let's talk about (?:my )?home)\b/i.test(latestTurnText);
-    const outOfHomeScenario = explicitTrainingTopicChange ? null : findOutOfHomeScenarioContext(messages);
+    const hasExplicitOutOfHomeContext = Object.prototype.hasOwnProperty.call(body || {}, "outOfHomeScenarioContext");
+    const suppliedOutOfHomeContext = hasExplicitOutOfHomeContext
+      ? cleanOutOfHomeScenarioContext(body.outOfHomeScenarioContext)
+      : findOutOfHomeScenarioContext(messages);
+    const outOfHomeScenario = explicitTrainingTopicChange ? null : suppliedOutOfHomeContext;
     const relevantSkills = outOfHomeScenario
       ? []
       : selectHouseholdSkills(latestForSkillSelection + " " + previousForSkillSelection, { limit: 2 });
