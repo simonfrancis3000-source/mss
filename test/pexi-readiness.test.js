@@ -104,7 +104,7 @@ test("supplier declarations remain unverified even when all required capabilitie
     source: "Manufacturer capability declaration",
     completeness: "complete",
     capabilities: ["object_recognition", "object_pick_and_place", "dishwasher_interaction", "controlled_force"],
-    declared_safety_gates: ["glass_and_ceramic_handling", "water_and_electrical_safety", "rack_and_door-clearance"]
+    declared_safety_gates: ["glass_and_ceramic_handling", "water_and_electrical_safety", "rack_and_door_clearance"]
   };
   const plan = buildPexiCapabilityPlan({ selectedFunctions: ["dishwashing"], capabilityManifest: manifest });
   assert.equal(plan.tasks[0].capability_status, "capability_match_safety_review_required");
@@ -112,4 +112,34 @@ test("supplier declarations remain unverified even when all required capabilitie
   assert.equal(plan.execution_contract.compatibility_claimed, false);
   assert.ok(plan.tasks[0].unverified_safety_gates.length > 0);
   assert.equal(plan.status, "safety_validation_required");
+});
+
+
+test("accepts a blank partial template without pretending any robot capability is known", () => {
+  const manifest = cleanPexiCapabilityManifest({
+    schema: "app.mysecondself.pexi-capability-manifest",
+    schema_version: "1.0.0",
+    manufacturer: "Example Robotics",
+    model: "XR-5",
+    source: "https://example.com/xr-5/specification",
+    completeness: "partial",
+    capabilities: [],
+    declared_safety_gates: []
+  });
+  assert.ok(manifest);
+  const plan = buildPexiCapabilityPlan({
+    selectedFunctions: ["dishwashing"],
+    capabilityManifest: manifest
+  });
+  assert.equal(plan.target_robot.capability_manifest_status, "partial");
+  assert.equal(plan.tasks[0].capability_status, "partially_verified");
+  assert.deepEqual(plan.tasks[0].supported_capabilities, []);
+  assert.equal(plan.tasks[0].unverified_capabilities.length, plan.tasks[0].required_capabilities.length);
+});
+
+test("an empty task selection cannot be marked as a mapped PEXI capability plan", () => {
+  const plan = buildPexiCapabilityPlan({ selectedFunctions: [] });
+  assert.equal(plan.task_count, 0);
+  assert.equal(plan.status, "tasks_need_mapping");
+  assert.equal(plan.execution_contract.compatibility_claimed, false);
 });
