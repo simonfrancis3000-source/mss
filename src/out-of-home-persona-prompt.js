@@ -1,3 +1,5 @@
+import { findOutOfHomeScenario } from "./out-of-home-training.js";
+
 const FIELD_LIMIT = 280;
 
 function clean(value, limit = FIELD_LIMIT) {
@@ -9,25 +11,30 @@ function readField(text, label, limit = FIELD_LIMIT) {
   return match ? clean(match[1], limit) : "";
 }
 
+export function cleanOutOfHomeScenarioContext(input) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return null;
+  const categoryId = clean(input.categoryId, 64);
+  const scenarioId = clean(input.scenarioId, 64);
+  if (!categoryId || !scenarioId) return null;
+  const match = findOutOfHomeScenario(categoryId, scenarioId);
+  if (!match) return null;
+  return {
+    categoryId,
+    scenarioId,
+    trainingArea: match.category.title,
+    scenario: match.scenario.title,
+    situation: match.scenario.situation,
+    behaviouralFocus: match.scenario.focus
+  };
+}
+
 export function parseOutOfHomeScenarioContext(message) {
   const text = String(message || "").trim();
   if (!/^SYNQ\.ME TRAINING SCENARIO:/i.test(text)) return null;
-  const trainingArea = readField(text, "Training area", 120);
-  const scenario = readField(text, "Scenario", 160);
-  const situation = readField(text, "Situation", 300);
-  const behaviouralFocus = readField(text, "Behavioural focus", 300);
-  if (!trainingArea || !scenario || !situation || !behaviouralFocus) return null;
-  return { trainingArea, scenario, situation, behaviouralFocus };
-}
-
-export function cleanOutOfHomeScenarioContext(input) {
-  if (!input || typeof input !== "object" || Array.isArray(input)) return null;
-  const trainingArea = clean(input.trainingArea, 120);
-  const scenario = clean(input.scenario, 160);
-  const situation = clean(input.situation, 300);
-  const behaviouralFocus = clean(input.behaviouralFocus, 300);
-  if (!trainingArea || !scenario || !situation || !behaviouralFocus) return null;
-  return { trainingArea, scenario, situation, behaviouralFocus };
+  return cleanOutOfHomeScenarioContext({
+    categoryId: readField(text, "Category ID", 64),
+    scenarioId: readField(text, "Scenario ID", 64)
+  });
 }
 
 export function findOutOfHomeScenarioContext(messages) {
