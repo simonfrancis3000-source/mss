@@ -2505,3 +2505,58 @@ body:not(.auth-required):not(.profile-setup-required) {
 }
 .pexi-manifest-import p[data-kind="error"] { color: #e0a5a5; }
 .pexi-manifest-import p[data-kind="success"] { color: #a6d9be; }
+
+
+.pexi-capability-plan-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+.pexi-capability-task {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #2b3543;
+  border-radius: 5px;
+  background: #0c1016;
+}
+.pexi-capability-task-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+.pexi-capability-task-head strong {
+  color: #e0e8f4;
+  font-size: 9px;
+  font-weight: 700;
+}
+.pexi-capability-task-head span {
+  flex: 0 0 auto;
+  color: #a8c6ed;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: .5px;
+  text-align: right;
+}
+.pexi-capability-task p {
+  margin: 0;
+  color: #8995a5;
+  font-size: 8px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.pexi-capability-task p strong {
+  color: #b8c7db;
+  font-weight: 600;
+}
+.pexi-manifest-import > .settings-task-link {
+  width: fit-content;
+  padding: 2px 0;
+  text-align: left;
+}
+@media (max-width: 520px) {
+  .pexi-capability-task-head { flex-direction: column; gap: 3px; }
+  .pexi-capability-task-head span { text-align: left; }
+}
