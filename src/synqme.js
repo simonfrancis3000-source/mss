@@ -4505,10 +4505,8 @@ function initialiseOutOfHomeTrainingControls() {
     const match = findOutOfHomeScenario(button.dataset.outOfHomeCategory, button.dataset.outOfHomeScenario);
     if (!match) return;
     activeOutOfHomeScenarioContext = {
-      trainingArea: match.category.title,
-      scenario: match.scenario.title,
-      situation: match.scenario.situation,
-      behaviouralFocus: match.scenario.focus
+      categoryId: match.category.id,
+      scenarioId: match.scenario.id
     };
     elements.messageInput.value = buildOutOfHomeScenarioPrompt(match.category, match.scenario);
     elements.messageInput.dispatchEvent(new Event("input", { bubbles: true }));
