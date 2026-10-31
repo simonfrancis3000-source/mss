@@ -32,7 +32,7 @@ const TASK_PROFILES = Object.freeze({
     topics: ["privacy_and_boundaries", "living_room", "bedroom"],
     requiredCapabilities: ["object_recognition", "object_pick_and_place", "spatial_memory", "user_permission_enforcement"],
     safetyGates: ["personal_and_private_item_protection", "fragile_item_protection", "unknown_destination_hold"],
-    preferenceTerms: /tidy|organis|organis|move|belonging|personal item|desk|storage|put away/i
+    preferenceTerms: /tidy|organis(e|ing|ation)|organiz(e|ing|ation)|move|belonging|personal item|desk|storage|put away/i
   },
   surfaces: {
     label: "Surface cleaning",
