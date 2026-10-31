@@ -224,7 +224,7 @@ export function buildPexiCapabilityPlan({
       unverified_capabilities: tasks.reduce((sum, task) => sum + task.unverified_capabilities.length, 0),
       unverified_safety_gates: tasks.reduce((sum, task) => sum + task.unverified_safety_gates.length, 0),
       undocumented_safety_gates: tasks.reduce((sum, task) => sum + task.undocumented_safety_gates.length, 0),
-      unresolved_preference_details: unresolvedPreferenceCount + unresolvedTaskDetails
+      unresolved_preference_details: unresolvedPreferenceCount
     },
     execution_contract: {
       compatibility_claimed: false,
