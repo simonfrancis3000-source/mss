@@ -88,3 +88,17 @@ test("first-use introduction audio is offered before conversation and can be rep
   assert.match(source, /introAudioStorageKey/);
   assert.match(source, /openWelcomeAudioOffer/);
 });
+
+
+test("the public app UI presents AMÏA without exposing an AI provider or model", async () => {
+  const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
+  const source = await readFile(new URL("../src/synqme.js", import.meta.url), "utf8");
+  assert.match(html, /AMÏA · PERSONAL INTELLIGENCE/);
+  assert.doesNotMatch(html, /id="providerLabel"/i);
+  assert.doesNotMatch(html, /Checking AI connection/i);
+  assert.doesNotMatch(source, /elements\\.providerLabel/);
+  assert.doesNotMatch(source, /responseProviderLabel/);
+  assert.doesNotMatch(source, /DEEPSEEK ONLY · BACKEND CHECK REQUIRED/);
+  assert.match(source, /"AMÏA is ready"/);
+  assert.match(source, /AMÏA is temporarily unavailable/);
+});
