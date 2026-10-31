@@ -27,7 +27,7 @@ The file must be JSON and use this schema:
 }
 ```
 
-Required fields are `manufacturer`, `model`, `source`, `completeness`, and a non-empty `capabilities` array. `completeness` is either `partial` or `complete`. A complete declaration means the source claims to enumerate the full capability set relevant to the manifest; it does not mean the claims have been verified.
+Required fields are `manufacturer`, `model`, `source`, `completeness`, and a `capabilities` array. A partial declaration may have an empty array, in which case every task requirement remains unverified. A complete declaration must contain at least one capability. Replace the template's `REPLACE_WITH_` values before importing. `completeness` is either `partial` or `complete`. A complete declaration means the source claims to enumerate the full capability set relevant to the manifest; it does not mean the claims have been verified.
 
 Capability identifiers are case-normalised strings. PEXI compares these identifiers with task requirements defined in `src/pexi-readiness.js`. Declared safety gates are recorded as supplier statements only. They do not count as independent safety validation.
 
