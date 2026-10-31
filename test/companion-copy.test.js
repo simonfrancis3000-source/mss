@@ -10,7 +10,7 @@ import {
 test("introduces the selected companion as the user's future robot", () => {
   assert.equal(
     companionWelcomeMessage("en", "Freya"),
-    "I am your future robot, Freya. I am here to help you build your SecondSelf, learn your routines and understand how you like things done."
+    "I am your future robot, Freya. I am here to help you build your SecondSelf and understand how you like life to work, at home and out in the world."
   );
   assert.match(companionWelcomeMessage("en", "ELO"), /future robot, ELO/);
 });
