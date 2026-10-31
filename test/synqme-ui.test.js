@@ -65,7 +65,7 @@ test("Beyond the Home exposes progressive out-of-home scenario training", async 
   assert.match(html, /data-out-of-home-stage="advanced"/);
   assert.match(html, /id="outOfHomeCategorySelect"/);
   assert.match(html, /id="outOfHomeScenarioList"/);
-  assert.match(html, /PEXI \\/ CAPABILITY VALIDATION/);
+  assert.ok(html.includes("PEXI / CAPABILITY VALIDATION"));
   assert.match(source, /buildOutOfHomeScenarioPrompt/);
   assert.match(source, /initialiseOutOfHomeTrainingControls/);
   assert.match(source, /renderOutOfHomeTraining/);
