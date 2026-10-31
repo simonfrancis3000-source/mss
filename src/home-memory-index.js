@@ -82,11 +82,12 @@ export function extractPersonaMemoryTopics(value) {
   const text = String(value || "");
   const homeTopics = extractHomeMemoryTopics(text);
   const topics = new Set();
-  // Keep the existing privacy boundary topic ahead of domain-specific tags.
-  if (homeTopics.includes("privacy_and_boundaries")) topics.add("privacy_and_boundaries");
+  // Prefer the most specific out-of-home topic when a public/social preference
+  // also contains general privacy or permission wording.
   for (const topic of OUT_OF_HOME_TOPICS) {
     if (topic.pattern.test(text)) topics.add(topic.id);
   }
+  if (homeTopics.includes("privacy_and_boundaries")) topics.add("privacy_and_boundaries");
   for (const topic of homeTopics) topics.add(topic);
   return [...topics];
 }
