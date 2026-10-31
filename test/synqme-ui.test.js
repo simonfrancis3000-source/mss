@@ -111,7 +111,7 @@ test("portable PEXI export contains structured out-of-home preferences and bound
   assert.match(source, /out_of_home_preferences: outOfHomePreferences/);
   assert.match(source, /out_of_home_boundaries: outOfHomeBoundaries/);
   assert.match(source, /out_of_home_behaviour_preferences_included: true/);
-  assert.match(source, /function activePersonaMemories\\(\\)/);
+  assert.ok(source.includes("function activePersonaMemories()"));
 });
 
 
