@@ -52,3 +52,39 @@ test("PEXI includes a per-task capability view and downloadable manifest templat
   assert.match(source, /function downloadPexiManifestTemplate\(\)/);
   assert.match(source, /REPLACE_WITH_MANUFACTURER_SPECIFICATION_URL/);
 });
+
+
+test("Beyond the Home exposes progressive out-of-home scenario training", async () => {
+  const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
+  const source = await readFile(new URL("../src/synqme.js", import.meta.url), "utf8");
+  const training = await readFile(new URL("../src/out-of-home-training.js", import.meta.url), "utf8");
+  assert.match(html, /id="outOfHomeTraining"/);
+  assert.match(html, /Beyond the Home/);
+  assert.match(html, /data-out-of-home-stage="everyday"/);
+  assert.match(html, /data-out-of-home-stage="social"/);
+  assert.match(html, /data-out-of-home-stage="advanced"/);
+  assert.match(html, /id="outOfHomeCategorySelect"/);
+  assert.match(html, /id="outOfHomeScenarioList"/);
+  assert.match(html, /PEXI \\/ CAPABILITY VALIDATION/);
+  assert.match(source, /buildOutOfHomeScenarioPrompt/);
+  assert.match(source, /initialiseOutOfHomeTrainingControls/);
+  assert.match(source, /renderOutOfHomeTraining/);
+  assert.match(training, /Social and contextual intelligence/);
+});
+
+test("first-use introduction audio is offered before conversation and can be replayed", async () => {
+  const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
+  const source = await readFile(new URL("../src/synqme.js", import.meta.url), "utf8");
+  assert.match(html, /id="welcomeAudioOffer"/);
+  assert.match(html, /id="welcomeAudioPlayer" controls preload="none"/);
+  assert.match(html, /https:\/\/mysecondself\.app\/wp-content\/uploads\/2026\/10\/MSS-Intro\.mp3/);
+  assert.match(html, /id="welcomeAudioContinue"/);
+  assert.match(html, /id="welcomeAudioSkip"/);
+  assert.match(html, /id="introAudioReplay"/);
+  assert.match(html, /id="chatStage" hidden/);
+  assert.doesNotMatch(html.match(/<audio id="welcomeAudioPlayer"[^>]*>/)?.[0] || "", /autoplay/i);
+  assert.match(source, /prepareWelcomeAudioOffer/);
+  assert.match(source, /INTRO_AUDIO_DISMISSED_KEY/);
+  assert.match(source, /introAudioStorageKey/);
+  assert.match(source, /openWelcomeAudioOffer/);
+});
