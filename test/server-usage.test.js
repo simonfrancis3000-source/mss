@@ -47,3 +47,19 @@ test("voice durations are bounded", () => {
   assert.equal(clampVoiceDuration(999999, 100000), 100000);
   assert.equal(clampVoiceDuration(-1, 100000), 0);
 });
+
+
+test("records a DeepSeek request as unpriced when token usage is absent", () => {
+  const event = buildDeepSeekUsageEvent({
+    userId: "user-123",
+    requestId: "request-missing-usage",
+    result: { model: "deepseek-flash" },
+    now: new Date("2026-10-31T12:00:00.000Z")
+  });
+  assert.ok(event);
+  assert.equal(event.event_type, "deepseek_chat");
+  assert.equal(event.cost_method, "deepseek_usage_missing");
+  assert.equal(event.metadata.token_usage_available, false);
+  assert.equal(event.total_tokens, 0);
+  assert.equal(event.deepseek_cost_usd, 0);
+});
