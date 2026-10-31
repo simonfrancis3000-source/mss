@@ -40,7 +40,7 @@ export function buildDeepSeekUsageEvent({
     promptDetails.cache_miss_tokens;
   const cacheMissTokens = reportedCacheMiss === undefined || reportedCacheMiss === null
     ? Math.max(0, promptTokens - cacheHitTokens)
-    : Math.min(promptTokens, count(reportedCacheMiss));
+    : Math.min(Math.max(0, promptTokens - cacheHitTokens), count(reportedCacheMiss));
   const period = deepSeekRatePeriod(now);
   const rates = DEEPSEEK_FLASH_RATES[period];
   const cost = (
