@@ -399,7 +399,13 @@
         </div>
         <div class="pexi-readiness" id="pexiReadiness">
           <div class="settings-subhead"><span>PEXI TRANSFER READINESS</span><span id="pexiReadinessStatus">NOT STARTED</span></div>
-          <p id="pexiReadinessSummary">Your stated preferences and unresolved details will be kept separate. PEXI must map these to a compatible robot before use.</p>
+          <p id="pexiReadinessSummary">Your stated preferences and unresolved details will be kept separate. PEXI will map selected tasks to generic capability requirements without assuming that a robot is compatible.</p>
+          <div class="pexi-manifest-import">
+            <label for="pexiManifestInput">Target robot capability manifest <span>OPTIONAL</span></label>
+            <input id="pexiManifestInput" type="file" accept=".json,application/json" />
+            <p id="pexiManifestStatus" role="status" aria-live="polite">No robot specification loaded. You can import a manufacturer/model capability manifest in JSON format.</p>
+            <button type="button" id="removePexiManifest" class="settings-task-link" hidden>Remove imported specification <span>×</span></button>
+          </div>
         </div>
         <div class="account-status-panel" id="accountStatusPanel">
           <div>
