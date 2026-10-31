@@ -1,10 +1,12 @@
-import { extractHomeMemoryKeys, extractHomeMemoryTopics } from "./home-memory-index.js";
+import { extractPersonaMemoryKeys, extractPersonaMemoryTopics } from "./home-memory-index.js";
 
 export const MEMORY_TOPICS = new Set([
   "kitchen", "bathroom", "vacuuming", "surface_cleaning", "cleaning_supplies",
   "laundry", "bedroom", "living_room", "pets", "plants", "food_and_meals",
   "guests", "privacy_and_boundaries", "scheduling", "safety_and_access",
-  "waste_and_recycling", "general_household"
+  "waste_and_recycling", "general_household",
+  "public_interactions", "social_relationships", "public_mobility", "out_of_home_safety",
+  "animal_interactions", "public_venues", "social_etiquette", "professional_community"
 ]);
 export const MEMORY_KINDS = new Set(["preference", "routine", "boundary", "fact", "exception"]);
 export const MEMORY_STATUSES = new Set([
@@ -56,7 +58,7 @@ export function deriveMemoryKind(value) {
 }
 
 export function deriveMemoryTopic(value, category = "") {
-  const topics = extractHomeMemoryTopics(String(category || "") + " " + String(value || ""));
+  const topics = extractPersonaMemoryTopics(String(category || "") + " " + String(value || ""));
   return topics[0] || "general_household";
 }
 
@@ -70,7 +72,7 @@ export function deriveMemoryScopeKey(value, topic, kind) {
 
 export function buildPersonaMemorySearchKeys(statement, searchTerms = [], topic = "") {
   const text = [statement, topic, ...(Array.isArray(searchTerms) ? searchTerms : [])].filter(Boolean).join(" ");
-  const keys = new Set(extractHomeMemoryKeys(text));
+  const keys = new Set(extractPersonaMemoryKeys(text));
   for (const term of Array.isArray(searchTerms) ? searchTerms : []) {
     const key = normaliseMemoryText(term);
     if (key) keys.add("phrase:" + key.slice(0, 60));
@@ -144,8 +146,10 @@ export function cleanPersonaMemoryCandidate(input) {
 export function shouldExtractPersonaMemory(message, preferenceWasAdded = false) {
   const text = String(message || "").trim();
   if (text.length < 8 || text.length > 1600 || SENSITIVE_MEMORY_PATTERN.test(text)) return false;
+  // A scenario launch prompt is app-generated training context, not a user preference.
+  if (/^SYNQ\.ME TRAINING SCENARIO:/i.test(text)) return false;
   if (preferenceWasAdded) return true;
-  return /\b(i prefer|i like|i dislike|i hate|i usually|i always|i never|i want|i need|i would rather|my routine|our routine|please (?:always|never)|make sure|remember that|don't move|do not move|never move|ask me before|check with me before|keep .* (?:clear|closed|open|separate|where)|after breakfast|before breakfast|every morning|every evening|twice a day|once a week|from now on|instead of|no longer|actually,?)\b/i.test(text);
+  return /\b(i prefer|i like|i don't like|i do not like|i dislike|i hate|i usually|i always|i never|i want|i don't want you to|i do not want you to|i need|i would like|i'd like|i would rather|i'd rather|my routine|our routine|please (?:always|never|stay|remain|keep|avoid|ask|wait|speak|don't|do not)|make sure|remember that|don't move|do not move|never move|don't approach|do not approach|never approach|ask me before|check with me before|keep .* (?:clear|closed|open|separate|where|beside me|away)|stay beside me|remain quiet|keep your distance|respect personal space|do not disclose|never tell anyone|only speak when|wait until|after breakfast|before breakfast|every morning|every evening|twice a day|once a week|from now on|instead of|no longer|actually,?)\b/i.test(text);
 }
 
 export function memoryIsActive(memory) {
@@ -156,7 +160,7 @@ export function rankPersonaMemories(query, memories, { limit = 8 } = {}) {
   const queryText = String(query || "").trim();
   if (!queryText || !Array.isArray(memories)) return [];
   const queryKeys = new Set(buildPersonaMemorySearchKeys(queryText));
-  const queryTopics = new Set(extractHomeMemoryTopics(queryText));
+  const queryTopics = new Set(extractPersonaMemoryTopics(queryText));
   const prepared = memories.map((memory) => {
     if (!memoryIsActive(memory) || typeof memory.statement !== "string" || !memory.statement.trim()) return null;
     // Always derive current keys as well as using stored keys. This makes

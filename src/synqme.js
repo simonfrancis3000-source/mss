@@ -4,6 +4,8 @@ import { buildPexiCapabilityPlan, cleanPexiCapabilityManifest } from "./pexi-rea
 import { companionThinkingMessage, companionWelcomeMessage, isCompanionWelcomeMessage } from "./companion-copy.js";
 import { assistantReplyRepeatsRecentAssistant, enforceFirstPersonTaskQuestions, normaliseVoicePreference, phonicVoiceIdForPreference } from "./voice-language.js";
 import { ROOM_JOURNEY_ROOMS, addMonthsAnchored, buildRoomProgressSnapshot, getRoomJourneySchedule, getRoomTaskStates } from "./room-journey.js";
+import { OUT_OF_HOME_STAGES, OUT_OF_HOME_CATEGORIES, getOutOfHomeCategories, findOutOfHomeScenario, buildOutOfHomeScenarioPrompt } from "./out-of-home-training.js";
+import { findOutOfHomeScenarioContext } from "./out-of-home-persona-prompt.js";
 import {
   buildHomeMemoryIndexRows,
   extractHomeMemoryKeys,
@@ -26,6 +28,9 @@ import {
 const STORAGE_KEY = "synqme-demo-v1";
 const ACCOUNT_DRAFT_KEY = "synqme-pending-account-migration-v1";
 const PEXI_CAPABILITY_MANIFEST_KEY = "synqme-pexi-capability-manifest-v1";
+const INTRO_AUDIO_DISMISSED_KEY = "synqme-intro-audio-dismissed-v1";
+let activeOutOfHomeStage = "everyday";
+let activeOutOfHomeCategoryId = "strangers";
 let pexiCapabilityManifest = (() => {
   try {
     return cleanPexiCapabilityManifest(JSON.parse(localStorage.getItem(PEXI_CAPABILITY_MANIFEST_KEY) || "null"));
@@ -177,7 +182,6 @@ const MILESTONES = [
 const $ = (selector) => document.querySelector(selector);
 const elements = {
   splash: $("#appSplash"),
-  providerLabel: $("#providerLabel"),
   preferredLanguage: $("#preferredLanguage"),
   conversationStatus: $("#conversationStatus"),
   chatTranscriptShell: $("#chatTranscriptShell"),
@@ -287,7 +291,17 @@ const elements = {
   roomJourneyIntro: $("#roomJourneyIntro"),
   roomJourneyNextUnlock: $("#roomJourneyNextUnlock"),
   roomJourneyFeature: $("#roomJourneyFeature"),
-  roomJourneyRoomGrid: $("#roomJourneyRoomGrid")
+  roomJourneyRoomGrid: $("#roomJourneyRoomGrid"),
+  chatStage: $("#chatStage"),
+  welcomeAudioOffer: $("#welcomeAudioOffer"),
+  welcomeAudioPlayer: $("#welcomeAudioPlayer"),
+  welcomeAudioContinue: $("#welcomeAudioContinue"),
+  welcomeAudioSkip: $("#welcomeAudioSkip"),
+  introAudioReplay: $("#introAudioReplay"),
+  outOfHomeStageTabs: $("#outOfHomeStageTabs"),
+  outOfHomeCategorySelect: $("#outOfHomeCategorySelect"),
+  outOfHomeCategoryDescription: $("#outOfHomeCategoryDescription"),
+  outOfHomeScenarioList: $("#outOfHomeScenarioList")
 };
 
 function defaultProfile() {
@@ -420,6 +434,7 @@ function loadState() {
 }
 
 let state = loadState();
+let activeOutOfHomeScenarioContext = findOutOfHomeScenarioContext(state.messages);
 let isSending = false;
 let sendSequence = 0;
 let lastAIReplyUsedFallback = false;
@@ -2014,6 +2029,7 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
 
   state.preferences = mergePreferences(remotePreferences, draftState?.preferences || []);
   state.messages = mergeConversationMessages(remoteConversation?.messages || [], draftState?.messages || []);
+  activeOutOfHomeScenarioContext = findOutOfHomeScenarioContext(state.messages);
   localizeWelcomeMessage(state.profile.preferredLanguage || "en");
   state.pendingClarification = remoteConversation?.pending_clarification || draftState?.pendingClarification || null;
   state.apiConnected = false;
@@ -2038,6 +2054,7 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   setAuthGateVisible(false);
   renderAccountStatus();
   renderAll();
+  prepareWelcomeAudioOffer();
   if (!profileComplete()) openSettings();
   else updateSettingsMode();
   startCloudConversationSync();
@@ -2813,6 +2830,7 @@ async function setRoomJourneyTask(taskId) {
 function handleRoomJourneyClick(event) {
   const task = event.target.closest("[data-room-task-prompt]");
   if (task && elements.messageInput) {
+    activeOutOfHomeScenarioContext = null;
     const taskId = task.dataset.roomTaskId;
     if (taskId) void setRoomJourneyTask(taskId);
     elements.messageInput.value = task.dataset.roomTaskPrompt || "";
@@ -2821,7 +2839,10 @@ function handleRoomJourneyClick(event) {
     return;
   }
   const room = event.target.closest("[data-room-select]");
-  if (room && !room.disabled) void setRoomJourneyFocus(room.dataset.roomSelect);
+  if (room && !room.disabled) {
+    activeOutOfHomeScenarioContext = null;
+    void setRoomJourneyFocus(room.dataset.roomSelect);
+  }
 }
 
 function classifyPreference(message) {
@@ -3470,6 +3491,7 @@ function renderAll() {
   renderSettingsDetails();
   renderPexiReadiness();
   renderRoomJourney();
+  renderOutOfHomeTraining();
 
   const name = state.profile.ownerName.trim();
   const robotName = state.profile.robotName.trim();
@@ -3495,17 +3517,6 @@ function renderAll() {
   const achieved = MILESTONES.filter(milestoneUnlocked).length;
   const progress = Math.round((achieved / MILESTONES.length) * 100);
   if (elements.mobileProgressValue) elements.mobileProgressValue.textContent = progress + "%";
-  if (state.apiConnected && state.apiProvider) {
-    elements.providerLabel.textContent = state.apiProvider.toUpperCase() + " · " + (state.apiModel || "model") + " · LIVE";
-  } else if (state.apiError) {
-    elements.providerLabel.textContent = (state.apiProvider ? state.apiProvider.toUpperCase() : "AI SERVICE") + " · " + state.apiError.toUpperCase().replace(/_/g, " ");
-  } else if (state.apiConfigured === false) {
-    elements.providerLabel.textContent = (state.apiProvider ? state.apiProvider.toUpperCase() : "AI") + " NOT CONFIGURED";
-  } else if (state.apiConfigured === true && state.apiProvider) {
-    elements.providerLabel.textContent = state.apiProvider.toUpperCase() + " · " + (state.apiModel || "model") + " · READY";
-  } else {
-    elements.providerLabel.textContent = API_BASE ? "CHECKING AI SERVICE" : "AI SERVICE NOT CONFIGURED";
-  }
   document.title = name ? "SYNQ.ME | " + name + "’s SecondSelf" : "SYNQ.ME | Build Your SecondSelf";
   const intro = $(".conversation-intro p");
   if (intro) intro.textContent = robotName
@@ -4340,7 +4351,177 @@ elements.voiceModeButton?.addEventListener("click", () => {
 
 initialiseRobotAndVoiceControls();
 initialisePexiManifestControls();
+initialiseOutOfHomeTrainingControls();
 
+
+
+function introAudioStorageKey() {
+  return INTRO_AUDIO_DISMISSED_KEY + ":" + String(cloudUserId || "unknown");
+}
+
+function prepareWelcomeAudioOffer() {
+  if (!cloudUserId || !elements.welcomeAudioOffer || !elements.chatStage) return;
+  let dismissed = false;
+  try { dismissed = localStorage.getItem(introAudioStorageKey()) === "true"; } catch {}
+  elements.welcomeAudioOffer.hidden = dismissed;
+  elements.chatStage.hidden = !dismissed;
+  if (elements.introAudioReplay) elements.introAudioReplay.hidden = !dismissed;
+  if (elements.welcomeAudioPlayer && !dismissed) {
+    elements.welcomeAudioPlayer.pause();
+    try { elements.welcomeAudioPlayer.currentTime = 0; } catch {}
+  }
+}
+
+function finishWelcomeAudioOffer() {
+  if (!cloudUserId) {
+    setAuthGateVisible(true);
+    setAuthMode("signin", "Sign in before starting your SecondSelf conversation.");
+    return;
+  }
+  try { localStorage.setItem(introAudioStorageKey(), "true"); } catch {}
+  if (elements.welcomeAudioPlayer) {
+    elements.welcomeAudioPlayer.pause();
+    try { elements.welcomeAudioPlayer.currentTime = 0; } catch {}
+  }
+  if (elements.welcomeAudioOffer) elements.welcomeAudioOffer.hidden = true;
+  if (elements.chatStage) elements.chatStage.hidden = false;
+  if (elements.introAudioReplay) elements.introAudioReplay.hidden = false;
+  elements.messageInput?.focus({ preventScroll: true });
+}
+
+function openWelcomeAudioOffer() {
+  if (!cloudUserId) {
+    setAuthGateVisible(true);
+    setAuthMode("signin", "Sign in before starting your SecondSelf conversation.");
+    return;
+  }
+  if (elements.welcomeAudioPlayer) {
+    elements.welcomeAudioPlayer.pause();
+    try { elements.welcomeAudioPlayer.currentTime = 0; } catch {}
+  }
+  if (elements.welcomeAudioOffer) elements.welcomeAudioOffer.hidden = false;
+  if (elements.chatStage) elements.chatStage.hidden = true;
+  if (elements.introAudioReplay) elements.introAudioReplay.hidden = true;
+  elements.welcomeAudioOffer?.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function renderOutOfHomeTraining() {
+  const stageTabs = elements.outOfHomeStageTabs;
+  const categorySelect = elements.outOfHomeCategorySelect;
+  const descriptionTarget = elements.outOfHomeCategoryDescription;
+  const scenarioTarget = elements.outOfHomeScenarioList;
+  if (!stageTabs || !categorySelect || !descriptionTarget || !scenarioTarget) return;
+
+  const stage = OUT_OF_HOME_STAGES.find((item) => item.id === activeOutOfHomeStage) || OUT_OF_HOME_STAGES[0];
+  activeOutOfHomeStage = stage.id;
+  const categories = getOutOfHomeCategories(stage.id);
+  if (!categories.some((item) => item.id === activeOutOfHomeCategoryId)) {
+    activeOutOfHomeCategoryId = categories[0]?.id || "";
+  }
+
+  stageTabs.querySelectorAll("[data-out-of-home-stage]").forEach((button) => {
+    const selected = button.dataset.outOfHomeStage === activeOutOfHomeStage;
+    button.classList.toggle("is-active", selected);
+    button.setAttribute("aria-pressed", String(selected));
+  });
+
+  categorySelect.replaceChildren();
+  categories.forEach((category) => {
+    const option = document.createElement("option");
+    option.value = category.id;
+    option.textContent = category.title;
+    categorySelect.append(option);
+  });
+  categorySelect.value = activeOutOfHomeCategoryId;
+
+  const category = categories.find((item) => item.id === activeOutOfHomeCategoryId);
+  scenarioTarget.replaceChildren();
+  if (!category) {
+    descriptionTarget.textContent = stage.description;
+    const empty = document.createElement("p");
+    empty.className = "out-of-home-empty";
+    empty.textContent = "No scenarios are available in this training area yet.";
+    scenarioTarget.append(empty);
+    return;
+  }
+
+  descriptionTarget.textContent = category.description + " " + category.scenarios.length + " scenarios to explore.";
+  category.scenarios.forEach((scenario, index) => {
+    const card = document.createElement("article");
+    card.className = "out-of-home-scenario-card";
+
+    const head = document.createElement("div");
+    head.className = "out-of-home-scenario-head";
+    const number = document.createElement("span");
+    number.className = "out-of-home-scenario-number";
+    number.textContent = String(index + 1).padStart(2, "0");
+    const title = document.createElement("h3");
+    title.textContent = scenario.title;
+    head.append(number, title);
+
+    const situation = document.createElement("p");
+    situation.className = "out-of-home-scenario-situation";
+    situation.textContent = scenario.situation;
+
+    const focus = document.createElement("p");
+    focus.className = "out-of-home-scenario-focus";
+    const focusLabel = document.createElement("strong");
+    focusLabel.textContent = "Behaviour to personalise: ";
+    focus.append(focusLabel, document.createTextNode(scenario.focus));
+
+    const action = document.createElement("button");
+    action.type = "button";
+    action.className = "out-of-home-scenario-action";
+    action.dataset.outOfHomeScenario = scenario.id;
+    action.dataset.outOfHomeCategory = category.id;
+    action.textContent = "Explore with AMÏA";
+
+    card.append(head, situation, focus, action);
+    scenarioTarget.append(card);
+  });
+}
+
+function initialiseOutOfHomeTrainingControls() {
+  elements.outOfHomeStageTabs?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-out-of-home-stage]");
+    if (!button) return;
+    const stageId = button.dataset.outOfHomeStage;
+    if (!OUT_OF_HOME_STAGES.some((item) => item.id === stageId)) return;
+    activeOutOfHomeScenarioContext = null;
+    activeOutOfHomeStage = stageId;
+    activeOutOfHomeCategoryId = getOutOfHomeCategories(stageId)[0]?.id || "";
+    renderOutOfHomeTraining();
+  });
+
+  elements.outOfHomeCategorySelect?.addEventListener("change", () => {
+    activeOutOfHomeScenarioContext = null;
+    activeOutOfHomeCategoryId = elements.outOfHomeCategorySelect.value;
+    renderOutOfHomeTraining();
+  });
+
+  elements.outOfHomeScenarioList?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-out-of-home-scenario]");
+    if (!button || !elements.messageInput) return;
+    const match = findOutOfHomeScenario(button.dataset.outOfHomeCategory, button.dataset.outOfHomeScenario);
+    if (!match) return;
+    activeOutOfHomeScenarioContext = {
+      categoryId: match.category.id,
+      scenarioId: match.scenario.id
+    };
+    elements.messageInput.value = buildOutOfHomeScenarioPrompt(match.category, match.scenario);
+    elements.messageInput.dispatchEvent(new Event("input", { bubbles: true }));
+    if (elements.chatStage?.hidden) {
+      elements.welcomeAudioOffer?.scrollIntoView({ behavior: "smooth", block: "center" });
+    } else {
+      elements.chatStage?.scrollIntoView({ behavior: "smooth", block: "center" });
+      elements.messageInput.focus({ preventScroll: true });
+    }
+  });
+}
+
+elements.welcomeAudioContinue?.addEventListener("click", finishWelcomeAudioOffer);
+elements.welcomeAudioSkip?.addEventListener("click", finishWelcomeAudioOffer);
+elements.introAudioReplay?.addEventListener("click", openWelcomeAudioOffer);
 
 function isClarificationRequest(message) {
   const value = String(message || "").toLowerCase().replace(/[.!?]+$/g, "").trim();
@@ -4395,9 +4576,8 @@ async function requestAIReply(repairMode = false) {
     state.apiConnected = false;
     state.apiError = "deepseek-only policy";
     state.apiErrorDetail = state.apiProvider
-      ? "AI request blocked: SYNQ.ME is configured for DeepSeek only, but the connected backend reported a different provider. Redeploy the DeepSeek-only backend."
-      : "AI request blocked because the backend provider could not be verified as DeepSeek. Redeploy or restore the DeepSeek-only backend.";
-    elements.providerLabel.textContent = "DEEPSEEK ONLY · BACKEND CHECK REQUIRED";
+      ? "AMÏA could not verify the AI service connection. Please try again shortly."
+      : "AMÏA could not establish a verified AI service connection. Please try again shortly.";
     return null;
   }
   if (!repairMode) lastAIReplyUsedFallback = false;
@@ -4444,6 +4624,7 @@ async function requestAIReply(repairMode = false) {
         },
         domesticFunctions,
         roomJourney: buildCurrentRoomJourneyContext(),
+        outOfHomeScenarioContext: activeOutOfHomeScenarioContext,
         pendingClarification: state.pendingClarification,
         memoryReferences: memoryReferences.map(({ role, content, timestamp, topics }) => ({ role, content, timestamp, topics })),
         personaMemories: relevantPersonaMemories.map(({ memory_key, topic, kind, scope_key, statement, status, confidence, conditions, source_message, source_timestamp, conflict_group }) => ({
@@ -4457,7 +4638,7 @@ async function requestAIReply(repairMode = false) {
     try { data = await response.json(); } catch {}
     const responseProvider = typeof data.provider === "string" ? data.provider.toLowerCase() : state.apiProvider;
     if (responseProvider && responseProvider !== "deepseek") {
-      throw new Error("SYNQ.ME is configured for DeepSeek only. The backend response was rejected because its provider did not match the DeepSeek-only policy. Redeploy the DeepSeek-only backend.");
+      throw new Error("The AI service connection did not pass its configuration check.");
     }
     if (data.provider) state.apiProvider = responseProvider;
     if (data.model) state.apiModel = String(data.model);
@@ -4476,7 +4657,6 @@ async function requestAIReply(repairMode = false) {
     state.apiConfigured = true;
     state.apiError = "";
     state.apiErrorDetail = "";
-    elements.providerLabel.textContent = (state.apiProvider || "AI").toUpperCase() + " · " + (state.apiModel || "model") + " · LIVE";
 
     // The backend can mark an output for review; don't initiate a second request
     // for a turn that already used its own fallback or repair strategy.
@@ -4487,13 +4667,8 @@ async function requestAIReply(repairMode = false) {
     console.info("SYNQ.ME AI request failed; no scripted question will be substituted.", error);
     state.apiConnected = false;
     state.apiError = responseErrorLabel(error);
-    state.apiErrorDetail = Number.isInteger(error?.apiStatus)
-      ? "HTTP " + error.apiStatus +
-        (Number.isInteger(error?.upstreamStatus) ? " · " + (state.apiProvider ? state.apiProvider.toUpperCase() : "UPSTREAM") + " upstream HTTP " + error.upstreamStatus : "") +
-        ": " + String(error?.message || "Request failed").slice(0, 260) +
-        (error?.errorCode ? " [reference " + error.errorCode + "]" : "")
-      : String(error?.message || "").slice(0, 260);
-    elements.providerLabel.textContent = (state.apiProvider ? state.apiProvider.toUpperCase() : "AI SERVICE") + " · " + state.apiError.toUpperCase().replace(/_/g, " ");
+    // Keep provider and model diagnostics in developer logs, not in the user interface.
+    state.apiErrorDetail = "AMÏA is temporarily unavailable. Please try again shortly.";
     return null;
   }
 }
@@ -4535,14 +4710,14 @@ async function checkAIBackend() {
     if (!state.apiConnected) {
       renderAll();
       elements.conversationStatus.textContent = state.apiConfigured
-        ? state.apiProvider.toUpperCase() + " · " + (state.apiModel || "model") + " ready"
-        : state.apiProvider.toUpperCase() + " is not configured";
+        ? "AMÏA is ready"
+        : "AMÏA is temporarily unavailable";
     }
   } catch (error) {
     state.apiError = "health check unavailable";
     if (!state.apiConnected) {
       renderAll();
-      elements.conversationStatus.textContent = "AI provider status could not be verified";
+      elements.conversationStatus.textContent = "AMÏA connection could not be verified";
     }
     console.info("SYNQ.ME could not verify backend provider settings.", error);
   }
@@ -4561,6 +4736,9 @@ async function sendMessage(rawText) {
   }
   const message = rawText.trim();
   if (!message || isSending) return;
+  if (/\b(change (?:the )?topic|change subject|different topic|something unrelated|back to (?:my )?(?:home|household)|switch to (?:my )?(?:home|household)|let's talk about (?:my )?home)\b/i.test(message)) {
+    activeOutOfHomeScenarioContext = null;
+  }
   const clarificationRequest = isClarificationRequest(message);
   const turnId = ++sendSequence;
   isSending = true;
@@ -4637,21 +4815,18 @@ async function sendMessage(rawText) {
   isSending = false;
   elements.sendButton.disabled = false;
   elements.messageInput.disabled = false;
-  const responseProviderLabel = (state.apiProvider ? state.apiProvider.toUpperCase() : "AI") + " · " + (state.apiModel || "model");
   elements.conversationStatus.textContent = sentToAIThisTurn && state.apiConnected
-    ? responseProviderLabel + " · reply received · saving to account…"
-    : "Reply received · saving to account…";
+    ? "Reply received · saving to your account…"
+    : "Reply received · saving to your account…";
   if (!voiceModeActive) elements.messageInput.focus();
 
   void flushCloudSave().then((conversationSaved) => {
     // An older save must not overwrite the status for a newer user turn.
     if (turnId !== sendSequence || isSending) return;
     elements.conversationStatus.textContent = conversationSaved
-      ? (sentToAIThisTurn && state.apiConnected
-          ? responseProviderLabel + " response · saved to account"
-          : state.apiError && sentToAIThisTurn
-            ? (state.apiErrorDetail || responseProviderLabel + " unavailable · no scripted reply")
-            : "Reply saved to account")
+      ? (state.apiError && sentToAIThisTurn
+          ? "AMÏA could not reply just now. Please try again."
+          : "Reply saved to your account")
       : "Reply received · account sync needs attention";
   });
 }
@@ -4704,6 +4879,7 @@ elements.resetDemo.addEventListener("click", () => {
   if (!window.confirm("Reset this browser demo, including your settings and saved preferences?")) return;
   try { localStorage.removeItem(STORAGE_KEY); } catch {}
   state = initialState();
+  activeOutOfHomeScenarioContext = null;
   state.apiConnected = false;
   elements.conversationStatus.textContent = "Ready to talk";
   elements.taskResult.hidden = true;
@@ -4749,6 +4925,32 @@ function buildPexiPersonaPackage() {
     capabilityManifest: pexiCapabilityManifest
   });
 
+  const activeMemories = activePersonaMemories();
+  const outOfHomeTopicIds = new Set([
+    "public_interactions", "social_relationships", "public_mobility", "out_of_home_safety",
+    "animal_interactions", "public_venues", "social_etiquette", "professional_community"
+  ]);
+  const personaMemories = activeMemories.map((memory) => ({
+    memory_id: memory.id,
+    topic: memory.topic || "general_household",
+    kind: memory.kind || "preference",
+    scope_key: memory.scope_key || "",
+    statement: memory.statement,
+    epistemic_status: memory.status || "user_stated",
+    confidence: Number.isFinite(Number(memory.confidence)) ? Number(memory.confidence) : null,
+    conditions: Array.isArray(memory.conditions) ? memory.conditions : [],
+    provenance: {
+      source_application: "SYNQ.ME",
+      source_type: "conversation",
+      recorded_at: memory.created_at || null,
+      last_updated_at: memory.updated_at || memory.created_at || null
+    },
+    execution_status: "not_executable",
+    requires_robot_capability_mapping: true
+  }));
+  const outOfHomePreferences = personaMemories.filter((memory) => outOfHomeTopicIds.has(memory.topic));
+  const outOfHomeBoundaries = outOfHomePreferences.filter((memory) => memory.kind === "boundary");
+
   const boundaries = preferences.filter((item) =>
     item.category === "Consent & boundaries" ||
     item.explicit_fields.approvalBoundary ||
@@ -4758,7 +4960,7 @@ function buildPexiPersonaPackage() {
 
   return {
     schema: "app.mysecondself.pexi-persona",
-    schema_version: "1.1.0",
+    schema_version: "1.2.0",
     package_type: "portable_persona_profile",
     exported_at: now,
     source: {
@@ -4781,11 +4983,16 @@ function buildPexiPersonaPackage() {
       return { function_id: id, label: activity?.label || id, status: "user_selected" };
     }),
     preferences,
+    persona_memories: personaMemories,
+    out_of_home_preferences: outOfHomePreferences,
+    out_of_home_boundaries: outOfHomeBoundaries,
     boundaries,
     pexi_capability_plan: pexiCapabilityPlan,
     pending_clarification: state.pendingClarification || null,
     completeness: {
       preference_count: preferences.length,
+      persona_memory_count: personaMemories.length,
+      out_of_home_preference_count: outOfHomePreferences.length,
       selected_domestic_function_count: state.functions.length,
       unresolved_detail_count: preferences.reduce((sum, item) => sum + item.unresolved_fields.length, 0),
       capability_plan_status: pexiCapabilityPlan.status,
@@ -4797,9 +5004,10 @@ function buildPexiPersonaPackage() {
       requires_robot_capability_mapping: true,
       requires_target_robot_safety_validation: true,
       requires_user_authorisation_before_physical_actions: true,
+      out_of_home_behaviour_preferences_included: true,
       physical_robot_connected: false,
       physical_actions_enabled: false,
-      note: "This package carries stated persona data and a generic task-to-capability brief. A manufacturer/model capability manifest and safety validation are still required. It is not a robot-control command or proof of compatibility."
+      note: "This package carries stated home and out-of-home persona data alongside a generic domestic task-to-capability brief. A manufacturer/model capability manifest and safety validation are still required before any physical action. It is not a robot-control command or proof of compatibility."
     }
   };
 }
@@ -5030,6 +5238,7 @@ elements.signOutButton?.addEventListener("click", async () => {
     homeMemoryIndexUnavailable = false;
     homeMemoryIndexWarningShown = false;
     state = initialState();
+    activeOutOfHomeScenarioContext = null;
     try {
       localStorage.removeItem(STORAGE_KEY);
       localStorage.removeItem(ACCOUNT_DRAFT_KEY);
