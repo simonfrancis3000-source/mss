@@ -20,9 +20,19 @@ export function parseOutOfHomeScenarioContext(message) {
   return { trainingArea, scenario, situation, behaviouralFocus };
 }
 
+export function cleanOutOfHomeScenarioContext(input) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return null;
+  const trainingArea = clean(input.trainingArea, 120);
+  const scenario = clean(input.scenario, 160);
+  const situation = clean(input.situation, 300);
+  const behaviouralFocus = clean(input.behaviouralFocus, 300);
+  if (!trainingArea || !scenario || !situation || !behaviouralFocus) return null;
+  return { trainingArea, scenario, situation, behaviouralFocus };
+}
+
 export function findOutOfHomeScenarioContext(messages) {
   if (!Array.isArray(messages)) return null;
-  const recent = messages.slice(-16).filter((item) => item?.role === "user" && typeof item.content === "string");
+  const recent = messages.slice(-80).filter((item) => item?.role === "user" && typeof item.content === "string");
   for (const item of recent.reverse()) {
     const context = parseOutOfHomeScenarioContext(item.content);
     if (context) return context;
