@@ -1,10 +1,12 @@
-import { extractHomeMemoryKeys, extractHomeMemoryTopics } from "./home-memory-index.js";
+import { extractPersonaMemoryKeys, extractPersonaMemoryTopics } from "./home-memory-index.js";
 
 export const MEMORY_TOPICS = new Set([
   "kitchen", "bathroom", "vacuuming", "surface_cleaning", "cleaning_supplies",
   "laundry", "bedroom", "living_room", "pets", "plants", "food_and_meals",
   "guests", "privacy_and_boundaries", "scheduling", "safety_and_access",
-  "waste_and_recycling", "general_household"
+  "waste_and_recycling", "general_household",
+  "public_interactions", "social_relationships", "public_mobility", "out_of_home_safety",
+  "animal_interactions", "public_venues", "social_etiquette", "professional_community"
 ]);
 export const MEMORY_KINDS = new Set(["preference", "routine", "boundary", "fact", "exception"]);
 export const MEMORY_STATUSES = new Set([
@@ -56,7 +58,7 @@ export function deriveMemoryKind(value) {
 }
 
 export function deriveMemoryTopic(value, category = "") {
-  const topics = extractHomeMemoryTopics(String(category || "") + " " + String(value || ""));
+  const topics = extractPersonaMemoryTopics(String(category || "") + " " + String(value || ""));
   return topics[0] || "general_household";
 }
 
@@ -70,7 +72,7 @@ export function deriveMemoryScopeKey(value, topic, kind) {
 
 export function buildPersonaMemorySearchKeys(statement, searchTerms = [], topic = "") {
   const text = [statement, topic, ...(Array.isArray(searchTerms) ? searchTerms : [])].filter(Boolean).join(" ");
-  const keys = new Set(extractHomeMemoryKeys(text));
+  const keys = new Set(extractPersonaMemoryKeys(text));
   for (const term of Array.isArray(searchTerms) ? searchTerms : []) {
     const key = normaliseMemoryText(term);
     if (key) keys.add("phrase:" + key.slice(0, 60));
@@ -156,7 +158,7 @@ export function rankPersonaMemories(query, memories, { limit = 8 } = {}) {
   const queryText = String(query || "").trim();
   if (!queryText || !Array.isArray(memories)) return [];
   const queryKeys = new Set(buildPersonaMemorySearchKeys(queryText));
-  const queryTopics = new Set(extractHomeMemoryTopics(queryText));
+  const queryTopics = new Set(extractPersonaMemoryTopics(queryText));
   const prepared = memories.map((memory) => {
     if (!memoryIsActive(memory) || typeof memory.statement !== "string" || !memory.statement.trim()) return null;
     // Always derive current keys as well as using stored keys. This makes
