@@ -128,6 +128,7 @@ async function recordUsageEvent(event, accessToken) {
       body: JSON.stringify(event),
       signal: AbortSignal.timeout(7000)
     });
+    if (upstream.status === 409) return true;
     if (!upstream.ok) {
       const detail = String(await upstream.text().catch(() => "")).slice(0, 180);
       console.warn("SYNQ.ME usage event insert failed", { status: upstream.status, detail });
@@ -586,8 +587,14 @@ const app = http.createServer(async (request, response) => {
       const now = Date.now();
       const elapsedLimit = Math.min(4 * 60 * 60 * 1000, Math.max(0, now - startedAtMs) + 30_000);
       const voiceDurationMs = clampVoiceDuration(body?.voiceDurationMs, elapsedLimit);
-      const userSpeechMs = Math.min(voiceDurationMs, clampVoiceDuration(body?.userSpeechMs, voiceDurationMs));
-      const assistantSpeechMs = Math.min(voiceDurationMs, clampVoiceDuration(body?.assistantSpeechMs, voiceDurationMs));
+      let userSpeechMs = clampVoiceDuration(body?.userSpeechMs, voiceDurationMs);
+      let assistantSpeechMs = clampVoiceDuration(body?.assistantSpeechMs, voiceDurationMs);
+      const combinedSpeechMs = userSpeechMs + assistantSpeechMs;
+      if (combinedSpeechMs > voiceDurationMs && combinedSpeechMs > 0) {
+        const scale = voiceDurationMs / combinedSpeechMs;
+        userSpeechMs = Math.floor(userSpeechMs * scale);
+        assistantSpeechMs = Math.floor(assistantSpeechMs * scale);
+      }
       if (voiceDurationMs < 1000) return json(response, 400, { error: "The recorded voice session is too short to report." }, headers || {});
       const inserted = await recordUsageEvent({
         user_id: authContext.user.id,
