@@ -214,7 +214,7 @@ function renderEvents(events) {
 
 function exportCsv() {
   if (!currentData) return;
-  const rows = [["Name", "Email", "User ID", "Registered At", "Chat Requests", "Voice Sessions", "Voice Minutes", "User Speech Minutes", "Assistant Speech Minutes", "Input Tokens", "Cached Input Tokens", "Output Tokens", "DeepSeek Unpriced Requests", "Search Requests", "Fetch Requests", "DeepSeek Cost USD", "Search Cost USD", "Fetch Cost USD", "Phonic Cost USD", "Phonic Unpriced Sessions", "Known Total Cost USD"]];
+  const rows = [["Name", "Email", "User ID", "Registered At", "DeepSeek Requests", "Voice Sessions", "Voice Minutes", "User Speech Minutes", "Assistant Speech Minutes", "Input Tokens", "Cached Input Tokens", "Output Tokens", "DeepSeek Unpriced Requests", "Search Requests", "Fetch Requests", "DeepSeek Cost USD", "Search Cost USD", "Fetch Cost USD", "Phonic Cost USD", "Phonic Unpriced Sessions", "Known Total Cost USD"]];
   const query = String(userSearch.value || "").trim().toLowerCase();
   for (const user of currentData.users || []) {
     if (query && ![user.email, user.ownerName, user.userId].some((value) => String(value || "").toLowerCase().includes(query))) continue;
