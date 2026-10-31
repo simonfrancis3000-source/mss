@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { createPhonicVoiceConversation } from "./phonic-voice.js";
-import { buildPexiCapabilityPlan } from "./pexi-readiness.js";
+import { buildPexiCapabilityPlan, cleanPexiCapabilityManifest } from "./pexi-readiness.js";
 import { companionThinkingMessage, companionWelcomeMessage, isCompanionWelcomeMessage } from "./companion-copy.js";
 import { assistantReplyRepeatsRecentAssistant, enforceFirstPersonTaskQuestions, normaliseVoicePreference, phonicVoiceIdForPreference } from "./voice-language.js";
 import { ROOM_JOURNEY_ROOMS, addMonthsAnchored, buildRoomProgressSnapshot, getRoomJourneySchedule, getRoomTaskStates } from "./room-journey.js";
@@ -25,6 +25,14 @@ import {
 
 const STORAGE_KEY = "synqme-demo-v1";
 const ACCOUNT_DRAFT_KEY = "synqme-pending-account-migration-v1";
+const PEXI_CAPABILITY_MANIFEST_KEY = "synqme-pexi-capability-manifest-v1";
+let pexiCapabilityManifest = (() => {
+  try {
+    return cleanPexiCapabilityManifest(JSON.parse(localStorage.getItem(PEXI_CAPABILITY_MANIFEST_KEY) || "null"));
+  } catch {
+    return null;
+  }
+})();
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
 const PHONIC_API_BASE_URL = String(import.meta.env.VITE_PHONIC_API_BASE_URL || import.meta.env.VITE_API_BASE_URL || "https://synqme-api.onrender.com").replace(/\/+$/, "");
 const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL || "").replace(/\/+$/, "");
@@ -225,6 +233,9 @@ const elements = {
   exportPexiPackage: $("#exportPexiPackage"),
   pexiReadinessSummary: $("#pexiReadinessSummary"),
   pexiReadinessStatus: $("#pexiReadinessStatus"),
+  pexiManifestInput: $("#pexiManifestInput"),
+  pexiManifestStatus: $("#pexiManifestStatus"),
+  removePexiManifest: $("#removePexiManifest"),
   closeSettings: $("#closeSettings"),
   cancelSettings: $("#cancelSettings"),
   settingsForm: $("#settingsForm"),
@@ -3213,6 +3224,51 @@ function milestoneUnlocked(milestone) {
   return Boolean(milestone.unlocked(state));
 }
 
+function renderPexiManifestStatus(kind = "") {
+  if (elements.pexiManifestStatus) {
+    elements.pexiManifestStatus.dataset.kind = kind;
+    elements.pexiManifestStatus.textContent = pexiCapabilityManifest
+      ? "Loaded " + pexiCapabilityManifest.manufacturer + " " + pexiCapabilityManifest.model +
+        " (" + pexiCapabilityManifest.completeness + " declaration). Source: " + pexiCapabilityManifest.source +
+        ". Supplier declarations are not independently verified."
+      : "No robot specification loaded. Import a manufacturer/model capability manifest in JSON format.";
+  }
+  if (elements.removePexiManifest) elements.removePexiManifest.hidden = !pexiCapabilityManifest;
+}
+
+function initialisePexiManifestControls() {
+  elements.pexiManifestInput?.addEventListener("change", async () => {
+    const file = elements.pexiManifestInput.files?.[0];
+    elements.pexiManifestInput.value = "";
+    if (!file) return;
+    if (file.size > 128 * 1024) {
+      renderPexiManifestStatus("error");
+      if (elements.pexiManifestStatus) elements.pexiManifestStatus.textContent = "The capability manifest must be smaller than 128 KB.";
+      return;
+    }
+    try {
+      const parsed = JSON.parse(await file.text());
+      const cleaned = cleanPexiCapabilityManifest(parsed);
+      if (!cleaned) throw new Error("The file does not match the PEXI capability manifest schema.");
+      pexiCapabilityManifest = cleaned;
+      try { localStorage.setItem(PEXI_CAPABILITY_MANIFEST_KEY, JSON.stringify(cleaned)); } catch {}
+      renderPexiManifestStatus("success");
+      renderPexiReadiness();
+    } catch (error) {
+      renderPexiManifestStatus("error");
+      if (elements.pexiManifestStatus) elements.pexiManifestStatus.textContent =
+        String(error?.message || "This capability manifest could not be read.").slice(0, 220);
+    }
+  });
+  elements.removePexiManifest?.addEventListener("click", () => {
+    pexiCapabilityManifest = null;
+    try { localStorage.removeItem(PEXI_CAPABILITY_MANIFEST_KEY); } catch {}
+    renderPexiManifestStatus();
+    renderPexiReadiness();
+  });
+  renderPexiManifestStatus();
+}
+
 function renderPexiReadiness() {
   const activePreferences = activeLegacyPreferences();
   const unresolved = activePreferences.reduce((sum, item) => sum + preferenceExtraction(item).unresolvedFields.length, 0);
@@ -3224,14 +3280,15 @@ function renderPexiReadiness() {
       status: item.status,
       unresolvedFields: preferenceExtraction(item).unresolvedFields
     })),
-    targetRobotType: state.profile.robotType || "Humanoid robot"
+    targetRobotType: state.profile.robotType || "Humanoid robot",
+    capabilityManifest: pexiCapabilityManifest
   });
   const labels = {
     persona_details_open: "DETAILS TO COMPLETE",
     tasks_need_mapping: "TASKS NEED MAPPING",
     awaiting_robot_specification: "AWAITING ROBOT SPEC",
     required_capabilities_missing: "CAPABILITY GAPS",
-    capability_match_pending_validation: "SAFETY VALIDATION",
+    safety_gates_to_confirm: "SAFETY GATES TO CONFIRM",
     safety_validation_required: "SAFETY VALIDATION"
   };
   if (elements.pexiReadinessStatus) {
@@ -3246,12 +3303,17 @@ function renderPexiReadiness() {
     if (unresolved) parts.push(unresolved + (unresolved === 1 ? " preference detail still needs" : " preference details still need") + " clarification");
     if (plan.target_robot.capability_manifest_status === "not_supplied") {
       parts.push("No manufacturer/model capability manifest has been supplied, so robot compatibility is unverified.");
-    } else if (plan.totals.missing_capabilities) {
-      parts.push(plan.totals.missing_capabilities + " required capability declarations are missing.");
-    } else if (plan.totals.unverified_capabilities) {
-      parts.push(plan.totals.unverified_capabilities + " capabilities remain unverified.");
     } else {
-      parts.push("Declared capabilities still require independent safety validation.");
+      parts.push("The imported manufacturer/model declarations have not been independently verified.");
+      if (plan.totals.missing_capabilities) {
+        parts.push(plan.totals.missing_capabilities + " required capability declarations are missing.");
+      } else if (plan.totals.unverified_capabilities) {
+        parts.push(plan.totals.unverified_capabilities + " capabilities remain unverified.");
+      } else if (plan.totals.undocumented_safety_gates) {
+        parts.push(plan.totals.undocumented_safety_gates + " safety gates still need source documentation.");
+      } else {
+        parts.push("Declared capabilities and safety gates still require independent validation.");
+      }
     }
     parts.push("No physical robot is connected and no task can be executed from this package.");
     if (!parts.length) parts.push("Choose the household tasks you want your SecondSelf to understand. PEXI will translate them into capability requirements without assuming compatibility.");
@@ -4185,6 +4247,7 @@ elements.voiceModeButton?.addEventListener("click", () => {
 });
 
 initialiseRobotAndVoiceControls();
+initialisePexiManifestControls();
 
 
 function isClarificationRequest(message) {
