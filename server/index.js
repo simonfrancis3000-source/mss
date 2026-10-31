@@ -891,7 +891,7 @@ const app = http.createServer(async (request, response) => {
     const previousAssistantMessage = messages.length > 1 && messages[messages.length - 2].role === "assistant"
       ? messages[messages.length - 2].content
       : "";
-    if (isClarificationRequest(latestUserMessage) && previousAssistantMessage && profile.preferredLanguage === "en") {
+    if (!outOfHomeScenario && isClarificationRequest(latestUserMessage) && previousAssistantMessage && profile.preferredLanguage === "en") {
       return json(response, 200, {
         reply: enforceFirstPersonTaskQuestions(clarificationHelpReply(previousAssistantMessage, messages[messages.length - 3]?.content || ""), profile.companionName || profile.robotName || "Freya"),
         provider: PROVIDER,
