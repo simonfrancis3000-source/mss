@@ -191,12 +191,13 @@ export function buildPexiCapabilityPlan({
   const missingCount = tasks.filter((task) => task.capability_status === "missing_capabilities").length;
   const unresolvedTaskDetails = tasks.reduce((sum, task) => sum + task.persona_preferences.reduce((total, preference) => total + preference.unresolved_fields.length, 0), 0);
   let status = "awaiting_robot_specification";
-  if (unresolvedPreferenceCount || unresolvedTaskDetails) status = "persona_details_open";
-  else if (unknownTaskCount) status = "tasks_need_mapping";
+  if (!tasks.length || unknownTaskCount) status = "tasks_need_mapping";
+  else if (unresolvedPreferenceCount || unresolvedTaskDetails) status = "persona_details_open";
   else if (manifest && missingCount) status = "required_capabilities_missing";
-  else if (manifest && tasks.length && tasks.every((task) => task.capability_status === "capability_match_safety_review_required") &&
+  else if (manifest && tasks.some((task) => task.capability_status === "partially_verified")) status = "capabilities_not_fully_declared";
+  else if (manifest && tasks.every((task) => task.capability_status === "capability_match_safety_review_required") &&
     tasks.every((task) => task.undocumented_safety_gates.length === 0)) status = "safety_validation_required";
-  else if (manifest && tasks.length && tasks.every((task) => task.capability_status === "capability_match_safety_review_required")) status = "safety_gates_to_confirm";
+  else if (manifest && tasks.every((task) => task.capability_status === "capability_match_safety_review_required")) status = "safety_gates_to_confirm";
 
   return {
     schema: "app.mysecondself.pexi-capability-plan",
