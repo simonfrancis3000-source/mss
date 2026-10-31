@@ -147,7 +147,7 @@ export function shouldExtractPersonaMemory(message, preferenceWasAdded = false) 
   const text = String(message || "").trim();
   if (text.length < 8 || text.length > 1600 || SENSITIVE_MEMORY_PATTERN.test(text)) return false;
   if (preferenceWasAdded) return true;
-  return /\b(i prefer|i like|i dislike|i hate|i usually|i always|i never|i want|i need|i would rather|my routine|our routine|please (?:always|never)|make sure|remember that|don't move|do not move|never move|ask me before|check with me before|keep .* (?:clear|closed|open|separate|where)|after breakfast|before breakfast|every morning|every evening|twice a day|once a week|from now on|instead of|no longer|actually,?)\b/i.test(text);
+  return /\b(i prefer|i like|i don't like|i do not like|i dislike|i hate|i usually|i always|i never|i want|i don't want you to|i do not want you to|i need|i would like|i'd like|i would rather|i'd rather|my routine|our routine|please (?:always|never|stay|remain|keep|avoid|ask|wait|speak|don't|do not)|make sure|remember that|don't move|do not move|never move|don't approach|do not approach|never approach|ask me before|check with me before|keep .* (?:clear|closed|open|separate|where|beside me|away)|stay beside me|remain quiet|keep your distance|respect personal space|do not disclose|never tell anyone|only speak when|wait until|after breakfast|before breakfast|every morning|every evening|twice a day|once a week|from now on|instead of|no longer|actually,?)\b/i.test(text);
 }
 
 export function memoryIsActive(memory) {
