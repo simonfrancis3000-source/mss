@@ -106,7 +106,7 @@ test("the public app UI presents AMÏA without exposing an AI provider or model"
 
 test("portable PEXI export contains structured out-of-home preferences and boundaries", async () => {
   const source = await readFile(new URL("../src/synqme.js", import.meta.url), "utf8");
-  assert.match(source, /schema_version: "1\\.2\\.0"/);
+  assert.ok(source.includes('schema_version: "1.2.0"'));
   assert.match(source, /persona_memories: personaMemories/);
   assert.match(source, /out_of_home_preferences: outOfHomePreferences/);
   assert.match(source, /out_of_home_boundaries: outOfHomeBoundaries/);
