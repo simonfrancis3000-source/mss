@@ -113,3 +113,15 @@ test("portable PEXI export contains structured out-of-home preferences and bound
   assert.match(source, /out_of_home_behaviour_preferences_included: true/);
   assert.match(source, /function activePersonaMemories\\(\\)/);
 });
+
+
+test("provider and model names are not rendered in the SYNQ.ME interface or conversation status", async () => {
+  const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
+  const source = await readFile(new URL("../src/synqme.js", import.meta.url), "utf8");
+  assert.match(html, /AMÏA · PERSONAL INTELLIGENCE/);
+  assert.doesNotMatch(html, /providerLabel|Checking AI connection|DeepSeek|deepseek-flash/i);
+  assert.doesNotMatch(source, /elements\\.providerLabel|responseProviderLabel/);
+  assert.doesNotMatch(source, /DEEPSEEK ONLY · BACKEND CHECK REQUIRED/);
+  assert.match(source, /"AMÏA is ready"/);
+  assert.match(source, /"AMÏA is temporarily unavailable"/);
+});
