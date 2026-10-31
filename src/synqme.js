@@ -3288,6 +3288,7 @@ function renderPexiReadiness() {
     tasks_need_mapping: "TASKS NEED MAPPING",
     awaiting_robot_specification: "AWAITING ROBOT SPEC",
     required_capabilities_missing: "CAPABILITY GAPS",
+    capabilities_not_fully_declared: "SPECIFICATION INCOMPLETE",
     safety_gates_to_confirm: "SAFETY GATES TO CONFIRM",
     safety_validation_required: "SAFETY VALIDATION"
   };
@@ -4653,7 +4654,8 @@ function buildPexiPersonaPackage() {
       status: item.status,
       unresolvedFields: preferenceExtraction(item).unresolvedFields
     })),
-    targetRobotType: state.profile.robotType || "Humanoid robot"
+    targetRobotType: state.profile.robotType || "Humanoid robot",
+    capabilityManifest: pexiCapabilityManifest
   });
 
   const boundaries = preferences.filter((item) =>
