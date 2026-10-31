@@ -221,3 +221,27 @@ test("task playbooks are selected separately from personal memories", () => {
   assert.ok(!laundrySkills.some((skill) => skill.id === "kitchen-reset"));
   assert.ok(kitchenSkills.every((skill) => !("userMemory" in skill)));
 });
+
+
+test("out-of-home behaviour preferences receive dedicated memory topics and remain retrievable", () => {
+  const stranger = "I prefer you not to start conversations with strangers unless I invite you.";
+  const animal = "I want you to keep a respectful distance from unfamiliar dogs.";
+  const mobility = "When we walk through a crowd, stay beside me and do not move ahead.";
+  assert.equal(deriveMemoryTopic(stranger), "public_interactions");
+  assert.equal(deriveMemoryTopic(animal), "animal_interactions");
+  assert.equal(deriveMemoryTopic(mobility), "public_mobility");
+
+  const strangerMemory = cleanPersonaMemoryCandidate({
+    statement: stranger,
+    topic: "public_interactions",
+    kind: "boundary",
+    status: "user_confirmed"
+  });
+  assert.equal(strangerMemory.topic, "public_interactions");
+  const ranked = rankPersonaMemories("What should you do when someone unknown approaches us?", [{
+    id: "stranger-boundary",
+    ...strangerMemory,
+    search_keys: buildPersonaMemorySearchKeys(strangerMemory.statement, [], strangerMemory.topic)
+  }]);
+  assert.equal(ranked[0]?.id, "stranger-boundary");
+});
