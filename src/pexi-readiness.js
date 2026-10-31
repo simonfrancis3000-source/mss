@@ -100,7 +100,10 @@ export function cleanPexiCapabilityManifest(input) {
   const completeness = input.completeness === "complete" ? "complete" : input.completeness === "partial" ? "partial" : "";
   const capabilities = cleanStrings(input.capabilities, 200);
   const declaredSafetyGates = cleanStrings(input.declared_safety_gates, 100);
-  if (!manufacturer || !model || !source || !completeness || !capabilities.length) return null;
+  if (!manufacturer || !model || !source || !completeness || (completeness === "complete" && !capabilities.length)) return null;
+  if (/^(REPLACE_WITH_|ADD_|ENTER_|TBD$|UNKNOWN$)/i.test(manufacturer) ||
+      /^(REPLACE_WITH_|ADD_|ENTER_|TBD$|UNKNOWN$)/i.test(model) ||
+      /^(REPLACE_WITH_|ADD_|ENTER_|TBD$|UNKNOWN$)/i.test(source)) return null;
   return {
     schema: "app.mysecondself.pexi-capability-manifest",
     schema_version: "1.0.0",
@@ -161,7 +164,7 @@ export function buildPexiCapabilityPlan({
     const unverified = manifest
       ? required.filter((capability) => !declaredCapabilities.includes(capability) && !manifestComplete)
       : required;
-    const verifiedSafety = declaredSafety.filter((gate) => profile.safetyGates.includes(gate));
+    const declaredSafetyForTask = declaredSafety.filter((gate) => profile.safetyGates.includes(gate));
     const capabilityStatus = !manifest
       ? "unverified"
       : missing.length
@@ -179,10 +182,10 @@ export function buildPexiCapabilityPlan({
       missing_capabilities: missing,
       unverified_capabilities: unverified,
       safety_gates: [...profile.safetyGates],
-      declared_safety_gates: verifiedSafety,
+      declared_safety_gates: declaredSafetyForTask,
       // A supplier declaration is evidence to review, not independent safety validation.
       unverified_safety_gates: [...profile.safetyGates],
-      undocumented_safety_gates: profile.safetyGates.filter((gate) => !verifiedSafety.includes(gate)),
+      undocumented_safety_gates: profile.safetyGates.filter((gate) => !declaredSafetyForTask.includes(gate)),
       persona_preferences: relevantPreferences(preferences, profile)
     };
   });
@@ -191,7 +194,9 @@ export function buildPexiCapabilityPlan({
   const missingCount = tasks.filter((task) => task.capability_status === "missing_capabilities").length;
   const unresolvedTaskDetails = tasks.reduce((sum, task) => sum + task.persona_preferences.reduce((total, preference) => total + preference.unresolved_fields.length, 0), 0);
   let status = "awaiting_robot_specification";
-  if (!tasks.length || unknownTaskCount) status = "tasks_need_mapping";
+  if (unknownTaskCount) status = "tasks_need_mapping";
+  else if (!tasks.length && unresolvedPreferenceCount) status = "persona_details_open";
+  else if (!tasks.length) status = "tasks_need_mapping";
   else if (unresolvedPreferenceCount || unresolvedTaskDetails) status = "persona_details_open";
   else if (manifest && missingCount) status = "required_capabilities_missing";
   else if (manifest && tasks.some((task) => task.capability_status === "partially_verified")) status = "capabilities_not_fully_declared";
