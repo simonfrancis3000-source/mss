@@ -212,7 +212,7 @@ export function findOutOfHomeScenario(categoryId, scenarioId) {
 export function buildOutOfHomeScenarioPrompt(category, scenario) {
   if (!category || !scenario) throw new TypeError("A training category and scenario are required.");
   return [
-    "I want to personalise my SecondSelf's behaviour outside the home.",
+    "SYNQ.ME TRAINING SCENARIO: The user selected an out-of-home behaviour exercise. This app-generated context is not itself a user preference.",
     "Training area: " + category.title,
     "Scenario: " + scenario.title,
     "Situation: " + scenario.situation,
