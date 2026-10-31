@@ -94,9 +94,31 @@
               <h2 id="conversationTitle">Build your SecondSelf</h2>
             </div>
             <div class="panel-status"><span class="status-dot"></span><span id="conversationStatus">Ready to talk</span></div>
+            <button class="intro-audio-replay" type="button" id="introAudioReplay" aria-controls="welcomeAudioOffer" hidden>Replay introduction</button>
           </div>
 
-          <div class="chat-stage">
+          <section class="welcome-audio-offer" id="welcomeAudioOffer" hidden aria-labelledby="welcomeAudioTitle">
+            <div class="welcome-audio-brand" aria-hidden="true">
+              <img src="https://mysecondself.app/wp-content/uploads/2026/10/MySecondSelf-Dual-Head-Logo.png" alt="" />
+              <span>MYSECONDSELF</span>
+            </div>
+            <div class="welcome-audio-copy">
+              <div class="section-kicker">BEFORE YOUR FIRST CONVERSATION</div>
+              <h3 id="welcomeAudioTitle">A quick introduction to your SecondSelf.</h3>
+              <p>Take a moment to hear how your SecondSelf journey works before you begin. You can listen now or skip straight to your conversation.</p>
+              <audio id="welcomeAudioPlayer" controls preload="none">
+                <source src="https://mysecondself.app/wp-content/uploads/2026/10/MSS-Intro.mp3" type="audio/mpeg" />
+                Your browser does not support audio playback.
+              </audio>
+              <div class="welcome-audio-actions">
+                <button class="welcome-audio-start" type="button" id="welcomeAudioContinue">Start my conversation</button>
+                <button class="welcome-audio-skip" type="button" id="welcomeAudioSkip">Skip introduction</button>
+              </div>
+              <p class="welcome-audio-note">The recording only plays when you press play. You can replay it later.</p>
+            </div>
+          </section>
+
+          <div class="chat-stage" id="chatStage" hidden>
             <div class="chat-workspace">
               <div class="chat-transcript-shell" id="chatTranscriptShell">
                 <div class="chat-messages" id="chatMessages" role="log" aria-live="polite" aria-relevant="additions text">
@@ -227,6 +249,53 @@
         </div>
         <div class="room-journey-room-grid" id="roomJourneyRoomGrid" aria-label="Your released and upcoming rooms"></div>
         <p class="room-journey-footnote">Your schedule is individual to your account. New rooms unlock automatically each month, and you can revisit any room that has already opened.</p>
+      </section>
+
+      <section class="panel out-of-home-panel" id="outOfHomeTraining" aria-labelledby="outOfHomeTitle">
+        <div class="panel-heading out-of-home-heading">
+          <div>
+            <div class="section-kicker">05 / OUT-OF-HOME BEHAVIOUR</div>
+            <h2 id="outOfHomeTitle">Beyond the Home</h2>
+          </div>
+          <span class="mini-tag">NEW TRAINING DOMAIN</span>
+        </div>
+        <div class="out-of-home-content">
+          <p class="out-of-home-intro">Prepare your SecondSelf for the wider world: meeting people, accompanying you in public, navigating social situations and responding safely when the unexpected happens. Work through scenarios gradually. AMÏA will explore one decision at a time and build an understanding of how you want your companion to behave.</p>
+          <div class="out-of-home-stage-tabs" id="outOfHomeStageTabs" role="group" aria-label="Out-of-home training stages">
+            <button class="out-of-home-stage-button is-active" type="button" data-out-of-home-stage="everyday" aria-pressed="true">
+              <span>01</span><strong>Everyday public behaviour</strong><small>Outings, strangers, venues and animals</small>
+            </button>
+            <button class="out-of-home-stage-button" type="button" data-out-of-home-stage="social" aria-pressed="false">
+              <span>02</span><strong>Social and contextual intelligence</strong><small>Relationships, conversation and community</small>
+            </button>
+            <button class="out-of-home-stage-button" type="button" data-out-of-home-stage="advanced" aria-pressed="false">
+              <span>03</span><strong>Advanced situational behaviour</strong><small>Safety, privacy and unexpected events</small>
+            </button>
+          </div>
+          <div class="out-of-home-browser">
+            <div class="out-of-home-category-control">
+              <label for="outOfHomeCategorySelect">Choose a training area</label>
+              <select id="outOfHomeCategorySelect" aria-label="Choose an out-of-home training area"></select>
+            </div>
+            <div class="out-of-home-category-description" id="outOfHomeCategoryDescription"></div>
+            <div class="out-of-home-scenarios" id="outOfHomeScenarioList" aria-live="polite">
+              <p class="out-of-home-empty">Choose a stage and training area to explore realistic situations.</p>
+            </div>
+          </div>
+          <div class="out-of-home-architecture">
+            <div>
+              <span class="out-of-home-architecture-label">AMÏA / BEHAVIOURAL INTELLIGENCE</span>
+              <strong>Understands how you want your companion to behave.</strong>
+              <p>AMÏA explores your preferences, boundaries, social style and decision-making through natural conversation. It asks one focused question at a time and captures only what you state or confirm.</p>
+            </div>
+            <div>
+              <span class="out-of-home-architecture-label">PEXI / CAPABILITY VALIDATION</span>
+              <strong>Checks what a particular robot can actually do.</strong>
+              <p>PEXI maps the behavioural intention to a target robot's declared capabilities and safety requirements. A preference is not a promise that a robot can physically perform the action.</p>
+            </div>
+          </div>
+          <p class="out-of-home-footnote">Your companion should be considerate and capable in society, not simply obedient. Training is progressive: there is no need to complete every scenario in one sitting.</p>
+        </div>
       </section>
 
       <section class="task-result panel" id="taskResult" hidden aria-labelledby="taskResultTitle">
