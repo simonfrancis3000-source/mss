@@ -175,7 +175,9 @@ function cleanMemoryReferences(input) {
   const allowedTopics = new Set([
     "kitchen", "bathroom", "vacuuming", "surface_cleaning", "cleaning_supplies",
     "laundry", "bedroom", "living_room", "pets", "plants", "food_and_meals",
-    "guests", "privacy_and_boundaries", "scheduling", "safety_and_access", "waste_and_recycling"
+    "guests", "privacy_and_boundaries", "scheduling", "safety_and_access", "waste_and_recycling",
+    "public_interactions", "social_relationships", "public_mobility", "out_of_home_safety",
+    "animal_interactions", "public_venues", "social_etiquette", "professional_community"
   ]);
   return input.slice(0, 8).map((item) => ({
     role: item?.role === "assistant" ? "assistant" : "user",
