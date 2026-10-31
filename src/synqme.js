@@ -4,6 +4,7 @@ import { buildPexiCapabilityPlan, cleanPexiCapabilityManifest } from "./pexi-rea
 import { companionThinkingMessage, companionWelcomeMessage, isCompanionWelcomeMessage } from "./companion-copy.js";
 import { assistantReplyRepeatsRecentAssistant, enforceFirstPersonTaskQuestions, normaliseVoicePreference, phonicVoiceIdForPreference } from "./voice-language.js";
 import { ROOM_JOURNEY_ROOMS, addMonthsAnchored, buildRoomProgressSnapshot, getRoomJourneySchedule, getRoomTaskStates } from "./room-journey.js";
+import { OUT_OF_HOME_STAGES, OUT_OF_HOME_CATEGORIES, getOutOfHomeCategories, findOutOfHomeScenario, buildOutOfHomeScenarioPrompt } from "./out-of-home-training.js";
 import {
   buildHomeMemoryIndexRows,
   extractHomeMemoryKeys,
@@ -26,6 +27,9 @@ import {
 const STORAGE_KEY = "synqme-demo-v1";
 const ACCOUNT_DRAFT_KEY = "synqme-pending-account-migration-v1";
 const PEXI_CAPABILITY_MANIFEST_KEY = "synqme-pexi-capability-manifest-v1";
+const INTRO_AUDIO_DISMISSED_KEY = "synqme-intro-audio-dismissed-v1";
+let activeOutOfHomeStage = "everyday";
+let activeOutOfHomeCategoryId = "strangers";
 let pexiCapabilityManifest = (() => {
   try {
     return cleanPexiCapabilityManifest(JSON.parse(localStorage.getItem(PEXI_CAPABILITY_MANIFEST_KEY) || "null"));
@@ -287,7 +291,17 @@ const elements = {
   roomJourneyIntro: $("#roomJourneyIntro"),
   roomJourneyNextUnlock: $("#roomJourneyNextUnlock"),
   roomJourneyFeature: $("#roomJourneyFeature"),
-  roomJourneyRoomGrid: $("#roomJourneyRoomGrid")
+  roomJourneyRoomGrid: $("#roomJourneyRoomGrid"),
+  chatStage: $("#chatStage"),
+  welcomeAudioOffer: $("#welcomeAudioOffer"),
+  welcomeAudioPlayer: $("#welcomeAudioPlayer"),
+  welcomeAudioContinue: $("#welcomeAudioContinue"),
+  welcomeAudioSkip: $("#welcomeAudioSkip"),
+  introAudioReplay: $("#introAudioReplay"),
+  outOfHomeStageTabs: $("#outOfHomeStageTabs"),
+  outOfHomeCategorySelect: $("#outOfHomeCategorySelect"),
+  outOfHomeCategoryDescription: $("#outOfHomeCategoryDescription"),
+  outOfHomeScenarioList: $("#outOfHomeScenarioList")
 };
 
 function defaultProfile() {
@@ -2038,6 +2052,7 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   setAuthGateVisible(false);
   renderAccountStatus();
   renderAll();
+  prepareWelcomeAudioOffer();
   if (!profileComplete()) openSettings();
   else updateSettingsMode();
   startCloudConversationSync();
@@ -3470,6 +3485,7 @@ function renderAll() {
   renderSettingsDetails();
   renderPexiReadiness();
   renderRoomJourney();
+  renderOutOfHomeTraining();
 
   const name = state.profile.ownerName.trim();
   const robotName = state.profile.robotName.trim();
@@ -4340,7 +4356,171 @@ elements.voiceModeButton?.addEventListener("click", () => {
 
 initialiseRobotAndVoiceControls();
 initialisePexiManifestControls();
+initialiseOutOfHomeTrainingControls();
 
+
+
+function introAudioStorageKey() {
+  return INTRO_AUDIO_DISMISSED_KEY + ":" + String(cloudUserId || "unknown");
+}
+
+function prepareWelcomeAudioOffer() {
+  if (!cloudUserId || !elements.welcomeAudioOffer || !elements.chatStage) return;
+  let dismissed = false;
+  try { dismissed = localStorage.getItem(introAudioStorageKey()) === "true"; } catch {}
+  elements.welcomeAudioOffer.hidden = dismissed;
+  elements.chatStage.hidden = !dismissed;
+  if (elements.introAudioReplay) elements.introAudioReplay.hidden = !dismissed;
+  if (elements.welcomeAudioPlayer && !dismissed) {
+    elements.welcomeAudioPlayer.pause();
+    try { elements.welcomeAudioPlayer.currentTime = 0; } catch {}
+  }
+}
+
+function finishWelcomeAudioOffer() {
+  if (!cloudUserId) {
+    setAuthGateVisible(true);
+    setAuthMode("signin", "Sign in before starting your SecondSelf conversation.");
+    return;
+  }
+  try { localStorage.setItem(introAudioStorageKey(), "true"); } catch {}
+  if (elements.welcomeAudioPlayer) {
+    elements.welcomeAudioPlayer.pause();
+    try { elements.welcomeAudioPlayer.currentTime = 0; } catch {}
+  }
+  if (elements.welcomeAudioOffer) elements.welcomeAudioOffer.hidden = true;
+  if (elements.chatStage) elements.chatStage.hidden = false;
+  if (elements.introAudioReplay) elements.introAudioReplay.hidden = false;
+  elements.messageInput?.focus({ preventScroll: true });
+}
+
+function openWelcomeAudioOffer() {
+  if (!cloudUserId) {
+    setAuthGateVisible(true);
+    setAuthMode("signin", "Sign in before starting your SecondSelf conversation.");
+    return;
+  }
+  if (elements.welcomeAudioPlayer) {
+    elements.welcomeAudioPlayer.pause();
+    try { elements.welcomeAudioPlayer.currentTime = 0; } catch {}
+  }
+  if (elements.welcomeAudioOffer) elements.welcomeAudioOffer.hidden = false;
+  if (elements.chatStage) elements.chatStage.hidden = true;
+  if (elements.introAudioReplay) elements.introAudioReplay.hidden = true;
+  elements.welcomeAudioOffer?.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function renderOutOfHomeTraining() {
+  const stageTabs = elements.outOfHomeStageTabs;
+  const categorySelect = elements.outOfHomeCategorySelect;
+  const descriptionTarget = elements.outOfHomeCategoryDescription;
+  const scenarioTarget = elements.outOfHomeScenarioList;
+  if (!stageTabs || !categorySelect || !descriptionTarget || !scenarioTarget) return;
+
+  const stage = OUT_OF_HOME_STAGES.find((item) => item.id === activeOutOfHomeStage) || OUT_OF_HOME_STAGES[0];
+  activeOutOfHomeStage = stage.id;
+  const categories = getOutOfHomeCategories(stage.id);
+  if (!categories.some((item) => item.id === activeOutOfHomeCategoryId)) {
+    activeOutOfHomeCategoryId = categories[0]?.id || "";
+  }
+
+  stageTabs.querySelectorAll("[data-out-of-home-stage]").forEach((button) => {
+    const selected = button.dataset.outOfHomeStage === activeOutOfHomeStage;
+    button.classList.toggle("is-active", selected);
+    button.setAttribute("aria-pressed", String(selected));
+  });
+
+  categorySelect.replaceChildren();
+  categories.forEach((category) => {
+    const option = document.createElement("option");
+    option.value = category.id;
+    option.textContent = category.title;
+    categorySelect.append(option);
+  });
+  categorySelect.value = activeOutOfHomeCategoryId;
+
+  const category = categories.find((item) => item.id === activeOutOfHomeCategoryId);
+  scenarioTarget.replaceChildren();
+  if (!category) {
+    descriptionTarget.textContent = stage.description;
+    const empty = document.createElement("p");
+    empty.className = "out-of-home-empty";
+    empty.textContent = "No scenarios are available in this training area yet.";
+    scenarioTarget.append(empty);
+    return;
+  }
+
+  descriptionTarget.textContent = category.description + " " + category.scenarios.length + " scenarios to explore.";
+  category.scenarios.forEach((scenario, index) => {
+    const card = document.createElement("article");
+    card.className = "out-of-home-scenario-card";
+
+    const head = document.createElement("div");
+    head.className = "out-of-home-scenario-head";
+    const number = document.createElement("span");
+    number.className = "out-of-home-scenario-number";
+    number.textContent = String(index + 1).padStart(2, "0");
+    const title = document.createElement("h3");
+    title.textContent = scenario.title;
+    head.append(number, title);
+
+    const situation = document.createElement("p");
+    situation.className = "out-of-home-scenario-situation";
+    situation.textContent = scenario.situation;
+
+    const focus = document.createElement("p");
+    focus.className = "out-of-home-scenario-focus";
+    const focusLabel = document.createElement("strong");
+    focusLabel.textContent = "Behaviour to personalise: ";
+    focus.append(focusLabel, document.createTextNode(scenario.focus));
+
+    const action = document.createElement("button");
+    action.type = "button";
+    action.className = "out-of-home-scenario-action";
+    action.dataset.outOfHomeScenario = scenario.id;
+    action.dataset.outOfHomeCategory = category.id;
+    action.textContent = "Explore with AMÏA";
+
+    card.append(head, situation, focus, action);
+    scenarioTarget.append(card);
+  });
+}
+
+function initialiseOutOfHomeTrainingControls() {
+  elements.outOfHomeStageTabs?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-out-of-home-stage]");
+    if (!button) return;
+    const stageId = button.dataset.outOfHomeStage;
+    if (!OUT_OF_HOME_STAGES.some((item) => item.id === stageId)) return;
+    activeOutOfHomeStage = stageId;
+    activeOutOfHomeCategoryId = getOutOfHomeCategories(stageId)[0]?.id || "";
+    renderOutOfHomeTraining();
+  });
+
+  elements.outOfHomeCategorySelect?.addEventListener("change", () => {
+    activeOutOfHomeCategoryId = elements.outOfHomeCategorySelect.value;
+    renderOutOfHomeTraining();
+  });
+
+  elements.outOfHomeScenarioList?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-out-of-home-scenario]");
+    if (!button || !elements.messageInput) return;
+    const match = findOutOfHomeScenario(button.dataset.outOfHomeCategory, button.dataset.outOfHomeScenario);
+    if (!match) return;
+    elements.messageInput.value = buildOutOfHomeScenarioPrompt(match.category, match.scenario);
+    elements.messageInput.dispatchEvent(new Event("input", { bubbles: true }));
+    if (elements.chatStage?.hidden) {
+      elements.welcomeAudioOffer?.scrollIntoView({ behavior: "smooth", block: "center" });
+    } else {
+      elements.chatStage?.scrollIntoView({ behavior: "smooth", block: "center" });
+      elements.messageInput.focus({ preventScroll: true });
+    }
+  });
+}
+
+elements.welcomeAudioContinue?.addEventListener("click", finishWelcomeAudioOffer);
+elements.welcomeAudioSkip?.addEventListener("click", finishWelcomeAudioOffer);
+elements.introAudioReplay?.addEventListener("click", openWelcomeAudioOffer);
 
 function isClarificationRequest(message) {
   const value = String(message || "").toLowerCase().replace(/[.!?]+$/g, "").trim();
