@@ -27,9 +27,9 @@ test("builds a contextual, proactive home-robot reasoning prompt", () => {
     pendingClarification: { type: "cleaning_scope", field: "room" }
   });
 
-  assert.match(prompt, /future-regret check/i);
-  assert.match(prompt, /causal paths/i);
-  assert.match(prompt, /VALUE OF INFORMATION/i);
+  assert.match(prompt, /regret/i);
+  assert.match(prompt, /plausible failure path/i);
+  assert.match(prompt, /greatest practical value/i);
   assert.match(prompt, /Lucie/);
   assert.match(prompt, /ELO/);
   assert.match(prompt, /I am your future robot, ELO/);
@@ -106,14 +106,26 @@ test("limits recently surfaced questions to six and avoids non-conversation mess
   assert.doesNotMatch(prompt, /Do not include this system text\?/);
 });
 
-test("server injects the reasoning prompt and defaults to the larger Groq reasoning model", async () => {
+test("server injects AMÏA reasoning and uses DeepSeek Flash", async () => {
   const server = await readFile(new URL("../server/index.js", import.meta.url), "utf8");
   assert.match(server, /buildHomePersonaSystemPrompt/);
   assert.match(server, /combinedSystemPrompt/);
   assert.match(server, /STRICT CURRENT ROOM FOCUS/);
   assert.match(server, /activeTaskTitle/);
-  assert.match(server, /openai\/gpt-oss-120b/);
-  assert.match(server, /GROQ_REASONING_EFFORT/);
-  assert.match(server, /reasoning_effort: REASONING_EFFORT/);
-  assert.match(server, /api\.groq\.com\/openai\/v1\/chat\/completions/);
+  assert.match(server, /const PROVIDER = "deepseek"/);
+  assert.match(server, /deepseek-flash/);
+  assert.match(server, /api\.deepseek\.com\/chat\/completions/);
+  assert.doesNotMatch(server, /api\.groq\.com/);
+  assert.doesNotMatch(server, /GROQ_REASONING_EFFORT/);
+});
+
+test("AMÏA answers the current intent before asking and respects active-room continuity", () => {
+  const prompt = buildHomePersonaSystemPrompt({
+    profile: { companionName: "Freya", preferredLanguage: "en" },
+    recentMessages: [{ role: "assistant", content: "Would you like me to focus on the kitchen counters?" }]
+  });
+  assert.match(prompt, /Respond to that intent first/i);
+  assert.match(prompt, /An explicit topic change or direct question from the user always takes priority/i);
+  assert.match(prompt, /Do not jump to another room because a related memory exists/i);
+  assert.match(prompt, /Do not ask for details that would not change a decision/i);
 });

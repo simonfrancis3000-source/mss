@@ -134,8 +134,8 @@ function renderDashboard(data) {
   el("chatRequests").textContent = number(totals.chatRequests);
   el("deepseekUnpricedRequests").textContent = number(totals.deepseekUnpricedRequests);
   el("deepseekPricingNote").textContent = Number(totals.deepseekUnpricedRequests || 0)
-    ? Number(totals.deepseekUnpricedRequests) + " chat responses did not include token details. Their DeepSeek inference cost is not calculated."
-    : "DeepSeek cost is calculated from provider-returned token usage and the rate card effective at request time.";
+    ? Number(totals.deepseekUnpricedRequests) + " DeepSeek requests did not include token details. Their inference cost is not calculated."
+    : "DeepSeek cost is estimated from provider token usage and the rate card effective at request time. Peak/off-peak estimates use UTC time; Chinese public-holiday exceptions are not applied.";
   el("voiceMinutes").textContent = minutes(totals.voiceMinutes);
   el("userSpeechMinutes").textContent = minutes(totals.userSpeechMinutes);
   el("assistantSpeechMinutes").textContent = minutes(totals.assistantSpeechMinutes);
@@ -150,7 +150,7 @@ function renderDashboard(data) {
   const pending = Number(totals.pendingVoiceSessions || 0);
   const phonicParts = [];
   if (rate) phonicParts.push("Rate card: " + money(rate) + " per minute.");
-  else phonicParts.push("Phonic rate not configured. Set PHONIC_COST_PER_MINUTE_USD on the API service.");
+  else phonicParts.push("Phonic rate not configured. Set PHONIC_COST_PER_MINUTE_USD on the Supabase usage function.");
   if (unpriced) phonicParts.push(unpriced + " sessions currently have no priced Phonic amount.");
   if (pending) phonicParts.push(pending + " sessions are pending provider reconciliation.");
   el("phonicPricingNote").textContent = phonicParts.join(" ");
@@ -214,7 +214,7 @@ function renderEvents(events) {
 
 function exportCsv() {
   if (!currentData) return;
-  const rows = [["Name", "Email", "User ID", "Registered At", "Chat Requests", "Voice Sessions", "Voice Minutes", "User Speech Minutes", "Assistant Speech Minutes", "Input Tokens", "Cached Input Tokens", "Output Tokens", "DeepSeek Unpriced Requests", "Search Requests", "Fetch Requests", "DeepSeek Cost USD", "Search Cost USD", "Fetch Cost USD", "Phonic Cost USD", "Phonic Unpriced Sessions", "Known Total Cost USD"]];
+  const rows = [["Name", "Email", "User ID", "Registered At", "DeepSeek Requests", "Voice Sessions", "Voice Minutes", "User Speech Minutes", "Assistant Speech Minutes", "Input Tokens", "Cached Input Tokens", "Output Tokens", "DeepSeek Unpriced Requests", "Search Requests", "Fetch Requests", "DeepSeek Cost USD", "Search Cost USD", "Fetch Cost USD", "Phonic Cost USD", "Phonic Unpriced Sessions", "Known Total Cost USD"]];
   const query = String(userSearch.value || "").trim().toLowerCase();
   for (const user of currentData.users || []) {
     if (query && ![user.email, user.ownerName, user.userId].some((value) => String(value || "").toLowerCase().includes(query))) continue;

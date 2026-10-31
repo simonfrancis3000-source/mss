@@ -1,5 +1,7 @@
 import http from "node:http";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { authenticateSupabaseRequest, rateLimitIdentity } from "./supabase-auth.js";
+import { buildDeepSeekUsageEvent, createPhonicUsageSession, verifyPhonicUsageSession, clampVoiceDuration } from "./usage.js";
 import { buildHomePersonaSystemPrompt } from "../src/home-persona-reasoning.js";
 import { cleanKnowledgeCandidate } from "../src/shared-knowledge-validation.js";
 import { cleanPersonaMemoryCandidate, MEMORY_TOPICS } from "../src/persona-memory.js";
@@ -10,6 +12,9 @@ import { buildRoomJourneyConversationContext } from "../src/room-journey.js";
 const PORT = Number.parseInt(process.env.PORT || "10000", 10);
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_PERSON_API_KEY || process.env.DEEPSEEK_API_KEY || "";
 const PHONIC_API_KEY = process.env.PHONIC_API_KEY || "";
+const SUPABASE_URL = String(process.env.SUPABASE_URL || "").replace(/\/+$/, "");
+const SUPABASE_PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || "";
+const USAGE_SIGNING_SECRET = process.env.USAGE_SIGNING_SECRET || PHONIC_API_KEY;
 const PROVIDER = "deepseek";
 const API_KEY = DEEPSEEK_API_KEY;
 const MODEL = String(process.env.DEEPSEEK_CHAT_MODEL || process.env.DEEPSEEK_FLASH_MODEL || "deepseek-flash").trim() || "deepseek-flash";
@@ -33,9 +38,12 @@ const ALLOWED_ORIGINS = new Set([
 const requestHistory = new Map();
 const knowledgeRequestHistory = new Map();
 const personaMemoryRequestHistory = new Map();
+const phonicUsageRequestHistory = new Map();
 const MAX_REQUESTS_PER_MINUTE = 12;
 const MAX_KNOWLEDGE_EXTRACTIONS_PER_MINUTE = 6;
 const MAX_PERSONA_MEMORY_EXTRACTIONS_PER_MINUTE = 8;
+const MAX_PHONIC_SESSIONS_PER_MINUTE = 5;
+const MAX_PHONIC_USAGE_REPORTS_PER_MINUTE = 20;
 const MAX_BODY_BYTES = 48 * 1024;
 const SUPPORTED_CONVERSATION_LANGUAGES = new Set(["en", "es", "fr", "it", "pt", "hi", "ja", "zh"]);
 const CONVERSATION_LANGUAGE_NAMES = {
@@ -67,7 +75,7 @@ function corsHeaders(origin) {
     "Access-Control-Allow-Origin": origin,
     "Vary": "Origin",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type"
+    "Access-Control-Allow-Headers": "Authorization, Content-Type"
   };
 }
 
@@ -92,17 +100,60 @@ async function readJson(request, maxBytes = MAX_BODY_BYTES) {
   }
 }
 
-function limitReached(request, history = requestHistory, maxRequests = MAX_REQUESTS_PER_MINUTE) {
+function limitReached(request, history = requestHistory, maxRequests = MAX_REQUESTS_PER_MINUTE, userId = "") {
   const forwarded = request.headers["x-forwarded-for"];
   const ip = typeof forwarded === "string" ? forwarded.split(",")[0].trim() : "unknown";
+  const key = rateLimitIdentity(userId, ip);
   const now = Date.now();
-  const current = history.get(ip);
+  const current = history.get(key);
   if (!current || now - current.start > 60_000) {
-    history.set(ip, { start: now, count: 1 });
+    history.set(key, { start: now, count: 1 });
     return false;
   }
   current.count += 1;
   return current.count > maxRequests;
+}
+
+async function recordUsageEvent(event, accessToken) {
+  if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY || !accessToken || !event?.user_id) return false;
+  try {
+    const upstream = await fetch(SUPABASE_URL + "/rest/v1/synqme_usage_events", {
+      method: "POST",
+      headers: {
+        apikey: SUPABASE_PUBLISHABLE_KEY,
+        Authorization: "Bearer " + accessToken,
+        "Content-Type": "application/json",
+        Prefer: "return=minimal"
+      },
+      body: JSON.stringify(event),
+      signal: AbortSignal.timeout(7000)
+    });
+    if (upstream.status === 409) return true;
+    if (!upstream.ok) {
+      const detail = String(await upstream.text().catch(() => "")).slice(0, 180);
+      console.warn("SYNQ.ME usage event insert failed", { status: upstream.status, detail });
+      return false;
+    }
+    return true;
+  } catch (error) {
+    console.warn("SYNQ.ME usage event insert failed", {
+      name: error?.name || "Error",
+      message: String(error?.message || "unknown error").slice(0, 160)
+    });
+    return false;
+  }
+}
+
+async function recordDeepSeekUsage(authContext, result, operation) {
+  if (!authContext?.user?.id || !authContext?.accessToken) return false;
+  const event = buildDeepSeekUsageEvent({
+    userId: authContext.user.id,
+    result,
+    operation,
+    requestId: randomUUID()
+  });
+  if (!event) return false;
+  return recordUsageEvent(event, authContext.accessToken);
 }
 
 function cleanMessages(input) {
@@ -421,6 +472,20 @@ const app = http.createServer(async (request, response) => {
   }
 
   const url = new URL(request.url || "/", "http://localhost");
+  const authenticatedRoutes = new Set([
+    "/api/chat", "/api/memory/extract", "/api/knowledge/extract",
+    "/api/phonic/session", "/api/phonic/usage"
+  ]);
+  let authContext = null;
+  if (request.method === "POST" && authenticatedRoutes.has(url.pathname)) {
+    const authResult = await authenticateSupabaseRequest(request, {
+      supabaseUrl: SUPABASE_URL,
+      publishableKey: SUPABASE_PUBLISHABLE_KEY
+    });
+    if (!authResult.ok) return json(response, authResult.status, { error: authResult.error }, headers || {});
+    authContext = authResult;
+  }
+
   if (request.method === "GET" && url.pathname === "/health") {
     return json(response, 200, {
       ok: true,
@@ -429,7 +494,9 @@ const app = http.createServer(async (request, response) => {
       configured: Boolean(API_KEY),
       model: MODEL,
       diagnosticsVersion: "deepseek-flash-chat-v1",
-      phonicConfigured: Boolean(PHONIC_API_KEY)
+      phonicConfigured: Boolean(PHONIC_API_KEY),
+      accountAuthConfigured: Boolean(SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY),
+      usageTrackingConfigured: Boolean(SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY)
     }, headers || {});
   }
 
@@ -440,7 +507,7 @@ const app = http.createServer(async (request, response) => {
         error: "Phonic real-time voice is not configured. Add PHONIC_API_KEY to the Render API environment."
       }, headers || {});
     }
-    if (limitReached(request)) {
+    if (limitReached(request, phonicUsageRequestHistory, MAX_PHONIC_SESSIONS_PER_MINUTE, authContext.user.id)) {
       return json(response, 429, { error: "Too many voice requests. Wait a minute, then try again." }, headers || {});
     }
 
@@ -479,9 +546,14 @@ const app = http.createServer(async (request, response) => {
         return json(response, 502, { error: "Phonic did not return a session token." }, headers || {});
       }
 
+      const usageSession = createPhonicUsageSession({
+        userId: authContext.user.id,
+        secret: USAGE_SIGNING_SECRET
+      });
       return json(response, 200, {
         sessionToken: payload.session_token,
-        websocketUrl: "wss://api.phonic.ai/v1/sts/ws"
+        websocketUrl: "wss://api.phonic.ai/v1/sts/ws",
+        usageSession
       }, headers || {});
     } catch (error) {
       const status = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
@@ -501,10 +573,65 @@ const app = http.createServer(async (request, response) => {
     }
   }
 
+  if (request.method === "POST" && url.pathname === "/api/phonic/usage") {
+    if (limitReached(request, phonicUsageRequestHistory, MAX_PHONIC_USAGE_REPORTS_PER_MINUTE, authContext.user.id)) {
+      return json(response, 429, { error: "Too many voice usage reports. Try again in a minute." }, headers || {});
+    }
+    try {
+      const body = await readJson(request, 4096);
+      const usageSession = body?.usageSession;
+      if (!verifyPhonicUsageSession(usageSession, { userId: authContext.user.id, secret: USAGE_SIGNING_SECRET })) {
+        return json(response, 401, { error: "This voice usage receipt is invalid or has expired." }, headers || {});
+      }
+      const startedAtMs = Date.parse(usageSession.startedAt);
+      const now = Date.now();
+      const elapsedLimit = Math.min(4 * 60 * 60 * 1000, Math.max(0, now - startedAtMs) + 30_000);
+      const voiceDurationMs = clampVoiceDuration(body?.voiceDurationMs, elapsedLimit);
+      let userSpeechMs = clampVoiceDuration(body?.userSpeechMs, voiceDurationMs);
+      let assistantSpeechMs = clampVoiceDuration(body?.assistantSpeechMs, voiceDurationMs);
+      const combinedSpeechMs = userSpeechMs + assistantSpeechMs;
+      if (combinedSpeechMs > voiceDurationMs && combinedSpeechMs > 0) {
+        const scale = voiceDurationMs / combinedSpeechMs;
+        userSpeechMs = Math.floor(userSpeechMs * scale);
+        assistantSpeechMs = Math.floor(assistantSpeechMs * scale);
+      }
+      if (voiceDurationMs < 1000) return json(response, 400, { error: "The recorded voice session is too short to report." }, headers || {});
+      const inserted = await recordUsageEvent({
+        user_id: authContext.user.id,
+        event_type: "phonic_voice",
+        provider: "phonic",
+        model: "phonic-sts",
+        request_id: usageSession.id,
+        status: "estimated",
+        voice_duration_ms: voiceDurationMs,
+        user_speech_ms: userSpeechMs,
+        assistant_speech_ms: assistantSpeechMs,
+        phonic_cost_usd: null,
+        phonic_rate_per_minute_usd: null,
+        currency: "USD",
+        cost_method: "phonic_admin_rate_card",
+        pricing_snapshot: { rate_source: "admin_configuration", captured_at: new Date().toISOString() },
+        metadata: { duration_source: "client_audio_session_clock", usage_receipt_verified: true },
+        started_at: new Date(startedAtMs).toISOString(),
+        ended_at: new Date(now).toISOString()
+      }, authContext.accessToken);
+      return json(response, 202, {
+        recorded: inserted,
+        pricing: "admin_rate_card",
+        message: inserted ? "Voice usage recorded." : "Voice usage could not be recorded. It will not be included in the usage dashboard."
+      }, headers || {});
+    } catch (error) {
+      const status = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
+      if (status === 400 || status === 413) return json(response, status, { error: error.message }, headers || {});
+      console.warn("SYNQ.ME Phonic usage report failed", { message: String(error?.message || "Unknown error").slice(0, 180) });
+      return json(response, 500, { error: "Phonic usage could not be recorded." }, headers || {});
+    }
+  }
+
   if (request.method === "POST" && url.pathname === "/api/memory/extract") {
     if (origin && headers === null) return json(response, 403, { error: "Origin not allowed." }, headers || {});
     if (!DEEPSEEK_API_KEY) return json(response, 503, { error: "DeepSeek memory extraction is not configured.", provider: "deepseek" }, headers || {});
-    if (limitReached(request, personaMemoryRequestHistory, MAX_PERSONA_MEMORY_EXTRACTIONS_PER_MINUTE)) {
+    if (limitReached(request, personaMemoryRequestHistory, MAX_PERSONA_MEMORY_EXTRACTIONS_PER_MINUTE, authContext.user.id)) {
       return json(response, 429, { error: "Memory extraction rate limit reached. Your conversation is unaffected.", provider: "deepseek" }, headers || {});
     }
 
@@ -570,6 +697,7 @@ const app = http.createServer(async (request, response) => {
       }
 
       const result = await upstream.json();
+      await recordDeepSeekUsage(authContext, result, "memory_extract");
       const raw = result?.choices?.[0]?.message?.content;
       let parsed;
       try { parsed = JSON.parse(typeof raw === "string" ? raw : "{}"); }
@@ -599,7 +727,7 @@ const app = http.createServer(async (request, response) => {
   if (request.method === "POST" && url.pathname === "/api/knowledge/extract") {
     if (origin && headers === null) return json(response, 403, { error: "Origin not allowed." });
     if (!API_KEY) return json(response, 503, { error: "AI knowledge extraction is not configured." }, headers || {});
-    if (limitReached(request, knowledgeRequestHistory, MAX_KNOWLEDGE_EXTRACTIONS_PER_MINUTE)) {
+    if (limitReached(request, knowledgeRequestHistory, MAX_KNOWLEDGE_EXTRACTIONS_PER_MINUTE, authContext.user.id)) {
       return json(response, 429, { error: "Shared-learning extraction limit reached. Your conversation is unaffected." }, headers || {});
     }
 
@@ -647,6 +775,7 @@ const app = http.createServer(async (request, response) => {
         return json(response, 502, { error: "The shared-learning extractor could not complete this turn." }, headers || {});
       }
       const result = await upstream.json();
+      await recordDeepSeekUsage(authContext, result, "knowledge_extract");
       const raw = result?.choices?.[0]?.message?.content;
       let parsed;
       try { parsed = JSON.parse(typeof raw === "string" ? raw : "{}"); }
@@ -691,7 +820,7 @@ const app = http.createServer(async (request, response) => {
     const requiredKey = "DEEPSEEK_PERSON_API_KEY";
     return json(response, 503, { error: "AI is not configured. Add " + requiredKey + " to the Render backend environment." }, headers || {});
   }
-  if (limitReached(request)) {
+  if (limitReached(request, requestHistory, MAX_REQUESTS_PER_MINUTE, authContext.user.id)) {
     return json(response, 429, { error: "Too many requests. Wait a minute, then try again." }, headers || {});
   }
 
@@ -857,6 +986,7 @@ const app = http.createServer(async (request, response) => {
     }
 
     const result = await upstream.json();
+    await recordDeepSeekUsage(authContext, result, "chat");
     const finishReason = result?.choices?.[0]?.finish_reason;
     if (finishReason === "length") {
       console.warn("DeepSeek reply reached the completion token limit", { model: MODEL, finishReason });

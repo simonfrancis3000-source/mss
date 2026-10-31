@@ -28,6 +28,17 @@ const HOME_TOPICS = [
   { id: "waste_and_recycling", pattern: /\b(rubbish|trash|garbage|recycling|recycle|compost|food waste|bin|bins|waste)\b/i }
 ];
 
+const MEMORY_CONCEPTS = [
+  { id: "laundry", pattern: /\b(laundry|washing machine|washing clothes|washing|clothes?|clothing|garments?|shirts?|trousers|pants|socks?|towels?|bedding|sheets?|fold(?:ed|ing)?|ironing|delicates?|detergent|hamper)\b/i },
+  { id: "kitchenware", pattern: /\b(dishes|dishwasher|plates?|cups?|mugs?|bowls?|crockery|cutlery|utensils?|pots?|pans?)\b/i },
+  { id: "surface_care", pattern: /\b(worktops?|countertops?|counter tops?|surfaces?|wipe(?:s|d|ing)?|dust(?:s|ed|ing)?|polish(?:es|ed|ing)?|microfibre|microfiber|cleaning cloths?|spray cleaner)\b/i },
+  { id: "floor_care", pattern: /\b(vacuum(?:s|ed|ing)?|hoover(?:s|ed|ing)?|mop(?:s|ped|ping)?|sweep(?:s|ing)?|floors?|carpets?|rugs?)\b/i },
+  { id: "permission", pattern: /\b(permission|approval|authori[sz]ation|ask me first|ask before|check with me|confirm with me|without asking|autonomously|independently)\b/i },
+  { id: "storage", pattern: /\b(put away|putting away|store|stored|storage|cupboards?|drawers?|shelves|shelving|where things belong|place items|leave .* where|keep .* where)\b/i },
+  { id: "fragile_items", pattern: /\b(fragile|breakable|delicate|glassware|ornaments?|keepsakes?|sentimental items?)\b/i },
+  { id: "timing", pattern: /\b(morning|afternoon|evening|overnight|bedtime|after breakfast|before breakfast|after dinner|before dinner|schedule|routine|twice a day|daily|every day|weekly)\b/i }
+];
+
 const TOPIC_SYNONYMS = new Map([
   ["hoover", "vacuuming"], ["hoovering", "vacuuming"], ["vacuum", "vacuuming"],
   ["carpet", "vacuuming"], ["rug", "vacuuming"], ["mop", "vacuuming"],
@@ -59,6 +70,9 @@ export function extractHomeMemoryTopics(value) {
 export function extractHomeMemoryKeys(value) {
   const text = String(value || "");
   const keys = new Set(extractHomeMemoryTopics(text).map((topic) => "topic:" + topic));
+  for (const concept of MEMORY_CONCEPTS) {
+    if (concept.pattern.test(text)) keys.add("concept:" + concept.id);
+  }
   const words = normaliseText(text).split(" ").filter((word) => word.length >= 3 && !STOP_WORDS.has(word));
   for (const word of words.slice(0, 60)) keys.add("word:" + word);
   return [...keys];
@@ -138,9 +152,12 @@ export function rankHomeMemoryCandidates(query, messages, { limit = 6 } = {}) {
     const ownContent = typeof message?.content === "string" ? message.content.trim() : "";
     const precomputedKeys = message?.search_keys || message?.searchKeys;
     const neighbourMessages = relatedContextMessages(messages, index);
-    const candidateKeys = new Set(Array.isArray(precomputedKeys) && precomputedKeys.length
-      ? precomputedKeys
-      : neighbourMessages.flatMap((neighbour) => extractHomeMemoryKeys(neighbour?.content)));
+    // Combine persisted keys with current keys so older archive rows benefit
+    // from new concept aliases without requiring a backfill job.
+    const candidateKeys = new Set([
+      ...(Array.isArray(precomputedKeys) ? precomputedKeys : []),
+      ...neighbourMessages.flatMap((neighbour) => extractHomeMemoryKeys(neighbour?.content))
+    ]);
     const candidateTopics = new Set([
       ...(Array.isArray(message?.topics) ? message.topics : []),
       ...neighbourMessages.flatMap((neighbour) => extractHomeMemoryTopics(neighbour?.content))

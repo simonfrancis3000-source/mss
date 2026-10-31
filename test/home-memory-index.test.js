@@ -57,3 +57,28 @@ test("empty or malformed inputs fail safely", () => {
   assert.deepEqual(buildHomeMemoryIndexRows(null, "user-123"), []);
   assert.deepEqual(rankHomeMemoryCandidates("kitchen", null), []);
 });
+
+
+test("concept retrieval connects different wording for laundry preferences", () => {
+  const archivedTurn = {
+    role: "user",
+    content: "I prefer dark garments stored separately from light items.",
+    timestamp: "2026-10-12T08:00:00.000Z",
+    search_keys: ["word:prefer", "word:dark", "word:garments", "word:stored", "word:separately"]
+  };
+  const query = "Where should my dark shirts go after washing?";
+  assert.ok(extractHomeMemoryKeys(archivedTurn.content).includes("concept:laundry"));
+  assert.ok(extractHomeMemoryKeys(query).includes("concept:laundry"));
+  const matches = rankHomeMemoryCandidates(query, [archivedTurn]);
+  assert.equal(matches[0]?.content, archivedTurn.content);
+});
+
+test("concept retrieval links everyday names for kitchenware", () => {
+  const memory = {
+    role: "user",
+    content: "Please leave the cups and glasses on the draining rack.",
+    timestamp: "2026-10-12T08:00:00.000Z"
+  };
+  const matches = rankHomeMemoryCandidates("What should happen to the mugs by the sink?", [memory]);
+  assert.equal(matches[0]?.content, memory.content);
+});

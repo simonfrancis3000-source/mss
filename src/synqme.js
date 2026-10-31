@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { createPhonicVoiceConversation } from "./phonic-voice.js";
+import { buildPexiCapabilityPlan, cleanPexiCapabilityManifest } from "./pexi-readiness.js";
 import { companionThinkingMessage, companionWelcomeMessage, isCompanionWelcomeMessage } from "./companion-copy.js";
 import { assistantReplyRepeatsRecentAssistant, enforceFirstPersonTaskQuestions, normaliseVoicePreference, phonicVoiceIdForPreference } from "./voice-language.js";
 import { ROOM_JOURNEY_ROOMS, addMonthsAnchored, buildRoomProgressSnapshot, getRoomJourneySchedule, getRoomTaskStates } from "./room-journey.js";
@@ -24,6 +25,14 @@ import {
 
 const STORAGE_KEY = "synqme-demo-v1";
 const ACCOUNT_DRAFT_KEY = "synqme-pending-account-migration-v1";
+const PEXI_CAPABILITY_MANIFEST_KEY = "synqme-pexi-capability-manifest-v1";
+let pexiCapabilityManifest = (() => {
+  try {
+    return cleanPexiCapabilityManifest(JSON.parse(localStorage.getItem(PEXI_CAPABILITY_MANIFEST_KEY) || "null"));
+  } catch {
+    return null;
+  }
+})();
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
 const PHONIC_API_BASE_URL = String(import.meta.env.VITE_PHONIC_API_BASE_URL || import.meta.env.VITE_API_BASE_URL || "https://synqme-api.onrender.com").replace(/\/+$/, "");
 const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL || "").replace(/\/+$/, "");
@@ -91,6 +100,16 @@ const supabase = SUPABASE_URL && SUPABASE_KEY
     })
   : null;
 const WELCOME = companionWelcomeMessage("en", "Freya");
+
+async function authenticatedApiHeaders(extra = {}) {
+  if (!supabase) throw new Error("Your SYNQ.ME account session is unavailable. Sign in again.");
+  const { data, error } = await supabase.auth.getSession();
+  const token = data?.session?.access_token;
+  if (error || !token || data?.session?.user?.is_anonymous) {
+    throw new Error("Your SYNQ.ME account session has expired. Sign in again.");
+  }
+  return { "Content-Type": "application/json", ...extra, Authorization: "Bearer " + token };
+}
 
 function localizeWelcomeMessage(language) {
   const welcome = companionWelcomeMessage(language, selectedCompanionDisplayName());
@@ -214,6 +233,11 @@ const elements = {
   exportPexiPackage: $("#exportPexiPackage"),
   pexiReadinessSummary: $("#pexiReadinessSummary"),
   pexiReadinessStatus: $("#pexiReadinessStatus"),
+  pexiCapabilityPlanList: $("#pexiCapabilityPlanList"),
+  downloadPexiManifestTemplate: $("#downloadPexiManifestTemplate"),
+  pexiManifestInput: $("#pexiManifestInput"),
+  pexiManifestStatus: $("#pexiManifestStatus"),
+  removePexiManifest: $("#removePexiManifest"),
   closeSettings: $("#closeSettings"),
   cancelSettings: $("#cancelSettings"),
   settingsForm: $("#settingsForm"),
@@ -402,6 +426,13 @@ let lastAIReplyUsedFallback = false;
 let voiceModeActive = false;
 let voiceInputMuted = false;
 let phonicVoiceConversation = null;
+let phonicUsageSession = null;
+let phonicUsageStartedAt = 0;
+let phonicUserSpeechStartedAt = 0;
+let phonicAssistantSpeechStartedAt = 0;
+let phonicUserSpeechMs = 0;
+let phonicAssistantSpeechMs = 0;
+let phonicUsageSubmitted = false;
 const phonicItemMap = new Map();
 const phonicTurnMetadata = new Map();
 let assistantIsSpeaking = false;
@@ -828,7 +859,7 @@ async function processStructuredMemoryTurn(userMessage, userTimestamp, shouldExt
     }));
     const response = await fetch(API_BASE + "/api/memory/extract", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: await authenticatedApiHeaders(),
       body: JSON.stringify({ messages: recent, existingMemories })
     });
     let data = {};
@@ -1204,7 +1235,7 @@ async function contributeSharedKnowledgeFromTurn() {
   try {
     const response = await fetch(API_BASE + "/api/knowledge/extract", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: await authenticatedApiHeaders(),
       body: JSON.stringify({ messages })
     });
     if (!response.ok) return false;
@@ -3195,24 +3226,191 @@ function milestoneUnlocked(milestone) {
   return Boolean(milestone.unlocked(state));
 }
 
+function formatPexiCapabilityLabel(value) {
+  return String(value || "").replace(/_/g, " ").replace(/\s+/g, " ").trim().replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function renderPexiCapabilityDetails(plan) {
+  const container = elements.pexiCapabilityPlanList;
+  if (!container) return;
+  container.replaceChildren();
+  const tasks = Array.isArray(plan?.tasks) ? plan.tasks : [];
+  container.hidden = tasks.length === 0;
+  const statusLabels = {
+    not_mapped: "NEEDS TASK MAPPING",
+    unverified: "AWAITING ROBOT SPECIFICATION",
+    partially_verified: "SPECIFICATION INCOMPLETE",
+    missing_capabilities: "DECLARED CAPABILITY GAP",
+    capability_match_safety_review_required: "SAFETY REVIEW REQUIRED"
+  };
+  for (const task of tasks) {
+    const card = document.createElement("article");
+    card.className = "pexi-capability-task";
+    const heading = document.createElement("div");
+    heading.className = "pexi-capability-task-head";
+    const title = document.createElement("strong");
+    title.textContent = task.label || formatPexiCapabilityLabel(task.function_id);
+    const state = document.createElement("span");
+    state.textContent = statusLabels[task.capability_status] || "REVIEW REQUIRED";
+    heading.append(title, state);
+    card.appendChild(heading);
+
+    const requirements = document.createElement("p");
+    requirements.textContent = "Required capabilities: " +
+      (task.required_capabilities || []).map(formatPexiCapabilityLabel).join(", ");
+    card.appendChild(requirements);
+
+    const evidence = document.createElement("p");
+    if (task.capability_status === "unverified") {
+      evidence.textContent = "No target-robot specification supplied. Every requirement remains unverified.";
+    } else if (task.missing_capabilities?.length) {
+      evidence.textContent = "Declared missing: " + task.missing_capabilities.map(formatPexiCapabilityLabel).join(", ");
+    } else if (task.unverified_capabilities?.length) {
+      evidence.textContent = "Declared so far: " + (task.supported_capabilities || []).map(formatPexiCapabilityLabel).join(", ") +
+        ". Still unverified: " + task.unverified_capabilities.map(formatPexiCapabilityLabel).join(", ");
+    } else {
+      evidence.textContent = "The supplied specification declares all required capabilities. This is not an independently verified capability match.";
+    }
+    card.appendChild(evidence);
+
+    const safety = document.createElement("p");
+    safety.textContent = "Safety gates requiring independent validation: " +
+      (task.unverified_safety_gates || []).map(formatPexiCapabilityLabel).join(", ");
+    card.appendChild(safety);
+
+    if (task.persona_preferences?.length) {
+      const prefs = document.createElement("p");
+      prefs.textContent = "Relevant persona details: " + task.persona_preferences.length;
+      card.appendChild(prefs);
+    }
+    container.appendChild(card);
+  }
+}
+
+function downloadPexiManifestTemplate() {
+  const template = {
+    schema: "app.mysecondself.pexi-capability-manifest",
+    schema_version: "1.0.0",
+    manufacturer: "REPLACE_WITH_MANUFACTURER",
+    model: "REPLACE_WITH_MODEL",
+    source: "REPLACE_WITH_MANUFACTURER_SPECIFICATION_URL",
+    completeness: "partial",
+    capabilities: [],
+    declared_safety_gates: []
+  };
+  const blob = new Blob([JSON.stringify(template, null, 2) + "\n"], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = "pexi-capability-manifest-template.json";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function renderPexiManifestStatus(kind = "") {
+  if (elements.pexiManifestStatus) {
+    elements.pexiManifestStatus.dataset.kind = kind;
+    elements.pexiManifestStatus.textContent = pexiCapabilityManifest
+      ? "Loaded " + pexiCapabilityManifest.manufacturer + " " + pexiCapabilityManifest.model +
+        " (" + pexiCapabilityManifest.completeness + " declaration). Source: " + pexiCapabilityManifest.source +
+        ". Supplier declarations are not independently verified."
+      : "No robot specification loaded. Import a manufacturer/model capability manifest in JSON format.";
+  }
+  if (elements.removePexiManifest) elements.removePexiManifest.hidden = !pexiCapabilityManifest;
+}
+
+function initialisePexiManifestControls() {
+  elements.downloadPexiManifestTemplate?.addEventListener("click", downloadPexiManifestTemplate);
+  elements.pexiManifestInput?.addEventListener("change", async () => {
+    const file = elements.pexiManifestInput.files?.[0];
+    elements.pexiManifestInput.value = "";
+    if (!file) return;
+    if (file.size > 128 * 1024) {
+      renderPexiManifestStatus("error");
+      if (elements.pexiManifestStatus) elements.pexiManifestStatus.textContent = "The capability manifest must be smaller than 128 KB.";
+      return;
+    }
+    try {
+      const parsed = JSON.parse(await file.text());
+      const cleaned = cleanPexiCapabilityManifest(parsed);
+      if (!cleaned) throw new Error("The file does not match the PEXI capability manifest schema.");
+      pexiCapabilityManifest = cleaned;
+      try { localStorage.setItem(PEXI_CAPABILITY_MANIFEST_KEY, JSON.stringify(cleaned)); } catch {}
+      renderPexiManifestStatus("success");
+      renderPexiReadiness();
+    } catch (error) {
+      renderPexiManifestStatus("error");
+      if (elements.pexiManifestStatus) elements.pexiManifestStatus.textContent =
+        String(error?.message || "This capability manifest could not be read.").slice(0, 220);
+    }
+  });
+  elements.removePexiManifest?.addEventListener("click", () => {
+    pexiCapabilityManifest = null;
+    try { localStorage.removeItem(PEXI_CAPABILITY_MANIFEST_KEY); } catch {}
+    renderPexiManifestStatus();
+    renderPexiReadiness();
+  });
+  renderPexiManifestStatus();
+}
+
 function renderPexiReadiness() {
   const activePreferences = activeLegacyPreferences();
-  const count = activePreferences.length;
-  const unresolved = activePreferences.reduce((sum, item) => {
-    return sum + preferenceExtraction(item).unresolvedFields.length;
-  }, 0);
+  const unresolved = activePreferences.reduce((sum, item) => sum + preferenceExtraction(item).unresolvedFields.length, 0);
+  const plan = buildPexiCapabilityPlan({
+    selectedFunctions: state.functions,
+    preferences: activePreferences.map((item) => ({
+      text: item.text,
+      category: item.category,
+      status: item.status,
+      unresolvedFields: preferenceExtraction(item).unresolvedFields
+    })),
+    targetRobotType: state.profile.robotType || "Humanoid robot",
+    capabilityManifest: pexiCapabilityManifest
+  });
+  const labels = {
+    persona_details_open: "DETAILS TO COMPLETE",
+    tasks_need_mapping: "TASKS NEED MAPPING",
+    awaiting_robot_specification: "AWAITING ROBOT SPEC",
+    required_capabilities_missing: "CAPABILITY GAPS",
+    capabilities_not_fully_declared: "SPECIFICATION INCOMPLETE",
+    safety_gates_to_confirm: "SAFETY GATES TO CONFIRM",
+    safety_validation_required: "SAFETY VALIDATION"
+  };
   if (elements.pexiReadinessStatus) {
-    elements.pexiReadinessStatus.textContent = unresolved
-      ? unresolved + (unresolved === 1 ? " OPEN DETAIL" : " OPEN DETAILS")
-      : count ? "READY FOR MAPPING" : "NOT STARTED";
+    elements.pexiReadinessStatus.textContent = !state.functions.length && !activePreferences.length
+      ? "NOT STARTED"
+      : labels[plan.status] || "AWAITING MAPPING";
   }
   if (elements.pexiReadinessSummary) {
-    elements.pexiReadinessSummary.textContent = !count
-      ? "As you share preferences, SYNQ.ME will separate what you stated from details that still need clarification. PEXI mapping remains a later compatibility step."
-      : unresolved
-        ? count + (count === 1 ? " stated preference" : " stated preferences") + " recorded. " + unresolved + (unresolved === 1 ? " detail still" : " details still") + " need clarification before the profile can be fully mapped for PEXI."
-        : count + (count === 1 ? " stated preference" : " stated preferences") + " recorded. The package can be exported for PEXI mapping, but target-robot capability and safety checks are still required.";
+    const parts = [];
+    if (plan.task_count) parts.push(plan.task_count + (plan.task_count === 1 ? " selected task" : " selected tasks") + " translated into a capability brief");
+    if (activePreferences.length) parts.push(activePreferences.length + (activePreferences.length === 1 ? " saved preference" : " saved preferences"));
+    if (unresolved) parts.push(unresolved + (unresolved === 1 ? " preference detail still needs" : " preference details still need") + " clarification");
+    if (plan.target_robot.capability_manifest_status === "not_supplied") {
+      parts.push("No manufacturer/model capability manifest has been supplied, so robot compatibility is unverified.");
+    } else {
+      parts.push("The imported manufacturer/model declarations have not been independently verified.");
+      if (plan.totals.missing_capabilities) {
+        parts.push(plan.totals.missing_capabilities + " required capability declarations are missing.");
+      } else if (plan.totals.unverified_capabilities) {
+        parts.push(plan.totals.unverified_capabilities + " capabilities remain unverified.");
+      } else if (plan.totals.undocumented_safety_gates) {
+        parts.push(plan.totals.undocumented_safety_gates + " safety gates still need source documentation.");
+      } else {
+        parts.push("Declared capabilities and safety gates still require independent validation.");
+      }
+    }
+    parts.push("No physical robot is connected and no task can be executed from this package.");
+    if (!parts.length) parts.push("Choose the household tasks you want your SecondSelf to understand. PEXI will translate them into capability requirements without assuming compatibility.");
+    if (!plan.task_count && !activePreferences.length) {
+      elements.pexiReadinessSummary.textContent = "Choose the household tasks you want your SecondSelf to understand. PEXI will translate them into capability requirements without assuming compatibility.";
+    } else {
+      elements.pexiReadinessSummary.textContent = parts.join(" ");
+    }
   }
+  renderPexiCapabilityDetails(plan);
 }
 
 function renderMilestones() {
@@ -3709,6 +3907,47 @@ function syncPhonicTranscriptItems(items) {
   return { changed, userAdded };
 }
 
+async function submitPhonicUsage() {
+  if (!phonicUsageSession || phonicUsageSubmitted) return;
+  phonicUsageSubmitted = true;
+  const endedAt = Date.now();
+  if (phonicUserSpeechStartedAt) {
+    phonicUserSpeechMs += Math.max(0, endedAt - phonicUserSpeechStartedAt);
+    phonicUserSpeechStartedAt = 0;
+  }
+  if (phonicAssistantSpeechStartedAt) {
+    phonicAssistantSpeechMs += Math.max(0, endedAt - phonicAssistantSpeechStartedAt);
+    phonicAssistantSpeechStartedAt = 0;
+  }
+  const startedAt = Date.parse(phonicUsageSession.startedAt) || phonicUsageStartedAt;
+  const voiceDurationMs = Math.max(0, Math.min(4 * 60 * 60 * 1000, endedAt - startedAt));
+  const usageSession = phonicUsageSession;
+  phonicUsageSession = null;
+  if (voiceDurationMs < 1000) return;
+  try {
+    const response = await fetch(PHONIC_API_BASE_URL + "/api/phonic/usage", {
+      method: "POST",
+      headers: await authenticatedApiHeaders(),
+      body: JSON.stringify({
+        usageSession,
+        voiceDurationMs,
+        userSpeechMs: Math.min(voiceDurationMs, phonicUserSpeechMs),
+        assistantSpeechMs: Math.min(voiceDurationMs, phonicAssistantSpeechMs)
+      })
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(String(payload.error || "Phonic usage could not be recorded."));
+    }
+  } catch (error) {
+    console.info("SYNQ.ME could not record Phonic session usage.", String(error?.message || "usage event failed").slice(0, 140));
+  } finally {
+    phonicUsageStartedAt = 0;
+    phonicUserSpeechMs = 0;
+    phonicAssistantSpeechMs = 0;
+  }
+}
+
 function handlePhonicVoiceEvent(event) {
   const companion = selectedCompanionDisplayName();
   switch (event.type) {
@@ -3726,10 +3965,15 @@ function handlePhonicVoiceEvent(event) {
       if (elements.conversationStatus) elements.conversationStatus.textContent = companion + " is listening";
       break;
     case "user_started_speaking":
+      if (!phonicUserSpeechStartedAt) phonicUserSpeechStartedAt = Date.now();
       updateVoiceExperience("listening", "Listening to you…");
       if (elements.conversationStatus) elements.conversationStatus.textContent = "Listening";
       break;
     case "user_finished_speaking":
+      if (phonicUserSpeechStartedAt) {
+        phonicUserSpeechMs += Math.max(0, Date.now() - phonicUserSpeechStartedAt);
+        phonicUserSpeechStartedAt = 0;
+      }
       updateVoiceExperience("thinking", companionThinkingMessage(companion));
       if (elements.conversationStatus) elements.conversationStatus.textContent = companionThinkingMessage(companion);
       break;
@@ -3742,6 +3986,7 @@ function handlePhonicVoiceEvent(event) {
       break;
     }
     case "assistant_started_speaking":
+      if (!phonicAssistantSpeechStartedAt) phonicAssistantSpeechStartedAt = Date.now();
       assistantIsSpeaking = true;
       updateVoiceExperience("speaking", companion + " is speaking.");
       if (elements.conversationStatus) elements.conversationStatus.textContent = companion + " is speaking";
@@ -3752,6 +3997,10 @@ function handlePhonicVoiceEvent(event) {
       break;
     }
     case "assistant_finished_speaking": {
+      if (phonicAssistantSpeechStartedAt) {
+        phonicAssistantSpeechMs += Math.max(0, Date.now() - phonicAssistantSpeechStartedAt);
+        phonicAssistantSpeechStartedAt = 0;
+      }
       assistantIsSpeaking = false;
       const synced = syncPhonicTranscriptItems(event.items);
       if (synced.userAdded) void flushCloudSave();
@@ -3893,6 +4142,13 @@ async function openVoiceExperience() {
   voiceInputMuted = false;
   voiceModeActive = true;
   assistantIsSpeaking = false;
+  phonicUsageSession = null;
+  phonicUsageStartedAt = 0;
+  phonicUserSpeechStartedAt = 0;
+  phonicAssistantSpeechStartedAt = 0;
+  phonicUserSpeechMs = 0;
+  phonicAssistantSpeechMs = 0;
+  phonicUsageSubmitted = false;
   phonicItemMap.clear();
   phonicTurnMetadata.clear();
   updateVoiceCompanionLabels();
@@ -3910,12 +4166,14 @@ async function openVoiceExperience() {
       getSession: async () => {
         const response = await fetch(PHONIC_API_BASE_URL + "/api/phonic/session", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: await authenticatedApiHeaders(),
           body: JSON.stringify({})
         });
         let payload = {};
         try { payload = await response.json(); } catch {}
         if (!response.ok) throw new Error("Voice session could not be created (HTTP " + response.status + ").");
+        phonicUsageSession = payload.usageSession || null;
+        phonicUsageStartedAt = Date.parse(phonicUsageSession?.startedAt || "") || Date.now();
         return payload;
       },
       getConfig: () => buildPhonicConfig(),
@@ -4056,6 +4314,7 @@ function updateVoiceModeButton() {
 }
 
 function stopVoiceConversation(statusMessage = "Voice conversation stopped.") {
+  void submitPhonicUsage();
   voiceModeActive = false;
   voiceInputMuted = false;
   assistantIsSpeaking = false;
@@ -4080,6 +4339,7 @@ elements.voiceModeButton?.addEventListener("click", () => {
 });
 
 initialiseRobotAndVoiceControls();
+initialisePexiManifestControls();
 
 
 function isClarificationRequest(message) {
@@ -4169,7 +4429,7 @@ async function requestAIReply(repairMode = false) {
     ]);
     const response = await fetch(API_BASE + "/api/chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: await authenticatedApiHeaders(),
       body: JSON.stringify({
         messages: conversationMessages,
         preferences,
@@ -4477,6 +4737,18 @@ function buildPexiPersonaPackage() {
     };
   });
 
+  const pexiCapabilityPlan = buildPexiCapabilityPlan({
+    selectedFunctions: state.functions,
+    preferences: activeLegacyPreferences().map((item) => ({
+      text: item.text,
+      category: item.category,
+      status: item.status,
+      unresolvedFields: preferenceExtraction(item).unresolvedFields
+    })),
+    targetRobotType: state.profile.robotType || "Humanoid robot",
+    capabilityManifest: pexiCapabilityManifest
+  });
+
   const boundaries = preferences.filter((item) =>
     item.category === "Consent & boundaries" ||
     item.explicit_fields.approvalBoundary ||
@@ -4486,7 +4758,7 @@ function buildPexiPersonaPackage() {
 
   return {
     schema: "app.mysecondself.pexi-persona",
-    schema_version: "1.0.0",
+    schema_version: "1.1.0",
     package_type: "portable_persona_profile",
     exported_at: now,
     source: {
@@ -4510,11 +4782,14 @@ function buildPexiPersonaPackage() {
     }),
     preferences,
     boundaries,
+    pexi_capability_plan: pexiCapabilityPlan,
     pending_clarification: state.pendingClarification || null,
     completeness: {
       preference_count: preferences.length,
       selected_domestic_function_count: state.functions.length,
-      unresolved_detail_count: preferences.reduce((sum, item) => sum + item.unresolved_fields.length, 0)
+      unresolved_detail_count: preferences.reduce((sum, item) => sum + item.unresolved_fields.length, 0),
+      capability_plan_status: pexiCapabilityPlan.status,
+      mapped_task_count: pexiCapabilityPlan.task_count
     },
     pexi_transfer_contract: {
       target: "PEXI",
@@ -4524,7 +4799,7 @@ function buildPexiPersonaPackage() {
       requires_user_authorisation_before_physical_actions: true,
       physical_robot_connected: false,
       physical_actions_enabled: false,
-      note: "This package carries stated persona data and unresolved details. It is not a robot-control command or proof of compatibility."
+      note: "This package carries stated persona data and a generic task-to-capability brief. A manufacturer/model capability manifest and safety validation are still required. It is not a robot-control command or proof of compatibility."
     }
   };
 }
