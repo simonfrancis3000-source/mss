@@ -245,3 +245,11 @@ test("out-of-home behaviour preferences receive dedicated memory topics and rema
   }]);
   assert.equal(ranked[0]?.id, "stranger-boundary");
 });
+
+
+test("explicit out-of-home behaviour statements trigger private persona memory extraction", () => {
+  assert.equal(shouldExtractPersonaMemory("I prefer you to stay beside me when we walk through crowds."), true);
+  assert.equal(shouldExtractPersonaMemory("I don't want you to approach strangers unless I invite you."), true);
+  assert.equal(shouldExtractPersonaMemory("I want you to keep your distance from unfamiliar dogs."), true);
+  assert.equal(shouldExtractPersonaMemory("A child approaches the robot in a public place."), false);
+});
