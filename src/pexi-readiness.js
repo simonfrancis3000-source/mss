@@ -91,6 +91,28 @@ function cleanStrings(input, limit = 40) {
     : [];
 }
 
+export function cleanPexiCapabilityManifest(input) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return null;
+  if (input.schema !== "app.mysecondself.pexi-capability-manifest" || input.schema_version !== "1.0.0") return null;
+  const manufacturer = typeof input.manufacturer === "string" ? input.manufacturer.trim().slice(0, 120) : "";
+  const model = typeof input.model === "string" ? input.model.trim().slice(0, 120) : "";
+  const source = typeof input.source === "string" ? input.source.trim().slice(0, 500) : "";
+  const completeness = input.completeness === "complete" ? "complete" : input.completeness === "partial" ? "partial" : "";
+  const capabilities = cleanStrings(input.capabilities, 200);
+  const declaredSafetyGates = cleanStrings(input.declared_safety_gates, 100);
+  if (!manufacturer || !model || !source || !completeness || !capabilities.length) return null;
+  return {
+    schema: "app.mysecondself.pexi-capability-manifest",
+    schema_version: "1.0.0",
+    manufacturer,
+    model,
+    source,
+    completeness,
+    capabilities,
+    declared_safety_gates: declaredSafetyGates
+  };
+}
+
 function relevantPreferences(preferences, profile) {
   return (Array.isArray(preferences) ? preferences : []).filter((item) => {
     const value = String(item?.text || item?.statement || "");
@@ -109,10 +131,10 @@ export function buildPexiCapabilityPlan({
   capabilityManifest = null
 } = {}) {
   const selected = cleanStrings(selectedFunctions, 20);
-  const manifest = capabilityManifest && typeof capabilityManifest === "object" ? capabilityManifest : null;
-  const declaredCapabilities = manifest ? cleanStrings(manifest.capabilities, 200) : [];
+  const manifest = cleanPexiCapabilityManifest(capabilityManifest);
+  const declaredCapabilities = manifest ? manifest.capabilities : [];
   const manifestComplete = manifest?.completeness === "complete";
-  const declaredSafety = manifest ? cleanStrings(manifest.verified_safety_gates, 100) : [];
+  const declaredSafety = manifest ? manifest.declared_safety_gates : [];
   const unresolvedPreferenceCount = (Array.isArray(preferences) ? preferences : [])
     .reduce((sum, item) => sum + (Array.isArray(item?.unresolvedFields) ? item.unresolvedFields.length : Array.isArray(item?.unresolved_fields) ? item.unresolved_fields.length : 0), 0);
 
@@ -127,8 +149,9 @@ export function buildPexiCapabilityPlan({
       missing_capabilities: [],
       unverified_capabilities: [],
       safety_gates: [],
-      verified_safety_gates: [],
+      declared_safety_gates: [],
       unverified_safety_gates: [],
+      undocumented_safety_gates: [],
       persona_preferences: []
     };
 
@@ -156,8 +179,10 @@ export function buildPexiCapabilityPlan({
       missing_capabilities: missing,
       unverified_capabilities: unverified,
       safety_gates: [...profile.safetyGates],
-      verified_safety_gates: verifiedSafety,
-      unverified_safety_gates: profile.safetyGates.filter((gate) => !verifiedSafety.includes(gate)),
+      declared_safety_gates: verifiedSafety,
+      // A supplier declaration is evidence to review, not independent safety validation.
+      unverified_safety_gates: [...profile.safetyGates],
+      undocumented_safety_gates: profile.safetyGates.filter((gate) => !verifiedSafety.includes(gate)),
       persona_preferences: relevantPreferences(preferences, profile)
     };
   });
@@ -170,8 +195,8 @@ export function buildPexiCapabilityPlan({
   else if (unknownTaskCount) status = "tasks_need_mapping";
   else if (manifest && missingCount) status = "required_capabilities_missing";
   else if (manifest && tasks.length && tasks.every((task) => task.capability_status === "capability_match_safety_review_required") &&
-    tasks.every((task) => task.unverified_safety_gates.length === 0)) status = "capability_match_pending_validation";
-  else if (manifest && tasks.length && tasks.every((task) => task.capability_status === "capability_match_safety_review_required")) status = "safety_validation_required";
+    tasks.every((task) => task.undocumented_safety_gates.length === 0)) status = "safety_validation_required";
+  else if (manifest && tasks.length && tasks.every((task) => task.capability_status === "capability_match_safety_review_required")) status = "safety_gates_to_confirm";
 
   return {
     schema: "app.mysecondself.pexi-capability-plan",
@@ -181,7 +206,8 @@ export function buildPexiCapabilityPlan({
       requested_type: String(targetRobotType || "Humanoid robot").slice(0, 80),
       manufacturer: String(manifest?.manufacturer || "").slice(0, 120) || null,
       model: String(manifest?.model || "").slice(0, 120) || null,
-      capability_manifest_status: !manifest ? "not_supplied" : manifestComplete ? "declared_complete" : "partial"
+      capability_manifest_status: !manifest ? "not_supplied" : manifestComplete ? "declared_complete" : "partial",
+      manifest_verification_status: manifest ? "not_independently_verified" : "not_supplied"
     },
     manifest_source: String(manifest?.source || "").slice(0, 500) || null,
     task_count: tasks.length,
@@ -191,6 +217,7 @@ export function buildPexiCapabilityPlan({
       missing_capabilities: tasks.reduce((sum, task) => sum + task.missing_capabilities.length, 0),
       unverified_capabilities: tasks.reduce((sum, task) => sum + task.unverified_capabilities.length, 0),
       unverified_safety_gates: tasks.reduce((sum, task) => sum + task.unverified_safety_gates.length, 0),
+      undocumented_safety_gates: tasks.reduce((sum, task) => sum + task.undocumented_safety_gates.length, 0),
       unresolved_preference_details: unresolvedPreferenceCount + unresolvedTaskDetails
     },
     execution_contract: {
