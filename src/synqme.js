@@ -2030,6 +2030,7 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
 
   state.preferences = mergePreferences(remotePreferences, draftState?.preferences || []);
   state.messages = mergeConversationMessages(remoteConversation?.messages || [], draftState?.messages || []);
+  activeOutOfHomeScenarioContext = findOutOfHomeScenarioContext(state.messages);
   localizeWelcomeMessage(state.profile.preferredLanguage || "en");
   state.pendingClarification = remoteConversation?.pending_clarification || draftState?.pendingClarification || null;
   state.apiConnected = false;
@@ -4902,6 +4903,7 @@ elements.resetDemo.addEventListener("click", () => {
   if (!window.confirm("Reset this browser demo, including your settings and saved preferences?")) return;
   try { localStorage.removeItem(STORAGE_KEY); } catch {}
   state = initialState();
+  activeOutOfHomeScenarioContext = null;
   state.apiConnected = false;
   elements.conversationStatus.textContent = "Ready to talk";
   elements.taskResult.hidden = true;
@@ -5228,6 +5230,7 @@ elements.signOutButton?.addEventListener("click", async () => {
     homeMemoryIndexUnavailable = false;
     homeMemoryIndexWarningShown = false;
     state = initialState();
+    activeOutOfHomeScenarioContext = null;
     try {
       localStorage.removeItem(STORAGE_KEY);
       localStorage.removeItem(ACCOUNT_DRAFT_KEY);
