@@ -41,8 +41,10 @@ test("frontend sends the signed-in access token with all five protected provider
 
 test("PEXI export contains the generic capability plan and never claims physical execution", async () => {
   const source = await readFile(new URL("../src/synqme.js", import.meta.url), "utf8");
+  const plan = await readFile(new URL("../src/pexi-readiness.js", import.meta.url), "utf8");
   assert.match(source, /pexi_capability_plan: pexiCapabilityPlan/);
-  assert.match(source, /compatibility_claimed: false/);
-  assert.match(source, /physical_actions_enabled: false/);
+  assert.match(plan, /compatibility_claimed: false/);
+  assert.match(plan, /physical_actions_enabled: false/);
   assert.match(source, /AWAITING ROBOT SPEC/);
+  assert.match(source, /pexiCapabilityPlan\.tasks/);
 });
