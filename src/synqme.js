@@ -5,6 +5,7 @@ import { companionThinkingMessage, companionWelcomeMessage, isCompanionWelcomeMe
 import { assistantReplyRepeatsRecentAssistant, enforceFirstPersonTaskQuestions, normaliseVoicePreference, phonicVoiceIdForPreference } from "./voice-language.js";
 import { ROOM_JOURNEY_ROOMS, addMonthsAnchored, buildRoomProgressSnapshot, getRoomJourneySchedule, getRoomTaskStates } from "./room-journey.js";
 import { OUT_OF_HOME_STAGES, OUT_OF_HOME_CATEGORIES, getOutOfHomeCategories, findOutOfHomeScenario, buildOutOfHomeScenarioPrompt } from "./out-of-home-training.js";
+import { findOutOfHomeScenarioContext } from "./out-of-home-persona-prompt.js";
 import {
   buildHomeMemoryIndexRows,
   extractHomeMemoryKeys,
@@ -434,6 +435,7 @@ function loadState() {
 }
 
 let state = loadState();
+let activeOutOfHomeScenarioContext = findOutOfHomeScenarioContext(state.messages);
 let isSending = false;
 let sendSequence = 0;
 let lastAIReplyUsedFallback = false;
@@ -2828,6 +2830,7 @@ async function setRoomJourneyTask(taskId) {
 function handleRoomJourneyClick(event) {
   const task = event.target.closest("[data-room-task-prompt]");
   if (task && elements.messageInput) {
+    activeOutOfHomeScenarioContext = null;
     const taskId = task.dataset.roomTaskId;
     if (taskId) void setRoomJourneyTask(taskId);
     elements.messageInput.value = task.dataset.roomTaskPrompt || "";
@@ -2836,7 +2839,10 @@ function handleRoomJourneyClick(event) {
     return;
   }
   const room = event.target.closest("[data-room-select]");
-  if (room && !room.disabled) void setRoomJourneyFocus(room.dataset.roomSelect);
+  if (room && !room.disabled) {
+    activeOutOfHomeScenarioContext = null;
+    void setRoomJourneyFocus(room.dataset.roomSelect);
+  }
 }
 
 function classifyPreference(message) {
@@ -4492,12 +4498,14 @@ function initialiseOutOfHomeTrainingControls() {
     if (!button) return;
     const stageId = button.dataset.outOfHomeStage;
     if (!OUT_OF_HOME_STAGES.some((item) => item.id === stageId)) return;
+    activeOutOfHomeScenarioContext = null;
     activeOutOfHomeStage = stageId;
     activeOutOfHomeCategoryId = getOutOfHomeCategories(stageId)[0]?.id || "";
     renderOutOfHomeTraining();
   });
 
   elements.outOfHomeCategorySelect?.addEventListener("change", () => {
+    activeOutOfHomeScenarioContext = null;
     activeOutOfHomeCategoryId = elements.outOfHomeCategorySelect.value;
     renderOutOfHomeTraining();
   });
@@ -4507,6 +4515,12 @@ function initialiseOutOfHomeTrainingControls() {
     if (!button || !elements.messageInput) return;
     const match = findOutOfHomeScenario(button.dataset.outOfHomeCategory, button.dataset.outOfHomeScenario);
     if (!match) return;
+    activeOutOfHomeScenarioContext = {
+      trainingArea: match.category.title,
+      scenario: match.scenario.title,
+      situation: match.scenario.situation,
+      behaviouralFocus: match.scenario.focus
+    };
     elements.messageInput.value = buildOutOfHomeScenarioPrompt(match.category, match.scenario);
     elements.messageInput.dispatchEvent(new Event("input", { bubbles: true }));
     if (elements.chatStage?.hidden) {
@@ -4624,6 +4638,7 @@ async function requestAIReply(repairMode = false) {
         },
         domesticFunctions,
         roomJourney: buildCurrentRoomJourneyContext(),
+        outOfHomeScenarioContext: activeOutOfHomeScenarioContext,
         pendingClarification: state.pendingClarification,
         memoryReferences: memoryReferences.map(({ role, content, timestamp, topics }) => ({ role, content, timestamp, topics })),
         personaMemories: relevantPersonaMemories.map(({ memory_key, topic, kind, scope_key, statement, status, confidence, conditions, source_message, source_timestamp, conflict_group }) => ({
@@ -4741,6 +4756,9 @@ async function sendMessage(rawText) {
   }
   const message = rawText.trim();
   if (!message || isSending) return;
+  if (/\b(change (?:the )?topic|change subject|different topic|something unrelated|back to (?:my )?(?:home|household)|switch to (?:my )?(?:home|household)|let's talk about (?:my )?home)\b/i.test(message)) {
+    activeOutOfHomeScenarioContext = null;
+  }
   const clarificationRequest = isClarificationRequest(message);
   const turnId = ++sendSequence;
   isSending = true;
