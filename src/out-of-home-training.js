@@ -218,6 +218,6 @@ export function buildOutOfHomeScenarioPrompt(category, scenario) {
     "Situation: " + scenario.situation,
     "Behavioural focus: " + scenario.focus,
     "",
-    "Help me decide how I want my companion to behave in this situation. Ask me one focused question at a time, explore relevant boundaries and do not rush through the whole scenario. Where relevant, consider safety, privacy, consent, personal space, children and the owner's authority. Capture only preferences I explicitly state or confirm. Distinguish the behaviour I want from the physical capabilities a particular robot may have. Never imply that a robot can safely perform a physical action until PEXI has checked the target robot's capabilities and the necessary safety conditions."
+    "Use this guided exercise to establish the owner's preferred behaviour in this situation. Ask me one focused question at a time, explore relevant boundaries and do not rush through the whole scenario. Where relevant, consider safety, privacy, consent, personal space, children and the owner's authority. Capture only preferences I explicitly state or confirm. Distinguish the behaviour I want from the physical capabilities a particular robot may have. Never imply that a robot can safely perform a physical action until PEXI has checked the target robot's capabilities and the necessary safety conditions."
   ].join("\n");
 }
