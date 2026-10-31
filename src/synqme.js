@@ -4927,6 +4927,32 @@ function buildPexiPersonaPackage() {
     capabilityManifest: pexiCapabilityManifest
   });
 
+  const activeMemories = activePersonaMemories();
+  const outOfHomeTopicIds = new Set([
+    "public_interactions", "social_relationships", "public_mobility", "out_of_home_safety",
+    "animal_interactions", "public_venues", "social_etiquette", "professional_community"
+  ]);
+  const personaMemories = activeMemories.map((memory) => ({
+    memory_id: memory.id,
+    topic: memory.topic || "general_household",
+    kind: memory.kind || "preference",
+    scope_key: memory.scope_key || "",
+    statement: memory.statement,
+    epistemic_status: memory.status || "user_stated",
+    confidence: Number.isFinite(Number(memory.confidence)) ? Number(memory.confidence) : null,
+    conditions: Array.isArray(memory.conditions) ? memory.conditions : [],
+    provenance: {
+      source_application: "SYNQ.ME",
+      source_type: "conversation",
+      recorded_at: memory.created_at || null,
+      last_updated_at: memory.updated_at || memory.created_at || null
+    },
+    execution_status: "not_executable",
+    requires_robot_capability_mapping: true
+  }));
+  const outOfHomePreferences = personaMemories.filter((memory) => outOfHomeTopicIds.has(memory.topic));
+  const outOfHomeBoundaries = outOfHomePreferences.filter((memory) => memory.kind === "boundary");
+
   const boundaries = preferences.filter((item) =>
     item.category === "Consent & boundaries" ||
     item.explicit_fields.approvalBoundary ||
@@ -4936,7 +4962,7 @@ function buildPexiPersonaPackage() {
 
   return {
     schema: "app.mysecondself.pexi-persona",
-    schema_version: "1.1.0",
+    schema_version: "1.2.0",
     package_type: "portable_persona_profile",
     exported_at: now,
     source: {
@@ -4959,11 +4985,16 @@ function buildPexiPersonaPackage() {
       return { function_id: id, label: activity?.label || id, status: "user_selected" };
     }),
     preferences,
+    persona_memories: personaMemories,
+    out_of_home_preferences: outOfHomePreferences,
+    out_of_home_boundaries: outOfHomeBoundaries,
     boundaries,
     pexi_capability_plan: pexiCapabilityPlan,
     pending_clarification: state.pendingClarification || null,
     completeness: {
       preference_count: preferences.length,
+      persona_memory_count: personaMemories.length,
+      out_of_home_preference_count: outOfHomePreferences.length,
       selected_domestic_function_count: state.functions.length,
       unresolved_detail_count: preferences.reduce((sum, item) => sum + item.unresolved_fields.length, 0),
       capability_plan_status: pexiCapabilityPlan.status,
@@ -4975,9 +5006,10 @@ function buildPexiPersonaPackage() {
       requires_robot_capability_mapping: true,
       requires_target_robot_safety_validation: true,
       requires_user_authorisation_before_physical_actions: true,
+      out_of_home_behaviour_preferences_included: true,
       physical_robot_connected: false,
       physical_actions_enabled: false,
-      note: "This package carries stated persona data and a generic task-to-capability brief. A manufacturer/model capability manifest and safety validation are still required. It is not a robot-control command or proof of compatibility."
+      note: "This package carries stated home and out-of-home persona data alongside a generic domestic task-to-capability brief. A manufacturer/model capability manifest and safety validation are still required before any physical action. It is not a robot-control command or proof of compatibility."
     }
   };
 }
