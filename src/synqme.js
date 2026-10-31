@@ -233,6 +233,8 @@ const elements = {
   exportPexiPackage: $("#exportPexiPackage"),
   pexiReadinessSummary: $("#pexiReadinessSummary"),
   pexiReadinessStatus: $("#pexiReadinessStatus"),
+  pexiCapabilityPlanList: $("#pexiCapabilityPlanList"),
+  downloadPexiManifestTemplate: $("#downloadPexiManifestTemplate"),
   pexiManifestInput: $("#pexiManifestInput"),
   pexiManifestStatus: $("#pexiManifestStatus"),
   removePexiManifest: $("#removePexiManifest"),
@@ -3224,6 +3226,89 @@ function milestoneUnlocked(milestone) {
   return Boolean(milestone.unlocked(state));
 }
 
+function formatPexiCapabilityLabel(value) {
+  return String(value || "").replace(/_/g, " ").replace(/\s+/g, " ").trim().replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function renderPexiCapabilityDetails(plan) {
+  const container = elements.pexiCapabilityPlanList;
+  if (!container) return;
+  container.replaceChildren();
+  const tasks = Array.isArray(plan?.tasks) ? plan.tasks : [];
+  container.hidden = tasks.length === 0;
+  const statusLabels = {
+    not_mapped: "NEEDS TASK MAPPING",
+    unverified: "AWAITING ROBOT SPECIFICATION",
+    partially_verified: "SPECIFICATION INCOMPLETE",
+    missing_capabilities: "DECLARED CAPABILITY GAP",
+    capability_match_safety_review_required: "SAFETY REVIEW REQUIRED"
+  };
+  for (const task of tasks) {
+    const card = document.createElement("article");
+    card.className = "pexi-capability-task";
+    const heading = document.createElement("div");
+    heading.className = "pexi-capability-task-head";
+    const title = document.createElement("strong");
+    title.textContent = task.label || formatPexiCapabilityLabel(task.function_id);
+    const state = document.createElement("span");
+    state.textContent = statusLabels[task.capability_status] || "REVIEW REQUIRED";
+    heading.append(title, state);
+    card.appendChild(heading);
+
+    const requirements = document.createElement("p");
+    requirements.textContent = "Required capabilities: " +
+      (task.required_capabilities || []).map(formatPexiCapabilityLabel).join(", ");
+    card.appendChild(requirements);
+
+    const evidence = document.createElement("p");
+    if (task.capability_status === "unverified") {
+      evidence.textContent = "No target-robot specification supplied. Every requirement remains unverified.";
+    } else if (task.missing_capabilities?.length) {
+      evidence.textContent = "Declared missing: " + task.missing_capabilities.map(formatPexiCapabilityLabel).join(", ");
+    } else if (task.unverified_capabilities?.length) {
+      evidence.textContent = "Declared so far: " + (task.supported_capabilities || []).map(formatPexiCapabilityLabel).join(", ") +
+        ". Still unverified: " + task.unverified_capabilities.map(formatPexiCapabilityLabel).join(", ");
+    } else {
+      evidence.textContent = "The supplied specification declares all required capabilities. This is not an independently verified capability match.";
+    }
+    card.appendChild(evidence);
+
+    const safety = document.createElement("p");
+    safety.textContent = "Safety gates requiring independent validation: " +
+      (task.unverified_safety_gates || []).map(formatPexiCapabilityLabel).join(", ");
+    card.appendChild(safety);
+
+    if (task.persona_preferences?.length) {
+      const prefs = document.createElement("p");
+      prefs.textContent = "Relevant persona details: " + task.persona_preferences.length;
+      card.appendChild(prefs);
+    }
+    container.appendChild(card);
+  }
+}
+
+function downloadPexiManifestTemplate() {
+  const template = {
+    schema: "app.mysecondself.pexi-capability-manifest",
+    schema_version: "1.0.0",
+    manufacturer: "REPLACE_WITH_MANUFACTURER",
+    model: "REPLACE_WITH_MODEL",
+    source: "REPLACE_WITH_MANUFACTURER_SPECIFICATION_URL",
+    completeness: "partial",
+    capabilities: [],
+    declared_safety_gates: []
+  };
+  const blob = new Blob([JSON.stringify(template, null, 2) + "\n"], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = "pexi-capability-manifest-template.json";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 function renderPexiManifestStatus(kind = "") {
   if (elements.pexiManifestStatus) {
     elements.pexiManifestStatus.dataset.kind = kind;
@@ -3237,6 +3322,7 @@ function renderPexiManifestStatus(kind = "") {
 }
 
 function initialisePexiManifestControls() {
+  elements.downloadPexiManifestTemplate?.addEventListener("click", downloadPexiManifestTemplate);
   elements.pexiManifestInput?.addEventListener("change", async () => {
     const file = elements.pexiManifestInput.files?.[0];
     elements.pexiManifestInput.value = "";
@@ -3318,8 +3404,13 @@ function renderPexiReadiness() {
     }
     parts.push("No physical robot is connected and no task can be executed from this package.");
     if (!parts.length) parts.push("Choose the household tasks you want your SecondSelf to understand. PEXI will translate them into capability requirements without assuming compatibility.");
-    elements.pexiReadinessSummary.textContent = parts.join(" ");
+    if (!plan.task_count && !activePreferences.length) {
+      elements.pexiReadinessSummary.textContent = "Choose the household tasks you want your SecondSelf to understand. PEXI will translate them into capability requirements without assuming compatibility.";
+    } else {
+      elements.pexiReadinessSummary.textContent = parts.join(" ");
+    }
   }
+  renderPexiCapabilityDetails(plan);
 }
 
 function renderMilestones() {
