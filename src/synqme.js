@@ -182,7 +182,6 @@ const MILESTONES = [
 const $ = (selector) => document.querySelector(selector);
 const elements = {
   splash: $("#appSplash"),
-  providerLabel: $("#providerLabel"),
   preferredLanguage: $("#preferredLanguage"),
   conversationStatus: $("#conversationStatus"),
   chatTranscriptShell: $("#chatTranscriptShell"),
@@ -3518,17 +3517,6 @@ function renderAll() {
   const achieved = MILESTONES.filter(milestoneUnlocked).length;
   const progress = Math.round((achieved / MILESTONES.length) * 100);
   if (elements.mobileProgressValue) elements.mobileProgressValue.textContent = progress + "%";
-  if (state.apiConnected && state.apiProvider) {
-    elements.providerLabel.textContent = state.apiProvider.toUpperCase() + " · " + (state.apiModel || "model") + " · LIVE";
-  } else if (state.apiError) {
-    elements.providerLabel.textContent = (state.apiProvider ? state.apiProvider.toUpperCase() : "AI SERVICE") + " · " + state.apiError.toUpperCase().replace(/_/g, " ");
-  } else if (state.apiConfigured === false) {
-    elements.providerLabel.textContent = (state.apiProvider ? state.apiProvider.toUpperCase() : "AI") + " NOT CONFIGURED";
-  } else if (state.apiConfigured === true && state.apiProvider) {
-    elements.providerLabel.textContent = state.apiProvider.toUpperCase() + " · " + (state.apiModel || "model") + " · READY";
-  } else {
-    elements.providerLabel.textContent = API_BASE ? "CHECKING AI SERVICE" : "AI SERVICE NOT CONFIGURED";
-  }
   document.title = name ? "SYNQ.ME | " + name + "’s SecondSelf" : "SYNQ.ME | Build Your SecondSelf";
   const intro = $(".conversation-intro p");
   if (intro) intro.textContent = robotName
@@ -4590,9 +4578,8 @@ async function requestAIReply(repairMode = false) {
     state.apiConnected = false;
     state.apiError = "deepseek-only policy";
     state.apiErrorDetail = state.apiProvider
-      ? "AI request blocked: SYNQ.ME is configured for DeepSeek only, but the connected backend reported a different provider. Redeploy the DeepSeek-only backend."
-      : "AI request blocked because the backend provider could not be verified as DeepSeek. Redeploy or restore the DeepSeek-only backend.";
-    elements.providerLabel.textContent = "DEEPSEEK ONLY · BACKEND CHECK REQUIRED";
+      ? "AMÏA could not verify the AI service connection. Please try again shortly."
+      : "AMÏA could not establish a verified AI service connection. Please try again shortly.";
     return null;
   }
   if (!repairMode) lastAIReplyUsedFallback = false;
@@ -4653,7 +4640,7 @@ async function requestAIReply(repairMode = false) {
     try { data = await response.json(); } catch {}
     const responseProvider = typeof data.provider === "string" ? data.provider.toLowerCase() : state.apiProvider;
     if (responseProvider && responseProvider !== "deepseek") {
-      throw new Error("SYNQ.ME is configured for DeepSeek only. The backend response was rejected because its provider did not match the DeepSeek-only policy. Redeploy the DeepSeek-only backend.");
+      throw new Error("The AI service connection did not pass its configuration check.");
     }
     if (data.provider) state.apiProvider = responseProvider;
     if (data.model) state.apiModel = String(data.model);
@@ -4672,7 +4659,6 @@ async function requestAIReply(repairMode = false) {
     state.apiConfigured = true;
     state.apiError = "";
     state.apiErrorDetail = "";
-    elements.providerLabel.textContent = (state.apiProvider || "AI").toUpperCase() + " · " + (state.apiModel || "model") + " · LIVE";
 
     // The backend can mark an output for review; don't initiate a second request
     // for a turn that already used its own fallback or repair strategy.
@@ -4683,13 +4669,8 @@ async function requestAIReply(repairMode = false) {
     console.info("SYNQ.ME AI request failed; no scripted question will be substituted.", error);
     state.apiConnected = false;
     state.apiError = responseErrorLabel(error);
-    state.apiErrorDetail = Number.isInteger(error?.apiStatus)
-      ? "HTTP " + error.apiStatus +
-        (Number.isInteger(error?.upstreamStatus) ? " · " + (state.apiProvider ? state.apiProvider.toUpperCase() : "UPSTREAM") + " upstream HTTP " + error.upstreamStatus : "") +
-        ": " + String(error?.message || "Request failed").slice(0, 260) +
-        (error?.errorCode ? " [reference " + error.errorCode + "]" : "")
-      : String(error?.message || "").slice(0, 260);
-    elements.providerLabel.textContent = (state.apiProvider ? state.apiProvider.toUpperCase() : "AI SERVICE") + " · " + state.apiError.toUpperCase().replace(/_/g, " ");
+    // Keep provider and model diagnostics in developer logs, not in the user interface.
+    state.apiErrorDetail = "AMÏA is temporarily unavailable. Please try again shortly.";
     return null;
   }
 }
@@ -4731,14 +4712,14 @@ async function checkAIBackend() {
     if (!state.apiConnected) {
       renderAll();
       elements.conversationStatus.textContent = state.apiConfigured
-        ? state.apiProvider.toUpperCase() + " · " + (state.apiModel || "model") + " ready"
-        : state.apiProvider.toUpperCase() + " is not configured";
+        ? "AMÏA is ready"
+        : "AMÏA is temporarily unavailable";
     }
   } catch (error) {
     state.apiError = "health check unavailable";
     if (!state.apiConnected) {
       renderAll();
-      elements.conversationStatus.textContent = "AI provider status could not be verified";
+      elements.conversationStatus.textContent = "AMÏA connection could not be verified";
     }
     console.info("SYNQ.ME could not verify backend provider settings.", error);
   }
@@ -4836,21 +4817,18 @@ async function sendMessage(rawText) {
   isSending = false;
   elements.sendButton.disabled = false;
   elements.messageInput.disabled = false;
-  const responseProviderLabel = (state.apiProvider ? state.apiProvider.toUpperCase() : "AI") + " · " + (state.apiModel || "model");
   elements.conversationStatus.textContent = sentToAIThisTurn && state.apiConnected
-    ? responseProviderLabel + " · reply received · saving to account…"
-    : "Reply received · saving to account…";
+    ? "Reply received · saving to your account…"
+    : "Reply received · saving to your account…";
   if (!voiceModeActive) elements.messageInput.focus();
 
   void flushCloudSave().then((conversationSaved) => {
     // An older save must not overwrite the status for a newer user turn.
     if (turnId !== sendSequence || isSending) return;
     elements.conversationStatus.textContent = conversationSaved
-      ? (sentToAIThisTurn && state.apiConnected
-          ? responseProviderLabel + " response · saved to account"
-          : state.apiError && sentToAIThisTurn
-            ? (state.apiErrorDetail || responseProviderLabel + " unavailable · no scripted reply")
-            : "Reply saved to account")
+      ? (state.apiError && sentToAIThisTurn
+          ? "AMÏA could not reply just now. Please try again."
+          : "Reply saved to your account")
       : "Reply received · account sync needs attention";
   });
 }
