@@ -4584,7 +4584,7 @@ function buildPexiPersonaPackage() {
 
   const pexiCapabilityPlan = buildPexiCapabilityPlan({
     selectedFunctions: state.functions,
-    preferences: state.preferences.map((item) => ({
+    preferences: activeLegacyPreferences().map((item) => ({
       text: item.text,
       category: item.category,
       status: item.status,
