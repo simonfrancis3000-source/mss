@@ -25,18 +25,18 @@ export function buildDeepSeekUsageEvent({
   requestId = randomUUID(),
   now = new Date()
 } = {}) {
-  const usage = result?.usage;
-  if (!usage || !userId) return null;
+  const usage = result?.usage && typeof result.usage === "object" ? result.usage : null;
+  if (!userId) return null;
 
-  const promptTokens = count(usage.prompt_tokens);
-  const completionTokens = count(usage.completion_tokens);
-  if (!promptTokens && !completionTokens) return null;
+  const promptTokens = count(usage?.prompt_tokens);
+  const completionTokens = count(usage?.completion_tokens);
+  const tokenUsageAvailable = Boolean(usage && (promptTokens > 0 || completionTokens > 0));
 
-  const promptDetails = usage.prompt_tokens_details || usage.promptTokensDetails || {};
+  const promptDetails = usage?.prompt_tokens_details || usage?.promptTokensDetails || {};
   const cacheHitTokens = Math.min(promptTokens, count(
-    usage.prompt_cache_hit_tokens ?? usage.cache_hit_tokens ?? promptDetails.cached_tokens ?? promptDetails.cache_hit_tokens
+    usage?.prompt_cache_hit_tokens ?? usage?.cache_hit_tokens ?? promptDetails.cached_tokens ?? promptDetails.cache_hit_tokens
   ));
-  const reportedCacheMiss = usage.prompt_cache_miss_tokens ?? usage.cache_miss_tokens ??
+  const reportedCacheMiss = usage?.prompt_cache_miss_tokens ?? usage?.cache_miss_tokens ??
     promptDetails.cache_miss_tokens;
   const cacheMissTokens = reportedCacheMiss === undefined || reportedCacheMiss === null
     ? Math.max(0, promptTokens - cacheHitTokens)
@@ -63,7 +63,7 @@ export function buildDeepSeekUsageEvent({
     total_tokens: count(usage.total_tokens) || promptTokens + completionTokens,
     deepseek_cost_usd: Number(cost.toFixed(12)),
     currency: "USD",
-    cost_method: "deepseek_usage_rate_card_estimate",
+    cost_method: tokenUsageAvailable ? "deepseek_usage_rate_card_estimate" : "deepseek_usage_missing",
     pricing_snapshot: {
       rate_card: "DeepSeek Flash",
       period,
@@ -74,7 +74,8 @@ export function buildDeepSeekUsageEvent({
     },
     metadata: {
       operation: String(operation).slice(0, 60),
-      usage_source: "provider_response",
+      usage_source: tokenUsageAvailable ? "provider_response" : "provider_response_missing",
+      token_usage_available: tokenUsageAvailable,
       cache_miss_derived: reportedCacheMiss === undefined || reportedCacheMiss === null
     },
     started_at: now.toISOString(),
