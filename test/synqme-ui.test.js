@@ -41,3 +41,14 @@ test("PEXI offers a target robot capability manifest import", async () => {
   assert.match(source, /PEXI_CAPABILITY_MANIFEST_KEY/);
   assert.match(source, /capabilityManifest: pexiCapabilityManifest/);
 });
+
+
+test("PEXI includes a per-task capability view and downloadable manifest template", async () => {
+  const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
+  assert.match(html, /id="pexiCapabilityPlanList"/);
+  assert.match(html, /id="downloadPexiManifestTemplate"/);
+  const source = await readFile(new URL("../src/synqme.js", import.meta.url), "utf8");
+  assert.match(source, /function renderPexiCapabilityDetails\(plan\)/);
+  assert.match(source, /function downloadPexiManifestTemplate\(\)/);
+  assert.match(source, /REPLACE_WITH_MANUFACTURER_SPECIFICATION_URL/);
+});
