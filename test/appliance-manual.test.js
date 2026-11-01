@@ -42,3 +42,29 @@ test('identity is accepted only when brand and full model were stated by the use
   assert.equal(validateApplianceIdentity({type:'dishwasher',brand:'Bosch',model:'ABC1234/02'},messages), null);
   assert.equal(validateApplianceIdentity({type:'dishwasher',brand:'Samsung',model:'ABC1234/01'},messages), null);
 });
+
+test('authenticated chat resolves a stated model and supplies only the link for account persistence', async (t) => {
+  const { spawn } = await import('node:child_process');
+  const { setTimeout: delay } = await import('node:timers/promises');
+  const port = 22000 + Math.floor(Math.random() * 20000);
+  const child = spawn(process.execPath, ['--import', './test/fixtures/appliance-provider-mock.mjs', 'server/index.js'], {
+    cwd: new URL('..', import.meta.url),
+    env: { ...process.env, PORT: String(port), DEEPSEEK_PERSON_API_KEY:'test-key', DEEPSEEK_SEARCH_API_KEY:'test-key', SUPABASE_URL:'https://auth.example.test', SUPABASE_PUBLISHABLE_KEY:'test-key' },
+    stdio: 'ignore'
+  });
+  t.after(() => child.kill());
+  let health;
+  for (let attempt=0; attempt<30; attempt++) {
+    try { health = await fetch(`http://127.0.0.1:${port}/health`); break; } catch { await delay(50); }
+  }
+  assert.ok(health?.ok);
+  const res = await fetch(`http://127.0.0.1:${port}/api/chat`, {
+    method:'POST', headers:{'Content-Type':'application/json',Authorization:'Bearer test-session'},
+    body: JSON.stringify({messages:[{role:'user',content:'My dishwasher is Bosch.'},{role:'assistant',content:'What is the model number?'},{role:'user',content:'ABC1234/01'}],profile:{preferredLanguage:'en'}})
+  });
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.appliance.manual_url, 'https://bosch-home.com/manual');
+  assert.equal(body.appliance.manual_status, 'matched');
+  assert.equal('excerpt' in body.appliance, false);
+});
