@@ -67,4 +67,15 @@ test('authenticated chat resolves a stated model and supplies only the link for 
   assert.equal(body.appliance.manual_url, 'https://bosch-home.com/manual');
   assert.equal(body.appliance.manual_status, 'matched');
   assert.equal('excerpt' in body.appliance, false);
+  assert.equal(body.amiaPersistence.status,'saved');
+  assert.equal(body.amiaPersistence.context_loaded,true);
+  assert.equal(body.amiaPersistence.appliance_saved,true);
+  assert.ok(Number.isFinite(Date.parse(body.appliance.verified_at)));
+  const restored=await fetch(`http://127.0.0.1:${port}/api/chat`,{
+    method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer test-session'},
+    body:JSON.stringify({messages:[{role:'user',content:'What cycles does my Bosch dishwasher support?'}],profile:{preferredLanguage:'en'}})
+  });
+  const reread=await restored.json();
+  assert.equal(reread.appliance.manual_status,'matched');
+  assert.equal(reread.appliance.model,'ABC1234/01');
 });

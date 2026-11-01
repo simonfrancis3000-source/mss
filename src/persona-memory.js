@@ -24,7 +24,7 @@ const STOP_WORDS = new Set([
   "that","the","their","them","then","there","these","they","this","those","what","when",
   "where","which","who","why","will","with","would","you","your","yours"
 ]);
-const SENSITIVE_MEMORY_PATTERN = /\b(?:password|passcode|pin code|access code|door code|alarm code|api key|secret key|social security|passport number|credit card|bank account|political party|religious affiliation|sexual orientation|medical diagnosis|immigration status|exact home address|home address|street address|my address|email address|phone number|phone is|ssn)\b/i;
+export const SENSITIVE_MEMORY_PATTERN = /\b(?:password|passcode|pin code|access code|door code|alarm code|api key|secret key|social security|passport number|credit card|bank account|political party|religious affiliation|sexual orientation|medical diagnosis|immigration status|exact home address|home address|street address|my address|email address|phone number|phone is|ssn)\b/i;
 const SENSITIVE_ATTRIBUTE_PATTERN = /password|passcode|pin|access|alarm|credential|secret|token|address|email|phone|bank|credit|medical|health|politic|religion|sexual|immigration|passport|government.?id|ssn|door.?code|access.?code|\bcode\b/i;
 
 export function normaliseMemoryText(value) {
@@ -137,6 +137,8 @@ export function cleanPersonaMemoryCandidate(input) {
     target_memory_key: typeof input.target_memory_key === "string" ? input.target_memory_key.trim().slice(0, 180) : "",
     confidence,
     status,
+    permission_policy: kind === "boundary" && status !== "inferred_pending_confirmation" &&
+      ["ask_first", "allowed", "prohibited"].includes(input.permission_policy) ? input.permission_policy : "unspecified",
     conditions,
     attributes,
     search_terms: searchTerms

@@ -24,6 +24,7 @@ const userSearch = el("userSearch");
 let currentData = null;
 let currentSession = null;
 let loading = false;
+let sessionGeneration = 0;
 
 function number(value, digits = 0) {
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: digits }).format(Number(value || 0));
@@ -65,6 +66,11 @@ function setBusy(isBusy) {
   el("periodSelect").disabled = isBusy;
 }
 function showLogin(message = "", kind = "") {
+  sessionGeneration += 1;
+  currentData = null;
+  userSearch.value = "";
+  renderDashboard({});
+  setBusy(false);
   loginPanel.hidden = false;
   dashboard.hidden = true;
   signOutButton.hidden = true;
@@ -86,10 +92,13 @@ async function getAccessToken() {
 
 async function loadDashboard() {
   if (loading) return;
+  const requestGeneration = sessionGeneration;
   setBusy(true);
   statusLine.textContent = "Refreshing usage data…";
   try {
     const token = await getAccessToken();
+    const requestUserId = currentSession?.user?.id;
+    if (requestGeneration !== sessionGeneration) return;
     const period = el("periodSelect").value;
     if (!ADMIN_USAGE_URL) throw new Error("Supabase is not configured in this build. Check the frontend environment variables.");
     const response = await fetch(ADMIN_USAGE_URL + "?period=" + encodeURIComponent(period), {
@@ -100,21 +109,28 @@ async function loadDashboard() {
       cache: "no-store"
     });
     const payload = await response.json().catch(() => ({}));
+    if (requestGeneration !== sessionGeneration || requestUserId !== currentSession?.user?.id) return;
     if (response.status === 401) throw new Error("Your session is no longer valid. Sign in again.");
     if (response.status === 403) throw new Error(payload.error || "This account is not on the administrator allowlist.");
     if (!response.ok) throw new Error(payload.error || "The admin API returned HTTP " + response.status + ".");
     currentData = payload;
     renderDashboard(payload);
+    showDashboard();
     statusLine.textContent = "Updated " + timestamp(new Date().toISOString()) + " · " + el("periodSelect").selectedOptions[0].textContent;
   } catch (error) {
+    if (requestGeneration !== sessionGeneration) return;
     statusLine.textContent = error?.message || "Could not load the administration data.";
     if (/session|sign in/i.test(statusLine.textContent)) {
       await supabase?.auth.signOut().catch(() => {});
       currentSession = null;
       showLogin(statusLine.textContent, "error");
+    } else if (/allowlist|authorised|authorized/i.test(statusLine.textContent)) {
+      showLogin(statusLine.textContent,"error");
+    } else if (dashboard.hidden) {
+      setNotice(loginNotice,statusLine.textContent,"error");
     }
   } finally {
-    setBusy(false);
+    if (requestGeneration === sessionGeneration) setBusy(false);
   }
 }
 
@@ -173,7 +189,7 @@ function renderUsers(users) {
   el("userCount").textContent = number(filtered.length) + " of " + number(users.length) + " accounts";
   const body = el("userTableBody");
   if (!filtered.length) {
-    body.innerHTML = '<tr><td colspan="8" class="empty-cell">No accounts match this search.</td></tr>';
+    body.innerHTML = '<tr><td colspan="9" class="empty-cell">No accounts match this search.</td></tr>';
     return;
   }
   body.innerHTML = filtered.map((user) => {
@@ -251,7 +267,6 @@ loginForm.addEventListener("submit", async (event) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error || !data?.session) throw new Error(error?.message || "Sign-in failed.");
     currentSession = data.session;
-    showDashboard();
     setBusy(false);
     await loadDashboard();
   } catch (error) {
@@ -262,10 +277,9 @@ loginForm.addEventListener("submit", async (event) => {
 });
 
 signOutButton.addEventListener("click", async () => {
-  await supabase?.auth.signOut();
   currentSession = null;
-  currentData = null;
   showLogin("You have signed out.");
+  await supabase?.auth.signOut();
 });
 el("periodSelect").addEventListener("change", loadDashboard);
 el("refreshButton").addEventListener("click", loadDashboard);
@@ -278,9 +292,10 @@ if (!supabase) {
   showLogin("This build is missing the Supabase URL or publishable/anon key.", "error");
 } else {
   supabase.auth.onAuthStateChange((_event, session) => {
+    const changedAccount = currentSession?.user?.id !== session?.user?.id;
     currentSession = session;
+    if (changedAccount) showLogin();
     if (session && dashboard.hidden) {
-      showDashboard();
       window.setTimeout(loadDashboard, 0);
     } else if (!session && !dashboard.hidden) {
       showLogin();
@@ -292,7 +307,6 @@ if (!supabase) {
       return;
     }
     currentSession = data.session;
-    showDashboard();
     void loadDashboard();
   });
 }

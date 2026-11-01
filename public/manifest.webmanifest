@@ -6,8 +6,8 @@
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#08090c",
-  "theme_color": "#08090c",
+  "background_color": "#e3f0f8",
+  "theme_color": "#e3f0f8",
   "icons": [
     {
       "src": "/synqme-icon.svg",
