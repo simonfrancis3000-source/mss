@@ -473,12 +473,15 @@ function renderScenarioJourney() {
   const counter = document.querySelector("#scenarioJourneyCount");
   const header = document.querySelector("#scenarioHeaderProgress");
   if (!target) return;
-  const data = scenarioData();
+  const ready = Boolean(cloudUserId && profileComplete() && roomJourney && roomJourney.user_id === cloudUserId);
+  const data = ready ? scenarioData() : {};
   const done = completedScenarioIds(data.completed);
-  if (counter) counter.textContent = done.length + " / 25 COMPLETE";
-  if (header) { header.textContent = "Progress: " + done.length + "/25"; header.setAttribute("aria-label", done.length + " of 25 scenarios completed"); }
+  const headerValue = document.querySelector("#scenarioHeaderValue");
+  if (counter) counter.textContent = ready ? done.length + " / 25 COMPLETE" : "PROGRESS UNAVAILABLE";
+  if (headerValue) headerValue.textContent = ready ? done.length + "/25" : "—/25";
+  if (header) header.setAttribute("aria-label", ready ? done.length + " of 25 scenarios completed" : "Scenario progress unavailable");
   target.replaceChildren();
-  if (!cloudUserId || !profileComplete() || !roomJourney) {
+  if (!ready) {
     target.textContent = roomJourneyTableUnavailable ? "Your scenario progress could not connect to your account. Try again when account sync is available." : "Sign in and complete your profile to begin your journey.";
     return;
   }
@@ -2576,6 +2579,10 @@ function renderMessages() {
 
 elements.chatMessages?.addEventListener("scroll", updateChatScrollbar, { passive: true });
 elements.roomJourneyPanel?.addEventListener("click", handleRoomJourneyClick);
+document.querySelector("#scenarioHeaderProgress")?.addEventListener("click", () => {
+  const workspace = document.querySelector("#moreWorkspace");
+  if (workspace) workspace.open = true;
+});
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible" && cloudUserId && profileComplete()) void ensureRoomJourney();
 });
@@ -4037,7 +4044,7 @@ function handlePhonicVoiceEvent(event) {
       break;
     case "user_started_speaking":
       if (!phonicUserSpeechStartedAt) phonicUserSpeechStartedAt = Date.now();
-      updateVoiceExperience("listening", "Listening to you…");
+      updateVoiceExperience("user-speaking", "Listening to you…");
       if (elements.conversationStatus) elements.conversationStatus.textContent = "Listening";
       break;
     case "user_finished_speaking":
