@@ -1,3 +1,4 @@
+import { scenarioDepth } from "./scenario-depth.js";
 import { findOutOfHomeScenario } from "./out-of-home-training.js";
 
 const FIELD_LIMIT = 280;
@@ -93,7 +94,9 @@ export function buildOutOfHomePersonaSystemPrompt({
         "Training area: " + scenario.trainingArea,
         "Scenario: " + scenario.scenario,
         "Situation: " + scenario.situation,
-        "Behavioural focus: " + scenario.behaviouralFocus
+        "Behavioural focus: " + scenario.behaviouralFocus,
+        "Learning areas: " + JSON.stringify(scenarioDepth("outside:" + scenario.categoryId + ":" + scenario.scenarioId)),
+        "Aim for around 30 minutes of useful conversation across relevant areas at the owner's pace. Ask one question at a time; where relevant, explore a normal preference, a concrete exception and when to ask or stop. Skip irrelevant or already answered points, and never pad or enforce a timer."
       ].join("\n")
     : "The user is exploring out-of-home behaviour. Establish the situation from their latest message.";
 

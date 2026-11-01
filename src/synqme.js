@@ -485,7 +485,7 @@ function renderLiveScenarioProgress() {
     const count = done.includes(scenario.id) ? tasks.length : tasks.filter(task => reviewed.has(task.id)).length;
     const header = document.createElement("div"); header.className = "scenario-live-label";
     const title = document.createElement("strong"); title.textContent = scenario.title;
-    const value = document.createElement("span"); value.textContent = count + " / " + tasks.length + " areas reviewed";
+    const value = document.createElement("span"); value.textContent = done.includes(scenario.id) && !data.reviewed?.[scenario.id] ? "Previously completed" : count + " / " + tasks.length + " areas reviewed";
     header.append(title, value);
     const track = document.createElement("div"); track.className = "scenario-live-track"; track.setAttribute("role", "progressbar"); track.setAttribute("aria-label", scenario.title + " areas reviewed"); track.setAttribute("aria-valuemin", "0"); track.setAttribute("aria-valuemax", String(tasks.length)); track.setAttribute("aria-valuenow", String(count));
     const fill = document.createElement("span"); fill.style.width = (tasks.length ? count / tasks.length * 100 : 0) + "%"; track.append(fill);
@@ -577,7 +577,7 @@ function renderScenarioJourney() {
   });
   const navLabel = document.createElement("div"); navLabel.id = "journeyScenarioLabel"; navLabel.className = "journey-select-label"; navLabel.textContent = "Choose your scenario"; toggle.setAttribute("aria-labelledby", "journeyScenarioLabel journeyScenarioSelect");
   const title = document.createElement("h3"); title.textContent = scenario.title;
-  const desc = document.createElement("p"); desc.textContent = scenario.description + (scenario.roomId === "living_room" ? " Plan at least 20 minutes to explore this room properly. You can pause and return whenever you like." : "");
+  const desc = document.createElement("p"); desc.textContent = scenario.description + " Allow around 30 minutes, depending on what matters to you. You can pause and return whenever you like.";
   const start = document.createElement("button"); start.type = "button"; start.className = "out-of-home-scenario-action";
   start.textContent = done.includes(scenario.id) ? "Revisit this scenario" : data.started === scenario.id ? "Continue conversation" : "Start conversation";
   start.addEventListener("click", () => void startJourneyScenario(scenario));
@@ -652,7 +652,7 @@ function renderScenarioJourney() {
     if (reviewUserId!==cloudUserId) return;
     if (reviewError) { finish.disabled=false; alert("Your scenario review could not be saved. Please try again."); return; }
     const current = scenarioData();
-    const next = { ...current, completed: completedScenarioIds([...(current.completed || []), scenario.id]), started: null };
+    const next = { ...current, completed: completedScenarioIds([...(current.completed || []), scenario.id]), started: null, reviewed: { ...(current.reviewed || {}), [scenario.id]: scenarioTasks(scenario).map(task => task.id) } };
     const progress = { ...roomJourney.room_progress, [SCENARIO_PROGRESS_KEY]: next };
     const saved = await persistRoomJourneyChanges({ room_progress: progress });
     if (!saved) { finish.disabled = false; alert("Your progress could not be saved. Please try again."); return; }

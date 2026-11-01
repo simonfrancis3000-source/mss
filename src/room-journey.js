@@ -1,3 +1,4 @@
+import { scenarioDepth } from "./scenario-depth.js";
 export const ROOM_JOURNEY_ROOMS = [
   {
     id: "kitchen",
@@ -176,6 +177,8 @@ export const ROOM_JOURNEY_ROOMS = [
   }
 ];
 
+for (const room of ROOM_JOURNEY_ROOMS) room.tasks.push(...scenarioDepth("room:" + room.id).map(task => ({ ...task, week: 4 })));
+
 export function addMonthsAnchored(dateValue, months) {
   const original = new Date(dateValue);
   if (!Number.isFinite(original.getTime())) throw new TypeError("A valid journey start date is required.");
@@ -301,7 +304,7 @@ export function buildRoomJourneyConversationContext(input, rooms = ROOM_JOURNEY_
   return {
     activeRoomId: room.id,
     activeRoomName: room.name,
-    targetConversationMinutes: room.id === 'living_room' ? 20 : null,
+    targetConversationMinutes: 30,
     unlockedRoomCount: unlockedCount,
     activeTaskId: activeTask?.id || null,
     activeTaskTitle: activeTask?.title || null,

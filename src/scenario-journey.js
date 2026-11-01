@@ -1,3 +1,4 @@
+import { scenarioDepth } from "./scenario-depth.js";
 import { ROOM_JOURNEY_ROOMS } from './room-journey.js';
 import { findOutOfHomeScenario } from './out-of-home-training.js';
 
@@ -39,6 +40,7 @@ export function scenarioTasks(scenario) {
   const match = findOutOfHomeScenario(scenario.categoryId, scenario.scenarioId);
   if (!match) return [];
   return [
+    ...scenarioDepth(scenario.id),
     { id: 'response', title: 'Response and behaviour', description: match.scenario.focus },
     { id: 'boundaries', title: 'Boundaries and exceptions', description: 'What I may do in this situation, what stays private, and any exceptions you want me to respect.' },
     { id: 'ask-wait-stop', title: 'When to ask, wait or stop', description: 'When I should check with you, step back or get help in this situation.' }

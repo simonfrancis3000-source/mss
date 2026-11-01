@@ -59,7 +59,7 @@ test("room progress can be derived across the released curriculum", () => {
 test("room tasks distinguish the current task, completed tasks and pending tasks", () => {
   const kitchen = ROOM_JOURNEY_ROOMS.find((room) => room.id === "kitchen");
   const states = getRoomTaskStates(kitchen, ["dishwashing"], "surfaces");
-  assert.deepEqual(states.map((task) => [task.id, task.status]), [
+  assert.deepEqual(states.slice(0, 5).map((task) => [task.id, task.status]), [
     ["dishwashing", "completed"],
     ["surfaces", "current"],
     ["products", "pending"],
@@ -119,9 +119,9 @@ test("explicit spoken room changes persist beyond short replies without followin
   assert.equal(resolveConversationRoomId([{role:"user",content:"Let's switch to the bedroom."}],"living_room"),"bedroom");
 });
 
-test("living room provides enough distinct learning areas for a substantive twenty-minute conversation", () => {
+test("living room provides enough distinct learning areas for a substantive thirty-minute conversation", () => {
   const context = buildRoomJourneyConversationContext({activeRoomId:"living_room"});
-  assert.equal(context.targetConversationMinutes,20);
+  assert.equal(context.targetConversationMinutes,30);
   assert.ok(context.tasks.length>=12);
   assert.ok(context.tasks.every(task=>task.description));
   assert.ok(context.tasks.some(task=>task.id==="quiet-time"));

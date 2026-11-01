@@ -35,7 +35,7 @@ test('selected scenario tasks and saved learnings stay scoped to that scenario',
   const kitchen = SCENARIOS[0];
   const outside = SCENARIOS[1];
   assert.ok(scenarioTasks(kitchen).some(task => task.id === 'dishwashing'));
-  assert.ok(scenarioTasks(outside)[0].description.includes('identifying information'));
+  assert.ok(scenarioTasks(outside).some(task => task.description.includes('identifying information')));
   assert.ok(scenarioTasks(outside).every(task => task.prompt.includes(outside.title)));
   const records = [
     { topic: 'kitchen', statement: 'Use the eco cycle for the dishwasher.', status: 'user_stated' },
@@ -60,4 +60,16 @@ test('chart totals represent completed scenarios without invented progress', () 
   const all = scenarioProgressSummary(SCENARIOS.map(item => item.id));
   assert.equal(all.percent, 100);
   assert.equal(all.next, null);
+});
+
+
+test('all 25 scenarios contain distinct, actionable ownership learning areas', () => {
+  assert.equal(SCENARIOS.length, 25);
+  for (const scenario of SCENARIOS) {
+    const tasks = scenarioTasks(scenario);
+    assert.ok(tasks.length >= 7, scenario.id);
+    assert.equal(new Set(tasks.map(task => task.id)).size, tasks.length, scenario.id);
+    assert.ok(tasks.filter(task => task.id.startsWith('depth-')).length >= 4, scenario.id);
+    assert.ok(tasks.every(task => task.title && task.description && task.prompt), scenario.id);
+  }
 });
