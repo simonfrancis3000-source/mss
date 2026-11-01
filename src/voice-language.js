@@ -17,7 +17,7 @@ export function normaliseVoicePreference(value) {
 }
 
 export function phonicVoiceIdForPreference(value) {
-  return normaliseVoicePreference(value) === "male" ? "grant" : "eloise";
+  return normaliseVoicePreference(value) === "male" ? "joon" : "virginia";
 }
 
 function preserveInitialCapital(match, replacement) {
