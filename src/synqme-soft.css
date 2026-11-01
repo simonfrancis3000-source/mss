@@ -309,3 +309,7 @@ input[type='checkbox'] { accent-color: #8b73cf; }
 .journey-scenario-options button[aria-selected='true'], .journey-scenario-options button:hover:not(:disabled), .journey-scenario-options button:focus-visible { border-color: #fff; background: #d4e7f4; box-shadow: var(--inset); }
 .journey-scenario-options button:disabled { opacity: 1; color: #586e80; }
 .journey-scenario-options button:disabled > span { color: #586e80; }
+.scenario-journey[data-journey-display='chart'] > p { display: none; }
+.persona-insights-drawer { border: 1px solid #f5fcff; border-radius: 21px; background: var(--soft); box-shadow: var(--raised-small); }
+.persona-insights-drawer .persona-insights-summary { border: 0; box-shadow: none; background: transparent; }
+.persona-insights-drawer .insights-chevron { border-color: #bdd5e6; background: #e4f1f9; color: #4f4a8c; }

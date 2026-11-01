@@ -478,6 +478,7 @@ function renderScenarioJourney() {
   if (headerValue) headerValue.textContent = ready ? done.length + "/25" : "—/25";
   if (header) header.setAttribute("aria-label", ready ? done.length + " of 25 scenarios completed" : "Scenario progress unavailable");
   target.replaceChildren();
+  target.closest(".scenario-journey").dataset.journeyDisplay = journeyDisplay;
   const tabs = document.createElement("div"); tabs.className = "journey-view-tabs"; tabs.setAttribute("role", "group"); tabs.setAttribute("aria-label", "Journey view");
   [["chart", "Chart"], ["scenarios", "Scenarios"]].forEach(([id, label]) => {
     const button = document.createElement("button"); button.type = "button"; button.textContent = label;
