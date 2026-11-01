@@ -5083,7 +5083,7 @@ document.querySelectorAll("[data-prompt]").forEach((button) => {
     elements.messageInput.focus();
   });
 });
-elements.resetDemo.addEventListener("click", () => {
+elements.resetDemo?.addEventListener("click", () => {
   if (!window.confirm("Reset this browser demo, including your settings and saved preferences?")) return;
   try { localStorage.removeItem(STORAGE_KEY); } catch {}
   state = initialState();
