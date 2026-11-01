@@ -4162,6 +4162,11 @@ function handlePhonicVoiceEvent(event) {
       if (elements.conversationStatus) elements.conversationStatus.textContent = companion + " is listening";
       break;
     case "user_started_speaking":
+      if (phonicAssistantSpeechStartedAt) {
+        phonicAssistantSpeechMs += Math.max(0, Date.now() - phonicAssistantSpeechStartedAt);
+        phonicAssistantSpeechStartedAt = 0;
+      }
+      assistantIsSpeaking = false;
       if (!phonicUserSpeechStartedAt) phonicUserSpeechStartedAt = Date.now();
       updateVoiceExperience("user-speaking", "Listening to you…");
       if (elements.conversationStatus) elements.conversationStatus.textContent = "Listening";
@@ -4209,8 +4214,8 @@ function handlePhonicVoiceEvent(event) {
       persist();
       renderAll();
       void flushCloudSave();
-      updateVoiceExperience("listening", companion + " is listening. Speak naturally.");
-      if (elements.voiceStatus) elements.voiceStatus.textContent = "Voice ready";
+      updateVoiceExperience(voiceInputMuted ? "muted" : "listening", voiceInputMuted ? "Microphone muted. Turn it on when you are ready." : companion + " is listening. Speak naturally.");
+      if (elements.voiceStatus) elements.voiceStatus.textContent = voiceInputMuted ? "Microphone muted" : "Voice ready";
       if (elements.conversationStatus) elements.conversationStatus.textContent = companion + " is ready for your next turn";
       break;
     }
@@ -4413,8 +4418,10 @@ function toggleVoiceInputMute() {
   if (!voiceModeActive) return;
   voiceInputMuted = !voiceInputMuted;
   if (phonicVoiceConversation) phonicVoiceConversation.setMuted(voiceInputMuted);
-  if (voiceInputMuted) {
-    updateVoiceExperience("muted", "Microphone muted. You can still hear the current reply.");
+  if (assistantIsSpeaking) {
+    updateVoiceExperience("speaking", selectedCompanionDisplayName() + " is speaking." + (voiceInputMuted ? " Microphone muted." : ""));
+  } else if (voiceInputMuted) {
+    updateVoiceExperience("muted", "Microphone muted. Turn it on when you are ready.");
   } else {
     updateVoiceExperience("listening", "Microphone on. Speak whenever you are ready.");
   }

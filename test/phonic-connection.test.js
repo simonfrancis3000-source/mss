@@ -17,12 +17,19 @@ function browser(t, { getUserMedia, inputSampleRate = 44100 } = {}) {
   const tracks = [{ stopped: false, stop() { this.stopped = true; } }];
   const stream = { getTracks: () => tracks };
   const nodes = [];
+  const audioSources = [];
   class AudioContext {
     sampleRate = inputSampleRate;
     currentTime = 0;
     destination = {};
     audioWorklet = { addModule: async () => {} };
     createMediaStreamSource() { return { connect() {}, disconnect() {} }; }
+    createBuffer(channels, length, rate) { const data = new Float32Array(length); return { duration:length/rate, getChannelData:()=>data }; }
+    createBufferSource() {
+      const source = { buffer:null, connect(){}, disconnect(){}, start(time){this.startAt=time;}, stop(){this.stopped=true;} };
+      audioSources.push(source);return source;
+    }
+    createDynamicsCompressor() { return { threshold:{}, knee:{}, ratio:{}, attack:{}, release:{}, connect(){}, disconnect(){} }; }
     createGain() { return { gain: {}, connect() {}, disconnect() {} }; }
     async resume() {}
     async close() {}
@@ -61,7 +68,7 @@ function browser(t, { getUserMedia, inputSampleRate = 44100 } = {}) {
     onEvent: (event) => events.push(event)
   });
   t.after(() => conversation.stop());
-  return { conversation, events, tracks, stream, nodes, Socket };
+  return { conversation, events, tracks, stream, nodes, Socket, audioSources };
 }
 
 async function waitForSocket(Socket) {
@@ -172,4 +179,44 @@ test("streaming resampling preserves duration and continuity across source rates
     const expected=(20*1024-(rate===44100?0:1))*44100/rate;
     assert.ok(Math.abs(frames-expected)<=1,rate+": incorrect resampled duration");
   }
+});
+
+
+function pcmAudio(length=4410){return Buffer.from(new Int16Array(length).fill(1200).buffer).toString('base64');}
+
+test("sentence gaps are scheduled into playback and speaking finishes only after audio drains",async(t)=>{
+ const {conversation,Socket,audioSources,events}=browser(t);
+ const starting=conversation.start();const socket=await waitForSocket(Socket);socket.open();socket.message({type:'ready_to_start_conversation'});await starting;
+ socket.message({type:'assistant_started_speaking'});
+ socket.message({type:'audio_chunk',text:'Understood.',audio:pcmAudio()});
+ socket.message({type:'audio_chunk',text:'How would you like',audio:pcmAudio()});
+ socket.message({type:'audio_chunk',text:' me to handle it?',audio:pcmAudio()});
+ assert.equal(audioSources.length,3);
+ assert.ok(Math.abs(audioSources[1].startAt-(audioSources[0].startAt+.1)-.42)<1e-8);
+ assert.ok(Math.abs(audioSources[2].startAt-(audioSources[1].startAt+.1))<1e-8);
+ socket.message({type:'assistant_finished_speaking'});
+ assert.equal(events.filter(e=>e.type==='assistant_finished_speaking').length,0);
+ await new Promise(resolve=>setTimeout(resolve,25));
+ assert.equal(events.filter(e=>e.type==='assistant_started_speaking').length,1);
+ audioSources[0].onended();audioSources[1].onended();
+ assert.equal(events.filter(e=>e.type==='assistant_finished_speaking').length,0);
+ audioSources[2].onended();
+ assert.equal(events.filter(e=>e.type==='assistant_finished_speaking').length,1);
+});
+
+test("interrupting speech cancels queued pauses and stale playback callbacks",async(t)=>{
+ const {conversation,Socket,audioSources,events}=browser(t);
+ const starting=conversation.start();const socket=await waitForSocket(Socket);socket.open();socket.message({type:'ready_to_start_conversation'});await starting;
+ socket.message({type:'assistant_started_speaking'});
+ socket.message({type:'audio_chunk',text:'Understood.',audio:pcmAudio()});
+ socket.message({type:'audio_chunk',text:'What next?',audio:pcmAudio()});
+ socket.message({type:'assistant_finished_speaking'});
+ socket.message({type:'user_started_speaking'});
+ assert.ok(audioSources.every(source=>source.stopped));
+ audioSources.forEach(source=>source.onended());
+ await new Promise(resolve=>setTimeout(resolve,25));
+ assert.equal(events.filter(e=>e.type==='assistant_started_speaking').length,0);
+ assert.equal(events.filter(e=>e.type==='assistant_finished_speaking').length,0);
+ socket.message({type:'audio_chunk',text:'Late audio.',audio:pcmAudio()});
+ assert.equal(audioSources.length,2);
 });

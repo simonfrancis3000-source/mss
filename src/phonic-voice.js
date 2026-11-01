@@ -1,3 +1,4 @@
+import { createSentencePausePlanner } from "./sentence-pause.js";
 // Real-time browser voice adapter for Phonic's Speech-to-Speech WebSocket.
 // Adapted from Phonic-Co/phonic-web-demo (MIT): https://github.com/Phonic-Co/phonic-web-demo
 
@@ -83,8 +84,15 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
   let microphoneNode = null;
   let silentGain = null;
   let playbackContext = null;
+  let playbackGain = null;
+  let playbackLimiter = null;
   let playbackSources = new Set();
   let nextPlaybackTime = 0;
+  const sentencePauses = createSentencePausePlanner(SAMPLE_RATE);
+  let providerFinishedSpeaking = false;
+  let playbackActive = false;
+  let playbackStartedTimer = null;
+  let playbackGeneration = 0;
   let stopped = true;
   let muted = false;
   let conversationItems = [];
@@ -103,16 +111,33 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
     }
   }
 
+  function finishPlaybackIfDrained() {
+    if (!providerFinishedSpeaking || playbackSources.size || userIsSpeaking) return;
+    providerFinishedSpeaking = false;
+    playbackActive = false;
+    sentencePauses.reset();
+    if (playbackStartedTimer !== null) globalThis.clearTimeout(playbackStartedTimer);
+    playbackStartedTimer = null;
+    emit({ type: "assistant_finished_speaking" });
+  }
+
   function stopPlayback() {
-    for (const source of playbackSources) {
+    playbackGeneration++;
+    providerFinishedSpeaking = false;
+    playbackActive = false;
+    sentencePauses.reset();
+    if (playbackStartedTimer !== null) globalThis.clearTimeout(playbackStartedTimer);
+    playbackStartedTimer = null;
+    const sources = [...playbackSources];
+    playbackSources.clear();
+    for (const source of sources) {
       try { source.stop(); } catch {}
     }
-    playbackSources.clear();
     nextPlaybackTime = playbackContext ? playbackContext.currentTime : 0;
   }
 
-  function playAudioChunk(base64Audio) {
-    if (stopped || !playbackContext || !base64Audio) return;
+  function playAudioChunk(base64Audio, text = "") {
+    if (stopped || userIsSpeaking || !playbackContext || !base64Audio) return;
     const pcm = base64ToInt16Array(base64Audio);
     if (!pcm.length) return;
 
@@ -124,13 +149,26 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
 
     const source = playbackContext.createBufferSource();
     source.buffer = buffer;
-    source.connect(playbackContext.destination);
-    const startAt = Math.max(playbackContext.currentTime + 0.015, nextPlaybackTime);
+    source.connect(playbackGain);
+    const baseStart = Math.max(playbackContext.currentTime + 0.015, nextPlaybackTime);
+    const elapsedGap = Math.max(0, baseStart - nextPlaybackTime);
+    const startAt = baseStart + sentencePauses.gapBefore(pcm, text, elapsedGap);
     nextPlaybackTime = startAt + buffer.duration;
     playbackSources.add(source);
+    const sourceGeneration = playbackGeneration;
+    if (!playbackActive) {
+      playbackActive = true;
+      const generation = playbackGeneration;
+      playbackStartedTimer = window.setTimeout(() => {
+        playbackStartedTimer = null;
+        if (!stopped && generation === playbackGeneration && playbackActive && !userIsSpeaking) emit({ type: "assistant_started_speaking" });
+      }, Math.max(0, (startAt - playbackContext.currentTime) * 1000));
+    }
     source.onended = () => {
+      if (sourceGeneration !== playbackGeneration) { try { source.disconnect(); } catch {} return; }
       playbackSources.delete(source);
       try { source.disconnect(); } catch {}
+      finishPlaybackIfDrained();
     };
     source.start(startAt);
   }
@@ -215,18 +253,20 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
           }
           startNewAssistantItem = false;
         }
-        if (typeof message.audio === "string") playAudioChunk(message.audio);
+        if (typeof message.audio === "string") playAudioChunk(message.audio, text);
         emit({ type: "audio_chunk", audio: message.audio || "", text });
         break;
       }
 
       case "assistant_started_speaking":
         startNewAssistantItem = true;
-        emit({ type: "assistant_started_speaking" });
+        providerFinishedSpeaking = false;
         break;
 
       case "assistant_finished_speaking":
-        emit({ type: "assistant_finished_speaking" });
+        if (userIsSpeaking) break;
+        providerFinishedSpeaking = true;
+        finishPlaybackIfDrained();
         break;
 
       case "user_started_speaking":
@@ -335,6 +375,17 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
       if (!sessionToken) throw new Error("The SYNQ.ME backend did not return a Phonic session token.");
 
       playbackContext = new AudioContextClass();
+      // Raise quiet speech by 6 dB and limit peaks before speaker output.
+      playbackGain = playbackContext.createGain();
+      playbackGain.gain.value = 2;
+      playbackLimiter = playbackContext.createDynamicsCompressor();
+      playbackLimiter.threshold.value = -3;
+      playbackLimiter.knee.value = 0;
+      playbackLimiter.ratio.value = 20;
+      playbackLimiter.attack.value = 0.003;
+      playbackLimiter.release.value = 0.12;
+      playbackGain.connect(playbackLimiter);
+      playbackLimiter.connect(playbackContext.destination);
       await playbackContext.resume();
       const wsBase = String(session.websocketUrl || session.wsUrl || DEFAULT_WS_URL);
       const separator = wsBase.includes("?") ? "&" : "?";
@@ -430,6 +481,10 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
       try { await microphoneContext.close(); } catch {}
       microphoneContext = null;
     }
+    try { playbackGain?.disconnect(); } catch {}
+    try { playbackLimiter?.disconnect(); } catch {}
+    playbackGain = null;
+    playbackLimiter = null;
     if (playbackContext) {
       try { await playbackContext.close(); } catch {}
       playbackContext = null;
