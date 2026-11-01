@@ -1,7 +1,7 @@
 import { isApplianceIdentityAnswer } from "./appliance-persona.js";
 import { SCENARIOS, completedScenarioIds, availableScenarioCount, buildScenarioStartPatch } from "./scenario-journey.js";
 import { createClient } from "@supabase/supabase-js";
-import { createPhonicVoiceConversation } from "./phonic-voice.js";
+import { createPhonicVoiceConversation, voiceFailureMessage } from "./phonic-voice.js";
 import { buildPexiCapabilityPlan, cleanPexiCapabilityManifest } from "./pexi-readiness.js";
 import { companionThinkingMessage, companionWelcomeMessage, isCompanionWelcomeMessage } from "./companion-copy.js";
 import { assistantReplyRepeatsRecentAssistant, enforceFirstPersonTaskQuestions, normaliseVoicePreference, phonicVoiceIdForPreference } from "./voice-language.js";
@@ -4101,7 +4101,7 @@ function handlePhonicVoiceEvent(event) {
       break;
     }
     case "error": {
-      const detail = "Your voice connection was interrupted. Please try again.";
+      const detail = voiceFailureMessage(event.error);
       stopVoiceConversation(detail);
       if (elements.voiceStatus) {
         elements.voiceStatus.dataset.error = "true";
@@ -4244,9 +4244,10 @@ async function openVoiceExperience() {
   updateVoiceExperience("connecting", "Requesting microphone access and preparing your voice…");
   if (elements.conversationStatus) elements.conversationStatus.textContent = "Connecting your voice";
 
+  let startingConversation = null;
   try {
     void checkAIBackend();
-    phonicVoiceConversation = createPhonicVoiceConversation({
+    startingConversation = createPhonicVoiceConversation({
       getSession: async () => {
         const response = await fetch(PHONIC_API_BASE_URL + "/api/phonic/session", {
           method: "POST",
@@ -4255,7 +4256,7 @@ async function openVoiceExperience() {
         });
         let payload = {};
         try { payload = await response.json(); } catch {}
-        if (!response.ok) throw new Error("Voice session could not be created (HTTP " + response.status + ").");
+        if (!response.ok) throw new Error(payload.error || "Voice session could not be created (HTTP " + response.status + ").");
         phonicUsageSession = payload.usageSession || null;
         phonicUsageStartedAt = Date.parse(phonicUsageSession?.startedAt || "") || Date.now();
         return payload;
@@ -4264,11 +4265,13 @@ async function openVoiceExperience() {
       onEvent: handlePhonicVoiceEvent,
       onToolCall: handlePhonicAmiaToolCall
     });
-    await phonicVoiceConversation.start();
+    phonicVoiceConversation = startingConversation;
+    await startingConversation.start();
   } catch (error) {
-    const detail = /microphone|permission|denied/i.test(String(error?.message || ""))
-      ? "Microphone access is needed to start a voice conversation."
-      : "Your voice connection could not be started. Please try again.";
+    // Closing the screen while permission or connection is pending is an
+    // intentional cancellation. Do not replace its status with an error.
+    if (!voiceModeActive || phonicVoiceConversation !== startingConversation) return;
+    const detail = voiceFailureMessage(error);
     stopVoiceConversation(detail);
     if (elements.voiceStatus) {
       elements.voiceStatus.dataset.error = "true";

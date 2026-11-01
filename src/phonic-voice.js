@@ -4,6 +4,23 @@
 const DEFAULT_WS_URL = "wss://api.phonic.ai/v1/sts/ws";
 const SAMPLE_RATE = 44100;
 
+// Provider errors can contain a token-bearing URL. Keep useful validation
+// details while ensuring credentials never reach a status label or console.
+export function voiceFailureMessage(value) {
+  const detail = String(value?.message || value || "The voice service disconnected.")
+    .replace(/https?:\/\/\S+|wss?:\/\/\S+/gi, "[connection]")
+    .replace(/\b(?:ph_session_|ph_sk_|sk-)[A-Za-z0-9_.-]+/g, "[redacted]")
+    .replace(/Bearer\s+\S+/gi, "Bearer [redacted]")
+    .replace(/[\r\n\t]+/g, " ").slice(0, 350);
+  if (/microphone|NotAllowedError|permission.*(?:microphone|denied)/i.test(detail)) {
+    return "Microphone access is needed to start a voice conversation. Allow it in your browser settings, then try again.";
+  }
+  if (/credit|balance|billing|quota/i.test(detail)) return "The voice service has reached its account or billing limit. Text chat is still available.";
+  if (/voice_id|(?:unknown|invalid|unsupported) voice/i.test(detail)) return "The selected voice is unavailable. " + detail;
+  if (/timed out|timeout/i.test(detail)) return "The voice service did not become ready in time. Please try again.";
+  return "Voice connection failed: " + detail;
+}
+
 function resampleFloat32(input, inputRate, outputRate) {
   if (inputRate === outputRate) return input.slice();
   const ratio = inputRate / outputRate;
@@ -69,6 +86,9 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
   let nextItemIndex = 0;
   let userIsSpeaking = false;
   let startNewAssistantItem = false;
+  let ready = false;
+  let resolveStartup = null;
+  let rejectStartup = null;
 
   function emit(event) {
     try {
@@ -157,6 +177,8 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
 
     switch (message.type) {
       case "ready_to_start_conversation":
+        ready = true;
+        resolveStartup?.();
         emit({ type: "ready" });
         break;
 
@@ -228,10 +250,14 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
         break;
 
       case "error":
-        emit({
-          type: "error",
-          error: message.error?.message || message.message || "Phonic reported a voice-session error."
-        });
+        {
+          const fields = message.param_errors && typeof message.param_errors === "object"
+            ? Object.entries(message.param_errors).map(([key, value]) => key + ": " + String(value)).join("; ")
+            : "";
+          const detail = [message.error?.message || message.message || "The voice service reported an error.", fields].filter(Boolean).join(" ");
+          if (!ready) rejectStartup?.(new Error(detail));
+          else emit({ type: "error", error: detail });
+        }
         break;
 
       default:
@@ -242,6 +268,7 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
   async function start() {
     if (!stopped) return;
     stopped = false;
+    ready = false;
     conversationItems = [];
     nextItemIndex = 0;
     userIsSpeaking = false;
@@ -270,7 +297,9 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
       });
       microphoneNode.port.onmessage = (event) => {
         if (stopped || event.data?.type !== "audio-recording-chunk") return;
-        if (!socket || socket.readyState !== WebSocket.OPEN) return;
+        // Opening the transport is not confirmation that Phonic accepted the
+        // config. Sending audio before readiness can race its initialization.
+        if (!ready || !socket || socket.readyState !== WebSocket.OPEN) return;
         const input = event.data.buffer;
         if (!(input instanceof Float32Array)) return;
         const resampled = resampleFloat32(input, microphoneContext.sampleRate, SAMPLE_RATE);
@@ -300,42 +329,53 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
       const wsBase = String(session.websocketUrl || session.wsUrl || DEFAULT_WS_URL);
       const separator = wsBase.includes("?") ? "&" : "?";
       socket = new WebSocket(wsBase + separator + "session_token=" + encodeURIComponent(sessionToken));
-      socket.addEventListener("message", (event) => handleMessage(event.data));
+      const activeSocket = socket;
+      activeSocket.addEventListener("message", (event) => {
+        if (!stopped && activeSocket === socket) handleMessage(event.data);
+      });
 
-      let connected = false;
       await new Promise((resolve, reject) => {
-        const timeout = window.setTimeout(() => {
-          reject(new Error("Timed out connecting to Phonic. Check the backend URL and Phonic API configuration."));
-        }, 15000);
-
-        socket.addEventListener("open", () => {
+        function finish(error) {
           window.clearTimeout(timeout);
+          resolveStartup = null;
+          rejectStartup = null;
+          if (error) reject(error);
+          else resolve();
+        }
+        const timeout = window.setTimeout(() => {
+          finish(new Error("Timed out waiting for the voice service to accept the conversation settings."));
+        }, 30000);
+        resolveStartup = () => finish();
+        rejectStartup = (error) => finish(error);
+
+        activeSocket.addEventListener("open", () => {
           if (stopped) {
-            reject(new Error("Voice conversation was stopped."));
+            finish(new Error("Voice conversation was stopped."));
             return;
           }
           try {
             const config = typeof getConfig === "function" ? getConfig(session) : getConfig;
             if (!config || config.type !== "config") throw new Error("The Phonic conversation configuration is invalid.");
-            socket.send(JSON.stringify(config));
-            connected = true;
+            activeSocket.send(JSON.stringify(config));
             emit({ type: "open" });
-            resolve();
           } catch (error) {
-            reject(error);
+            finish(error);
           }
         }, { once: true });
 
-        socket.addEventListener("error", () => {
-          window.clearTimeout(timeout);
-          if (!connected) reject(new Error("Could not connect to Phonic. Check PHONIC_API_KEY and the backend URL."));
-          emit({ type: "error", error: "The connection to Phonic failed." });
+        activeSocket.addEventListener("error", () => {
+          if (stopped || activeSocket !== socket) return;
+          const detail = "Could not reach the voice service. Check your connection and try again.";
+          if (!ready) finish(new Error(detail));
+          else emit({ type: "error", error: detail });
         });
 
-        socket.addEventListener("close", (event) => {
-          window.clearTimeout(timeout);
-          if (!connected) reject(new Error("Phonic closed the voice connection before it was ready."));
-          emit({ type: "close", code: event.code, reason: event.reason || "" });
+        activeSocket.addEventListener("close", (event) => {
+          if (stopped || activeSocket !== socket) return;
+          const detail = "The voice service closed the connection (" + event.code + ")" + (event.reason ? ": " + event.reason : ".");
+          if (!ready) finish(new Error(detail));
+          else if (event.code !== 1000) emit({ type: "error", error: detail });
+          else emit({ type: "close", code: event.code, reason: event.reason || "" });
         });
       });
     } catch (error) {
@@ -350,8 +390,11 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
   }
 
   async function stop() {
-    if (stopped) return;
+    // getUserMedia may finish after an earlier stop. Always release any
+    // resources that arrived late rather than leaking the microphone track.
     stopped = true;
+    ready = false;
+    rejectStartup?.(new Error("Voice conversation was stopped."));
     stopPlayback();
 
     const activeSocket = socket;
