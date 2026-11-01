@@ -408,3 +408,4 @@ input[type='checkbox'] { accent-color: #8b73cf; }
 .run-button { background: var(--soft); color: var(--ink); border: 1px solid #f5fbff; box-shadow: var(--raised-small); border-radius: 17px; font-family: inherit; }
 .chat-composer textarea::placeholder { font-size: 12px; line-height: 1.5; }
 .conversation-panel > .scenario-live-progress { transform: translateY(calc(-50% - 24px)); margin-bottom: -40px; }
+.voice-experience .voice-experience-content .voice-companion-name { display: none; }
