@@ -82,3 +82,17 @@ test("concept retrieval links everyday names for kitchenware", () => {
   const matches = rankHomeMemoryCandidates("What should happen to the mugs by the sink?", [memory]);
   assert.equal(matches[0]?.content, memory.content);
 });
+
+
+test("conversation archive indexes and retrieves public-behaviour preferences", () => {
+  const message = {
+    role: "user",
+    content: "I prefer you to stay beside me when we walk through crowded public places.",
+    timestamp: "2026-10-30T08:00:00.000Z"
+  };
+  const rows = buildHomeMemoryIndexRows([message], "user-123");
+  assert.ok(rows[0].topics.includes("public_mobility"));
+  assert.ok(rows[0].search_keys.includes("topic:public_mobility"));
+  const matches = rankHomeMemoryCandidates("What should you do when the pavement gets crowded?", [message]);
+  assert.equal(matches[0]?.content, message.content);
+});

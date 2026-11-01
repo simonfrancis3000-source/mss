@@ -28,6 +28,17 @@ const HOME_TOPICS = [
   { id: "waste_and_recycling", pattern: /\b(rubbish|trash|garbage|recycling|recycle|compost|food waste|bin|bins|waste)\b/i }
 ];
 
+const OUT_OF_HOME_TOPICS = [
+  { id: "public_interactions", pattern: /\b(strangers?|passers?by|adults?|children|child|kids?|approach(?:es|ed|ing)?|introduc(?:e|es|ed|tion|ing)|greet(?:s|ed|ing)?|touch(?:es|ed|ing)?|hug(?:s|ged|ging)?|photograph(?:s|ed|ing)?|bystanders?|first contact)\b/i },
+  { id: "social_relationships", pattern: /\b(friends?|family members?|relatives?|colleagues?|clients?|introductions?|remember(?:ing)? names?|known people|meeting people again|social circle)\b/i },
+  { id: "public_mobility", pattern: /\b(pavements?|sidewalks?|pedestrians?|crosswalks?|pedestrian crossings?|road crossings?|crowds?|crowded|queues?|lifts?|elevators?|public transport|buses?|trains?|trams?|metros?|stations?|airports?|shopping centres?|shopping centers?|public parks?|shared paths?|busy public spaces?)\b/i },
+  { id: "out_of_home_safety", pattern: /\b(emergenc(?:y|ies)|falls?|incapacitated|aggressive|aggression|threats?|theft|stolen|security guards?|connectivity loss|low battery|obstacles?|restricted areas?|unsafe areas?|road safety|collision|separated|lost in public)\b/i },
+  { id: "animal_interactions", pattern: /\b(dogs?|puppies|cats?|kittens|animals?|wildlife|off[- ]lead|dog parks?|animal handlers?|injured animals?)\b/i },
+  { id: "public_venues", pattern: /\b(shops?|stores?|caf[eé]s?|restaurants?|hotels?|venues?|supermarkets?|receptions?|banks?|clinics?|medical appointments?|service counters?|retailers?|hospitality)\b/i },
+  { id: "social_etiquette", pattern: /\b(private conversations?|interrupt(?:s|ed|ing)?|sarcasm|jokes?|compliments?|etiquette|personal space|turn[- ]taking|conversation(?:al)? tone|cultural customs?|social cues?|discomfort|polite(?:ly)?|remain quiet|stay quiet)\b/i },
+  { id: "professional_community", pattern: /\b(workplaces?|offices?|business meetings?|conferences?|exhibitions?|universit(?:y|ies)|schools?|libraries?|gyms?|sports facilities|weddings?|community events?|places of worship|colleagues?|professional settings?)\b/i }
+];
+
 const MEMORY_CONCEPTS = [
   { id: "laundry", pattern: /\b(laundry|washing machine|washing clothes|washing|clothes?|clothing|garments?|shirts?|trousers|pants|socks?|towels?|bedding|sheets?|fold(?:ed|ing)?|ironing|delicates?|detergent|hamper)\b/i },
   { id: "kitchenware", pattern: /\b(dishes|dishwasher|plates?|cups?|mugs?|bowls?|crockery|cutlery|utensils?|pots?|pans?)\b/i },
@@ -65,6 +76,28 @@ export function extractHomeMemoryTopics(value) {
     if (mapped) topics.add(mapped);
   }
   return [...topics];
+}
+
+export function extractPersonaMemoryTopics(value) {
+  const text = String(value || "");
+  const homeTopics = extractHomeMemoryTopics(text);
+  const topics = new Set();
+  // Prefer the most specific out-of-home topic when a public/social preference
+  // also contains general privacy or permission wording.
+  for (const topic of OUT_OF_HOME_TOPICS) {
+    if (topic.pattern.test(text)) topics.add(topic.id);
+  }
+  if (homeTopics.includes("privacy_and_boundaries")) topics.add("privacy_and_boundaries");
+  for (const topic of homeTopics) topics.add(topic);
+  return [...topics];
+}
+
+export function extractPersonaMemoryKeys(value) {
+  const keys = new Set(extractHomeMemoryKeys(value));
+  for (const topic of extractPersonaMemoryTopics(value)) {
+    keys.add("topic:" + topic);
+  }
+  return [...keys];
 }
 
 export function extractHomeMemoryKeys(value) {
@@ -124,8 +157,8 @@ export function buildHomeMemoryIndexRows(messages, userId, conversationKey = "ma
     const keys = new Set();
     const topics = new Set();
     for (const neighbour of neighbours) {
-      for (const key of extractHomeMemoryKeys(neighbour.content)) keys.add(key);
-      for (const topic of extractHomeMemoryTopics(neighbour.content)) topics.add(topic);
+      for (const key of extractPersonaMemoryKeys(neighbour.content)) keys.add(key);
+      for (const topic of extractPersonaMemoryTopics(neighbour.content)) topics.add(topic);
     }
     const stableTimestamp = item.timestamp || ("legacy-" + item.index);
     const sourceHash = fnv1a(item.role + "\n" + stableTimestamp + "\n" + item.content);
@@ -144,8 +177,8 @@ export function buildHomeMemoryIndexRows(messages, userId, conversationKey = "ma
 
 export function rankHomeMemoryCandidates(query, messages, { limit = 6 } = {}) {
   if (!Array.isArray(messages) || !String(query || "").trim()) return [];
-  const queryKeys = new Set(extractHomeMemoryKeys(query));
-  const queryTopics = new Set(extractHomeMemoryTopics(query));
+  const queryKeys = new Set(extractPersonaMemoryKeys(query));
+  const queryTopics = new Set(extractPersonaMemoryTopics(query));
   if (!queryKeys.size) return [];
 
   const prepared = messages.map((message, index) => {
@@ -156,11 +189,11 @@ export function rankHomeMemoryCandidates(query, messages, { limit = 6 } = {}) {
     // from new concept aliases without requiring a backfill job.
     const candidateKeys = new Set([
       ...(Array.isArray(precomputedKeys) ? precomputedKeys : []),
-      ...neighbourMessages.flatMap((neighbour) => extractHomeMemoryKeys(neighbour?.content))
+      ...neighbourMessages.flatMap((neighbour) => extractPersonaMemoryKeys(neighbour?.content))
     ]);
     const candidateTopics = new Set([
       ...(Array.isArray(message?.topics) ? message.topics : []),
-      ...neighbourMessages.flatMap((neighbour) => extractHomeMemoryTopics(neighbour?.content))
+      ...neighbourMessages.flatMap((neighbour) => extractPersonaMemoryTopics(neighbour?.content))
     ]);
     let topicHits = 0;
     let wordHits = 0;
