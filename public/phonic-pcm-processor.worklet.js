@@ -2,7 +2,9 @@
 class PCMProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
-    this.bufferSize = 1024;
+    // Browser microphone rates vary (including 16 kHz). Use a duration,
+    // rather than 1024 frames which would be 64 ms at that rate.
+    this.bufferSize = Math.max(128, Math.floor(sampleRate * 0.02));
     this.buffer = new Float32Array(this.bufferSize);
     this.bufferIndex = 0;
     this.isMuted = false;

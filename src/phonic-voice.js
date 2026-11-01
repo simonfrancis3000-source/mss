@@ -3,6 +3,7 @@
 
 const DEFAULT_WS_URL = "wss://api.phonic.ai/v1/sts/ws";
 const SAMPLE_RATE = 44100;
+const MICROPHONE_PACKET_SAMPLES = Math.floor(SAMPLE_RATE * 0.02);
 
 // Provider errors can contain a token-bearing URL. Keep useful validation
 // details while ensuring credentials never reach a status label or console.
@@ -21,24 +22,28 @@ export function voiceFailureMessage(value) {
   return "Voice connection failed: " + detail;
 }
 
-function resampleFloat32(input, inputRate, outputRate) {
-  if (inputRate === outputRate) return input.slice();
+export function createFloat32Resampler(inputRate, outputRate = SAMPLE_RATE) {
   const ratio = inputRate / outputRate;
-  const outputLength = Math.floor(input.length / ratio);
-  const output = new Float32Array(outputLength);
+  let tail = new Float32Array(0);
   let position = 0;
-  for (let index = 0; index < outputLength; index += 1) {
-    const nextPosition = (index + 1) * ratio;
-    let sum = 0;
-    let count = 0;
-    while (position < nextPosition && position < input.length) {
-      sum += input[position];
-      count += 1;
-      position += 1;
+  return (input) => {
+    if (inputRate === outputRate) return input.slice();
+    const samples = new Float32Array(tail.length + input.length);
+    samples.set(tail); samples.set(input, tail.length);
+    const output = [];
+    // Keep fractional position and the last source sample across worklet
+    // messages. Upsampling low-rate microphones must not insert silence.
+    while (position < samples.length - 1) {
+      const index = Math.floor(position);
+      const fraction = position - index;
+      output.push(samples[index] + (samples[index + 1] - samples[index]) * fraction);
+      position += ratio;
     }
-    output[index] = count ? sum / count : 0;
-  }
-  return output;
+    const consumed = Math.min(Math.floor(position), Math.max(0, samples.length - 1));
+    tail = samples.slice(consumed);
+    position -= consumed;
+    return Float32Array.from(output);
+  };
 }
 
 function floatToInt16(input) {
@@ -288,7 +293,8 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
       if (stopped) throw new Error("Voice conversation was stopped.");
 
       microphoneContext = new AudioContextClass();
-      await microphoneContext.audioWorklet.addModule("/phonic-pcm-processor.worklet.js");
+      const resample = createFloat32Resampler(microphoneContext.sampleRate);
+      await microphoneContext.audioWorklet.addModule("/phonic-pcm-processor.worklet.js?v=2");
       microphoneSource = microphoneContext.createMediaStreamSource(microphoneStream);
       microphoneNode = new AudioWorkletNode(microphoneContext, "pcm-processor", {
         numberOfInputs: 1,
@@ -302,11 +308,15 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
         if (!ready || !socket || socket.readyState !== WebSocket.OPEN) return;
         const input = event.data.buffer;
         if (!(input instanceof Float32Array)) return;
-        const resampled = resampleFloat32(input, microphoneContext.sampleRate, SAMPLE_RATE);
+        const resampled = resample(input);
         const pcm = floatToInt16(resampled);
         if (!pcm.length) return;
         try {
-          socket.send(JSON.stringify({ type: "audio_chunk", audio: int16ToBase64(pcm) }));
+          // Cap every wire message to 20 ms after resampling. This remains
+          // valid even if an older cached worklet produces larger blocks.
+          for (let offset = 0; offset < pcm.length; offset += MICROPHONE_PACKET_SAMPLES) {
+            socket.send(JSON.stringify({ type: "audio_chunk", audio: int16ToBase64(pcm.subarray(offset, offset + MICROPHONE_PACKET_SAMPLES)) }));
+          }
         } catch (error) {
           console.info("SYNQ.ME could not send a microphone chunk to Phonic.", error);
         }

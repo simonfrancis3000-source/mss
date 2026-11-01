@@ -18,6 +18,7 @@
 }
 body { background: radial-gradient(ellipse at 18% 0%, #f0f9ff 0, transparent 55%), #deedf6; color: var(--ink); padding: 22px 20px 125px; }
 body, body * { font-family: 'Quicksand', sans-serif !important; }
+body.voice-experience-open { overflow: hidden !important; }
 button, input, textarea, select { -webkit-tap-highlight-color: transparent; }
 button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid #6a58b2; outline-offset: 5px; }
 button { transition: box-shadow .18s ease, color .18s ease, transform .18s ease; }
@@ -43,7 +44,7 @@ main { max-width: 860px; min-height: calc(100dvh - 220px); padding: 10px 30px 26
 .panel-status { color: var(--secondary); font-size: 10px; font-weight: 600; white-space: normal; text-align: right; }
 .panel-status .status-dot { background: #80bfb7; box-shadow: 0 0 0 4px #d7eaf0; }
 .intro-audio-replay { color: var(--secondary); background: var(--soft); border-color: #f5fcff; border-radius: 12px; box-shadow: var(--raised-small); font-size: 10px; }
-.chat-stage, .chat-workspace { display: flex; flex-direction: column; gap: 0; min-width: 0; width: 100%; }
+.chat-stage, .chat-workspace { display: flex; flex-direction: column; gap: 0; min-width: 0; width: 100%; background: transparent; }
 .chat-transcript-shell { width: 100%; min-height: 0; padding: 0; overflow: visible; }
 .chat-workspace > .chat-transcript-shell { flex: 1 1 auto; min-width: 0; }
 .chat-transcript-shell > .chat-messages, .chat-workspace > .chat-transcript-shell > .chat-messages { width: 100%; min-height: 270px; max-height: min(54dvh, 640px); height: auto; padding: 16px 12px 28px; gap: 25px; overflow-y: auto; overflow-x: hidden; background: transparent; scrollbar-color: #afcddd transparent; }
@@ -55,7 +56,7 @@ main { max-width: 860px; min-height: calc(100dvh - 220px); padding: 10px 30px 26
 .message-meta { margin-bottom: 6px; color: #6b86a0; font-size: 10px; font-weight: 700; letter-spacing: .09em; }
 .message-timestamp, .user-message .message-timestamp { color: #7994a9; font-size: 9px; }
 .chat-workspace > .chat-composer, .chat-composer { position: relative; bottom: auto; width: 100%; margin: 10px 0 0; padding: 12px; display: flex; align-items: flex-end; gap: 10px; border: 1px solid #f4fbff; border-radius: 25px; background: var(--soft); box-shadow: var(--inset); }
-.chat-composer textarea { width: 100%; min-width: 0; min-height: 53px; max-height: 140px; padding: 10px; resize: vertical; border: 0; background: transparent; box-shadow: none; color: var(--ink); font-size: 15px; font-weight: 500; line-height: 1.5; }
+.chat-composer textarea { width: 100%; min-width: 0; min-height: 64px; max-height: 140px; padding: 10px; resize: none; border: 0; background: transparent; box-shadow: none; color: var(--ink); font-size: 15px; font-weight: 500; line-height: 1.5; scrollbar-width: thin; }
 .chat-composer textarea::placeholder { color: #6b899f; opacity: 1; }
 .send-button, .voice-mode-button { width: 46px; min-width: 46px; height: 46px; min-height: 46px; margin-bottom: 3px; padding: 12px; border: 1px solid #f3fbff; border-radius: 16px; background: var(--soft); color: #5d829a; box-shadow: var(--raised-small); }
 .send-button { background: linear-gradient(135deg,#9c87e6,#8272d3); color: #fff; border-color: #ad9beb; box-shadow: 5px 6px 13px #c4cfeb,-4px -4px 12px #f7fbff; }
@@ -143,6 +144,7 @@ input[type='checkbox'] { accent-color: #8b73cf; }
 .voice-control-secondary, .voice-control-end { color: var(--secondary); font-size: 11px; font-weight: 600; }
 .voice-control-icon { width: 64px; height: 64px; border: 1px solid #f5fcff; border-radius: 22px; background: var(--soft); color: var(--ink); box-shadow: var(--raised-small); }
 .voice-control-end .voice-control-icon { border-color: #f7f7ff; background: linear-gradient(135deg,#9a85dc,#8271cb); color: #fff; }
+.voice-control-end .voice-control-icon, .voice-control-end:hover .voice-control-icon, .voice-control-end .voice-control-icon svg { transform: none; }
 .voice-experience .app-bottom-nav { bottom: max(25px,env(safe-area-inset-bottom)); }
 @media (max-width:600px) {
   body { padding: 0 0 118px; background: var(--soft); }

@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createPhonicVoiceConversation, voiceFailureMessage } from "../src/phonic-voice.js";
+import { createPhonicVoiceConversation, voiceFailureMessage, createFloat32Resampler } from "../src/phonic-voice.js";
 
-function browser(t, { getUserMedia } = {}) {
+function browser(t, { getUserMedia, inputSampleRate = 44100 } = {}) {
   const originals = new Map();
   function install(key, value) {
     originals.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
@@ -18,7 +18,7 @@ function browser(t, { getUserMedia } = {}) {
   const stream = { getTracks: () => tracks };
   const nodes = [];
   class AudioContext {
-    sampleRate = 44100;
+    sampleRate = inputSampleRate;
     currentTime = 0;
     destination = {};
     audioWorklet = { addModule: async () => {} };
@@ -142,4 +142,34 @@ test("voice failures keep useful details and redact session credentials", () => 
   assert.match(voiceFailureMessage("Unknown voice_id"), /selected voice is unavailable/);
   const safe = voiceFailureMessage("wss://api.phonic.ai/?session_token=secret Bearer private ph_session_hidden");
   assert.doesNotMatch(safe, /secret|private|ph_session_hidden/);
+});
+
+test("16 kHz microphone blocks are split into provider-safe packets without inserted silence", async (t) => {
+  const { conversation, nodes, Socket } = browser(t, { inputSampleRate:16000 });
+  const starting = conversation.start();
+  const socket = await waitForSocket(Socket);
+  socket.open(); socket.message({type:"ready_to_start_conversation"});
+  await starting;
+  nodes[0].port.onmessage({data:{type:"audio-recording-chunk",buffer:new Float32Array(1024).fill(0.5)}});
+  const packets=socket.sent.filter(message=>message.type==="audio_chunk");
+  assert.ok(packets.length>=4);
+  for(const packet of packets){
+    const bytes=Buffer.from(packet.audio,'base64');
+    assert.ok(bytes.length/2/44100*1000<=20);
+    for(let index=0;index<bytes.length;index+=2)assert.ok(bytes.readInt16LE(index)>15000);
+  }
+});
+
+test("streaming resampling preserves duration and continuity across source rates",()=>{
+  for(const rate of [16000,44100,48000]){
+    const resample=createFloat32Resampler(rate);
+    let frames=0;
+    for(let index=0;index<20;index++){
+      const output=resample(new Float32Array(1024).fill(0.5));
+      frames+=output.length;
+      assert.ok(output.every(sample=>sample===0.5));
+    }
+    const expected=(20*1024-(rate===44100?0:1))*44100/rate;
+    assert.ok(Math.abs(frames-expected)<=1,rate+": incorrect resampled duration");
+  }
 });
