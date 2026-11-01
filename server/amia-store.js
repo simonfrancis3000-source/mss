@@ -46,7 +46,7 @@ export function createAmiaStore({ supabaseUrl, publishableKey, fetchImpl = fetch
     if (!supabaseUrl || !publishableKey || !auth?.accessToken || !auth?.user?.id) throw new Error('storage_not_configured');
     const response = await fetchImpl(base + path, {
       method, headers: { apikey: publishableKey, Authorization: 'Bearer ' + auth.accessToken,
-        'Content-Type': 'application/json', Prefer: prefer },
+        'Content-Type': 'application/json', 'X-Training-Revision': String(auth.trainingRevision || '0'), Prefer: prefer },
       ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(7000)
     });
     if (!response.ok) throw new Error('storage_http_' + response.status);

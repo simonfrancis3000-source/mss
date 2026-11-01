@@ -73,7 +73,7 @@ function corsHeaders(origin) {
     "Access-Control-Allow-Origin": origin,
     "Vary": "Origin",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Authorization, Content-Type"
+    "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Training-Revision"
   };
 }
 
@@ -485,7 +485,7 @@ const app = http.createServer(async (request, response) => {
       publishableKey: SUPABASE_PUBLISHABLE_KEY
     });
     if (!authResult.ok) return json(response, authResult.status, { error: authResult.error }, headers || {});
-    authContext = authResult;
+    authContext = { ...authResult, trainingRevision: String(request.headers["x-training-revision"] || "0") };
   }
 
   if (request.method === "GET" && url.pathname === "/health") {

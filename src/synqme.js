@@ -97,8 +97,15 @@ const rememberMeStorage = {
     try { sessionStorage.removeItem(key); } catch {}
   }
 };
+let trainingRevision = 0;
+const trainingSessionStartedAt = Date.now();
 const supabase = SUPABASE_URL && SUPABASE_KEY
   ? createClient(SUPABASE_URL, SUPABASE_KEY, {
+      global: { fetch: (url, options = {}) => {
+        const headers = new Headers(options.headers);
+        headers.set("x-training-revision", String(trainingRevision));
+        return fetch(url, { ...options, headers });
+      } },
       auth: {
         storage: rememberMeStorage,
         persistSession: true,
@@ -116,7 +123,7 @@ async function authenticatedApiHeaders(extra = {}) {
   if (error || !token || data?.session?.user?.is_anonymous) {
     throw new Error("Your SYNQ.ME account session has expired. Sign in again.");
   }
-  return { "Content-Type": "application/json", ...extra, Authorization: "Bearer " + token };
+  return { "Content-Type": "application/json", "X-Training-Revision": String(trainingRevision), ...extra, Authorization: "Bearer " + token };
 }
 
 function localizeWelcomeMessage(language) {
@@ -151,7 +158,7 @@ let robotAppearance = (() => {
   try {
     const saved = JSON.parse(localStorage.getItem(ROBOT_APPEARANCE_KEY) || "{}");
     return {
-      robotId: ROBOT_OPTIONS.some((item) => item.id === saved.robotId) ? saved.robotId : "elo",
+      robotId: saved.robotId === "none" || ROBOT_OPTIONS.some((item) => item.id === saved.robotId) ? saved.robotId : "elo",
       customImageData: typeof saved.customImageData === "string" ? saved.customImageData : ""
     };
   } catch {
@@ -323,7 +330,7 @@ function defaultProfile() {
 function companionNameForProfile(profile = {}) {
   const configuredName = String(profile.robotName || "").trim();
   if (configuredName) return configuredName;
-  if (robotAppearance.customImageData) return "Your robot";
+  if (robotAppearance.customImageData || robotAppearance.robotId === "none") return "Your robot";
   return (ROBOT_OPTIONS.find((item) => item.id === robotAppearance.robotId) || ROBOT_OPTIONS[0]).name;
 }
 
@@ -1219,7 +1226,7 @@ async function processStructuredMemoryTurn(userMessage, userTimestamp, shouldExt
         conditions: candidate.conditions,
         permission_policy: candidate.permission_policy,
         source_refs: ruleSourceReferences(sameRecord?.source_refs,userTimestamp),
-        attributes: candidate.attributes,
+        attributes: { ...(candidate.attributes || {}), scenario_id: state.messages.find(message => message.timestamp === userTimestamp)?.scenario_id || null },
         search_terms: candidate.search_terms,
         search_keys: buildPersonaMemorySearchKeys(candidate.statement, candidate.search_terms, candidate.topic),
         source_message: candidate.statement,
@@ -1568,6 +1575,8 @@ async function deletePendingSharedKnowledgeCandidates() {
 }
 
 function persist(syncCloud = true) {
+  const scope = scenarioData().started || (roomJourney?.active_room_id ? "room:" + roomJourney.active_room_id : null);
+  if (scope) state.messages = state.messages.map(message => !message.scenario_id && Date.parse(message.timestamp || "") >= trainingSessionStartedAt ? { ...message, scenario_id: scope } : message);
   let localSaved = false;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
@@ -2213,7 +2222,10 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   }
 
   const email = user.email.trim().toLowerCase();
-  const draft = migrateDraft ? readMatchingAccountDraft(email) : null;
+  const revisionResult = await supabase.from("synqme_training_revisions").select("revision").eq("user_id", user.id).maybeSingle();
+  if (revisionResult.error) throw revisionResult.error;
+  trainingRevision = Number(revisionResult.data?.revision || 0);
+  const draft = migrateDraft && trainingRevision === 0 ? readMatchingAccountDraft(email) : null;
   const draftState = draft?.state ? stateFromSnapshot(draft.state) : null;
   const fallbackProfile = draftState?.profile || defaultProfile();
   const fallbackFunctions = draftState?.functions || [];
@@ -2686,6 +2698,7 @@ function appendMessage(role, content, timestamp = null) {
   } else {
     avatar.classList.add("robot-message-avatar");
     avatar.setAttribute("aria-hidden", "true");
+    avatar.hidden = robotAppearance.robotId === "none" && !robotAppearance.customImageData;
     if (robotAppearance.customImageData) {
       const image = document.createElement("img");
       image.className = "message-robot-image";
@@ -3949,6 +3962,17 @@ function saveRobotAppearance() {
 function renderRobotPicker() {
   if (!elements.robotPicker) return;
   elements.robotPicker.replaceChildren();
+  const clear = document.createElement("button");
+  clear.type = "button"; clear.className = "robot-picker-item robot-picker-none";
+  clear.textContent = "No image";
+  clear.setAttribute("aria-label", "Clear companion image");
+  clear.setAttribute("aria-pressed", String(robotAppearance.robotId === "none" && !robotAppearance.customImageData));
+  clear.classList.toggle("is-selected", robotAppearance.robotId === "none" && !robotAppearance.customImageData);
+  clear.addEventListener("click", () => {
+    robotAppearance = { robotId: "none", customImageData: "" };
+    saveRobotAppearance(); renderRobotPicker(); applyRobotAppearance();
+  });
+  elements.robotPicker.append(clear);
   ROBOT_OPTIONS.forEach((option, index) => {
     const button = document.createElement("button");
     button.type = "button";
@@ -3992,7 +4016,7 @@ function applyRobotAppearance() {
       voiceImage.className = "voice-robot-image";
       elements.voiceOrbCore.append(voiceImage);
     } else {
-      elements.voiceOrbCore.innerHTML = robotSvgMarkup(option.id);
+      if (robotAppearance.robotId !== "none") elements.voiceOrbCore.innerHTML = robotSvgMarkup(option.id);
     }
   }
   if (robotAppearance.customImageData) {
@@ -4003,8 +4027,9 @@ function applyRobotAppearance() {
     elements.selectedRobotArt.append(image);
     if (elements.selectedRobotName) elements.selectedRobotName.textContent = "YOUR ROBOT";
   } else {
-    elements.selectedRobotArt.innerHTML = robotSvgMarkup(option.id);
-    if (elements.selectedRobotName) elements.selectedRobotName.textContent = option.name;
+    if (robotAppearance.robotId === "none") elements.selectedRobotArt.textContent = "No image";
+    else elements.selectedRobotArt.innerHTML = robotSvgMarkup(option.id);
+    if (elements.selectedRobotName) elements.selectedRobotName.textContent = robotAppearance.robotId === "none" ? "No image" : option.name;
   }
   if (elements.robotPicker) {
     elements.robotPicker.querySelectorAll("[data-robot-id]").forEach((button) => {
@@ -5122,18 +5147,6 @@ document.querySelectorAll("[data-prompt]").forEach((button) => {
     elements.messageInput.focus();
   });
 });
-elements.resetDemo?.addEventListener("click", () => {
-  if (!window.confirm("Reset this browser demo, including your settings and saved preferences?")) return;
-  try { localStorage.removeItem(STORAGE_KEY); } catch {}
-  state = initialState();
-  activeOutOfHomeScenarioContext = null;
-  state.apiConnected = false;
-  elements.conversationStatus.textContent = "Ready to talk";
-  elements.taskResult.hidden = true;
-  populateSettingsForm();
-  renderAll();
-  persist();
-});
 
 function buildPexiPersonaPackage() {
   const now = new Date().toISOString();
@@ -5533,3 +5546,47 @@ if ("serviceWorker" in navigator && import.meta.env.PROD) {
     });
   });
 }
+
+// Explicit destructive controls use a modal and never run on a select change.
+const resetScenarioSelect = document.querySelector("#resetTrainingScenario");
+SCENARIOS.forEach(scenario => { const option = document.createElement("option"); option.value = scenario.id; option.textContent = scenario.title; resetScenarioSelect?.append(option); });
+let resetTarget = null;
+const resetDialog = document.querySelector("#trainingResetDialog");
+const resetInput = document.querySelector("#trainingResetConfirmation");
+const resetExecute = document.querySelector("#trainingResetExecute");
+function openTrainingReset(scenarioId) {
+  if (!cloudUserId || isSending || personaMemoryWriteInFlight || roomJourneySaveInFlight) { alert("Wait for the current conversation or save to finish before resetting training."); return; }
+  closeVoiceExperience("Voice conversation ended.");
+  resetTarget = scenarioId;
+  const selected = SCENARIOS.find(item => item.id === scenarioId);
+  document.querySelector("#trainingResetTitle").textContent = selected ? "Reset " + selected.title + "?" : "Reset all training?";
+  document.querySelector("#trainingResetDescription").textContent = selected ? "Permanently delete this scenario’s conversations, saved learning and progress. Other scenarios stay saved. Older records that cannot be reliably separated will block this reset. This cannot be undone." : "Permanently delete all training conversations, saved preferences, memories and progress. Your account, name, companion settings and usage records stay saved. This cannot be undone.";
+  resetInput.value = ""; resetExecute.disabled = true;
+  document.querySelector("#trainingResetError").textContent = "";
+  resetDialog.showModal(); resetInput.focus();
+}
+document.querySelector("#resetAllTraining")?.addEventListener("click", () => openTrainingReset(null));
+document.querySelector("#resetOneScenario")?.addEventListener("click", () => openTrainingReset(resetScenarioSelect.value));
+resetInput?.addEventListener("input", () => { resetExecute.disabled = resetInput.value !== "RESET"; });
+document.querySelector("#trainingResetCancel")?.addEventListener("click", () => resetDialog.close());
+let resettingTraining = false;
+resetDialog?.addEventListener("cancel", event => { if (resettingTraining) event.preventDefault(); });
+resetExecute?.addEventListener("click", async () => {
+  if (resetInput.value !== "RESET" || resettingTraining) return;
+  resettingTraining = true; resetExecute.disabled = true;
+  document.querySelector("#trainingResetCancel").disabled = true;
+  try {
+    clearTimeout(cloudSaveTimer); cloudSaveTimer = null;
+    await cloudSaveChain;
+    if (isSending || personaMemoryWriteInFlight || roomJourneySaveInFlight) throw new Error("Wait for the current save to finish, then try again.");
+    const { data, error } = await supabase.rpc("synqme_reset_training", { p_confirmation: resetInput.value, p_scenario_id: resetTarget });
+    if (error) throw error;
+    trainingRevision = Number(data);
+    try { localStorage.removeItem(STORAGE_KEY); localStorage.removeItem(ACCOUNT_DRAFT_KEY); } catch {}
+    window.location.reload();
+  } catch (error) {
+    document.querySelector("#trainingResetError").textContent = error.message || "Reset failed. Nothing was deleted. Try again.";
+    resettingTraining = false; resetExecute.disabled = resetInput.value !== "RESET";
+    document.querySelector("#trainingResetCancel").disabled = false;
+  }
+});
