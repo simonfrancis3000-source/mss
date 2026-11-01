@@ -54,23 +54,16 @@ test("PEXI includes a per-task capability view and downloadable manifest templat
 });
 
 
-test("Beyond the Home exposes progressive out-of-home scenario training", async () => {
+test("Journey integrates public scenarios without a second training browser", async () => {
   const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
   const source = await readFile(new URL("../src/synqme.js", import.meta.url), "utf8");
-  const training = await readFile(new URL("../src/out-of-home-training.js", import.meta.url), "utf8");
-  assert.match(html, /id="outOfHomeTraining"/);
-  assert.match(html, /Beyond the Home/);
-  assert.match(html, /data-out-of-home-stage="everyday"/);
-  assert.match(html, /data-out-of-home-stage="social"/);
-  assert.match(html, /data-out-of-home-stage="advanced"/);
-  assert.match(html, /id="outOfHomeCategorySelect"/);
-  assert.match(html, /id="outOfHomeScenarioList"/);
-  assert.ok(html.includes("PEXI / CAPABILITY VALIDATION"));
-  assert.match(source, /buildOutOfHomeScenarioPrompt/);
-  assert.match(source, /initialiseOutOfHomeTrainingControls/);
-  assert.match(source, /renderOutOfHomeTraining/);
-  assert.match(training, /Social and contextual intelligence/);
+  assert.doesNotMatch(html, /id="outOfHomeTraining"/);
+  assert.doesNotMatch(html, /id="outOfHomeScenarioList"/);
+  assert.match(source, /scenarioTasks\(scenario\)/);
+  assert.match(source, /scenarioLearnings\(scenario,/);
+  assert.match(source, /startJourneyScenario\(scenario, task\)/);
 });
+
 
 test("first-use introduction audio is offered before conversation and can be replayed", async () => {
   const html = await readFile(new URL("../index.html", import.meta.url), "utf8");

@@ -1,0 +1,6 @@
+// Matched to Phonic's default-language catalogue, verified 1 November 2026.
+export const PHONIC_LANGUAGES = [
+  ['sq','Albanian'],['ar','Arabic'],['az','Azerbaijani'],['bn','Bengali'],['bg','Bulgarian'],['yue','Cantonese'],['zh','Chinese (Mandarin)'],['cs','Czech'],['da','Danish'],['nl','Dutch'],['en','English'],['fil','Filipino'],['fi','Finnish'],['fr','French'],['ka','Georgian'],['de','German'],['el','Greek'],['gu','Gujarati'],['he','Hebrew'],['hi','Hindi'],['hu','Hungarian'],['id','Indonesian'],['it','Italian'],['ja','Japanese'],['kn','Kannada'],['km','Khmer'],['ko','Korean'],['lv','Latvian'],['lt','Lithuanian'],['ms','Malay'],['ml','Malayalam'],['mr','Marathi'],['ne','Nepali'],['no','Norwegian'],['fa','Persian'],['pl','Polish'],['pt','Portuguese'],['pa','Punjabi'],['ro','Romanian'],['ru','Russian'],['si','Sinhala'],['sk','Slovak'],['es','Spanish'],['sw','Swahili'],['sv','Swedish'],['ta','Tamil'],['te','Telugu'],['th','Thai'],['tr','Turkish'],['uk','Ukrainian'],['ur','Urdu'],['vi','Vietnamese']
+].map(([code,label])=>({code,label}));
+export const CONVERSATION_LANGUAGE_NAMES = Object.fromEntries(PHONIC_LANGUAGES.map(({code,label})=>[code,label]));
+export const SUPPORTED_CONVERSATION_LANGUAGES = new Set(PHONIC_LANGUAGES.map(item=>item.code));

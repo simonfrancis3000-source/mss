@@ -9,16 +9,18 @@ export function ruleSourceReferences(existing, timestamp) {
   return [...new Map(refs.map((ref) => [ref.message_timestamp,ref])).values()].slice(-8);
 }
 
-export function scenarioReviewRecord({ userId, scenarioId, startedAt, checks, userTurnCount }) {
+export function scenarioReviewRecord({ userId, scenarioId, startedAt, checks, userTurnCount, reviewedTaskIds }) {
   if (!userId || !SCENARIOS.some((scenario) => scenario.id===scenarioId) || !Number.isFinite(Date.parse(startedAt || '')) || !Array.isArray(checks) || checks.length!==3 || !checks.every((value) => value===true) || !Number.isInteger(userTurnCount) || userTurnCount<1) return null;
+  const scenario = SCENARIOS.find(item => item.id === scenarioId);
+  if (reviewedTaskIds !== undefined && (!Array.isArray(reviewedTaskIds) || scenarioTasks(scenario).some(task => !reviewedTaskIds.includes(task.id)))) return null;
   return {
     user_id:userId, evaluation_key:'review:'+scenarioId+':'+new Date(startedAt).toISOString(), scope_key:scenarioId,
     evaluation_kind:'scenario_self_review', origin:'user_self_report', outcome:'self_reported_complete',
-    checks:{ preferences_reviewed:true,boundaries_reviewed:true,exceptions_reviewed:true,user_turn_count:Math.min(userTurnCount,10000) },
+    checks:{ preferences_reviewed:true,boundaries_reviewed:true,exceptions_reviewed:true,user_turn_count:Math.min(userTurnCount,10000), ...(reviewedTaskIds ? {reviewed_task_ids:scenarioTasks(scenario).map(task => task.id)} : {}) },
     source_refs:[{ scenario_id:scenarioId,started_at:new Date(startedAt).toISOString() }],engine_version:'persistence-v1'
   };
 }
-import { SCENARIOS } from './scenario-journey.js';
+import { SCENARIOS, scenarioTasks } from './scenario-journey.js';
 
 
 export function scenarioTestRecord(userId, report) {

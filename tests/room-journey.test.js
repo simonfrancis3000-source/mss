@@ -7,6 +7,7 @@ import {
   deriveCompletedRoomTasks,
   getRoomJourneySchedule,
   getRoomTaskStates,
+  resolveConversationRoomId,
   buildRoomJourneyConversationContext
 } from "../src/room-journey.js";
 
@@ -102,4 +103,35 @@ test("conversation context does not select a completed task as current", () => {
   assert.equal(context.activeTaskTitle, null);
   assert.equal(context.nextPendingTaskId, "surfaces");
   assert.equal(context.tasks.some((task) => task.current), false);
+});
+
+test("explicit spoken room changes persist beyond short replies without following assistant suggestions", () => {
+  const messages = [
+    {role:"assistant",content:"Which room would you like next?"},
+    {role:"user",content:"Living room."},
+    {role:"user",content:"My candle stays on the side table."},
+    {role:"assistant",content:"Shall we move on to the kitchen?"},
+    {role:"user",content:"Put it somewhere sensible."}
+  ];
+  assert.equal(resolveConversationRoomId(messages,"kitchen"),"living_room");
+  assert.equal(resolveConversationRoomId([{role:"user",content:"I bring snacks from the kitchen."}],"living_room"),"living_room");
+  assert.equal(resolveConversationRoomId([{role:"user",content:"Do not switch to the kitchen yet."}],"living_room"),"living_room");
+  assert.equal(resolveConversationRoomId([{role:"user",content:"Let's switch to the bedroom."}],"living_room"),"bedroom");
+});
+
+test("living room provides enough distinct learning areas for a substantive twenty-minute conversation", () => {
+  const context = buildRoomJourneyConversationContext({activeRoomId:"living_room"});
+  assert.equal(context.targetConversationMinutes,20);
+  assert.ok(context.tasks.length>=12);
+  assert.ok(context.tasks.every(task=>task.description));
+  assert.ok(context.tasks.some(task=>task.id==="quiet-time"));
+  assert.ok(context.tasks.some(task=>task.id==="spills-hazards"));
+});
+
+test('premature room transitions are detected without blocking normal in-room replies', async () => {
+  const {prematureRoomTransition} = await import('../src/room-journey.js');
+  assert.equal(prematureRoomTransition("Now that the living room is mostly settled, shall we move on to the kitchen?",'living_room'),true);
+  assert.equal(prematureRoomTransition('Would you like to move on to the next room now?','living_room'),true);
+  assert.equal(prematureRoomTransition('Shall we explore the living room lighting?','living_room'),false);
+  assert.equal(prematureRoomTransition('Shall we move on to the kitchen?','living_room',true),false);
 });
