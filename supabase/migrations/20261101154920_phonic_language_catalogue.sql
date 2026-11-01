@@ -1,0 +1,2 @@
+alter table public.synqme_profiles drop constraint if exists synqme_profiles_preferred_language_check;
+alter table public.synqme_profiles add constraint synqme_profiles_preferred_language_check check (preferred_language in ('sq', 'ar', 'az', 'bn', 'bg', 'yue', 'zh', 'cs', 'da', 'nl', 'en', 'fil', 'fi', 'fr', 'ka', 'de', 'el', 'gu', 'he', 'hi', 'hu', 'id', 'it', 'ja', 'kn', 'km', 'ko', 'lv', 'lt', 'ms', 'ml', 'mr', 'ne', 'no', 'fa', 'pl', 'pt', 'pa', 'ro', 'ru', 'si', 'sk', 'es', 'sw', 'sv', 'ta', 'te', 'th', 'tr', 'uk', 'ur', 'vi'));

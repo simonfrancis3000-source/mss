@@ -41,8 +41,8 @@ test("male and female preferences resolve to one fixed Phonic voice", () => {
   assert.equal(normaliseVoicePreference("female"), "female");
   assert.equal(normaliseVoicePreference("invalid"), "female");
   assert.equal(phonicVoiceIdForPreference("male"), "joon");
-  assert.equal(phonicVoiceIdForPreference("female"), "virginia");
-  assert.equal(phonicVoiceIdForPreference("invalid"), "virginia");
+  assert.equal(phonicVoiceIdForPreference("female"), "gabrielle");
+  assert.equal(phonicVoiceIdForPreference("invalid"), "gabrielle");
 });
 
 

@@ -1,3 +1,5 @@
+import { PHONIC_LANGUAGES, CONVERSATION_LANGUAGE_NAMES } from "./conversation-languages.js";
+import { shouldWelcomeBack, welcomeBackReply, spokenSentenceBreaks } from "./conversation-return.js";
 import { isApplianceIdentityAnswer } from "./appliance-persona.js";
 import { ruleSourceReferences, scenarioReviewRecord } from "./amia-persistence.js";
 import { SCENARIOS, completedScenarioIds, availableScenarioCount, buildScenarioStartPatch, scenarioTasks, scenarioLearnings, scenarioProgressSummary } from "./scenario-journey.js";
@@ -6,7 +8,7 @@ import { createPhonicVoiceConversation, voiceFailureMessage } from "./phonic-voi
 import { buildPexiCapabilityPlan, cleanPexiCapabilityManifest } from "./pexi-readiness.js";
 import { companionThinkingMessage, companionWelcomeMessage, isCompanionWelcomeMessage } from "./companion-copy.js";
 import { assistantReplyRepeatsRecentAssistant, enforceFirstPersonTaskQuestions, normaliseVoicePreference, phonicVoiceIdForPreference } from "./voice-language.js";
-import { ROOM_JOURNEY_ROOMS, addMonthsAnchored, getRoomTaskStates } from "./room-journey.js";
+import { ROOM_JOURNEY_ROOMS, addMonthsAnchored, getRoomTaskStates, resolveConversationRoomId } from "./room-journey.js";
 import { OUT_OF_HOME_CATEGORIES, findOutOfHomeScenario, buildOutOfHomeScenarioPrompt } from "./out-of-home-training.js";
 import { findOutOfHomeScenarioContext, isOutOfHomeTopicChange } from "./out-of-home-persona-prompt.js";
 import {
@@ -301,6 +303,10 @@ const elements = {
   introAudioReplay: $("#introAudioReplay")
 };
 
+if (elements.preferredLanguage) elements.preferredLanguage.replaceChildren(...PHONIC_LANGUAGES.map(({code,label}) => {
+  const option = document.createElement("option"); option.value = code; option.textContent = label; return option;
+}));
+
 function defaultProfile() {
   return {
     ownerName: "",
@@ -458,6 +464,7 @@ let roomJourneyLoadInFlight = false;
 let roomJourneyTableUnavailable = false;
 let roomJourneyWarningShown = false;
 let roomJourneySaveInFlight = false;
+let welcomeBackPending = false;
 let selectedJourneyScenario = null;
 let journeyDisplay = "chart";
 const SCENARIO_PROGRESS_KEY = "scenario_journey_v1";
@@ -509,16 +516,19 @@ function renderScenarioJourney() {
       const count = document.createElement("strong"); count.textContent = group.completed + "/" + group.total;
       column.setAttribute("aria-label", group.label + ": " + group.completed + " of " + group.total + " complete"); column.append(track, label, count); bars.append(column);
     });
+    const currentScenario = SCENARIOS.find(item => item.id === data.started && !done.includes(item.id)) || SCENARIOS.find(item => item.kind === "room" && item.roomId === roomJourney.active_room_id && !done.includes(item.id));
+    const nextScenario = currentScenario || progress.next;
     const next = document.createElement("div"); next.className = "journey-chart-next";
-    const nextLabel = document.createElement("span"); nextLabel.textContent = progress.next ? "Your next scenario" : "All scenarios complete";
-    const nextTitle = document.createElement("strong"); nextTitle.textContent = progress.next?.title || "Keep refining your SecondSelf";
+    const nextLabel = document.createElement("span"); nextLabel.textContent = currentScenario ? "Your current scenario" : progress.next ? "Your next scenario" : "All scenarios complete";
+    const nextTitle = document.createElement("strong"); nextTitle.textContent = nextScenario?.title || "Keep refining your SecondSelf";
     const open = document.createElement("button"); open.type = "button"; open.className = "journey-task-button"; open.textContent = progress.next ? "Explore scenario" : "Review scenarios";
-    open.addEventListener("click", () => { selectedJourneyScenario = progress.next?.id || SCENARIOS[0].id; journeyDisplay = "scenarios"; renderScenarioJourney(); });
+    open.addEventListener("click", () => { selectedJourneyScenario = nextScenario?.id || SCENARIOS[0].id; journeyDisplay = "scenarios"; renderScenarioJourney(); });
     next.append(nextLabel, nextTitle, open); chart.append(heading, ring, caption, bars, next); target.append(chart); return;
   }
   const available = availableScenarioCount(done);
   const selected = SCENARIOS.findIndex((item) => item.id === selectedJourneyScenario);
-  const index = selected >= 0 && selected < available ? selected : Math.min(available - 1, SCENARIOS.length - 1);
+  const activeIndex = SCENARIOS.findIndex(item => item.kind === "room" && item.roomId === roomJourney.active_room_id && !done.includes(item.id));
+  const index = selected >= 0 && (selected < available || selected === activeIndex) ? selected : activeIndex >= 0 ? activeIndex : Math.min(available - 1, SCENARIOS.length - 1);
   const scenario = SCENARIOS[index];
   selectedJourneyScenario = scenario.id;
   const nav = document.createElement("details"); nav.className = "journey-scenario-picker";
@@ -527,9 +537,9 @@ function renderScenarioJourney() {
   const list = document.createElement("div"); list.id = "journeyScenarioOptions"; list.className = "journey-scenario-options"; list.setAttribute("role", "listbox"); list.setAttribute("aria-label", "Choose a scenario");
   SCENARIOS.forEach((item, i) => {
     const option = document.createElement("button"); option.type = "button"; option.setAttribute("role", "option"); option.setAttribute("aria-selected", String(item.id === scenario.id));
-    option.disabled = i >= available;
+    option.disabled = i >= available && i !== activeIndex;
     option.textContent = (i + 1) + ". " + item.title;
-    const status = document.createElement("span"); status.textContent = done.includes(item.id) ? "Complete" : i >= available ? "Locked" : "Current"; option.append(status);
+    const status = document.createElement("span"); status.textContent = done.includes(item.id) ? "Complete" : option.disabled ? "Locked" : "Current"; option.append(status);
     option.addEventListener("click", () => { selectedJourneyScenario = item.id; renderScenarioJourney(); document.querySelector("#journeyScenarioSelect")?.focus(); }); list.append(option);
   });
   nav.append(toggle, list);
@@ -546,7 +556,7 @@ function renderScenarioJourney() {
   });
   const navLabel = document.createElement("div"); navLabel.id = "journeyScenarioLabel"; navLabel.className = "journey-select-label"; navLabel.textContent = "Choose your scenario"; toggle.setAttribute("aria-labelledby", "journeyScenarioLabel journeyScenarioSelect");
   const title = document.createElement("h3"); title.textContent = scenario.title;
-  const desc = document.createElement("p"); desc.textContent = scenario.description;
+  const desc = document.createElement("p"); desc.textContent = scenario.description + (scenario.roomId === "living_room" ? " Plan at least 20 minutes to explore this room properly. You can pause and return whenever you like." : "");
   const start = document.createElement("button"); start.type = "button"; start.className = "out-of-home-scenario-action";
   start.textContent = done.includes(scenario.id) ? "Revisit this scenario" : data.started === scenario.id ? "Continue conversation" : "Start conversation";
   start.addEventListener("click", () => void startJourneyScenario(scenario));
@@ -590,8 +600,12 @@ function renderScenarioJourney() {
   }
   const checklist = document.createElement("fieldset");
   const legend = document.createElement("legend"); legend.textContent = "Ready to finish? Confirm what you have covered together:"; checklist.append(legend);
+  scenarioTasks(scenario).forEach(task => {
+    const label = document.createElement("label"); const input = document.createElement("input"); input.type = "checkbox"; input.dataset.reviewTask = task.id;
+    label.append(input, document.createTextNode("We have fully covered " + task.title.toLowerCase() + ", or agreed it is not relevant.")); checklist.append(label);
+  });
   ["I have explained the behaviour or preferences that matter to me.", "We have discussed relevant boundaries, privacy or safety.", "I have covered when I want my companion to ask, wait or stop, or confirmed that this is not relevant."].forEach((text) => {
-    const label = document.createElement("label"); const input = document.createElement("input"); input.type = "checkbox";
+    const label = document.createElement("label"); const input = document.createElement("input"); input.type = "checkbox"; input.dataset.reviewSummary = "true";
     label.append(input, document.createTextNode(" " + text)); checklist.append(label);
   });
   const finish = document.createElement("button"); finish.type = "button"; finish.className = "out-of-home-scenario-action"; finish.textContent = "Complete scenario and unlock next"; finish.disabled = true;
@@ -600,7 +614,8 @@ function renderScenarioJourney() {
     finish.disabled = true;
     const reviewUserId = cloudUserId;
     const review = scenarioReviewRecord({ userId:reviewUserId,scenarioId:scenario.id,startedAt:data.startedAt,
-      checks:[...checklist.querySelectorAll("input")].map((input) => input.checked),userTurnCount:responses.length });
+      checks:[...checklist.querySelectorAll("input[data-review-summary]")].map((input) => input.checked),
+      reviewedTaskIds:[...checklist.querySelectorAll("input[data-review-task]:checked")].map(input => input.dataset.reviewTask), userTurnCount:responses.length });
     if (!review || !supabase) { finish.disabled=false; return; }
     const { error:reviewError } = await supabase.from("synqme_evaluation_records").upsert(review,{onConflict:"user_id,evaluation_key",ignoreDuplicates:true});
     if (reviewUserId!==cloudUserId) return;
@@ -617,13 +632,20 @@ function renderScenarioJourney() {
 }
 async function startJourneyScenario(scenario, task = null) {
   if (!roomJourney || roomJourneySaveInFlight) return;
+  const done = completedScenarioIds(scenarioData().completed);
+  const currentId = scenarioData().started || "room:" + roomJourney.active_room_id;
+  if (currentId !== scenario.id && !done.includes(currentId)) {
+    alert("Finish and review the current scenario in Journey before moving to another one. You can pause and return at any time."); return;
+  }
   // Commit the scenario and room focus together so a failed save cannot leave
   // AMÏA working on a different room from the one shown in the journey.
   const patch = buildScenarioStartPatch(scenario, roomJourney.room_progress);
+  patch.room_progress[SCENARIO_PROGRESS_KEY].focusStartedAt = new Date().toISOString();
   if (scenario.kind === "room") patch.active_task_id = task?.id || (scenarioData().started === scenario.id ? roomJourney.active_task_id : null);
   if (!(await persistRoomJourneyChanges(patch))) { alert("Your scenario could not be saved. Please try again."); return; }
   if (scenario.kind === "room") {
     activeOutOfHomeScenarioContext = null;
+    state.pendingClarification = null;
     const room = ROOM_JOURNEY_ROOMS.find((item) => item.id === scenario.roomId);
     elements.messageInput.value = task?.prompt || "Let's explore " + room.name + ". Ask me one question at a time about my preferences, relevant boundaries, and when you should ask, wait or stop. This may be a place I visit, not necessarily a room in my home.";
   } else {
@@ -2142,6 +2164,7 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   cloudUserEmail = user.email;
   profileCreatedAt = null;
   roomJourney = null;
+  welcomeBackPending = false;
   selectedJourneyScenario = null;
   renderScenarioJourney();
   roomJourneyTableUnavailable = false;
@@ -2698,8 +2721,9 @@ function buildCurrentRoomJourneyContext() {
   if (!room) return null;
   return {
     activeRoomId: room.id,
-    activeTaskId: roomJourney.active_task_id || null,
+    activeTaskId: room.id === roomJourney.active_room_id ? roomJourney.active_task_id || null : null,
     completedTaskIds: roomCompletedIds(room),
+    completionConfirmed: completedScenarioIds(scenarioData().completed).includes("room:" + room.id),
     unlockedRoomCount: schedule.unlockedCount
   };
 }
@@ -3962,11 +3986,7 @@ function updateVoiceExperience(mode, message) {
 
 function buildPhonicConfig() {
   const language = state.profile.preferredLanguage || "en";
-  const languageNames = {
-    en: "English (US)", es: "Spanish", fr: "French", it: "Italian",
-    pt: "Portuguese", hi: "Hindi", ja: "Japanese", zh: "Mandarin Chinese"
-  };
-  const languageName = languageNames[language] || "English (US)";
+  const languageName = CONVERSATION_LANGUAGE_NAMES[language] || "English";
   const companion = selectedCompanionDisplayName();
   const voicePreference = normaliseVoicePreference(state.profile.robotVoice);
   const voiceId = phonicVoiceIdForPreference(voicePreference);
@@ -3977,6 +3997,7 @@ function buildPhonicConfig() {
     "MANDATORY TURN FLOW: After each completed user utterance, call amia_next_turn exactly once before speaking. Do not independently answer, acknowledge, or ask a follow-up while waiting. The tool calls SYNQ.ME's AMÏA conversation engine with the current transcript, saved preferences, relevant home memories, profile and selected household interests.",
     "AUTHORITATIVE RESPONSE: Speak only the tool's assistant_text, verbatim, in " + languageName + ". Do not paraphrase, add greetings, ask an extra question, or continue after that response. Never mention tools or internal decision logic.",
     "FIRST-PERSON COMPANION RULE — NON-NEGOTIABLE: When discussing tasks you may eventually do, always speak as the user's SecondSelf using I/me. Ask, for example, “What would you like me to do?” or “How would you like me to handle that?” Never ask what the user wants their robot to do, what the robot should do, or any equivalent third-person task question. Apply this perspective naturally in the selected language.",
+    "NATURAL PACING: Pause briefly at each sentence ending. Make a clear, relaxed pause before moving from an acknowledgement into a new question, and a slightly longer pause at blank lines. Do not rush the question into the preceding statement. Keep all words verbatim. Use a warm, unhurried conversational delivery.",
     "VOICE SELECTION — NON-NEGOTIABLE: The user selected the " + voicePreference + " voice. Use the configured voice consistently and do not substitute, alternate, or randomise it.",
     "Never claim a robot is physically connected or that a household task has happened. This conversation prepares a personal digital persona for a future compatible robot."
   ].join("\n\n");
@@ -3985,6 +4006,9 @@ function buildPhonicConfig() {
     system_prompt: systemPrompt,
     voice_id: voiceId,
     audio_speed: 1,
+    default_language: language,
+    additional_languages: [],
+    multilingual_mode: "request",
     input_format: "pcm_44100",
     output_format: "pcm_44100",
     tools: [{
@@ -4270,10 +4294,10 @@ async function handlePhonicAmiaToolCall({ name, parameters = {}, items = [] } = 
       reply = unavailable;
     }
 
-    const spokenReply = enforceFirstPersonTaskQuestions(
+    const spokenReply = spokenSentenceBreaks(enforceFirstPersonTaskQuestions(
       reply.trim() || unavailable,
       selectedCompanionDisplayName()
-    );
+    ));
     state.pendingClarification = detectPendingClarification(latestUserText, spokenReply);
     void refreshRoomJourneyProgress();
     void processStructuredMemoryTurn(latestUserText, metadata.timestamp, metadata.shouldExtractStructuredMemory);
@@ -4298,6 +4322,7 @@ async function handlePhonicAmiaToolCall({ name, parameters = {}, items = [] } = 
 }
 
 async function openVoiceExperience() {
+  welcomeBackPending ||= shouldWelcomeBack(state.messages);
   if (!elements.voiceExperience) return;
   if (!cloudUserId) {
     setAuthGateVisible(true);
@@ -4683,6 +4708,17 @@ async function saveApplianceRecord(appliance) {
 
 async function requestAIReply(repairMode = false) {
   const requestUserId = cloudUserId;
+  if (roomJourney) {
+    const currentUser = [...state.messages].reverse().find(item => item.role === "user");
+    const maySwitch = completedScenarioIds(scenarioData().completed).includes("room:" + roomJourney.active_room_id);
+    const focusId = maySwitch ? resolveConversationRoomId(currentUser ? [currentUser] : [], roomJourney.active_room_id) : roomJourney.active_room_id;
+    if (focusId !== roomJourney.active_room_id) {
+      activeOutOfHomeScenarioContext = null;
+      state.pendingClarification = null;
+      await persistRoomJourneyChanges({ active_room_id: focusId, active_task_id: null, room_progress: { ...roomJourney.room_progress, [SCENARIO_PROGRESS_KEY]: { ...scenarioData(), focusStartedAt: new Date().toISOString() } } });
+      renderAll();
+    }
+  }
   if (!API_BASE) return null;
   if (!state.apiProvider) await checkAIBackend();
   if (state.apiProvider !== "deepseek") {
@@ -4715,10 +4751,12 @@ async function requestAIReply(repairMode = false) {
       content: message.content
     }));
     const currentUserText = state.messages[state.messages.length - 1]?.content || "";
+    const activeRoomName = ROOM_JOURNEY_ROOMS.find(room => room.id === roomJourney?.active_room_id)?.name || "";
+    const retrievalQuery = currentUserText + (activeOutOfHomeScenarioContext ? "" : " " + activeRoomName);
     const [memoryReferences, sharedKnowledgeReferences, relevantPersonaMemories] = await Promise.all([
-      getHomeMemoryReferences(currentUserText),
-      getSharedKnowledgeReferences(currentUserText),
-      getRelevantPersonaMemories(currentUserText)
+      getHomeMemoryReferences(retrievalQuery),
+      getSharedKnowledgeReferences(retrievalQuery),
+      getRelevantPersonaMemories(retrievalQuery)
     ]);
     if (!requestUserId || requestUserId !== cloudUserId) return null;
     const requestHeaders = await authenticatedApiHeaders();
@@ -4749,7 +4787,7 @@ async function requestAIReply(repairMode = false) {
           memory_key, topic, kind, scope_key, statement, status, confidence, conditions, source_message, source_timestamp, conflict_group
         })),
         sharedKnowledgeReferences,
-        repairMode
+        repairMode, welcomeBack: welcomeBackPending
       })
     });
     let data = {};
@@ -4788,7 +4826,9 @@ async function requestAIReply(repairMode = false) {
     // for a turn that already used its own fallback or repair strategy.
     lastAIReplyUsedFallback = Boolean(data.usedFallback || data.responseNeedsReview);
     if (data.responseNeedsReview) return "__SYNQME_UNHELPFUL_AI_RESPONSE__";
-    return reply.trim();
+    const personalised = welcomeBackPending ? welcomeBackReply(reply.trim(), state.profile.ownerName, state.profile.preferredLanguage || "en") : reply.trim();
+    welcomeBackPending = false;
+    return personalised;
   } catch (error) {
     console.info("SYNQ.ME AI request failed; no scripted question will be substituted.", error);
     state.apiConnected = false;
@@ -4862,6 +4902,7 @@ async function sendMessage(rawText) {
   }
   const message = rawText.trim();
   if (!message || isSending) return;
+  welcomeBackPending ||= shouldWelcomeBack(state.messages);
   if (isOutOfHomeTopicChange(message)) {
     activeOutOfHomeScenarioContext = null;
   }

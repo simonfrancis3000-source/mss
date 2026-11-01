@@ -12,7 +12,7 @@ test("voice input transcripts are committed to chat as soon as Phonic transcribe
 test("the exact assistant text is saved before Phonic plays it and partial assistant fragments are not persisted", async () => {
   const source = await readFile(new URL("../src/synqme.js", import.meta.url), "utf8");
   const handler = source.match(/async function handlePhonicAmiaToolCall\([\s\S]*?\n\}/)?.[0] || "";
-  assert.match(handler, /const spokenReply = enforceFirstPersonTaskQuestions/);
+  assert.match(handler, /const spokenReply = spokenSentenceBreaks\(enforceFirstPersonTaskQuestions/);
   assert.match(handler, /state\.messages\.push\(\{ role: "assistant", content: spokenReply/);
   assert.match(handler, /persist\(\);[\s\S]*?renderAll\(\);[\s\S]*?return \{ status: "ok", decision_owner: "AMÏA", assistant_text: spokenReply \}/);
   const synchroniser = source.match(/function syncPhonicTranscriptItems\(items\) \{([\s\S]*?)\n\}\n\nfunction handlePhonicVoiceEvent/)?.[1] || "";

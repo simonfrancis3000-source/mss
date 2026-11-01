@@ -125,7 +125,7 @@ test("AMÏA answers the current intent before asking and respects active-room co
     recentMessages: [{ role: "assistant", content: "Would you like me to focus on the kitchen counters?" }]
   });
   assert.match(prompt, /Respond to that intent first/i);
-  assert.match(prompt, /An explicit topic change or direct question from the user always takes priority/i);
+  assert.match(prompt, /Answer direct questions from the user[\s\S]*?without silently changing the active learning focus/i);
   assert.match(prompt, /Do not jump to another room because a related memory exists/i);
   assert.match(prompt, /Do not ask for details that would not change a decision/i);
 });

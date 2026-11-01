@@ -1,3 +1,4 @@
+import { SUPPORTED_CONVERSATION_LANGUAGES, CONVERSATION_LANGUAGE_NAMES } from "../src/conversation-languages.js";
 import { findApplianceManual, readSavedApplianceManual, shouldIdentifyAppliance, validateApplianceIdentity } from "./appliance-manual.js";
 import { buildApplianceConversationGuidance } from "../src/appliance-persona.js";
 import { buildCompanionNameGuidance } from "../src/companion-personality.js";
@@ -12,7 +13,7 @@ import { cleanKnowledgeCandidate } from "../src/shared-knowledge-validation.js";
 import { cleanPersonaMemoryCandidate, MEMORY_TOPICS } from "../src/persona-memory.js";
 import { selectHouseholdSkills } from "../src/household-skills.js";
 import { assistantReplyRepeatsRecentAssistant, enforceFirstPersonTaskQuestions, isIncompleteAssistantReply, normaliseVoicePreference } from "../src/voice-language.js";
-import { buildRoomJourneyConversationContext } from "../src/room-journey.js";
+import { buildRoomJourneyConversationContext, resolveConversationRoomId, prematureRoomTransition } from "../src/room-journey.js";
 
 const PORT = Number.parseInt(process.env.PORT || "10000", 10);
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_PERSON_API_KEY || process.env.DEEPSEEK_API_KEY || "";
@@ -52,17 +53,7 @@ const MAX_PERSONA_MEMORY_EXTRACTIONS_PER_MINUTE = 8;
 const MAX_PHONIC_SESSIONS_PER_MINUTE = 5;
 const MAX_PHONIC_USAGE_REPORTS_PER_MINUTE = 20;
 const MAX_BODY_BYTES = 48 * 1024;
-const SUPPORTED_CONVERSATION_LANGUAGES = new Set(["en", "es", "fr", "it", "pt", "hi", "ja", "zh"]);
-const CONVERSATION_LANGUAGE_NAMES = {
-  en: "English (US)",
-  es: "Spanish",
-  fr: "French",
-  it: "Italian",
-  pt: "Brazilian Portuguese",
-  hi: "Hindi",
-  ja: "Japanese",
-  zh: "Mandarin Chinese"
-};
+
 
 function json(response, status, body, headers = {}) {
   response.writeHead(status, {
@@ -853,7 +844,14 @@ const app = http.createServer(async (request, response) => {
     });
     const preferences = cleanPreferences(body?.preferences);
     const profile = cleanProfile(body?.profile);
-    const roomJourney = cleanRoomJourney(body?.roomJourney);
+    const requestedRoom = body?.roomJourney;
+    const resolvedRoomId = requestedRoom?.completionConfirmed === true ? resolveConversationRoomId(normalizedMessages.slice(-1), requestedRoom?.activeRoomId || "kitchen") : requestedRoom?.activeRoomId || "kitchen";
+    const roomCompletionConfirmed = resolvedRoomId === requestedRoom?.activeRoomId && requestedRoom?.completionConfirmed === true;
+    const roomJourney = cleanRoomJourney(requestedRoom ? {
+      ...requestedRoom, activeRoomId: resolvedRoomId,
+      activeTaskId: resolvedRoomId === requestedRoom.activeRoomId ? requestedRoom.activeTaskId : null,
+      completedTaskIds: resolvedRoomId === requestedRoom.activeRoomId ? requestedRoom.completedTaskIds : []
+    } : null);
     const responseLanguage = CONVERSATION_LANGUAGE_NAMES[profile.preferredLanguage] || "English (US)";
     const domesticFunctions = cleanFunctions(body?.domesticFunctions);
     const memoryReferences = cleanMemoryReferences(body?.memoryReferences);
@@ -1009,17 +1007,24 @@ const app = http.createServer(async (request, response) => {
       : "";
     const roomJourneyContext = !outOfHomeScenario && roomJourney
       ? [
-          "STRICT CURRENT ROOM FOCUS: The active room for this conversation is " + roomJourney.activeRoomName + ". This is the only room to advance in the current scenario unless the user explicitly asks to switch rooms or directly asks about another room. Never pivot to another room because older memories or preferences mention it. Ignore out-of-room memories for the current learning question unless the user brings that room up.",
+          "STRICT CURRENT ROOM FOCUS: The active room for this conversation is " + roomJourney.activeRoomName + ". This is the only room to advance in the current scenario until the user confirms the room completion review. Answer direct factual questions about other rooms without changing the active learning focus. Never pivot to another room because older memories or preferences mention it. Ignore out-of-room memories for the current learning question unless the user brings that room up.",
           roomJourney.activeTaskTitle
             ? "CURRENT TASK: The user has selected " + roomJourney.activeTaskTitle + " in the " + roomJourney.activeRoomName + ". Treat that as the task currently being worked on. If asked what we are working on, answer directly that we are working on " + roomJourney.activeTaskTitle + " in the " + roomJourney.activeRoomName + ". Do not replace it with a different room or task."
             : "CURRENT ROOM: The user is working through the " + roomJourney.activeRoomName + " journey. No task has been explicitly selected as in progress. The next pending task is " + (roomJourney.nextPendingTaskTitle || "not available") + ". If asked what we are working on, identify the " + roomJourney.activeRoomName + " journey and describe that next pending task as the next task, not as already in progress.",
           "Room tasks already learned: " + JSON.stringify(roomJourney.tasks.filter((task) => task.completed).map((task) => task.title)) + ". " +
             "Outstanding room tasks: " + JSON.stringify(roomJourney.tasks.filter((task) => !task.completed).map((task) => task.title)) + ". " +
             "Use these as learning objectives, not as a rigid questionnaire. Never ask again about a task already learned. Choose one useful outstanding detail at a time, and acknowledge new information naturally. Ask only about this active room unless the user explicitly broadens the topic.",
+          "COMPLETION RULE: The current room completion review is " + (roomCompletionConfirmed ? "confirmed" : "NOT confirmed") + ". Do not advance or offer to advance to a different room until the user has reviewed every task and confirmed completion in Journey. Conversational acknowledgements such as got it, that settles it, or a single preference do not complete a room. If the user asks to move on early, explain the remaining learning areas briefly and continue one relevant outstanding detail. The user can pause at any time. Never invent consent or assume that permission for one object applies to everything else.",
+          "CONVERSATION DEPTH: For each task, explore the normal routine, sequence, timing, quality standard, exception, privacy or permission boundary, failure recovery and how the user would correct me. Ask two or three distinct useful follow-ups when needed; do not mistake one answer for full task coverage. Follow answers into relevant practical detail without repeating or padding. Saved-task flags are evidence that some preferences were captured, not proof that a whole room is settled. Do not repeat settled answers; deepen the remaining aspects with concrete situations, exceptions, priorities and when to ask. Never conclude that a room is done after discussing only one or two topics. Do not propose returning to another room or reopen completed food-preparation questions unless the user asks.",
+          roomJourney.targetConversationMinutes
+            ? "LIVING ROOM DEPTH: Plan at least 20 minutes of substantive conversation at the user's pace, across the room's learning areas. Explore approximately three distinct useful aspects per area: normal preference, a realistic exception, and permission or escalation. One question at a time; react to the answer and skip what is already known. Do not pad with repetition, speak at length to consume time, force a timer, or prevent the user pausing or changing topic. Continue the next relevant living-room area instead of suggesting another room prematurely. Learning areas: " + JSON.stringify(roomJourney.tasks.map(task => ({title:task.title,details:task.description})))
+            : "Explore each relevant learning area in sufficient depth before offering a summary.",
           "Rooms are available as part of the user's scenario journey; " + roomJourney.unlockedRoomCount + " room(s) are currently released. The user may revisit earlier rooms. Do not claim an unreleased room is available, and do not imply a physical robot is connected or performing tasks."
         ].join(" ")
       : "";
-    const combinedSystemPrompt = systemPrompt + "\n\n" + personaDomainSystemPrompt + "\n\n" + storedDecisionGuidance(savedContext) + "\n\n" + buildApplianceConversationGuidance() +
+    const firstName = String(profile.ownerName || "").trim().split(/\s+/)[0];
+    const personalAddress = firstName ? "PERSONAL ADDRESS: The user's preferred first name is " + JSON.stringify(firstName) + ". Use it naturally occasionally, including when acknowledging a meaningful preference or returning after a break. Do not repeat it in every reply. " + (body?.welcomeBack === true ? "This is the first turn after at least 12 hours away. Begin with Welcome back, " + firstName + ", translated into the selected conversation language, then continue the current unfinished room without restarting it." : "If the last four assistant replies have not used their name, use it naturally in this reply.") : "";
+    const combinedSystemPrompt = personalAddress + "\n\n" + systemPrompt + "\n\n" + personaDomainSystemPrompt + "\n\n" + storedDecisionGuidance(savedContext) + "\n\n" + buildApplianceConversationGuidance() +
       (memoryContext ? "\n\n" + memoryContext : "") +
       (sharedKnowledgeContext ? "\n\n" + sharedKnowledgeContext : "") +
       (roomJourneyContext ? "\n\n" + roomJourneyContext : "") +
@@ -1078,8 +1083,16 @@ const app = http.createServer(async (request, response) => {
       }, headers || {});
     }
 
-    const result = await upstream.json();
+    let result = await upstream.json();
     await recordDeepSeekUsage(authContext, result, "chat");
+    if (roomJourney && prematureRoomTransition(result?.choices?.[0]?.message?.content, roomJourney.activeRoomId, roomCompletionConfirmed)) {
+      const corrected = await fetch("https://api.deepseek.com/chat/completions", {
+        method: "POST", headers: {"Authorization":"Bearer " + DEEPSEEK_API_KEY,"Content-Type":"application/json"},
+        body: JSON.stringify({model:MODEL,thinking:{type:"disabled"},messages:[{role:"system",content:combinedSystemPrompt + "\n\nCORRECTION: The previous draft tried to advance to another room before completion. Remain in " + roomJourney.activeRoomName + ". Respond to the latest answer, then ask one new substantive question about an uncovered aspect of this room. Do not propose a room change."},...messages],temperature:0.5,max_tokens:1200,stream:false}),
+        signal: AbortSignal.timeout(30_000)
+      });
+      if (corrected.ok) { result = await corrected.json(); await recordDeepSeekUsage(authContext,result,"chat"); }
+    }
     const finishReason = result?.choices?.[0]?.finish_reason;
     if (finishReason === "length") {
       console.warn("DeepSeek reply reached the completion token limit", { model: MODEL, finishReason });
@@ -1090,9 +1103,13 @@ const app = http.createServer(async (request, response) => {
         finishReason
       }, headers || {});
     }
-    const reply = result?.choices?.[0]?.message?.content;
+    let reply = result?.choices?.[0]?.message?.content;
     if (typeof reply !== "string" || !reply.trim()) {
       return json(response, 502, { error: "The AI service returned an empty reply." }, headers || {});
+    }
+    if (roomJourney && prematureRoomTransition(reply,roomJourney.activeRoomId,roomCompletionConfirmed)) {
+      const area = roomJourney.tasks.find(task => !task.completed && !task.current) || roomJourney.tasks[0];
+      reply = "Let's stay with your " + roomJourney.activeRoomName.toLowerCase() + ". For " + area.title.toLowerCase() + ", what would you like me to do when the usual routine needs to change?";
     }
     const robotName = String(profile.robotName || "").trim();
     const namedReply = robotName

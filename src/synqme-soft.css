@@ -313,3 +313,12 @@ input[type='checkbox'] { accent-color: #8b73cf; }
 .persona-insights-drawer { border: 1px solid #f5fcff; border-radius: 21px; background: var(--soft); box-shadow: var(--raised-small); }
 .persona-insights-drawer .persona-insights-summary { border: 0; box-shadow: none; background: transparent; }
 .persona-insights-drawer .insights-chevron { border-color: #bdd5e6; background: #e4f1f9; color: #4f4a8c; }
+.settings-sheet .settings-actions { position: static; padding: 12px 0; background: transparent; box-shadow: none; }
+.settings-sheet .settings-actions button { box-shadow: var(--raised-small); }
+.settings-sheet .owner-identity-row { background: #e6f2fa; border-color: #f5fcff; border-radius: 18px; }
+.settings-sheet input.sr-only { position: absolute !important; width: 1px !important; min-width: 0 !important; max-width: 1px !important; height: 1px !important; min-height: 0 !important; padding: 0 !important; border: 0 !important; margin: -1px !important; overflow: hidden !important; clip-path: inset(50%) !important; }
+.settings-overlay .settings-sheet { overflow-x: hidden; }
+.settings-sheet .settings-disclosure > summary { display: grid; grid-template-columns: minmax(0,1fr) auto; }
+.settings-sheet .settings-disclosure > summary > span { grid-column: 1; }
+.settings-sheet .settings-disclosure > summary small { grid-column: 1; grid-row: 2; margin: 0; text-align: left; }
+.settings-sheet .settings-disclosure > summary::after { grid-column: 2; grid-row: 1 / 3; color: #655096; }

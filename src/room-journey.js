@@ -24,7 +24,14 @@ export const ROOM_JOURNEY_ROOMS = [
       { id: "surfaces", week: 1, title: "Furniture and surfaces", description: "Your preferences for tables, shelves, upholstery and delicate finishes.", prompt: "Let's discuss how I like my living room furniture and surfaces cared for.", keywords: ["living room surface", "coffee table", "shelves", "upholstery", "sofa fabric", "wooden furniture"] },
       { id: "entertainment", week: 2, title: "TV and entertainment", description: "How you use and organise screens, remotes and audio equipment.", prompt: "Let's record how I use and organise my television and entertainment equipment.", keywords: ["television", "TV", "remote", "sound system", "speaker", "entertainment"] },
       { id: "guests", week: 3, title: "Guests and shared space", description: "How you prefer the room prepared when people visit.", prompt: "Let's discuss how I like my living room prepared when I have guests.", keywords: ["guests", "visitors", "entertaining", "people visit", "hosting"] },
-      { id: "boundaries", week: 4, title: "Personal items and boundaries", description: "What should not be handled, moved or reorganised without asking.", prompt: "Let's set my living room boundaries and the things you should ask me about first.", keywords: ["personal belongings", "private items", "ask me before", "leave it where", "do not move", "don't move"] }
+      { id: "boundaries", week: 4, title: "Personal items and boundaries", description: "What should not be handled, moved or reorganised without asking.", prompt: "Let's set my living room boundaries and the things you should ask me about first.", keywords: ["personal belongings", "private items", "ask me before", "leave it where", "do not move", "don't move"] },
+      { id: "floors-rugs", week: 1, title: "Floors, rugs and access", description: "Floor finishes, rug care, furniture clearance, cables and places I should avoid.", prompt: "Let's explore living room floor and rug care, including awkward corners and cables.", keywords: ["living room floor", "living room rug", "carpet fringe"] },
+      { id: "soft-furnishings", week: 2, title: "Cushions, throws and upholstery", description: "Preferred arrangement, care labels, delicate fabrics and what to do when something is stained.", prompt: "Let's discuss living room cushions, throws and upholstery, including stain exceptions.", keywords: ["cushions", "throws", "upholstery", "sofa fabric"] },
+      { id: "lighting-comfort", week: 2, title: "Lighting and comfort", description: "Lamps, curtains, glare, temperature and the different settings you enjoy throughout the day.", prompt: "Let's explore your living room lighting and comfort preferences at different times of day.", keywords: ["living room lighting", "living room curtains", "reading lamp"] },
+      { id: "quiet-time", week: 3, title: "Quiet time and interruptions", description: "Reading, calls, television, naps and when I should stay quiet or interrupt you.", prompt: "Let's explore quiet time in the living room and when you want me to interrupt.", keywords: ["living room quiet", "watching television", "interrupt my reading"] },
+      { id: "shared-use", week: 3, title: "Family, visitors and shared use", description: "Different preferences, visiting children or pets, and whose instructions take priority.", prompt: "Let's explore shared use of the living room and how to handle competing preferences.", keywords: ["living room visitors", "living room children", "shared living room"] },
+      { id: "spills-hazards", week: 4, title: "Spills, candles and hazards", description: "Spills near electronics, broken glass, lit candles, fragile objects and when to stop and ask.", prompt: "Let's explore living room spills and hazards, including candles and electronics.", keywords: ["living room spill", "lit candle", "broken glass"] },
+      { id: "reset-routine", week: 4, title: "Evening reset and exceptions", description: "Your end-of-day routine, what changes when you are hosting, and how I should adapt when plans change.", prompt: "Let's build your living room evening reset and explore exceptions for busy or social evenings.", keywords: ["living room evening", "evening reset", "living room routine"] }
     ]
   },
   {
@@ -243,6 +250,36 @@ export function getRoomTaskStates(room, completedTaskIds = [], activeTaskId = nu
   }));
 }
 
+export function resolveConversationRoomId(messages = [], currentRoomId = 'kitchen') {
+  let selected = currentRoomId;
+  for (const item of messages.slice(-60)) {
+    if (item?.role !== 'user') continue;
+    const text = String(item.content || '').toLowerCase().replace(/[’]/g, "'").replace(/[.!?,]+$/g, '').trim();
+    if (/\b(?:don't|do not|not yet|rather than)\b/.test(text)) continue;
+    for (const room of ROOM_JOURNEY_ROOMS) {
+      const aliases = [room.name.toLowerCase(), room.label.toLowerCase(), room.id.replaceAll('_', ' ')];
+      if (room.id === 'living_room') aliases.push('lounge', 'sitting room');
+      const direct = aliases.some(alias => [alias, 'the ' + alias, 'my ' + alias, alias + ' next'].includes(text));
+      const explicit = /\b(?:let's|let us|can we|could we|i want to|i'd like to|now|next|switch|move|back to)\b/.test(text) &&
+        /\b(?:talk|discuss|focus|work|move|switch|explore|start|continue|cover|go|back to)\b/.test(text) &&
+        aliases.some(alias => text.includes(alias));
+      if (direct || explicit) { selected = room.id; break; }
+    }
+  }
+  return selected;
+}
+
+export function prematureRoomTransition(reply, activeRoomId, completionConfirmed = false) {
+  if (completionConfirmed || !activeRoomId) return false;
+  const sentences = String(reply || '').split(/(?<=[.!?])\s+/);
+  return sentences.some(sentence => {
+    if (!/\b(?:shall we|should we|would you like to|let's|let us|ready to|now that|next step)\b/i.test(sentence) ||
+      !/\b(?:move|switch|return|go|start|explore|work|next room)\b/i.test(sentence)) return false;
+    if (/\bnext room\b/i.test(sentence)) return true;
+    return ROOM_JOURNEY_ROOMS.some(room => room.id !== activeRoomId && sentence.toLowerCase().includes(room.name.toLowerCase()));
+  });
+}
+
 export function buildRoomJourneyConversationContext(input, rooms = ROOM_JOURNEY_ROOMS) {
   if (!input || typeof input !== "object" || Array.isArray(input)) return null;
   const room = rooms.find((item) => item.id === input.activeRoomId);
@@ -264,6 +301,7 @@ export function buildRoomJourneyConversationContext(input, rooms = ROOM_JOURNEY_
   return {
     activeRoomId: room.id,
     activeRoomName: room.name,
+    targetConversationMinutes: room.id === 'living_room' ? 20 : null,
     unlockedRoomCount: unlockedCount,
     activeTaskId: activeTask?.id || null,
     activeTaskTitle: activeTask?.title || null,
@@ -272,6 +310,7 @@ export function buildRoomJourneyConversationContext(input, rooms = ROOM_JOURNEY_
     tasks: room.tasks.map((task) => ({
       id: task.id,
       title: task.title,
+      description: task.description,
       completed: completedIds.has(task.id),
       current: activeTask?.id === task.id
     }))
