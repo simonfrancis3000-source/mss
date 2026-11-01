@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#08090c" />
+    <meta name="theme-color" content="#e3f0f8" />
     <meta name="description" content="Build a personal digital persona with SYNQ.ME, powered by MySecondSelf decision intelligence." />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -12,13 +12,12 @@
     <link rel="icon" href="/synqme-icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="https://mysecondself.app/wp-content/uploads/2026/10/MySecondSelf-Dual-Head-Logo.png" />
     <title>SYNQ.ME | Build Your SecondSelf</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="preload" href="/fonts/Quicksand-Variable.ttf" as="font" type="font/ttf" crossorigin />
     <link rel="stylesheet" href="/src/synqme.css" />
+    <link rel="stylesheet" href="/src/synqme-soft.css" />
     <script type="module" src="/src/synqme.js"></script>
   </head>
-  <body class="auth-required">
+  <body class="auth-required" data-app-view="chat">
     <div class="app-splash" id="appSplash" role="status" aria-label="Opening SYNQ.ME">
       <img class="splash-logo" src="https://mysecondself.app/wp-content/uploads/2026/10/MySecondSelf-Dual-Head-Logo.png" alt="MySecondSelf" />
       <div class="splash-caption">SYNQ.ME <span>PERSONAL INTELLIGENCE</span></div>
@@ -55,7 +54,7 @@
       <div class="nav-wrap">
         <a class="brand" href="https://mysecondself.app/" aria-label="MySecondSelf home">
           <img src="https://mysecondself.app/wp-content/uploads/2026/10/MySecondSelf-Dual-Head-Logo.png" alt="MySecondSelf" />
-        </a>
+        <span class="brand-wordmark">SYNQ.ME</span></a>
         <a class="scenario-header-progress" href="#scenarioJourney" id="scenarioHeaderProgress" aria-label="Scenario progress unavailable"><span>Your progress</span><strong id="scenarioHeaderValue">—/25</strong></a>
         <nav class="nav-links" aria-label="Main navigation">
           <a href="https://mysecondself.app/owners/">OWNERS</a>
@@ -64,7 +63,7 @@
           <a href="https://mysecondself.app/contact/">CONTACT</a>
         </nav>
         <button class="settings-button" type="button" id="openSettings" aria-haspopup="dialog" aria-controls="settingsDialog" aria-label="Open settings">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"/><path d="m19.4 13.5 1.1.9-1.5 2.6-1.4-.5a7.9 7.9 0 0 1-1.8 1l-.2 1.5h-3l-.3-1.5a7.9 7.9 0 0 1-1.8-1l-1.4.5-1.5-2.6 1.1-.9a7.2 7.2 0 0 1 0-2l-1.1-.9 1.5-2.6 1.4.5a7.9 7.9 0 0 1 1.8-1l.3-1.5h3l.2 1.5a7.9 7.9 0 0 1 1.8 1l1.4-.5 1.5 2.6-1.1.9a7.2 7.2 0 0 1 0 2Z" transform="translate(-.4 -1)"/></svg>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="7" r="3.4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/></svg>
           <span>Settings</span>
         </button>
       </div>
@@ -160,6 +159,12 @@
 
       <details class="more-workspace" id="moreWorkspace">
         <summary class="more-workspace-summary"><span>Your journey and preferences</span><span aria-hidden="true">+</span></summary>
+      <section class="panel scenario-journey" id="scenarioJourney" aria-labelledby="scenarioJourneyTitle">
+        <div class="panel-heading"><div><div class="section-kicker">YOUR PERSONALISATION JOURNEY</div><h2 id="scenarioJourneyTitle">One scenario at a time.</h2></div><span class="mini-tag" id="scenarioJourneyCount">SIGN IN TO SEE PROGRESS</span></div>
+        <p>Explore life at home, out in the world and around other people. When you finish a scenario, the next one is ready immediately. You can revisit earlier scenarios whenever you like.</p>
+        <div id="scenarioJourneyContent" aria-live="polite"></div>
+      </section>
+
       <details class="persona-insights-drawer" id="personaInsights">
         <summary class="persona-insights-summary">
           <span class="insights-summary-mark" aria-hidden="true">S</span>
@@ -236,12 +241,6 @@
           </section>
         </aside>
       </details>
-
-      <section class="panel scenario-journey" id="scenarioJourney" aria-labelledby="scenarioJourneyTitle">
-        <div class="panel-heading"><div><div class="section-kicker">YOUR PERSONALISATION JOURNEY</div><h2 id="scenarioJourneyTitle">One scenario at a time.</h2></div><span class="mini-tag" id="scenarioJourneyCount">SIGN IN TO SEE PROGRESS</span></div>
-        <p>Explore life at home, out in the world and around other people. When you finish a scenario, the next one is ready immediately. You can revisit earlier scenarios whenever you like.</p>
-        <div id="scenarioJourneyContent" aria-live="polite"></div>
-      </section>
 
       <section class="panel room-journey-panel" id="roomJourneyPanel" hidden aria-labelledby="roomJourneyTitle">
         <div class="panel-heading room-journey-heading">
@@ -548,5 +547,10 @@
         <p class="voice-privacy-note">Your microphone is used for the live conversation. Spoken words appear as text in this chat.</p>
       </div>
     </section>
+    <nav class="app-bottom-nav" id="appBottomNav" aria-label="App navigation">
+      <button type="button" data-app-tab="chat" aria-current="page"><span class="bottom-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-9l-6 3v-3H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/><path d="M7 9h10M7 13h6"/></svg></span><span>Chat</span></button>
+      <button type="button" data-app-tab="talk"><span class="bottom-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3m-4 0h8"/></svg></span><span>Talk</span></button>
+      <button type="button" data-app-tab="journey"><span class="bottom-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V12M12 20V4M19 20V8"/><path d="M3 20h4M10 4h4M17 8h4"/></svg></span><span>Journey</span></button>
+    </nav>
   </body>
 </html>

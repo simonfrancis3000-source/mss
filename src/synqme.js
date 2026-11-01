@@ -1,4 +1,5 @@
 import { isApplianceIdentityAnswer } from "./appliance-persona.js";
+import { ruleSourceReferences, scenarioReviewRecord } from "./amia-persistence.js";
 import { SCENARIOS, completedScenarioIds, availableScenarioCount, buildScenarioStartPatch } from "./scenario-journey.js";
 import { createClient } from "@supabase/supabase-js";
 import { createPhonicVoiceConversation, voiceFailureMessage } from "./phonic-voice.js";
@@ -525,6 +526,13 @@ function renderScenarioJourney() {
   checklist.addEventListener("change", () => { finish.disabled = [...checklist.querySelectorAll("input")].some((input) => !input.checked); });
   finish.addEventListener("click", async () => {
     finish.disabled = true;
+    const reviewUserId = cloudUserId;
+    const review = scenarioReviewRecord({ userId:reviewUserId,scenarioId:scenario.id,startedAt:data.startedAt,
+      checks:[...checklist.querySelectorAll("input")].map((input) => input.checked),userTurnCount:responses.length });
+    if (!review || !supabase) { finish.disabled=false; return; }
+    const { error:reviewError } = await supabase.from("synqme_evaluation_records").upsert(review,{onConflict:"user_id,evaluation_key",ignoreDuplicates:true});
+    if (reviewUserId!==cloudUserId) return;
+    if (reviewError) { finish.disabled=false; alert("Your scenario review could not be saved. Please try again."); return; }
     const current = scenarioData();
     const next = { ...current, completed: completedScenarioIds([...(current.completed || []), scenario.id]), started: null };
     const progress = { ...roomJourney.room_progress, [SCENARIO_PROGRESS_KEY]: next };
@@ -551,6 +559,7 @@ async function startJourneyScenario(scenario) {
     elements.messageInput.value = buildOutOfHomeScenarioPrompt(match.category, match.scenario);
   }
   elements.messageInput.dispatchEvent(new Event("input", { bubbles: true }));
+  selectAppView("chat");
   if (elements.chatStage?.hidden) elements.welcomeAudioOffer?.scrollIntoView({ behavior: "smooth", block: "center" });
   else { elements.chatStage?.scrollIntoView({ behavior: "smooth", block: "center" }); elements.messageInput.focus({ preventScroll: true }); }
   renderScenarioJourney();
@@ -571,7 +580,7 @@ let cloudConversationRefreshInFlight = false;
 let homeMemoryIndexUnavailable = false;
 let homeMemoryIndexBackfilledUserId = null;
 let homeMemoryIndexWarningShown = false;
-const PERSONA_MEMORY_SELECT_COLUMNS = "id,user_id,memory_key,source_preference_id,topic,kind,scope_key,statement,status,relation,confidence,conditions,attributes,search_terms,search_keys,source_message,source_timestamp,source_conversation_key,conflict_group,supersedes_id,reviewed_at,last_used_at,archived_at,created_at,updated_at";
+const PERSONA_MEMORY_SELECT_COLUMNS = "id,user_id,memory_key,source_preference_id,topic,kind,scope_key,statement,status,relation,confidence,conditions,permission_policy,source_refs,rule_version,attributes,search_terms,search_keys,source_message,source_timestamp,source_conversation_key,conflict_group,supersedes_id,reviewed_at,last_used_at,archived_at,created_at,updated_at";
 let personaMemoryRecords = [];
 let personaMemoryTableUnavailable = false;
 let personaMemoryWarningShown = false;
@@ -952,6 +961,7 @@ async function setLinkedPreferenceStatus(preferenceId, status) {
 }
 
 async function processStructuredMemoryTurn(userMessage, userTimestamp, shouldExtract = false) {
+  const memoryUserId = cloudUserId;
   const latestUserIndex = state.messages.findLastIndex((item) => item.role === "user" && item.timestamp === userTimestamp);
   const previousQuestion = latestUserIndex > 0 && state.messages[latestUserIndex - 1]?.role === "assistant"
     ? state.messages[latestUserIndex - 1].content : "";
@@ -978,12 +988,14 @@ async function processStructuredMemoryTurn(userMessage, userTimestamp, shouldExt
     });
     let data = {};
     try { data = await response.json(); } catch {}
+    if (memoryUserId !== cloudUserId) return;
     if (!response.ok || String(data.provider || "").toLowerCase() !== "deepseek") {
       throw new Error(String(data.error || "DeepSeek memory extraction did not complete."));
     }
     const candidates = (Array.isArray(data.memories) ? data.memories : [])
       .map(cleanPersonaMemoryCandidate).filter(Boolean).slice(0, 5);
     for (const candidate of candidates) {
+      if (memoryUserId !== cloudUserId) return;
       const target = personaMemoryRecords.find((item) =>
         (candidate.target_memory_key && item.memory_key === candidate.target_memory_key) ||
         (candidate.scope_key && item.scope_key === candidate.scope_key && memoryIsActive(item))
@@ -994,7 +1006,8 @@ async function processStructuredMemoryTurn(userMessage, userTimestamp, shouldExt
           status: "user_confirmed",
           confidence: Math.max(Number(target.confidence) || 0, candidate.confidence),
           reviewed_at: new Date().toISOString(),
-          relation: "confirms"
+          relation: "confirms",
+          source_refs: ruleSourceReferences(target.source_refs,userTimestamp)
         });
         continue;
       }
@@ -1041,7 +1054,7 @@ async function processStructuredMemoryTurn(userMessage, userTimestamp, shouldExt
         (item.statement?.trim().toLowerCase() === candidate.statement.trim().toLowerCase() && item.scope_key === candidate.scope_key && memoryIsActive(item))
       );
       const row = {
-        user_id: cloudUserId,
+        user_id: memoryUserId,
         memory_key: sameRecord?.memory_key || memoryKey,
         source_preference_id: linkedPreference ? String(linkedPreference.id) : sameRecord?.source_preference_id || null,
         topic: candidate.topic,
@@ -1052,6 +1065,8 @@ async function processStructuredMemoryTurn(userMessage, userTimestamp, shouldExt
         relation: candidate.relation,
         confidence: candidate.confidence,
         conditions: candidate.conditions,
+        permission_policy: candidate.permission_policy,
+        source_refs: ruleSourceReferences(sameRecord?.source_refs,userTimestamp),
         attributes: candidate.attributes,
         search_terms: candidate.search_terms,
         search_keys: buildPersonaMemorySearchKeys(candidate.statement, candidate.search_terms, candidate.topic),
@@ -1069,8 +1084,11 @@ async function processStructuredMemoryTurn(userMessage, userTimestamp, shouldExt
       if (error) throw error;
     }
 
+    if (memoryUserId !== cloudUserId) return;
     await backfillPersonaMemoriesFromPreferences();
-    personaMemoryRecords = await queryPersonaMemoryRecords();
+    const refreshedMemories = await queryPersonaMemoryRecords();
+    if (memoryUserId !== cloudUserId) return;
+    personaMemoryRecords = refreshedMemories;
     renderPersonaMemoryLibrary();
     if (candidates.length && elements.personaMemoryStatus) {
       elements.personaMemoryStatus.textContent = "Saved " + candidates.length + (candidates.length === 1 ? " memory." : " memories.") + " You can edit or forget them here.";
@@ -2584,9 +2602,9 @@ function renderMessages() {
 
 elements.chatMessages?.addEventListener("scroll", updateChatScrollbar, { passive: true });
 elements.roomJourneyPanel?.addEventListener("click", handleRoomJourneyClick);
-document.querySelector("#scenarioHeaderProgress")?.addEventListener("click", () => {
-  const workspace = document.querySelector("#moreWorkspace");
-  if (workspace) workspace.open = true;
+document.querySelector("#scenarioHeaderProgress")?.addEventListener("click", (event) => {
+  event.preventDefault();
+  selectAppView("journey");
 });
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible" && cloudUserId && profileComplete()) void ensureRoomJourney();
@@ -4222,6 +4240,8 @@ async function openVoiceExperience() {
   if (voiceModeActive) return;
 
   elements.voiceExperience.hidden = false;
+  const appNav = document.querySelector("#appBottomNav");
+  if (appNav) elements.voiceExperience.append(appNav);
   document.body.classList.add("voice-experience-open");
   voiceInputMuted = false;
   voiceModeActive = true;
@@ -4287,6 +4307,9 @@ function closeVoiceExperience(statusMessage) {
   voiceInputMuted = false;
   if (elements.voiceExperience) elements.voiceExperience.hidden = true;
   document.body.classList.remove("voice-experience-open");
+  const appNav = document.querySelector("#appBottomNav");
+  if (appNav) document.body.append(appNav);
+  syncAppNavigation();
 }
 
 function toggleVoiceInputMute() {
@@ -4387,6 +4410,7 @@ function initialiseRobotAndVoiceControls() {
 }
 
 function updateVoiceModeButton() {
+  syncAppNavigation();
   if (elements.voiceModeButton) {
     elements.voiceModeButton.classList.toggle("is-active", voiceModeActive);
     elements.voiceModeButton.setAttribute("aria-pressed", String(voiceModeActive));
@@ -4428,6 +4452,37 @@ elements.voiceModeButton?.addEventListener("click", () => {
 initialiseRobotAndVoiceControls();
 initialisePexiManifestControls();
 initialiseOutOfHomeTrainingControls();
+
+function syncAppNavigation() {
+  const selected = elements.voiceExperience && !elements.voiceExperience.hidden ? "talk" : document.body.dataset.appView || "chat";
+  document.querySelectorAll("[data-app-tab]").forEach((button) => {
+    if (button.dataset.appTab === selected) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
+  });
+}
+
+function selectAppView(view) {
+  if (elements.voiceExperience && !elements.voiceExperience.hidden) closeVoiceExperience("Returned to your conversation.");
+  document.body.dataset.appView = view === "journey" ? "journey" : "chat";
+  const workspace = document.querySelector("#moreWorkspace");
+  if (workspace) workspace.open = view === "journey";
+  if (view === "journey") renderScenarioJourney();
+  syncAppNavigation();
+  window.requestAnimationFrame(updateChatScrollbar);
+  window.scrollTo({top:0,behavior:"smooth"});
+}
+
+document.querySelectorAll("[data-app-tab]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const view = button.dataset.appTab;
+    if (view === "talk") {
+      if (elements.voiceExperience && !elements.voiceExperience.hidden) return;
+      selectAppView("chat");
+      void openVoiceExperience();
+    } else selectAppView(view);
+  });
+});
+syncAppNavigation();
 
 
 
@@ -4654,7 +4709,7 @@ async function saveApplianceRecord(appliance) {
   const key = makePersonaMemoryKey("appliance " + type + " " + brand + " " + model);
   const existing = personaMemoryRecords.find((item) => item.memory_key === key);
   const record = { type, brand, model, manual_url: appliance.manual_status === "matched" ? String(appliance.manual_url || "").slice(0, 2048) : existing?.attributes?.appliance_v1?.manual_url || null,
-    manual_status: appliance.manual_status === "matched" ? "matched" : existing?.attributes?.appliance_v1?.manual_status || appliance.manual_status || "unverified", checked_at: new Date().toISOString() };
+    manual_status: appliance.manual_status || "unverified", verified_at: appliance.verified_at || existing?.attributes?.appliance_v1?.verified_at || null, checked_at: new Date().toISOString() };
   const statement = "My " + type + " is " + brand + " model " + model + ".";
   const userId = cloudUserId;
   try {
@@ -4670,6 +4725,7 @@ async function saveApplianceRecord(appliance) {
 }
 
 async function requestAIReply(repairMode = false) {
+  const requestUserId = cloudUserId;
   if (!API_BASE) return null;
   if (!state.apiProvider) await checkAIBackend();
   if (state.apiProvider !== "deepseek") {
@@ -4707,12 +4763,15 @@ async function requestAIReply(repairMode = false) {
       getSharedKnowledgeReferences(currentUserText),
       getRelevantPersonaMemories(currentUserText)
     ]);
-    const requestUserId = cloudUserId;
+    if (!requestUserId || requestUserId !== cloudUserId) return null;
+    const requestHeaders = await authenticatedApiHeaders();
+    if (requestUserId !== cloudUserId) return null;
     const response = await fetch(API_BASE + "/api/chat", {
       method: "POST",
-      headers: await authenticatedApiHeaders(),
+      headers: requestHeaders,
       body: JSON.stringify({
         messages: conversationMessages,
+        sourceMessageTimestamp: state.messages[state.messages.length - 1]?.timestamp || null,
         preferences,
         profile: {
           ownerName: state.profile.ownerName,
@@ -4738,6 +4797,7 @@ async function requestAIReply(repairMode = false) {
     });
     let data = {};
     try { data = await response.json(); } catch {}
+    if (requestUserId !== cloudUserId) return null;
     const responseProvider = typeof data.provider === "string" ? data.provider.toLowerCase() : state.apiProvider;
     if (responseProvider && responseProvider !== "deepseek") {
       throw new Error("The AI service connection did not pass its configuration check.");
@@ -4755,7 +4815,13 @@ async function requestAIReply(repairMode = false) {
     }
     const reply = typeof data.reply === "string" ? data.reply : typeof data.message === "string" ? data.message : "";
     if (!reply.trim()) throw new Error("AI endpoint returned no reply text");
-    if (data.appliance && cloudUserId && cloudUserId === requestUserId) await saveApplianceRecord(data.appliance);
+    if (data.appliance && cloudUserId === requestUserId) {
+      if (data.amiaPersistence?.appliance_saved) void loadPersonaMemories();
+      else await saveApplianceRecord(data.appliance);
+    }
+    if (data.amiaPersistence?.status === "unavailable" && elements.personaMemoryStatus) {
+      elements.personaMemoryStatus.textContent = "Your reply is available, but decision tracking could not be saved this turn.";
+    }
     state.apiConnected = true;
     state.apiConfigured = true;
     state.apiError = "";
@@ -5042,6 +5108,9 @@ function buildPexiPersonaPackage() {
     epistemic_status: memory.status || "user_stated",
     confidence: Number.isFinite(Number(memory.confidence)) ? Number(memory.confidence) : null,
     conditions: Array.isArray(memory.conditions) ? memory.conditions : [],
+    permission_policy: memory.permission_policy || "unspecified",
+    rule_version: memory.rule_version || 1,
+    source_refs: memory.source_refs || [],
     provenance: {
       source_application: "SYNQ.ME",
       source_type: "conversation",

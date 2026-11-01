@@ -36,7 +36,10 @@ test("frontend sends the signed-in access token with all five protected provider
   assert.match(source, /async function authenticatedApiHeaders/);
   assert.match(source, /Authorization: "Bearer " \+ token/);
   const calls = source.match(/headers: await authenticatedApiHeaders\(\)/g) || [];
-  assert.equal(calls.length, 5);
+  assert.equal(calls.length, 4);
+  assert.match(source, /const requestHeaders = await authenticatedApiHeaders\(\)/);
+  assert.match(source, /headers: requestHeaders/);
+  assert.match(source, /if \(requestUserId !== cloudUserId\) return null;/);
 });
 
 test("PEXI export contains the generic capability plan and never claims physical execution", async () => {
