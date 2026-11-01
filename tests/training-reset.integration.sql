@@ -18,6 +18,23 @@ do $$ begin
  if (select count(*) from public.synqme_persona_memories where user_id=auth.uid())<>1 then raise exception 'FAILED memory scoping'; end if;
  begin update public.synqme_conversations set messages='[]' where user_id=auth.uid(); raise exception 'FAILED stale revision'; exception when serialization_failure then null; end;
  perform set_config('request.headers','{"x-training-revision":"1"}',true);
+ insert into public.synqme_memory_index(user_id,source_key,role,content,message_timestamp) values(auth.uid(),'legacy-unassigned-fixture','user','Unassigned legacy training fixture','2026-10-01T00:00:00Z');
+ begin
+  perform public.synqme_reset_training('RESET','room:living_room');
+  raise exception 'FAILED legacy safeguard';
+ exception when raise_exception then
+  if SQLERRM not like 'Older training cannot be reliably separated%' then raise; end if;
+ end;
+ if (select count(*) from public.synqme_persona_memories where user_id=auth.uid())<>1 then raise exception 'FAILED legacy rollback'; end if;
+ delete from public.synqme_memory_index where user_id=auth.uid() and source_key='legacy-unassigned-fixture';
+ perform set_config('request.jwt.claims','{"sub":"a21a1d11-7dcb-4124-a343-1abc1d3a0001","role":"authenticated","is_anonymous":true}',true);
+ begin
+  perform public.synqme_reset_training('RESET',null);
+  raise exception 'FAILED anonymous restriction';
+ exception when raise_exception then
+  if SQLERRM<>'Sign in to reset training.' then raise; end if;
+ end;
+ perform set_config('request.jwt.claims','{"sub":"a21a1d11-7dcb-4124-a343-1abc1d3a0001","role":"authenticated","is_anonymous":false}',true);
  if public.synqme_reset_training('RESET',null)<>2 then raise exception 'FAILED full reset'; end if;
  if (select jsonb_array_length(messages) from public.synqme_conversations where user_id=auth.uid())<>0 then raise exception 'FAILED full transcript'; end if;
  if exists(select 1 from public.synqme_persona_memories where user_id=auth.uid()) then raise exception 'FAILED full memories'; end if;

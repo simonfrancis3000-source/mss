@@ -378,3 +378,5 @@ input[type='checkbox'] { accent-color: #8b73cf; }
 #trainingResetError { color: #923f53; }
 #trainingResetExecute { color: #923f53; }
 #trainingResetExecute:disabled { opacity: .45; }
+.robot-picker-none { color: var(--ink); font: 600 13px 'Quicksand',sans-serif; }
+.message-avatar[hidden] { display: none; }

@@ -158,7 +158,7 @@ let robotAppearance = (() => {
   try {
     const saved = JSON.parse(localStorage.getItem(ROBOT_APPEARANCE_KEY) || "{}");
     return {
-      robotId: ROBOT_OPTIONS.some((item) => item.id === saved.robotId) ? saved.robotId : "elo",
+      robotId: saved.robotId === "none" || ROBOT_OPTIONS.some((item) => item.id === saved.robotId) ? saved.robotId : "elo",
       customImageData: typeof saved.customImageData === "string" ? saved.customImageData : ""
     };
   } catch {
@@ -330,7 +330,7 @@ function defaultProfile() {
 function companionNameForProfile(profile = {}) {
   const configuredName = String(profile.robotName || "").trim();
   if (configuredName) return configuredName;
-  if (robotAppearance.customImageData) return "Your robot";
+  if (robotAppearance.customImageData || robotAppearance.robotId === "none") return "Your robot";
   return (ROBOT_OPTIONS.find((item) => item.id === robotAppearance.robotId) || ROBOT_OPTIONS[0]).name;
 }
 
@@ -2698,6 +2698,7 @@ function appendMessage(role, content, timestamp = null) {
   } else {
     avatar.classList.add("robot-message-avatar");
     avatar.setAttribute("aria-hidden", "true");
+    avatar.hidden = robotAppearance.robotId === "none" && !robotAppearance.customImageData;
     if (robotAppearance.customImageData) {
       const image = document.createElement("img");
       image.className = "message-robot-image";
@@ -3961,6 +3962,17 @@ function saveRobotAppearance() {
 function renderRobotPicker() {
   if (!elements.robotPicker) return;
   elements.robotPicker.replaceChildren();
+  const clear = document.createElement("button");
+  clear.type = "button"; clear.className = "robot-picker-item robot-picker-none";
+  clear.textContent = "No image";
+  clear.setAttribute("aria-label", "Clear companion image");
+  clear.setAttribute("aria-pressed", String(robotAppearance.robotId === "none" && !robotAppearance.customImageData));
+  clear.classList.toggle("is-selected", robotAppearance.robotId === "none" && !robotAppearance.customImageData);
+  clear.addEventListener("click", () => {
+    robotAppearance = { robotId: "none", customImageData: "" };
+    saveRobotAppearance(); renderRobotPicker(); applyRobotAppearance();
+  });
+  elements.robotPicker.append(clear);
   ROBOT_OPTIONS.forEach((option, index) => {
     const button = document.createElement("button");
     button.type = "button";
@@ -4004,7 +4016,7 @@ function applyRobotAppearance() {
       voiceImage.className = "voice-robot-image";
       elements.voiceOrbCore.append(voiceImage);
     } else {
-      elements.voiceOrbCore.innerHTML = robotSvgMarkup(option.id);
+      if (robotAppearance.robotId !== "none") elements.voiceOrbCore.innerHTML = robotSvgMarkup(option.id);
     }
   }
   if (robotAppearance.customImageData) {
@@ -4015,8 +4027,9 @@ function applyRobotAppearance() {
     elements.selectedRobotArt.append(image);
     if (elements.selectedRobotName) elements.selectedRobotName.textContent = "YOUR ROBOT";
   } else {
-    elements.selectedRobotArt.innerHTML = robotSvgMarkup(option.id);
-    if (elements.selectedRobotName) elements.selectedRobotName.textContent = option.name;
+    if (robotAppearance.robotId === "none") elements.selectedRobotArt.textContent = "No image";
+    else elements.selectedRobotArt.innerHTML = robotSvgMarkup(option.id);
+    if (elements.selectedRobotName) elements.selectedRobotName.textContent = robotAppearance.robotId === "none" ? "No image" : option.name;
   }
   if (elements.robotPicker) {
     elements.robotPicker.querySelectorAll("[data-robot-id]").forEach((button) => {
