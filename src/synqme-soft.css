@@ -348,3 +348,22 @@ input[type='checkbox'] { accent-color: #8b73cf; }
 .voice-experience-content .voice-companion-name { display: block; color: var(--ink); font-size: 17px; font-weight: 600; }
 .voice-experience-content .scenario-live-progress { margin: 16px auto; }
 .voice-experience-content .voice-experience-status { margin: 0; }
+/* Lift the chat heading and progress by half the progress card height. */
+.conversation-panel > .panel-heading { transform: translateY(-24px); }
+.conversation-panel > .scenario-live-progress { transform: translateY(-50%); margin-bottom: -16px; }
+.voice-experience-content > .scenario-live-progress { transform: translateY(-50%); margin-bottom: -12px; }
+
+/* The header occupies its own row; the compact content fits above navigation. */
+.voice-experience { overflow-y: auto; }
+.voice-experience .voice-experience-topbar { position: relative; top: auto; left: auto; right: auto; flex: 0 0 auto; }
+.voice-experience .voice-experience-content { flex: 0 0 auto; min-height: 0; padding: 18px 24px calc(130px + env(safe-area-inset-bottom)); gap: 0; }
+.voice-experience .voice-experience-content h2 { margin: 0 0 4px; font-size: clamp(22px,5vw,30px); line-height: 1.25; overflow-wrap: anywhere; }
+.voice-experience .voice-experience-content .voice-orb { width: min(32vw,135px); height: auto; aspect-ratio: 1; margin: 14px 0 8px; }
+.voice-experience .voice-experience-content .voice-companion-name { margin-bottom: 18px; }
+.voice-experience .voice-experience-content .scenario-live-progress { margin-top: 16px; margin-bottom: -8px; }
+.voice-experience .voice-experience-content .voice-controls { flex: 0 0 auto; margin-top: 18px; padding-top: 0; }
+@media (max-height:650px) {
+ .voice-experience .voice-experience-content { padding-top: 12px; }
+ .voice-experience .voice-experience-content .voice-orb { width: min(32vw,100px); margin-block: 10px 5px; }
+ .voice-experience .voice-control-icon { width: 50px; height: 50px; border-radius: 16px; }
+}
