@@ -56,6 +56,7 @@
         <a class="brand" href="https://mysecondself.app/" aria-label="MySecondSelf home">
           <img src="https://mysecondself.app/wp-content/uploads/2026/10/MySecondSelf-Dual-Head-Logo.png" alt="MySecondSelf" />
         </a>
+        <a class="scenario-header-progress" href="#scenarioJourney" id="scenarioHeaderProgress" aria-label="Scenario progress">Progress: 0/25</a>
         <nav class="nav-links" aria-label="Main navigation">
           <a href="https://mysecondself.app/owners/">OWNERS</a>
           <a href="https://mysecondself.app/partners/">PARTNERS</a>
@@ -235,7 +236,13 @@
         </aside>
       </details>
 
-      <section class="panel room-journey-panel" id="roomJourneyPanel" aria-labelledby="roomJourneyTitle">
+      <section class="panel scenario-journey" id="scenarioJourney" aria-labelledby="scenarioJourneyTitle">
+        <div class="panel-heading"><div><div class="section-kicker">YOUR PERSONALISATION JOURNEY</div><h2 id="scenarioJourneyTitle">One scenario at a time.</h2></div><span class="mini-tag" id="scenarioJourneyCount">0 / 25 COMPLETE</span></div>
+        <p>Explore life at home, out in the world and around other people. When you finish a scenario, the next one is ready immediately. You can revisit earlier scenarios whenever you like.</p>
+        <div id="scenarioJourneyContent" aria-live="polite"></div>
+      </section>
+
+      <section class="panel room-journey-panel" id="roomJourneyPanel" hidden aria-labelledby="roomJourneyTitle">
         <div class="panel-heading room-journey-heading">
           <div>
             <div class="section-kicker">04 / YOUR MONTHLY HOME JOURNEY</div>

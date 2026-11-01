@@ -2907,3 +2907,15 @@ body:not(.auth-required):not(.profile-setup-required) {
   .out-of-home-heading .mini-tag { max-width: 112px; white-space: normal; text-align: center; }
   .intro-audio-replay { font-size: 7px; padding: 4px 6px; }
 }
+
+/* Account scenario journey */
+.scenario-header-progress { margin-left: 16px; color: #404b5c; font: 600 12px system-ui, sans-serif; text-decoration: none; white-space: nowrap; }
+.scenario-journey { margin: 24px 0; padding: 22px; }
+.scenario-journey > p, #scenarioJourneyContent p { color: #626a76; line-height: 1.6; }
+#scenarioJourneyContent select { width: min(100%, 520px); padding: 10px; border: 1px solid #cdd3dc; border-radius: 7px; background: white; color: #283445; }
+#scenarioJourneyContent h3 { margin: 20px 0 4px; }
+#scenarioJourneyContent fieldset { display: grid; gap: 10px; margin: 20px 0 14px; border: 1px solid #d9dfe8; border-radius: 8px; padding: 15px; color: #303c4c; }
+#scenarioJourneyContent label { display: flex; gap: 8px; align-items: start; line-height: 1.45; }
+#scenarioJourneyContent button:disabled { opacity: .45; cursor: not-allowed; }
+@media (max-width: 600px) { .scenario-header-progress { margin-left: 0; font-size: 11px; } .scenario-journey { padding: 16px; } }
+#roomJourneyPanel[hidden] { display: none !important; }
