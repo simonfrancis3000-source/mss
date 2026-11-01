@@ -93,9 +93,9 @@
               <h2 id="conversationTitle">Your conversation</h2>
             </div>
             <div class="panel-status"><span class="status-dot"></span><span id="conversationStatus">Ready to talk</span></div>
-            <button class="intro-audio-replay" type="button" id="introAudioReplay" aria-controls="welcomeAudioOffer" hidden>Replay introduction</button>
           </div>
 
+          <div class="scenario-live-progress" data-scenario-progress></div>
           <section class="welcome-audio-offer" id="welcomeAudioOffer" hidden aria-labelledby="welcomeAudioTitle">
             <div class="welcome-audio-brand" aria-hidden="true">
               <img src="https://mysecondself.app/wp-content/uploads/2026/10/MySecondSelf-Dual-Head-Logo.png" alt="" />
@@ -299,6 +299,7 @@
           </div>
           <button type="button" class="settings-close" id="closeSettings" aria-label="Close settings">×</button>
         </div>
+        <button class="intro-audio-replay" type="button" id="introAudioReplay" aria-controls="welcomeAudioOffer" hidden>Replay introduction</button>
         <form id="settingsForm" class="settings-form">
           <div class="owner-identity-row">
             <div class="owner-avatar-preview" id="ownerAvatarPreview" aria-label="Your profile image preview">
@@ -530,6 +531,7 @@
           <span class="voice-orb-core" id="voiceOrbCore"></span>
         </div>
         <div class="voice-companion-name" id="voiceCompanionName">Your robot</div>
+        <div class="scenario-live-progress" data-scenario-progress></div>
         <p class="voice-experience-status" id="voiceExperienceStatus" role="status" aria-live="polite">Ready to connect</p>
         <div class="voice-state-caption">LISTENING <span></span> THINKING <span></span> SPEAKING</div>
         <div class="voice-controls">

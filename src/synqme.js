@@ -472,7 +472,28 @@ function scenarioData() {
   const stored = roomJourney?.room_progress?.[SCENARIO_PROGRESS_KEY];
   return stored && typeof stored === "object" ? stored : {};
 }
+function renderLiveScenarioProgress() {
+  const data = scenarioData();
+  const scenario = SCENARIOS.find(item => item.id === (data.started || (roomJourney?.active_room_id ? "room:" + roomJourney.active_room_id : "")));
+  const done = completedScenarioIds(data.completed);
+  document.querySelectorAll("[data-scenario-progress]").forEach(node => {
+    node.replaceChildren();
+    if (!scenario || !cloudUserId) { node.hidden = true; return; }
+    node.hidden = false;
+    const tasks = scenarioTasks(scenario);
+    const reviewed = new Set(data.reviewed?.[scenario.id] || []);
+    const count = done.includes(scenario.id) ? tasks.length : tasks.filter(task => reviewed.has(task.id)).length;
+    const header = document.createElement("div"); header.className = "scenario-live-label";
+    const title = document.createElement("strong"); title.textContent = scenario.title;
+    const value = document.createElement("span"); value.textContent = count + " / " + tasks.length + " areas reviewed";
+    header.append(title, value);
+    const track = document.createElement("div"); track.className = "scenario-live-track"; track.setAttribute("role", "progressbar"); track.setAttribute("aria-label", scenario.title + " areas reviewed"); track.setAttribute("aria-valuemin", "0"); track.setAttribute("aria-valuemax", String(tasks.length)); track.setAttribute("aria-valuenow", String(count));
+    const fill = document.createElement("span"); fill.style.width = (tasks.length ? count / tasks.length * 100 : 0) + "%"; track.append(fill);
+    node.append(header, track);
+  });
+}
 function renderScenarioJourney() {
+  renderLiveScenarioProgress();
   const target = document.querySelector("#scenarioJourneyContent");
   const counter = document.querySelector("#scenarioJourneyCount");
   const header = document.querySelector("#scenarioHeaderProgress");
@@ -601,13 +622,23 @@ function renderScenarioJourney() {
   const checklist = document.createElement("fieldset");
   const legend = document.createElement("legend"); legend.textContent = "Ready to finish? Confirm what you have covered together:"; checklist.append(legend);
   scenarioTasks(scenario).forEach(task => {
-    const label = document.createElement("label"); const input = document.createElement("input"); input.type = "checkbox"; input.dataset.reviewTask = task.id;
+    const label = document.createElement("label"); const input = document.createElement("input"); input.type = "checkbox"; input.dataset.reviewTask = task.id; input.checked = (data.reviewed?.[scenario.id] || []).includes(task.id);
     label.append(input, document.createTextNode("We have fully covered " + task.title.toLowerCase() + ", or agreed it is not relevant.")); checklist.append(label);
   });
   ["I have explained the behaviour or preferences that matter to me.", "We have discussed relevant boundaries, privacy or safety.", "I have covered when I want my companion to ask, wait or stop, or confirmed that this is not relevant."].forEach((text) => {
     const label = document.createElement("label"); const input = document.createElement("input"); input.type = "checkbox"; input.dataset.reviewSummary = "true";
     label.append(input, document.createTextNode(" " + text)); checklist.append(label);
   });
+  const saveReview = document.createElement("button"); saveReview.type = "button"; saveReview.className = "out-of-home-scenario-action"; saveReview.textContent = "Save reviewed areas";
+  saveReview.addEventListener("click", async () => {
+    saveReview.disabled = true;
+    const reviewedIds = [...checklist.querySelectorAll("input[data-review-task]:checked")].map(input => input.dataset.reviewTask);
+    const current = scenarioData();
+    const progress = { ...roomJourney.room_progress, [SCENARIO_PROGRESS_KEY]: { ...current, reviewed: { ...(current.reviewed || {}), [scenario.id]: reviewedIds } } };
+    if (!(await persistRoomJourneyChanges({ room_progress: progress }))) { alert("Your reviewed areas could not be saved. Please try again."); saveReview.disabled = false; return; }
+    renderScenarioJourney();
+  });
+  checklist.append(saveReview);
   const finish = document.createElement("button"); finish.type = "button"; finish.className = "out-of-home-scenario-action"; finish.textContent = "Complete scenario and unlock next"; finish.disabled = true;
   checklist.addEventListener("change", () => { finish.disabled = [...checklist.querySelectorAll("input")].some((input) => !input.checked); });
   finish.addEventListener("click", async () => {
@@ -4624,6 +4655,8 @@ function finishWelcomeAudioOffer() {
 }
 
 function openWelcomeAudioOffer() {
+  closeSettings();
+  selectAppView("chat");
   if (!cloudUserId) {
     setAuthGateVisible(true);
     setAuthMode("signin", "Sign in before starting your SecondSelf conversation.");

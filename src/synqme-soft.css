@@ -337,3 +337,14 @@ input[type='checkbox'] { accent-color: #8b73cf; }
 .persona-insights-drawer .preference-item { padding: 15px 12px; margin-bottom: 10px; }
 .persona-insights-drawer .preference-number { color: #5c498f; border-color: var(--line); }
 @media (max-width: 720px) { .persona-insights-drawer > .side-stack { grid-template-columns: minmax(0,1fr); } }
+.scenario-live-progress { width: 100%; max-width: 430px; margin: 14px auto; padding: 12px 15px; border: 1px solid #f5fbff; border-radius: 17px; background: var(--soft); box-shadow: var(--raised-small); }
+.scenario-live-progress[hidden] { display: none; }
+.scenario-live-label { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--ink); font-size: 12px; }
+.scenario-live-label span { color: #506f84; font-size: 11px; text-align: right; }
+.scenario-live-track { height: 8px; margin-top: 10px; overflow: hidden; border-radius: 9px; background: #c8dfea; box-shadow: var(--inset); }
+.scenario-live-track span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg,#6cbfd1,#8e70d6); transition: width .2s ease; }
+.voice-experience-content { padding-top: 35px; }
+.voice-experience-content .voice-orb { margin: 24px 0 12px; }
+.voice-experience-content .voice-companion-name { display: block; color: var(--ink); font-size: 17px; font-weight: 600; }
+.voice-experience-content .scenario-live-progress { margin: 16px auto; }
+.voice-experience-content .voice-experience-status { margin: 0; }
