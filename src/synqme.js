@@ -442,6 +442,32 @@ let isSending = false;
 let sendSequence = 0;
 let lastAIReplyUsedFallback = false;
 let voiceModeActive = false;
+let voiceWakeLock = null;
+let voiceIdleTimer = null;
+let voiceIdleDeadline = 0;
+async function requestVoiceWakeLock() {
+  if (!voiceModeActive || document.visibilityState !== "visible" || !navigator.wakeLock) return;
+  try {
+    const lock = await navigator.wakeLock.request("screen");
+    if (!voiceModeActive) { await lock.release(); return; }
+    voiceWakeLock = lock;
+    lock.addEventListener("release", () => { if (voiceWakeLock === lock) voiceWakeLock = null; });
+  } catch { /* The browser or device may not allow wake locks. */ }
+}
+function clearVoiceIdle() { clearTimeout(voiceIdleTimer); voiceIdleTimer = null; voiceIdleDeadline = 0; }
+function armVoiceIdle() {
+  clearVoiceIdle();
+  if (!voiceModeActive) return;
+  voiceIdleDeadline = Date.now() + 30000;
+  voiceIdleTimer = setTimeout(() => {
+    if (voiceModeActive) closeVoiceExperience("Voice conversation ended after 30 seconds of silence.");
+  }, 30000);
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible" || !voiceModeActive) return;
+  if (voiceIdleDeadline && Date.now() >= voiceIdleDeadline) closeVoiceExperience("Voice conversation ended after 30 seconds of silence.");
+  else if (!voiceWakeLock) void requestVoiceWakeLock();
+});
 let voiceInputMuted = false;
 let phonicVoiceConversation = null;
 let phonicUsageSession = null;
@@ -4037,6 +4063,8 @@ function buildPhonicConfig() {
     system_prompt: systemPrompt,
     voice_id: voiceId,
     audio_speed: 1,
+    no_input_end_conversation_sec: 30,
+    websocket_timeout_sec: 30,
     default_language: language,
     additional_languages: [],
     multilingual_mode: "request",
@@ -4185,6 +4213,7 @@ function handlePhonicVoiceEvent(event) {
       if (elements.conversationStatus) elements.conversationStatus.textContent = "Getting ready to listen";
       break;
     case "ready":
+      armVoiceIdle();
       updateVoiceExperience("listening", companion + " is listening. Speak naturally.");
       if (elements.voiceStatus) {
         elements.voiceStatus.dataset.error = "";
@@ -4193,6 +4222,7 @@ function handlePhonicVoiceEvent(event) {
       if (elements.conversationStatus) elements.conversationStatus.textContent = companion + " is listening";
       break;
     case "user_started_speaking":
+      clearVoiceIdle();
       if (phonicAssistantSpeechStartedAt) {
         phonicAssistantSpeechMs += Math.max(0, Date.now() - phonicAssistantSpeechStartedAt);
         phonicAssistantSpeechStartedAt = 0;
@@ -4203,12 +4233,16 @@ function handlePhonicVoiceEvent(event) {
       if (elements.conversationStatus) elements.conversationStatus.textContent = "Listening";
       break;
     case "user_finished_speaking":
+      armVoiceIdle();
       if (phonicUserSpeechStartedAt) {
         phonicUserSpeechMs += Math.max(0, Date.now() - phonicUserSpeechStartedAt);
         phonicUserSpeechStartedAt = 0;
       }
       updateVoiceExperience("thinking", companionThinkingMessage(companion));
       if (elements.conversationStatus) elements.conversationStatus.textContent = companionThinkingMessage(companion);
+      break;
+    case "input_cancelled":
+      armVoiceIdle();
       break;
     case "input_text": {
       // Save the user's live speech transcription immediately, not only when
@@ -4219,6 +4253,7 @@ function handlePhonicVoiceEvent(event) {
       break;
     }
     case "assistant_started_speaking":
+      clearVoiceIdle();
       if (!phonicAssistantSpeechStartedAt) phonicAssistantSpeechStartedAt = Date.now();
       assistantIsSpeaking = true;
       updateVoiceExperience("speaking", companion + " is speaking.");
@@ -4230,6 +4265,7 @@ function handlePhonicVoiceEvent(event) {
       break;
     }
     case "assistant_finished_speaking": {
+      armVoiceIdle();
       if (phonicAssistantSpeechStartedAt) {
         phonicAssistantSpeechMs += Math.max(0, Date.now() - phonicAssistantSpeechStartedAt);
         phonicAssistantSpeechStartedAt = 0;
@@ -4378,6 +4414,7 @@ async function openVoiceExperience() {
   document.body.classList.add("voice-experience-open");
   voiceInputMuted = false;
   voiceModeActive = true;
+  void requestVoiceWakeLock();
   assistantIsSpeaking = false;
   phonicUsageSession = null;
   phonicUsageStartedAt = 0;
@@ -4560,6 +4597,8 @@ function updateVoiceModeButton() {
 }
 
 function stopVoiceConversation(statusMessage = "Voice conversation stopped.") {
+  clearVoiceIdle();
+  if (voiceWakeLock) { void voiceWakeLock.release().catch(() => {}); voiceWakeLock = null; }
   void submitPhonicUsage();
   voiceModeActive = false;
   voiceInputMuted = false;
