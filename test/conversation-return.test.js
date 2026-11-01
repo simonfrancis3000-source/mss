@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {shouldWelcomeBack,welcomeBackReply,spokenSentenceBreaks,RETURN_GREETING_GAP_MS} from '../src/conversation-return.js';
+import {shouldWelcomeBack,welcomeBackReply,spokenSentenceBreaks,addressByNameReply,RETURN_GREETING_GAP_MS} from '../src/conversation-return.js';
 import {PHONIC_LANGUAGES,SUPPORTED_CONVERSATION_LANGUAGES} from '../src/conversation-languages.js';
 test('return greeting starts at twelve hours and ignores assistant messages',()=>{
  const timestamp='2026-11-01T00:00:00Z';const messages=[{role:'user',timestamp},{role:'assistant',timestamp:'2026-11-01T05:00:00Z'}];const base=Date.parse(timestamp);
@@ -28,4 +28,11 @@ test('completion review requires every task when detailed task review is supplie
  const base={userId:'test-user',scenarioId:scenario.id,startedAt:'2026-11-01T12:00:00Z',checks:[true,true,true],userTurnCount:10};
  assert.equal(scenarioReviewRecord({...base,reviewedTaskIds:['tidying']}),null);
  assert.ok(scenarioReviewRecord({...base,reviewedTaskIds:scenarioTasks(scenario).map(task=>task.id)}));
+});
+
+test('occasional personal address is guaranteed without repeating the name every turn',()=>{
+ assert.equal(addressByNameReply('Understood. What about the lamps?','Simon',[]),'Simon, understood. What about the lamps?');
+ const recent=[{role:'assistant',content:'Simon, understood.'}];
+ assert.equal(addressByNameReply('What about the lamps?','Simon',recent),'What about the lamps?');
+ assert.equal(addressByNameReply('Welcome back, Simon.','Simon',[]),'Welcome back, Simon.');
 });

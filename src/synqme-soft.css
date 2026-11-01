@@ -322,3 +322,4 @@ input[type='checkbox'] { accent-color: #8b73cf; }
 .settings-sheet .settings-disclosure > summary > span { grid-column: 1; }
 .settings-sheet .settings-disclosure > summary small { grid-column: 1; grid-row: 2; margin: 0; text-align: left; }
 .settings-sheet .settings-disclosure > summary::after { grid-column: 2; grid-row: 1 / 3; color: #655096; }
+.auth-card img, .auth-brand img { mix-blend-mode: multiply; }

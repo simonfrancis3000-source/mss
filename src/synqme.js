@@ -1,5 +1,5 @@
 import { PHONIC_LANGUAGES, CONVERSATION_LANGUAGE_NAMES } from "./conversation-languages.js";
-import { shouldWelcomeBack, welcomeBackReply, spokenSentenceBreaks } from "./conversation-return.js";
+import { shouldWelcomeBack, welcomeBackReply, spokenSentenceBreaks, addressByNameReply } from "./conversation-return.js";
 import { isApplianceIdentityAnswer } from "./appliance-persona.js";
 import { ruleSourceReferences, scenarioReviewRecord } from "./amia-persistence.js";
 import { SCENARIOS, completedScenarioIds, availableScenarioCount, buildScenarioStartPatch, scenarioTasks, scenarioLearnings, scenarioProgressSummary } from "./scenario-journey.js";
@@ -304,7 +304,7 @@ const elements = {
 };
 
 if (elements.preferredLanguage) elements.preferredLanguage.replaceChildren(...PHONIC_LANGUAGES.map(({code,label}) => {
-  const option = document.createElement("option"); option.value = code; option.textContent = label; return option;
+  const option = document.createElement("option"); option.value = code; option.textContent = label; option.selected = code === "en"; return option;
 }));
 
 function defaultProfile() {
@@ -571,8 +571,8 @@ function renderScenarioJourney() {
     const heading = document.createElement("h5"); heading.textContent = task.title;
     const description = document.createElement("p"); description.textContent = task.description;
     const status = document.createElement("span"); status.className = "journey-task-status";
-    status.textContent = covered.includes(task.id) ? "Preferences saved" : data.started === scenario.id && (room ? roomJourney.active_task_id === task.id : taskIndex === 0) ? "In conversation" : "To explore";
-    const button = document.createElement("button"); button.type = "button"; button.className = "journey-task-button"; button.textContent = covered.includes(task.id) ? "Review" : "Explore";
+    status.textContent = done.includes(scenario.id) ? "Reviewed" : covered.includes(task.id) ? "Preferences saved" : data.started === scenario.id && (room ? roomJourney.active_task_id === task.id : taskIndex === 0) ? "In conversation" : "To explore";
+    const button = document.createElement("button"); button.type = "button"; button.className = "journey-task-button"; button.textContent = done.includes(scenario.id) || covered.includes(task.id) ? "Review" : "Explore";
     button.setAttribute("aria-label", button.textContent + " " + task.title);
     button.addEventListener("click", () => void startJourneyScenario(scenario, task));
     const copy = document.createElement("div"); copy.append(status, heading, description);
@@ -4826,7 +4826,8 @@ async function requestAIReply(repairMode = false) {
     // for a turn that already used its own fallback or repair strategy.
     lastAIReplyUsedFallback = Boolean(data.usedFallback || data.responseNeedsReview);
     if (data.responseNeedsReview) return "__SYNQME_UNHELPFUL_AI_RESPONSE__";
-    const personalised = welcomeBackPending ? welcomeBackReply(reply.trim(), state.profile.ownerName, state.profile.preferredLanguage || "en") : reply.trim();
+    const returningReply = welcomeBackPending ? welcomeBackReply(reply.trim(), state.profile.ownerName, state.profile.preferredLanguage || "en") : reply.trim();
+    const personalised = addressByNameReply(returningReply, state.profile.ownerName, state.messages);
     welcomeBackPending = false;
     return personalised;
   } catch (error) {

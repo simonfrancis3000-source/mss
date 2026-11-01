@@ -14,3 +14,12 @@ export function welcomeBackReply(reply, ownerName, language = 'en') {
 export function spokenSentenceBreaks(text) {
   return String(text || '').replace(/([.!?。！？])[\t ]+(?=\S)/g, '$1\n\n');
 }
+export function addressByNameReply(reply, ownerName, recentMessages = []) {
+  const name = String(ownerName || '').trim().split(/\s+/)[0];
+  if (!name || String(reply).toLocaleLowerCase().includes(name.toLocaleLowerCase())) return reply;
+  const recent = recentMessages.filter(item => item.role === 'assistant').slice(-4);
+  if (recent.some(item => String(item.content || '').toLocaleLowerCase().includes(name.toLocaleLowerCase()))) return reply;
+  const opening = /^(?:Understood|Got it|That|Yes|No|Let['’]s|We|You|Thanks|Good|Right|Okay)\b/.test(reply)
+    ? reply.charAt(0).toLowerCase() + reply.slice(1) : reply;
+  return name + ', ' + opening;
+}
