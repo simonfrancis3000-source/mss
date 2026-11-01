@@ -125,3 +125,14 @@ test("provider and model names are not rendered in the SYNQ.ME interface or conv
   assert.match(source, /"AMÏA is ready"/);
   assert.match(source, /"AMÏA is temporarily unavailable"/);
 });
+
+test("voice view pulses the robot ring only while the user is speaking", async () => {
+  const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
+  const css = await readFile(new URL("../src/synqme.css", import.meta.url), "utf8");
+  const source = await readFile(new URL("../src/synqme.js", import.meta.url), "utf8");
+  assert.match(html, /id="voiceOrbCore"/);
+  assert.match(css, /voice-orb\[data-state="user-speaking"\] \.voice-orb-ring-one\s*\{\s*animation:\s*voice-user-pulse/);
+  assert.match(source, /case "user_started_speaking":[\s\S]*?updateVoiceExperience\("user-speaking"/);
+  assert.match(source, /case "user_finished_speaking":[\s\S]*?updateVoiceExperience\("thinking"/);
+  assert.match(css, /prefers-reduced-motion:\s*reduce/);
+});

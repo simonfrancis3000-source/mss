@@ -37,10 +37,18 @@ export function parseOutOfHomeScenarioContext(message) {
   });
 }
 
+export function isOutOfHomeTopicChange(text) {
+  return /\b(change (?:the )?topic|change subject|different topic|something unrelated|back to (?:my )?(?:home|household)|switch to (?:my )?(?:home|household)|let's talk about (?:my )?home)\b/i.test(String(text || ""));
+}
+
 export function findOutOfHomeScenarioContext(messages) {
   if (!Array.isArray(messages)) return null;
   const recent = messages.slice(-80).filter((item) => item?.role === "user" && typeof item.content === "string");
   for (const item of recent.reverse()) {
+    // An older public scenario must not come back after switching to a home
+    // scenario or explicitly changing topic, including after a reload.
+    if (/^Let's explore .+\. Ask me one question at a time/i.test(item.content) ||
+        isOutOfHomeTopicChange(item.content)) return null;
     const context = parseOutOfHomeScenarioContext(item.content);
     if (context) return context;
   }

@@ -1,12 +1,12 @@
-import { SCENARIOS, completedScenarioIds, availableScenarioCount } from "./scenario-journey.js";
+import { SCENARIOS, completedScenarioIds, availableScenarioCount, buildScenarioStartPatch } from "./scenario-journey.js";
 import { createClient } from "@supabase/supabase-js";
 import { createPhonicVoiceConversation } from "./phonic-voice.js";
 import { buildPexiCapabilityPlan, cleanPexiCapabilityManifest } from "./pexi-readiness.js";
 import { companionThinkingMessage, companionWelcomeMessage, isCompanionWelcomeMessage } from "./companion-copy.js";
 import { assistantReplyRepeatsRecentAssistant, enforceFirstPersonTaskQuestions, normaliseVoicePreference, phonicVoiceIdForPreference } from "./voice-language.js";
-import { ROOM_JOURNEY_ROOMS, addMonthsAnchored, buildRoomProgressSnapshot, getRoomJourneySchedule, getRoomTaskStates } from "./room-journey.js";
+import { ROOM_JOURNEY_ROOMS, addMonthsAnchored, getRoomTaskStates } from "./room-journey.js";
 import { OUT_OF_HOME_STAGES, OUT_OF_HOME_CATEGORIES, getOutOfHomeCategories, findOutOfHomeScenario, buildOutOfHomeScenarioPrompt } from "./out-of-home-training.js";
-import { findOutOfHomeScenarioContext } from "./out-of-home-persona-prompt.js";
+import { findOutOfHomeScenarioContext, isOutOfHomeTopicChange } from "./out-of-home-persona-prompt.js";
 import {
   buildHomeMemoryIndexRows,
   extractHomeMemoryKeys,
@@ -473,12 +473,15 @@ function renderScenarioJourney() {
   const counter = document.querySelector("#scenarioJourneyCount");
   const header = document.querySelector("#scenarioHeaderProgress");
   if (!target) return;
-  const data = scenarioData();
+  const ready = Boolean(cloudUserId && profileComplete() && roomJourney && roomJourney.user_id === cloudUserId);
+  const data = ready ? scenarioData() : {};
   const done = completedScenarioIds(data.completed);
-  if (counter) counter.textContent = done.length + " / 25 COMPLETE";
-  if (header) { header.textContent = "Progress: " + done.length + "/25"; header.setAttribute("aria-label", done.length + " of 25 scenarios completed"); }
+  const headerValue = document.querySelector("#scenarioHeaderValue");
+  if (counter) counter.textContent = ready ? done.length + " / 25 COMPLETE" : "PROGRESS UNAVAILABLE";
+  if (headerValue) headerValue.textContent = ready ? done.length + "/25" : "—/25";
+  if (header) header.setAttribute("aria-label", ready ? done.length + " of 25 scenarios completed" : "Scenario progress unavailable");
   target.replaceChildren();
-  if (!cloudUserId || !profileComplete() || !roomJourney) {
+  if (!ready) {
     target.textContent = roomJourneyTableUnavailable ? "Your scenario progress could not connect to your account. Try again when account sync is available." : "Sign in and complete your profile to begin your journey.";
     return;
   }
@@ -533,16 +536,12 @@ function renderScenarioJourney() {
 }
 async function startJourneyScenario(scenario) {
   if (!roomJourney || roomJourneySaveInFlight) return;
-  const data = scenarioData();
-  const progress = { ...roomJourney.room_progress, [SCENARIO_PROGRESS_KEY]: { ...data, started: scenario.id, startedAt: data.started === scenario.id && data.startedAt ? data.startedAt : new Date().toISOString() } };
-  if (!(await persistRoomJourneyChanges({ room_progress: progress }))) { alert("Your scenario could not be saved. Please try again."); return; }
+  // Commit the scenario and room focus together so a failed save cannot leave
+  // AMÏA working on a different room from the one shown in the journey.
+  const patch = buildScenarioStartPatch(scenario, roomJourney.room_progress);
+  if (!(await persistRoomJourneyChanges(patch))) { alert("Your scenario could not be saved. Please try again."); return; }
   if (scenario.kind === "room") {
     activeOutOfHomeScenarioContext = null;
-    await setRoomJourneyFocus(scenario.roomId);
-    if (roomJourney.active_task_id) {
-      const saved = await persistRoomJourneyChanges({ active_task_id: null });
-      if (!saved) { alert("Your scenario focus could not be saved. Please try again."); return; }
-    }
     const room = ROOM_JOURNEY_ROOMS.find((item) => item.id === scenario.roomId);
     elements.messageInput.value = "Let's explore " + room.name + ". Ask me one question at a time about my preferences, relevant boundaries, and when you should ask, wait or stop. This may be a place I visit, not necessarily a room in my home.";
   } else {
@@ -2580,25 +2579,15 @@ function renderMessages() {
 
 elements.chatMessages?.addEventListener("scroll", updateChatScrollbar, { passive: true });
 elements.roomJourneyPanel?.addEventListener("click", handleRoomJourneyClick);
+document.querySelector("#scenarioHeaderProgress")?.addEventListener("click", () => {
+  const workspace = document.querySelector("#moreWorkspace");
+  if (workspace) workspace.open = true;
+});
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible" && cloudUserId && profileComplete()) void ensureRoomJourney();
 });
 window.addEventListener("resize", updateChatScrollbar);
 
-
-function roomJourneyEvidenceRecords() {
-  const rows = [
-    ...activeLegacyPreferences().map((item) => ({ text: item.text, status: item.status || item.preference_status || "user_stated" })),
-    ...activePersonaMemories().map((item) => ({ text: item.statement, status: item.status }))
-  ];
-  const seen = new Set();
-  return rows.filter((item) => {
-    const key = String(item.text || "").trim().toLowerCase();
-    if (!key || seen.has(key)) return false;
-    seen.add(key);
-    return ["user_stated", "user_confirmed"].includes(String(item.status || "user_stated"));
-  });
-}
 
 function roomSchedule() {
   if (!roomJourney?.journey_started_at) return null;
@@ -2634,7 +2623,7 @@ function roomText(className, text) {
 function renderRoomJourney() {
   const featureTarget = elements.roomJourneyFeature;
   const gridTarget = elements.roomJourneyRoomGrid;
-  if (!featureTarget || !gridTarget) return;
+  if (!featureTarget || !gridTarget || elements.roomJourneyPanel?.hidden) return;
   featureTarget.replaceChildren();
   gridTarget.replaceChildren();
 
@@ -2813,34 +2802,11 @@ async function persistRoomJourneyChanges(patch) {
 }
 
 async function refreshRoomJourneyProgress() {
-  if (!supabase || !cloudUserId || !roomJourney || roomJourney.user_id !== cloudUserId) {
-    renderRoomJourney();
-    return false;
-  }
-  const derived = buildRoomProgressSnapshot(ROOM_JOURNEY_ROOMS, roomJourneyEvidenceRecords());
-  const previous = roomJourney.room_progress && typeof roomJourney.room_progress === "object" ? roomJourney.room_progress : {};
-  const merged = { ...previous };
-  for (const room of ROOM_JOURNEY_ROOMS) {
-    const oldIds = Array.isArray(previous[room.id]?.completed_task_ids) ? previous[room.id].completed_task_ids : [];
-    const newIds = Array.isArray(derived[room.id]?.completed_task_ids) ? derived[room.id].completed_task_ids : [];
-    const valid = new Set(room.tasks.map((task) => task.id));
-    merged[room.id] = { completed_task_ids: [...new Set([...oldIds, ...newIds])].filter((id) => valid.has(id)) };
-  }
-  const focusedRoom = ROOM_JOURNEY_ROOMS.find((room) => room.id === roomJourney.active_room_id);
-  const activeTaskStillPending = focusedRoom?.tasks.some((task) =>
-    task.id === roomJourney.active_task_id && !merged[focusedRoom.id].completed_task_ids.includes(task.id)
-  );
-  const nextActiveTaskId = activeTaskStillPending ? roomJourney.active_task_id : null;
-  const progressChanged = JSON.stringify(merged) !== JSON.stringify(previous);
-  const activeTaskChanged = (roomJourney.active_task_id || null) !== nextActiveTaskId;
-  if (progressChanged || activeTaskChanged) {
-    roomJourney.room_progress = merged;
-    roomJourney.active_task_id = nextActiveTaskId;
-    renderRoomJourney();
-    await persistRoomJourneyChanges({ room_progress: merged, active_task_id: nextActiveTaskId });
-    return true;
-  }
+  // Scenario completion is explicitly confirmed by the owner. Legacy room
+  // keyword matches must not silently mark tasks complete or overwrite the
+  // scenario state while a conversation is being saved.
   renderRoomJourney();
+  renderScenarioJourney();
   return false;
 }
 
@@ -4078,7 +4044,7 @@ function handlePhonicVoiceEvent(event) {
       break;
     case "user_started_speaking":
       if (!phonicUserSpeechStartedAt) phonicUserSpeechStartedAt = Date.now();
-      updateVoiceExperience("listening", "Listening to you…");
+      updateVoiceExperience("user-speaking", "Listening to you…");
       if (elements.conversationStatus) elements.conversationStatus.textContent = "Listening";
       break;
     case "user_finished_speaking":
@@ -4161,6 +4127,7 @@ async function handlePhonicAmiaToolCall({ name, parameters = {}, items = [] } = 
   );
   const latestUserText = String(latestItem?.text || parameters.latest_user_message || "").trim();
   if (!latestUserText) return { status: "error", assistant_text: unavailable };
+  if (isOutOfHomeTopicChange(latestUserText)) activeOutOfHomeScenarioContext = null;
 
   const latestKey = latestItem ? String(latestItem.itemIdx) : "";
   const mappedIndex = latestKey ? phonicItemMap.get(latestKey) : undefined;
@@ -4837,7 +4804,7 @@ async function sendMessage(rawText) {
   }
   const message = rawText.trim();
   if (!message || isSending) return;
-  if (/\b(change (?:the )?topic|change subject|different topic|something unrelated|back to (?:my )?(?:home|household)|switch to (?:my )?(?:home|household)|let's talk about (?:my )?home)\b/i.test(message)) {
+  if (isOutOfHomeTopicChange(message)) {
     activeOutOfHomeScenarioContext = null;
   }
   const clarificationRequest = isClarificationRequest(message);

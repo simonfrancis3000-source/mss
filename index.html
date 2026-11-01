@@ -56,7 +56,7 @@
         <a class="brand" href="https://mysecondself.app/" aria-label="MySecondSelf home">
           <img src="https://mysecondself.app/wp-content/uploads/2026/10/MySecondSelf-Dual-Head-Logo.png" alt="MySecondSelf" />
         </a>
-        <a class="scenario-header-progress" href="#scenarioJourney" id="scenarioHeaderProgress" aria-label="Scenario progress">Progress: 0/25</a>
+        <a class="scenario-header-progress" href="#scenarioJourney" id="scenarioHeaderProgress" aria-label="Scenario progress unavailable"><span>Your progress</span><strong id="scenarioHeaderValue">—/25</strong></a>
         <nav class="nav-links" aria-label="Main navigation">
           <a href="https://mysecondself.app/owners/">OWNERS</a>
           <a href="https://mysecondself.app/partners/">PARTNERS</a>
@@ -91,8 +91,7 @@
         <section class="panel conversation-panel" aria-labelledby="conversationTitle">
           <div class="panel-heading">
             <div>
-              <div class="section-kicker">01 / Conversation</div>
-              <h2 id="conversationTitle">Build your SecondSelf</h2>
+              <h2 id="conversationTitle">Your conversation</h2>
             </div>
             <div class="panel-status"><span class="status-dot"></span><span id="conversationStatus">Ready to talk</span></div>
             <button class="intro-audio-replay" type="button" id="introAudioReplay" aria-controls="welcomeAudioOffer" hidden>Replay introduction</button>
@@ -141,7 +140,7 @@
             <textarea id="messageInput" name="message" rows="2" maxlength="1200" placeholder="Tell your SecondSelf how you like things done..." required></textarea>
             <button class="voice-mode-button" id="voiceModeButton" type="button" aria-pressed="false" aria-label="Start voice conversation" title="Start a spoken conversation">
               <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"></rect><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3m-4 0h8"></path></svg>
-              <span>Voice</span>
+              <span>Talk</span>
             </button>
             <button class="send-button" id="sendButton" type="submit" aria-label="Send message">
               <span>Send</span>
@@ -159,6 +158,8 @@
 
       </section>
 
+      <details class="more-workspace" id="moreWorkspace">
+        <summary class="more-workspace-summary"><span>Your journey and preferences</span><span aria-hidden="true">+</span></summary>
       <details class="persona-insights-drawer" id="personaInsights">
         <summary class="persona-insights-summary">
           <span class="insights-summary-mark" aria-hidden="true">S</span>
@@ -212,7 +213,7 @@
               <span class="mini-tag">DEMO</span>
             </div>
             <div class="decision-body">
-              <div class="decision-summary" id="decisionSummary">Your monthly room journey gives you one clear focus at a time. AMÏA captures the preferences you share and avoids asking you to repeat them.</div>
+              <div class="decision-summary" id="decisionSummary">Your scenario journey gives you one clear focus at a time. AMÏA captures the preferences you share and avoids asking you to repeat them.</div>
               <div class="decision-route">
                 <div class="route-node">
                   <span class="route-icon">01</span>
@@ -237,7 +238,7 @@
       </details>
 
       <section class="panel scenario-journey" id="scenarioJourney" aria-labelledby="scenarioJourneyTitle">
-        <div class="panel-heading"><div><div class="section-kicker">YOUR PERSONALISATION JOURNEY</div><h2 id="scenarioJourneyTitle">One scenario at a time.</h2></div><span class="mini-tag" id="scenarioJourneyCount">0 / 25 COMPLETE</span></div>
+        <div class="panel-heading"><div><div class="section-kicker">YOUR PERSONALISATION JOURNEY</div><h2 id="scenarioJourneyTitle">One scenario at a time.</h2></div><span class="mini-tag" id="scenarioJourneyCount">SIGN IN TO SEE PROGRESS</span></div>
         <p>Explore life at home, out in the world and around other people. When you finish a scenario, the next one is ready immediately. You can revisit earlier scenarios whenever you like.</p>
         <div id="scenarioJourneyContent" aria-live="polite"></div>
       </section>
@@ -304,6 +305,8 @@
           <p class="out-of-home-footnote">Your companion should be considerate and capable in society, not simply obedient. Training is progressive: there is no need to complete every scenario in one sitting.</p>
         </div>
       </section>
+
+      </details>
 
       <section class="task-result panel" id="taskResult" hidden aria-labelledby="taskResultTitle">
         <div class="task-visual">
@@ -425,7 +428,7 @@
             <summary><span>Home interests</span><small>OPTIONAL</small></summary>
           <div class="settings-section">
             <div class="settings-subhead function-section-head"><span>OPTIONAL HOME INTERESTS</span><div class="function-section-controls"><span id="functionCount">0 SELECTED</span><button type="button" id="toggleAllFunctions" class="select-all-functions">Select all</button></div></div>
-            <p class="settings-section-copy">These optional interests add background context. Your monthly room journey guides what we explore first.</p>
+            <p class="settings-section-copy">These optional interests add background context. Your scenario journey guides what we explore first.</p>
             <div class="function-grid" id="functionGrid">
               <label class="function-option"><input type="checkbox" value="dishwashing"><span class="function-symbol">01</span><span class="function-label"><strong>Dishwashing</strong><small>Loading, unloading, preferences</small></span></label>
               <label class="function-option"><input type="checkbox" value="vacuuming"><span class="function-symbol">02</span><span class="function-label"><strong>Vacuuming & floors</strong><small>Rooms, timing, floor types</small></span></label>

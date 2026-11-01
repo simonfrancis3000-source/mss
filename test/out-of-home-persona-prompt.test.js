@@ -64,3 +64,12 @@ test("the server validates scenario context by catalogue ID and excludes the hom
   assert.match(server, /!outOfHomeScenario && isClarificationRequest/);
   assert.match(server, /app-generated scenario descriptions/);
 });
+
+test("a later home scenario or explicit topic change prevents restoring an old outdoor scenario", () => {
+  const match = findOutOfHomeScenario("strangers", "child-approaches");
+  const outdoor = { role: "user", content: buildOutOfHomeScenarioPrompt(match.category, match.scenario) };
+  const home = { role: "user", content: "Let's explore Kitchen. Ask me one question at a time about my preferences, relevant boundaries, and when you should ask, wait or stop. This may be a place I visit, not necessarily a room in my home." };
+  assert.equal(findOutOfHomeScenarioContext([outdoor, home]), null);
+  assert.equal(findOutOfHomeScenarioContext([outdoor, { role: "user", content: "Let's change the topic" }]), null);
+  assert.equal(findOutOfHomeScenarioContext([home, outdoor]).scenarioId, "child-approaches");
+});

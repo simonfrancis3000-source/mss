@@ -22,7 +22,7 @@ The system deliberately separates three layers:
 ## Ingestion and review lifecycle
 
 1. After an assistant response, an opted-in account may send up to six recent user/assistant messages to `POST /api/knowledge/extract`.
-2. Groq is asked to generalise a clearly stated, reusable household preference, decision rule or exception into a generic question, answer pattern, principle, tags, keywords, conditions and limitations.
+2. DeepSeek is asked to generalise a clearly stated, reusable household preference, decision rule or exception into a generic question, answer pattern, principle, tags, keywords, conditions and limitations.
 3. Server-side validation normalises fields and rejects candidates that fail eligibility, category, privacy or content checks. The server calculates a SHA-256 fingerprint for duplicate detection.
 4. The browser submits only the generalised candidate to the private queue with `status='pending_review'`; the raw transcript is not inserted into the shared library.
 5. A platform reviewer checks usefulness, generalisability, privacy, evidence and safety. Approved lessons are inserted into `synqme_shared_knowledge` with a fingerprint and non-identifying evidence count. Similar candidates from different users can increase that count or be consolidated before promotion.
