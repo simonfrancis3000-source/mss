@@ -1,3 +1,4 @@
+import { isApplianceIdentityAnswer } from "./appliance-persona.js";
 import { SCENARIOS, completedScenarioIds, availableScenarioCount, buildScenarioStartPatch } from "./scenario-journey.js";
 import { createClient } from "@supabase/supabase-js";
 import { createPhonicVoiceConversation } from "./phonic-voice.js";
@@ -951,7 +952,11 @@ async function setLinkedPreferenceStatus(preferenceId, status) {
 }
 
 async function processStructuredMemoryTurn(userMessage, userTimestamp, shouldExtract = false) {
-  if (!shouldExtract || !API_BASE || !supabase || !cloudUserId || personaMemoryTableUnavailable || personaMemoryWriteInFlight) return;
+  const latestUserIndex = state.messages.findLastIndex((item) => item.role === "user" && item.timestamp === userTimestamp);
+  const previousQuestion = latestUserIndex > 0 && state.messages[latestUserIndex - 1]?.role === "assistant"
+    ? state.messages[latestUserIndex - 1].content : "";
+  const identityAnswer = isApplianceIdentityAnswer(userMessage, previousQuestion);
+  if ((!shouldExtract && !identityAnswer) || !API_BASE || !supabase || !cloudUserId || personaMemoryTableUnavailable || personaMemoryWriteInFlight) return;
   personaMemoryWriteInFlight = true;
   if (elements.personaMemoryStatus) elements.personaMemoryStatus.textContent = "Updating your personal memory…";
   try {
