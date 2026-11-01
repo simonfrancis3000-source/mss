@@ -299,14 +299,6 @@
           <button type="button" class="settings-close" id="closeSettings" aria-label="Close settings">×</button>
         </div>
         <button class="intro-audio-replay" type="button" id="introAudioReplay" aria-controls="welcomeAudioOffer" hidden>Replay introduction</button>
-        <section class="training-reset-settings" aria-labelledby="trainingResetHeading">
-          <h3 id="trainingResetHeading">Reset training</h3>
-          <p>Remove saved training permanently. Each reset requires typing RESET.</p>
-          <label for="resetTrainingScenario">Scenario to reset</label>
-          <select id="resetTrainingScenario"></select>
-          <button type="button" id="resetOneScenario">Reset selected scenario</button>
-          <button type="button" id="resetAllTraining">Reset all training</button>
-        </section>
         <form id="settingsForm" class="settings-form">
           <div class="owner-identity-row">
             <div class="owner-avatar-preview" id="ownerAvatarPreview" aria-label="Your profile image preview">
@@ -476,12 +468,21 @@
           <p class="settings-note">Removing a saved memory stops it being used as a structured preference. The original conversation remains in your chat history unless you remove that conversation separately.</p>
         </section>
         </details>
+        <section class="training-reset-settings" aria-labelledby="trainingResetHeading">
+          <h3 id="trainingResetHeading">Reset training</h3>
+          <p>Remove saved training permanently. Each reset requires typing RESET.</p>
+          <label for="resetTrainingScenario">Scenario to reset</label>
+          <select id="resetTrainingScenario"></select>
+          <button type="button" id="resetOneScenario">Reset selected scenario</button>
+          <button type="button" id="resetAllTraining">Reset all training</button>
+        </section>
         <div class="settings-milestones">
           <div class="settings-subhead"><span>PERSONA MILESTONES</span><span id="milestoneCount">0 OF 5</span></div>
           <p class="settings-section-copy">Small steps that show your SecondSelf taking shape. Rewards are profile achievements, not payments or robot capabilities.</p>
           <div id="milestoneList" class="milestone-list"></div>
         </div>
-        <div class="pexi-readiness" id="pexiReadiness">
+        <button type="button" class="settings-task-link" id="viewPexiReadiness" aria-expanded="false" aria-controls="pexiReadiness">View PEXI Transfer Readiness</button>
+        <div class="pexi-readiness" id="pexiReadiness" hidden>
           <div class="settings-subhead"><span>PEXI TRANSFER READINESS</span><span id="pexiReadinessStatus">NOT STARTED</span></div>
           <p id="pexiReadinessSummary">Your stated preferences and unresolved details will be kept separate. PEXI will map selected tasks to generic capability requirements without assuming that a robot is compatible.</p>
           <div id="pexiCapabilityPlanList" class="pexi-capability-plan-list" aria-live="polite"></div>
@@ -546,9 +547,9 @@
             <span class="voice-control-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"></rect><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3m-4 0h8"></path></svg></span>
             <span id="voiceMuteControlLabel">Mute</span>
           </button>
-          <button class="voice-control-end" type="button" id="voiceEndButton" aria-label="End voice conversation">
+          <button class="voice-control-end" type="button" id="voiceEndButton" aria-label="Start voice conversation">
             <span class="voice-control-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14c4.5-4 11.5-4 16 0l-2.5 3.5-3.2-1.7v-2.2a6.6 6.6 0 0 0-4.6 0v2.2l-3.2 1.7Z"></path></svg></span>
-            <span>End</span>
+            <span data-voice-session-label>Start</span>
           </button>
         </div>
         <p class="voice-privacy-note">Your microphone is used for the live conversation. Spoken words appear as text in this chat.</p>

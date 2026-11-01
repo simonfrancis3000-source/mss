@@ -380,3 +380,17 @@ input[type='checkbox'] { accent-color: #8b73cf; }
 #trainingResetExecute:disabled { opacity: .45; }
 .robot-picker-none { color: var(--ink); font: 600 13px 'Quicksand',sans-serif; }
 .message-avatar[hidden] { display: none; }
+.settings-sheet .training-reset-settings { font: inherit; color: var(--ink); }
+.settings-sheet .training-reset-settings h3 { margin: 0 0 10px; font-size: 14px; font-weight: 600; }
+.settings-sheet .training-reset-settings p, .settings-sheet .training-reset-settings label { font-size: 13px; line-height: 1.65; }
+.settings-sheet .training-reset-settings select { font: inherit; font-size: 14px; min-height: 44px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--soft-light); color: var(--ink); }
+.settings-sheet .training-reset-settings button { font-size: 13px; }
+.settings-sheet .pexi-readiness, .settings-sheet .pexi-manifest-import, .settings-sheet .pexi-capability-task { background: var(--soft); color: var(--ink); border-color: var(--line); border-radius: 17px; }
+.settings-sheet .pexi-readiness[hidden] { display: none; }
+.settings-sheet .pexi-readiness p, .settings-sheet .pexi-readiness label, .settings-sheet .pexi-readiness strong { font-family: inherit; color: var(--ink); font-size: 13px; line-height: 1.65; }
+.settings-sheet .pexi-capability-task-head { flex-wrap: wrap; gap: 8px; }
+.settings-sheet .pexi-capability-task-head span, .settings-sheet .pexi-readiness .settings-subhead span:last-child, .settings-sheet .pexi-manifest-import label span { color: #506f84; }
+.settings-sheet .pexi-manifest-import input[type=file] { color: var(--ink); border-color: var(--line); background: var(--soft-light); font-family: inherit; }
+.settings-sheet .pexi-manifest-import input[type=file]::file-selector-button { color: var(--ink); background: var(--soft); border: 1px solid var(--line); }
+.voice-experience button:disabled { opacity: .45; cursor: default; }
+.conversation-panel > .scenario-live-progress { transform: translateY(calc(-50% - 12px)); margin-bottom: -28px; }

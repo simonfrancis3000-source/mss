@@ -467,12 +467,12 @@ function armVoiceIdle() {
   if (!voiceModeActive) return;
   voiceIdleDeadline = Date.now() + 30000;
   voiceIdleTimer = setTimeout(() => {
-    if (voiceModeActive) closeVoiceExperience("Voice conversation ended after 30 seconds of silence.");
+    if (voiceModeActive) stopVoiceConversation("Paused after 30 seconds of silence. Press Start to continue.");
   }, 30000);
 }
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState !== "visible" || !voiceModeActive) return;
-  if (voiceIdleDeadline && Date.now() >= voiceIdleDeadline) closeVoiceExperience("Voice conversation ended after 30 seconds of silence.");
+  if (voiceIdleDeadline && Date.now() >= voiceIdleDeadline) stopVoiceConversation("Paused after 30 seconds of silence. Press Start to continue.");
   else if (!voiceWakeLock) void requestVoiceWakeLock();
 });
 let voiceInputMuted = false;
@@ -4418,7 +4418,7 @@ async function handlePhonicAmiaToolCall({ name, parameters = {}, items = [] } = 
   }
 }
 
-async function openVoiceExperience() {
+async function openVoiceExperience({ activate = false } = {}) {
   welcomeBackPending ||= shouldWelcomeBack(state.messages);
   if (!elements.voiceExperience) return;
   if (!cloudUserId) {
@@ -4437,6 +4437,12 @@ async function openVoiceExperience() {
   const appNav = document.querySelector("#appBottomNav");
   if (appNav) elements.voiceExperience.append(appNav);
   document.body.classList.add("voice-experience-open");
+  if (!activate) {
+    updateVoiceCompanionLabels();
+    updateVoiceExperience("idle", "Press Start when you are ready to talk.");
+    updateVoiceModeButton();
+    return;
+  }
   voiceInputMuted = false;
   voiceModeActive = true;
   void requestVoiceWakeLock();
@@ -4597,7 +4603,10 @@ function initialiseRobotAndVoiceControls() {
   });
   elements.voiceMuteButton?.addEventListener("click", toggleVoiceInputMute);
   elements.voiceMuteControlButton?.addEventListener("click", toggleVoiceInputMute);
-  elements.voiceEndButton?.addEventListener("click", () => closeVoiceExperience("Voice conversation ended."));
+  elements.voiceEndButton?.addEventListener("click", () => {
+    if (voiceModeActive) stopVoiceConversation("Paused. Press Start to continue.");
+    else void openVoiceExperience({ activate: true });
+  });
   elements.voiceChatButton?.addEventListener("click", () => closeVoiceExperience("Returned to text chat."));
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && elements.voiceExperience && !elements.voiceExperience.hidden) {
@@ -4608,6 +4617,15 @@ function initialiseRobotAndVoiceControls() {
 
 function updateVoiceModeButton() {
   syncAppNavigation();
+  const control = elements.voiceEndButton;
+  if (control) {
+    control.setAttribute("aria-label", voiceModeActive ? "Pause voice conversation" : "Start voice conversation");
+    const label = control.querySelector("[data-voice-session-label]");
+    if (label) label.textContent = voiceModeActive ? "Pause" : "Start";
+    const icon = control.querySelector("svg");
+    if (icon) icon.innerHTML = voiceModeActive ? '<path d="M8 5v14M16 5v14"/>' : '<path d="m9 5 10 7-10 7Z"/>';
+  }
+  for (const button of [elements.voiceMuteButton, elements.voiceMuteControlButton]) if (button) button.disabled = !voiceModeActive;
   if (elements.voiceModeButton) {
     elements.voiceModeButton.classList.toggle("is-active", voiceModeActive);
     elements.voiceModeButton.setAttribute("aria-pressed", String(voiceModeActive));
@@ -5589,4 +5607,11 @@ resetExecute?.addEventListener("click", async () => {
     resettingTraining = false; resetExecute.disabled = resetInput.value !== "RESET";
     document.querySelector("#trainingResetCancel").disabled = false;
   }
+});
+
+document.querySelector("#viewPexiReadiness")?.addEventListener("click", event => {
+  const panel = document.querySelector("#pexiReadiness");
+  panel.hidden = !panel.hidden;
+  event.currentTarget.setAttribute("aria-expanded", String(!panel.hidden));
+  event.currentTarget.textContent = panel.hidden ? "View PEXI Transfer Readiness" : "Hide PEXI Transfer Readiness";
 });
