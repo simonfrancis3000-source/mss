@@ -165,6 +165,7 @@ export function buildHomeMemoryIndexRows(messages, userId, conversationKey = "ma
     return {
       user_id: userId,
       conversation_key: conversationKey,
+      scenario_id: item.message?.scenario_id || null,
       source_key: stableTimestamp.replace(/[^a-zA-Z0-9]/g, "").slice(-24) + "-" + sourceHash,
       role: item.role,
       content: item.content,

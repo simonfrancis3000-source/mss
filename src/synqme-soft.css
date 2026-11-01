@@ -367,3 +367,14 @@ input[type='checkbox'] { accent-color: #8b73cf; }
  .voice-experience .voice-experience-content .voice-orb { width: min(32vw,100px); margin-block: 10px 5px; }
  .voice-experience .voice-control-icon { width: 50px; height: 50px; border-radius: 16px; }
 }
+
+.training-reset-settings { margin: 20px 0; padding: 18px; border: 1px solid var(--line); border-radius: 18px; }
+.training-reset-settings label, .training-reset-settings select { display: block; width: 100%; margin-bottom: 12px; }
+.training-reset-settings button, .training-reset-actions button { margin: 8px 8px 0 0; padding: 12px 16px; border: 1px solid var(--line); border-radius: 14px; color: var(--ink); background: var(--soft); font: inherit; }
+#trainingResetDialog { width: min(440px,calc(100vw - 36px)); max-height: calc(100dvh - 40px); overflow: auto; padding: 24px; border: 1px solid white; border-radius: 24px; background: var(--soft); color: var(--ink); font: 500 15px/1.6 'Quicksand',sans-serif; }
+#trainingResetDialog::backdrop { background: #19354388; }
+#trainingResetDialog h2 { font-size: 24px; }
+#trainingResetConfirmation { display: block; width: 100%; padding: 14px; margin-top: 10px; border-radius: 12px; border: 1px solid var(--line); background: var(--soft-light); color: var(--ink); font: inherit; }
+#trainingResetError { color: #923f53; }
+#trainingResetExecute { color: #923f53; }
+#trainingResetExecute:disabled { opacity: .45; }

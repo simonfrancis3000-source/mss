@@ -299,6 +299,14 @@
           <button type="button" class="settings-close" id="closeSettings" aria-label="Close settings">×</button>
         </div>
         <button class="intro-audio-replay" type="button" id="introAudioReplay" aria-controls="welcomeAudioOffer" hidden>Replay introduction</button>
+        <section class="training-reset-settings" aria-labelledby="trainingResetHeading">
+          <h3 id="trainingResetHeading">Reset training</h3>
+          <p>Remove saved training permanently. Each reset requires typing RESET.</p>
+          <label for="resetTrainingScenario">Scenario to reset</label>
+          <select id="resetTrainingScenario"></select>
+          <button type="button" id="resetOneScenario">Reset selected scenario</button>
+          <button type="button" id="resetAllTraining">Reset all training</button>
+        </section>
         <form id="settingsForm" class="settings-form">
           <div class="owner-identity-row">
             <div class="owner-avatar-preview" id="ownerAvatarPreview" aria-label="Your profile image preview">
@@ -546,6 +554,14 @@
         <p class="voice-privacy-note">Your microphone is used for the live conversation. Spoken words appear as text in this chat.</p>
       </div>
     </section>
+    <dialog id="trainingResetDialog" aria-labelledby="trainingResetTitle" aria-describedby="trainingResetDescription">
+      <h2 id="trainingResetTitle">Reset training?</h2>
+      <p id="trainingResetDescription"></p>
+      <label for="trainingResetConfirmation">Type RESET to confirm</label>
+      <input id="trainingResetConfirmation" autocomplete="off" autocapitalize="off" spellcheck="false" />
+      <p id="trainingResetError" role="alert"></p>
+      <div class="training-reset-actions"><button type="button" id="trainingResetCancel">Cancel</button><button type="button" id="trainingResetExecute" disabled>Permanently reset</button></div>
+    </dialog>
     <nav class="app-bottom-nav" id="appBottomNav" aria-label="App navigation">
       <button type="button" data-app-tab="chat" aria-current="page"><span class="bottom-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-9l-6 3v-3H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/><path d="M7 9h10M7 13h6"/></svg></span><span>Chat</span></button>
       <button type="button" data-app-tab="talk"><span class="bottom-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3m-4 0h8"/></svg></span><span>Talk</span></button>
