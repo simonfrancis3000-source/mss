@@ -116,6 +116,7 @@ async function loadDashboard() {
     currentData = payload;
     renderDashboard(payload);
     showDashboard();
+    void loadSharedLearning();
     statusLine.textContent = "Updated " + timestamp(new Date().toISOString()) + " · " + el("periodSelect").selectedOptions[0].textContent;
   } catch (error) {
     if (requestGeneration !== sessionGeneration) return;
@@ -310,3 +311,46 @@ if (!supabase) {
     void loadDashboard();
   });
 }
+
+async function loadSharedLearning() {
+  const target = el("sharedLearningItems");
+  if (!target || !currentSession) return;
+  target.textContent = "Loading review queue…";
+  const generation = sessionGeneration;
+  try {
+    let query = supabase.from("synqme_shared_knowledge").select("id,scenario_id,candidate_kind,prompt_pattern,answer_pattern,general_principle,evidence_count,status,version,limitations,category,context_tags,key_terms,applicability").eq("status", el("sharedLearningStatus")?.value || "pending_review").order("evidence_count", { ascending: false }).order("updated_at", { ascending: false }).limit(100);
+    const kind = el("sharedLearningKind")?.value;
+    if (kind) query = query.eq("candidate_kind",kind);
+    const { data, error } = await query;
+    if (error) throw error;
+    if (generation !== sessionGeneration) return;
+    target.replaceChildren();
+    if (!data?.length) target.textContent = "No shared learning is awaiting review. New contributions are grouped in the background every minute.";
+    for (const item of data || []) {
+      const card = document.createElement("article"); card.className = "learning-review-card";
+      const heading = document.createElement("h3"); heading.textContent = item.prompt_pattern;
+      const meta = document.createElement("p"); meta.textContent = (item.scenario_id || "General ownership") + " · " + item.candidate_kind.replaceAll("_", " ") + " · " + item.evidence_count + " contributing accounts · " + item.status + " · version " + item.version;
+      const detail = document.createElement("p"); detail.textContent = item.answer_pattern;
+      const principle = document.createElement("p"); principle.textContent = item.general_principle;
+      const limits = document.createElement("p"); limits.textContent = (item.limitations || []).join(" ");
+      card.append(meta, heading, detail, principle, limits);
+      for (const [action, label] of [["approved", "Approve"], ["rejected", "Reject"], ["retired", "Withdraw"]]) {
+        if (item.status === action) continue;
+        const button = document.createElement("button"); button.type = "button"; button.textContent = label;
+        button.addEventListener("click", async () => {
+          if (!window.confirm(label + " this generalised learning item? Confirm it contains no identifying details and does not turn a personal preference into a universal rule.")) return;
+          button.disabled = true;
+          const { error } = await supabase.rpc("synqme_review_learning", { p_id: item.id, p_action: action });
+          if (error) { alert(error.message); button.disabled = false; return; }
+          await loadSharedLearning();
+        });
+        card.append(button);
+      }
+      target.append(card);
+    }
+  } catch (error) { target.textContent = error.message || "Could not load shared learning."; }
+}
+el("refreshSharedLearning")?.addEventListener("click", loadSharedLearning);
+
+el("sharedLearningStatus")?.addEventListener("change",loadSharedLearning);
+el("sharedLearningKind")?.addEventListener("change",loadSharedLearning);

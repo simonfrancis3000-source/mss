@@ -99,7 +99,19 @@ export function createAmiaStore({ supabaseUrl, publishableKey, fetchImpl = fetch
       return true;
     } catch (error) { console.warn('AMIA appliance reference could not be saved',{code:error.message}); return false; }
   }
-  return { loadContext, recordTurn, saveAppliance };
+  async function loadSharedKnowledge(auth, scopeKey) {
+    const scenarioId = scopeKey.startsWith('room:') ? scopeKey.split(':').slice(0,2).join(':') : scopeKey;
+    if (!/^(room|outside):/.test(scenarioId)) return [];
+    const params = { select:'category,prompt_pattern,answer_pattern,general_principle,context_tags,applicability,limitations,quality_score,evidence_count', status:'eq.approved', scenario_id:'eq.'+scenarioId };
+    try {
+      const [common, novel] = await Promise.all([
+        request(auth,'synqme_shared_knowledge?'+new URLSearchParams({...params,order:'quality_score.desc,evidence_count.desc',limit:'4'})),
+        request(auth,'synqme_shared_knowledge?'+new URLSearchParams({...params,candidate_kind:'in.(novel_situation,unanswered_question)',order:'updated_at.desc',limit:'2'}))
+      ]);
+      return [...new Map([...common,...novel].map(item=>[item.prompt_pattern,item])).values()].slice(0,6);
+    } catch { return []; }
+  }
+  return { loadContext, recordTurn, saveAppliance, loadSharedKnowledge };
 }
 
 export function storedDecisionGuidance(context) {

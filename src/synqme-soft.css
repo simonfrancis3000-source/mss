@@ -394,3 +394,15 @@ input[type='checkbox'] { accent-color: #8b73cf; }
 .settings-sheet .pexi-manifest-import input[type=file]::file-selector-button { color: var(--ink); background: var(--soft); border: 1px solid var(--line); }
 .voice-experience button:disabled { opacity: .45; cursor: default; }
 .conversation-panel > .scenario-live-progress { transform: translateY(calc(-50% - 12px)); margin-bottom: -28px; }
+.journey-title-row { display: flex; align-items: center; justify-content: space-between; gap: 15px; width: 100%; }
+.journey-title-row h2 { min-width: 0; overflow-wrap: anywhere; }
+.scenario-journey > .panel-heading > div { width: 100%; }
+.journey-share-button { flex: 0 0 44px; display: grid; place-items: center; width: 44px; height: 44px; padding: 11px; border: 1px solid #f5fbff; border-radius: 14px; background: var(--soft); color: var(--ink); box-shadow: var(--raised-small); }
+.journey-share-button svg { width: 23px; height: 23px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.journey-share-button:disabled { opacity: .4; }
+#journeyShareStatus:empty { display: none; }
+#journeyShareStatus { color: var(--secondary); font-size: 13px; }
+.decision-route .route-node { background: var(--soft-light); color: var(--ink); border-radius: 14px; padding: 12px; }
+.decision-route .route-node strong { color: var(--ink); }
+.decision-route .route-node small, .decision-route .route-state { color: #506f84; }
+.run-button { background: var(--soft); color: var(--ink); border: 1px solid #f5fbff; box-shadow: var(--raised-small); border-radius: 17px; font-family: inherit; }

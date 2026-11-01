@@ -159,6 +159,13 @@
           </div>
         </section>
 
+      <section class="data-panel" aria-labelledby="sharedLearningTitle">
+        <div class="panel-header"><div><div class="eyebrow">REVIEW BEFORE PUBLISHING</div><h2 id="sharedLearningTitle">Shared learning</h2></div><button type="button" id="refreshSharedLearning">Refresh queue</button></div>
+        <p>Contributions are grouped by similar questions within each scenario. Account identities and raw conversations are not shown here. Review privacy, accuracy and usefulness before approving. Frequency alone does not establish correctness.</p>
+        <label>Review status <select id="sharedLearningStatus"><option value="pending_review">Pending review</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="retired">Withdrawn</option></select></label>
+        <label>Learning type <select id="sharedLearningKind"><option value="">All types</option><option value="common_question">Questions</option><option value="novel_situation">New situations</option><option value="unanswered_question">Unanswered questions</option><option value="decision_rule">Decision patterns</option></select></label>
+        <div id="sharedLearningItems" aria-live="polite"></div>
+      </section>
         <footer class="dashboard-footer">
           <span id="trackingNote">Usage tracking start date will appear here.</span>
           <span>Private SYNQ.ME operations console</span>

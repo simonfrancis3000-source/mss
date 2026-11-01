@@ -67,3 +67,13 @@ test("caps the content fields and allowed tags", () => {
   assert.deepEqual(result.context_tags, ["kitchen", "bathroom"]);
   assert.deepEqual(result.key_terms, ["counter", "permissions"]);
 });
+
+
+test("ownership questions and unusual situations retain valid scenario attribution", () => {
+  for (const kind of ["common_question", "novel_situation", "unanswered_question"]) {
+    const result = cleanKnowledgeCandidate(safeCandidate({ candidate_kind: kind, scenario_id: "outside:strangers:adult-approaches" }));
+    assert.equal(result.candidate_kind, kind);
+    assert.equal(result.scenario_id, "outside:strangers:adult-approaches");
+  }
+  assert.equal(cleanKnowledgeCandidate(safeCandidate({scenario_id:"invented"})).scenario_id,null);
+});

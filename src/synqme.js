@@ -1,3 +1,4 @@
+import { progressOwnerLabel, shareProgressImage } from "./progress-share.js";
 import { PHONIC_LANGUAGES, CONVERSATION_LANGUAGE_NAMES } from "./conversation-languages.js";
 import { shouldWelcomeBack, welcomeBackReply, spokenSentenceBreaks, addressByNameReply } from "./conversation-return.js";
 import { isApplianceIdentityAnswer } from "./appliance-persona.js";
@@ -423,7 +424,7 @@ function loadState() {
           return sanitiseConversationMessage(m);
         })
         .filter(Boolean),
-      preferences: saved.preferences.slice(0, 24)
+      preferences: saved.preferences
         .map((p) => typeof p === "string" ? cleanPreference(p) : cleanPreference(p?.text, p))
         .filter(Boolean),
       profile: { ...defaultProfile(), ...(saved.profile && typeof saved.profile === "object" ? saved.profile : {}), robotVoice: normaliseVoicePreference(saved.profile?.robotVoice) },
@@ -533,6 +534,14 @@ function renderScenarioJourney() {
   if (!target) return;
   const ready = Boolean(cloudUserId && profileComplete() && roomJourney && roomJourney.user_id === cloudUserId);
   const data = ready ? scenarioData() : {};
+  const journeyTitle = document.querySelector("#scenarioJourneyTitle");
+  if (journeyTitle) journeyTitle.textContent = progressOwnerLabel(state.profile.ownerName,"journey");
+  const share = document.querySelector("#shareJourneyProgress");
+  if (share) { share.disabled = !ready; share.setAttribute("aria-label", "Share " + progressOwnerLabel(state.profile.ownerName,"progress")); }
+  const workspaceLabel = document.querySelector("#moreWorkspace > summary > span");
+  if (workspaceLabel) workspaceLabel.textContent = progressOwnerLabel(state.profile.ownerName,"journey and preferences");
+  const headerLabel = document.querySelector("#scenarioHeaderProgress > span");
+  if (headerLabel) headerLabel.textContent = progressOwnerLabel(state.profile.ownerName,"progress");
   const done = completedScenarioIds(data.completed);
   const headerValue = document.querySelector("#scenarioHeaderValue");
   if (counter) counter.textContent = ready ? done.length + " / 25 COMPLETE" : "PROGRESS UNAVAILABLE";
@@ -555,7 +564,7 @@ function renderScenarioJourney() {
   if (journeyDisplay === "chart") {
     const progress = scenarioProgressSummary(done);
     const chart = document.createElement("section"); chart.className = "journey-chart";
-    const heading = document.createElement("h3"); heading.textContent = "Your progress";
+    const heading = document.createElement("h3"); heading.textContent = progressOwnerLabel(state.profile.ownerName,"progress");
     const ring = document.createElement("div"); ring.className = "journey-progress-ring"; ring.style.setProperty("--progress", progress.percent + "%");
     ring.setAttribute("role", "img"); ring.setAttribute("aria-label", progress.completed + " of " + progress.total + " scenarios completed, " + progress.percent + " percent");
     const ringValue = document.createElement("strong"); ringValue.textContent = progress.percent + "%";
@@ -1302,6 +1311,8 @@ async function handlePersonaMemoryAction(event) {
         reviewed_at: new Date().toISOString()
       });
       if (memory.source_preference_id) {
+        const { error } = await supabase.from("synqme_preferences").update({ preference_text: statement, normalised_text: statement.toLowerCase().slice(0,240) }).eq("user_id",cloudUserId).eq("id",memory.source_preference_id);
+        if (error) throw error;
         state.preferences = state.preferences.map((item) => String(item.id) === String(memory.source_preference_id)
           ? { ...item, text: statement, normalised: statement.toLowerCase(), status: "user_confirmed" }
           : item);
@@ -1527,7 +1538,7 @@ async function contributeSharedKnowledgeFromTurn() {
     const response = await fetch(API_BASE + "/api/knowledge/extract", {
       method: "POST",
       headers: await authenticatedApiHeaders(),
-      body: JSON.stringify({ messages })
+      body: JSON.stringify({ messages, scenario_id: scenarioData().started || (roomJourney?.active_room_id ? "room:" + roomJourney.active_room_id : null) })
     });
     if (!response.ok) return false;
     const payload = await response.json();
@@ -1536,6 +1547,7 @@ async function contributeSharedKnowledgeFromTurn() {
 
     const { error } = await supabase.from("synqme_knowledge_candidates").insert({
       user_id: cloudUserId,
+      scenario_id: candidate.scenario_id, candidate_kind: candidate.candidate_kind,
       category: candidate.category,
       prompt_pattern: candidate.prompt_pattern,
       answer_pattern: candidate.answer_pattern,
@@ -1581,7 +1593,7 @@ function persist(syncCloud = true) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       messages: state.messages.slice(-5000),
-      preferences: state.preferences.slice(0, 24),
+      preferences: state.preferences,
       profile: state.profile,
       functions: state.functions,
       pendingClarification: state.pendingClarification || null
@@ -1661,6 +1673,16 @@ function preferenceExtraction(item) {
   return { explicitFields, unresolvedFields };
 }
 
+async function loadAllCloudPreferences(userId) {
+  const data = [];
+  for (let offset = 0; ; offset += 1000) {
+    const result = await supabase.from("synqme_preferences").select("id,category,preference_text,normalised_text,preference_status,explicit_facets,unresolved_fields,source_message,created_at,schema_version,clarifications").eq("user_id", userId).order("created_at", { ascending: false }).order("id").range(offset, offset + 999);
+    if (result.error) return { data: null, error: result.error };
+    data.push(...(result.data || []));
+    if ((result.data || []).length < 1000) return { data, error: null };
+  }
+}
+
 async function saveCloudState() {
   if (!supabase || !cloudUserId) return;
   const snapshot = {
@@ -1734,21 +1756,8 @@ async function saveCloudState() {
     if (prefsError) throw prefsError;
   }
 
-  const { data: existing, error: selectError } = await supabase
-    .from("synqme_preferences")
-    .select("id,normalised_text")
-    .eq("user_id", cloudUserId);
-  if (selectError) throw selectError;
-  const keep = new Set(desired.map((item) => item.normalised_text));
-  const stale = (existing || []).filter((item) => !keep.has(item.normalised_text)).map((item) => item.id);
-  if (stale.length) {
-    const { error: deleteError } = await supabase
-      .from("synqme_preferences")
-      .delete()
-      .eq("user_id", cloudUserId)
-      .in("id", stale);
-    if (deleteError) throw deleteError;
-  }
+  // Missing entries in a local snapshot are not deletion requests. Explicit
+  // edit/forget/reset actions update their own account-scoped rows.
 
   // Read the latest transcript before writing: two browsers can otherwise
   // replace the same row with stale, device-local snapshots.
@@ -1828,11 +1837,7 @@ async function refreshCloudConversation() {
     // those records as well so the other browser's whole persona catches up.
     const [profileResult, preferencesResult] = await Promise.all([
       supabase.from("synqme_profiles").select("*").eq("user_id", userIdAtStart).maybeSingle(),
-      supabase.from("synqme_preferences")
-        .select("id,category,preference_text,normalised_text,preference_status,explicit_facets,unresolved_fields,source_message,created_at,schema_version,clarifications")
-        .eq("user_id", userIdAtStart)
-        .order("created_at", { ascending: false })
-        .limit(24)
+      loadAllCloudPreferences(userIdAtStart)
     ]);
     if (profileResult.error) throw profileResult.error;
     if (preferencesResult.error) throw preferencesResult.error;
@@ -1971,7 +1976,7 @@ document.addEventListener("visibilitychange", () => {
 function snapshotAppState() {
   return {
     messages: state.messages.slice(-5000),
-    preferences: state.preferences.slice(0, 24).map((item) => ({ ...item })),
+    preferences: state.preferences.map((item) => ({ ...item })),
     profile: { ...state.profile },
     functions: [...state.functions],
     pendingClarification: state.pendingClarification ? { ...state.pendingClarification } : null
@@ -2012,7 +2017,7 @@ function stateFromSnapshot(snapshot) {
     : [];
   base.messages = messages.length ? messages : [{ role: "assistant", content: WELCOME, timestamp: new Date().toISOString() }];
   base.preferences = Array.isArray(snapshot.preferences)
-    ? snapshot.preferences.slice(0, 24).map((item) => typeof item === "string" ? cleanPreference(item) : cleanPreference(item?.text, item)).filter(Boolean)
+    ? snapshot.preferences.map((item) => typeof item === "string" ? cleanPreference(item) : cleanPreference(item?.text, item)).filter(Boolean)
     : [];
   base.profile = { ...defaultProfile(), ...(snapshot.profile && typeof snapshot.profile === "object" ? snapshot.profile : {}) };
   base.messages = personaliseWelcomeMessages(base.messages, base.profile);
@@ -2157,7 +2162,7 @@ function mergePreferences(remoteItems, draftItems) {
       clarifications: item?.clarifications || cleaned.clarifications || []
     });
   }
-  return [...unique.values()].slice(-24);
+  return [...unique.values()];
 }
 
 function setAuthGateVisible(visible) {
@@ -2251,7 +2256,7 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
 
   const [profileResult, preferencesResult, conversationResult] = await Promise.all([
     supabase.from("synqme_profiles").select("*").eq("user_id", cloudUserId).maybeSingle(),
-    supabase.from("synqme_preferences").select("id,category,preference_text,normalised_text,preference_status,explicit_facets,unresolved_fields,source_message,created_at,schema_version,clarifications").eq("user_id", cloudUserId).order("created_at", { ascending: false }).limit(24),
+    loadAllCloudPreferences(cloudUserId),
     supabase.from("synqme_conversations").select("messages,pending_clarification,updated_at").eq("user_id", cloudUserId).maybeSingle()
   ]);
   if (profileResult.error) throw profileResult.error;
@@ -2828,11 +2833,11 @@ function renderRoomJourney() {
     return;
   }
   if (roomJourneyTableUnavailable) {
-    message("Your monthly room journey could not connect to account storage.", "ACCOUNT SYNC NEEDED", "Your conversations are still available. Room progress needs its private account storage before it can be saved.");
+    message("Your scenario journey could not connect to account storage.", "ACCOUNT SYNC NEEDED", "Your conversations are still available. Room progress needs its private account storage before it can be saved.");
     return;
   }
   if (!roomJourney) {
-    message("Preparing your personal room-by-room journey…", "STARTING WITH KITCHEN", "Your individual monthly release schedule is being prepared.");
+    message("Preparing your personal room-by-room journey…", "STARTING WITH KITCHEN", "Your 25-scenario journey is being prepared.");
     return;
   }
 
@@ -2853,7 +2858,7 @@ function renderRoomJourney() {
   const allDone = schedule.unlockedRooms.reduce((total, room) => total + room.tasks.filter((task) => roomCompletedIds(room).includes(task.id)).length, 0);
   const allTasks = schedule.unlockedRooms.reduce((total, room) => total + room.tasks.length, 0);
 
-  if (elements.roomJourneyIntro) elements.roomJourneyIntro.textContent = "Rooms unlock on your own monthly anniversary. Saved preferences are recognised automatically, so you never need to repeat what you have already taught me.";
+  if (elements.roomJourneyIntro) elements.roomJourneyIntro.textContent = "Rooms form part of your 25-scenario journey. Complete and review the current scenario to unlock the next.";
   if (elements.roomJourneyNextUnlock) {
     elements.roomJourneyNextUnlock.textContent = schedule.nextUnlockAt
       ? "NEXT ROOM · " + schedule.nextUnlockAt.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })
@@ -2869,7 +2874,7 @@ function renderRoomJourney() {
   identity.append(roomText("room-feature-icon", activeRoom.icon));
   const labels = document.createElement("div");
   labels.className = "room-feature-labels";
-  labels.append(roomText("room-feature-month", "MONTH " + (activeIndex + 1) + " · " + schedule.unlockedCount + " OF " + ROOM_JOURNEY_ROOMS.length + " RELEASED"));
+  labels.append(roomText("room-feature-month", "HOME AREA " + (activeIndex + 1) + " OF " + ROOM_JOURNEY_ROOMS.length + " · PART OF YOUR 25-SCENARIO JOURNEY"));
   const name = document.createElement("h3");
   name.textContent = activeRoom.name;
   labels.append(name);
@@ -3196,7 +3201,6 @@ function savePreference(message) {
     if (exists) continue;
     state.preferences.unshift(preference);
   }
-  state.preferences = state.preferences.slice(0, 24);
   void refreshRoomJourneyProgress();
 }
 
@@ -3235,7 +3239,6 @@ function findOrCreateLaundryPreference(contextMessage = "", answer = "") {
   preference.sourceMessage = context;
   preference.clarifications = [];
   state.preferences.unshift(preference);
-  state.preferences = state.preferences.slice(0, 24);
   return preference;
 }
 
@@ -3722,6 +3725,8 @@ function renderSettingsDetails() {
 }
 
 function updateDecisionSummary() {
+  const summaryTitle = document.querySelector("#decisionTitle");
+  if (summaryTitle) summaryTitle.textContent = progressOwnerLabel(state.profile.ownerName,"learning summary");
   const preferences = state.preferences;
   if (!preferences.length && !state.functions.length) {
     elements.decisionSummary.textContent = "Your scenario journey gives you one clear focus at a time. Start with the Kitchen and build your SecondSelf through natural conversation.";
@@ -3731,7 +3736,8 @@ function updateDecisionSummary() {
     elements.pexiState.classList.remove("ready");
     return;
   }
-  elements.decisionSummary.textContent = "Your persona includes " + preferences.length + (preferences.length === 1 ? " saved preference" : " saved preferences") + " across " + state.functions.length + (state.functions.length === 1 ? " selected domestic function" : " selected domestic functions") + ". Keep going to unlock personalisation milestones.";
+  const journeyProgress = scenarioProgressSummary(scenarioData().completed);
+  elements.decisionSummary.textContent = journeyProgress.completed + " of " + journeyProgress.total + " scenarios confirmed complete. " + preferences.length + (preferences.length === 1 ? " saved preference" : " saved preferences") + " captured so far. Preferences are individual learnings, not completed scenarios.";
   elements.amyaState.textContent = "Building context";
   elements.pexiState.textContent = "Future use";
   elements.amyaState.classList.add("ready");
@@ -4877,7 +4883,7 @@ async function requestAIReply(repairMode = false) {
     const retrievalQuery = currentUserText + (activeOutOfHomeScenarioContext ? "" : " " + activeRoomName);
     const [memoryReferences, sharedKnowledgeReferences, relevantPersonaMemories] = await Promise.all([
       getHomeMemoryReferences(retrievalQuery),
-      getSharedKnowledgeReferences(retrievalQuery),
+      Promise.resolve([]),
       getRelevantPersonaMemories(retrievalQuery)
     ]);
     if (!requestUserId || requestUserId !== cloudUserId) return null;
@@ -5614,4 +5620,16 @@ document.querySelector("#viewPexiReadiness")?.addEventListener("click", event =>
   panel.hidden = !panel.hidden;
   event.currentTarget.setAttribute("aria-expanded", String(!panel.hidden));
   event.currentTarget.textContent = panel.hidden ? "View PEXI Transfer Readiness" : "Hide PEXI Transfer Readiness";
+});
+
+document.querySelector("#shareJourneyProgress")?.addEventListener("click", async event => {
+  const button = event.currentTarget;
+  const status = document.querySelector("#journeyShareStatus");
+  if (!cloudUserId || !roomJourney) return;
+  button.disabled = true; status.textContent = "Creating your progress image…";
+  try {
+    const result = await shareProgressImage(scenarioProgressSummary(scenarioData().completed),state.profile.ownerName);
+    status.textContent = result === "downloaded" ? "Progress image downloaded. It is ready to share." : "";
+  } catch (error) { status.textContent = error.message || "Could not share your progress. Try again."; }
+  finally { button.disabled = false; }
 });

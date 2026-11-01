@@ -1,3 +1,4 @@
+import { SCENARIOS } from "./scenario-journey.js";
 const KNOWLEDGE_CATEGORIES = new Set([
   "kitchen", "bathroom", "vacuuming", "surface_cleaning", "cleaning_supplies",
   "laundry", "bedroom", "living_room", "pets", "plants", "food_and_meals",
@@ -57,6 +58,8 @@ export function cleanKnowledgeCandidate(input) {
   if (/\b(?:i|me|my|mine|we|our|ours|myself|my partner|my child|my children)\b/i.test(fullText)) return null;
   return {
     eligible: true,
+    scenario_id: SCENARIOS.some(item => item.id === input.scenario_id) ? input.scenario_id : null,
+    candidate_kind: ["decision_rule","common_question","novel_situation","unanswered_question"].includes(input.candidate_kind) ? input.candidate_kind : "decision_rule",
     category,
     prompt_pattern: promptPattern,
     answer_pattern: answerPattern,

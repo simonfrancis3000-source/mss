@@ -151,3 +151,7 @@ tbody tr:hover td { background: rgba(141,215,208,.025); }
   .user-tools input { flex: 1; }
   .dashboard-footer { display: grid; }
 }
+.learning-review-card { padding: 18px; margin: 14px 0; border: 1px solid #c6d8e4; border-radius: 16px; background: #eff7fc; color: #254e5d; }
+.learning-review-card h3 { font-size: 16px; margin: 10px 0; }
+.learning-review-card p { font-size: 13px; line-height: 1.6; }
+.learning-review-card button { margin: 10px 10px 0 0; padding: 10px 16px; border: 1px solid #a9bfce; border-radius: 12px; background: white; color: #254e5d; cursor: pointer; }
