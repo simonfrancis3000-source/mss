@@ -5581,7 +5581,7 @@ resetExecute?.addEventListener("click", async () => {
     if (isSending || personaMemoryWriteInFlight || roomJourneySaveInFlight) throw new Error("Wait for the current save to finish, then try again.");
     const { data, error } = await supabase.rpc("synqme_reset_training", { p_confirmation: resetInput.value, p_scenario_id: resetTarget });
     if (error) throw error;
-    trainingRevision = Number(data);
+    // Keep this page on its old revision until reload so late async writes are rejected.
     try { localStorage.removeItem(STORAGE_KEY); localStorage.removeItem(ACCOUNT_DRAFT_KEY); } catch {}
     window.location.reload();
   } catch (error) {
