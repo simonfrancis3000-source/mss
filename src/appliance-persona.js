@@ -1,0 +1,16 @@
+/** Guidance shared by text and voice. Facts are grounded only in supplied context. */
+export function buildApplianceConversationGuidance() {
+  return `HOUSEHOLD DEVICES AND APPLIANCES
+When the owner wants to personalise a task involving any appliance or device, such as a dishwasher, washing machine, dryer, vacuum, air fryer, microwave or coffee maker, first respond to the actual request. Establish only the information needed to give a useful answer or shape a future routine. Ask at most one natural question at a time. If the brand is known but an exact model would materially affect the answer, ask for the model number rather than asking for the brand again. Accept the full model suffix, where relevant. Never confuse a model number with a serial number or ask for a serial number, network credentials or private data.
+If the owner does not know the model, offer one short, conditional hint appropriate to the appliance: a label around the door or door frame for many washing machines, dryers and dishwashers, or a label on the underside, back or body for many smaller devices. Locations vary; never claim to see the device or ask someone to move a heavy or plugged-in appliance. Let them skip and return later. Use only the identity they have explicitly stated or confirmed, keeping different appliances separate. Respect a correction or replacement. Do not repeatedly ask after a user declines or changes subject.
+If no actual verified manual content has been supplied in the conversation context, say clearly when necessary that you cannot confirm model-specific features; never say you found, read or saved a manual, never invent a manual link, Wi-Fi, cycles, instructions, access or features. Generic suggestions must be framed as possibilities to check, not facts about the device. Never claim a manual link was saved unless the app confirms the save. If a verified manual excerpt is supplied, distinguish manufacturer information, user preferences and guesses; mention a feature only when it is supported by the matched model's excerpt. Do not claim a feature is safe or compatible with a robot without verified PEXI capability, integration and user permission. Never promise to perform or control a task now.
+Use the owner’s aim, verified information and known preferences to consider a few plausible hidden dependencies, exceptions and consequences. Ask only the most relevant unanswered question that could change the outcome, such as whether an item is suitable for a specific cycle, what should happen with a partially full load, whether a device should run while someone is sleeping, or whether permission is needed to start it. Do not overwhelm the user or turn every message into an interview.`;
+}
+
+/** Only send a short answer for extraction when the immediately preceding question
+ * explicitly requests an appliance brand or model; the extractor still validates context. */
+export function isApplianceIdentityAnswer(answer, previousQuestion) {
+  const text = String(answer || '').trim();
+  if (!text || text.length > 120 || /^(?:i (?:do not|don't) know|not sure|skip|later|no|yes|unknown|no idea)[.! ]*$/i.test(text)) return false;
+  return /\b(?:brand|manufacturer|make|model(?:\s+(?:number|code|name))?|e-?nr)\b/i.test(String(previousQuestion || '')) && /\?/.test(String(previousQuestion || ''));
+}

@@ -1,3 +1,4 @@
+import { isApplianceIdentityAnswer } from "./appliance-persona.js";
 import { SCENARIOS, completedScenarioIds, availableScenarioCount, buildScenarioStartPatch } from "./scenario-journey.js";
 import { createClient } from "@supabase/supabase-js";
 import { createPhonicVoiceConversation } from "./phonic-voice.js";
@@ -951,7 +952,11 @@ async function setLinkedPreferenceStatus(preferenceId, status) {
 }
 
 async function processStructuredMemoryTurn(userMessage, userTimestamp, shouldExtract = false) {
-  if (!shouldExtract || !API_BASE || !supabase || !cloudUserId || personaMemoryTableUnavailable || personaMemoryWriteInFlight) return;
+  const latestUserIndex = state.messages.findLastIndex((item) => item.role === "user" && item.timestamp === userTimestamp);
+  const previousQuestion = latestUserIndex > 0 && state.messages[latestUserIndex - 1]?.role === "assistant"
+    ? state.messages[latestUserIndex - 1].content : "";
+  const identityAnswer = isApplianceIdentityAnswer(userMessage, previousQuestion);
+  if ((!shouldExtract && !identityAnswer) || !API_BASE || !supabase || !cloudUserId || personaMemoryTableUnavailable || personaMemoryWriteInFlight) return;
   personaMemoryWriteInFlight = true;
   if (elements.personaMemoryStatus) elements.personaMemoryStatus.textContent = "Updating your personal memory…";
   try {
@@ -4637,6 +4642,30 @@ function responseRepeatsUser(reply, userMessage) {
   return overlap >= 0.78;
 }
 
+async function saveApplianceRecord(appliance) {
+  if (!supabase || !cloudUserId || !appliance || typeof appliance !== "object") return false;
+  const type = String(appliance.type || "").trim().slice(0, 80);
+  const brand = String(appliance.brand || "").trim().slice(0, 80);
+  const model = String(appliance.model || "").trim().slice(0, 80);
+  if (!type || !brand || !model) return false;
+  const key = makePersonaMemoryKey("appliance " + type + " " + brand + " " + model);
+  const existing = personaMemoryRecords.find((item) => item.memory_key === key);
+  const record = { type, brand, model, manual_url: appliance.manual_status === "matched" ? String(appliance.manual_url || "").slice(0, 2048) : existing?.attributes?.appliance_v1?.manual_url || null,
+    manual_status: appliance.manual_status === "matched" ? "matched" : existing?.attributes?.appliance_v1?.manual_status || appliance.manual_status || "unverified", checked_at: new Date().toISOString() };
+  const statement = "My " + type + " is " + brand + " model " + model + ".";
+  const userId = cloudUserId;
+  try {
+    const { data, error } = await supabase.from("synqme_persona_memories").upsert({ user_id: userId, memory_key: key, topic: "general_household", kind: "fact", scope_key: "appliance." + key,
+      statement, status: "user_stated", relation: "new", confidence: 1, conditions: [], attributes: { appliance_v1: record }, search_terms: [type, brand, model],
+      search_keys: buildPersonaMemorySearchKeys(statement, [type, brand, model], "general_household"), source_message: statement, source_conversation_key: "main", archived_at: null
+    }, { onConflict: "user_id,memory_key" }).select(PERSONA_MEMORY_SELECT_COLUMNS).single();
+    if (error) throw error;
+    if (userId !== cloudUserId) return false;
+    personaMemoryRecords = [...personaMemoryRecords.filter((item) => item.memory_key !== key), data];
+    return true;
+  } catch (error) { console.info("Appliance details could not be saved.", error?.code || "storage error"); return false; }
+}
+
 async function requestAIReply(repairMode = false) {
   if (!API_BASE) return null;
   if (!state.apiProvider) await checkAIBackend();
@@ -4675,6 +4704,7 @@ async function requestAIReply(repairMode = false) {
       getSharedKnowledgeReferences(currentUserText),
       getRelevantPersonaMemories(currentUserText)
     ]);
+    const requestUserId = cloudUserId;
     const response = await fetch(API_BASE + "/api/chat", {
       method: "POST",
       headers: await authenticatedApiHeaders(),
@@ -4691,6 +4721,7 @@ async function requestAIReply(repairMode = false) {
           askBeforeActions: state.profile.confirmActions
         },
         domesticFunctions,
+        applianceRecords: activePersonaMemories().filter((item) => item.attributes?.appliance_v1 && item.status !== "conflicting").slice(0, 20).map((item) => item.attributes.appliance_v1),
         roomJourney: buildCurrentRoomJourneyContext(),
         outOfHomeScenarioContext: activeOutOfHomeScenarioContext,
         pendingClarification: state.pendingClarification,
@@ -4721,6 +4752,7 @@ async function requestAIReply(repairMode = false) {
     }
     const reply = typeof data.reply === "string" ? data.reply : typeof data.message === "string" ? data.message : "";
     if (!reply.trim()) throw new Error("AI endpoint returned no reply text");
+    if (data.appliance && cloudUserId && cloudUserId === requestUserId) await saveApplianceRecord(data.appliance);
     state.apiConnected = true;
     state.apiConfigured = true;
     state.apiError = "";
