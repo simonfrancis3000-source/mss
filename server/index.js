@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { authenticateSupabaseRequest, rateLimitIdentity } from "./supabase-auth.js";
 import { buildDeepSeekUsageEvent, createPhonicUsageSession, verifyPhonicUsageSession, clampVoiceDuration } from "./usage.js";
 import { buildHomePersonaSystemPrompt } from "../src/home-persona-reasoning.js";
-import { buildOutOfHomePersonaSystemPrompt, cleanOutOfHomeScenarioContext, findOutOfHomeScenarioContext } from "../src/out-of-home-persona-prompt.js";
+import { buildOutOfHomePersonaSystemPrompt, cleanOutOfHomeScenarioContext, findOutOfHomeScenarioContext, isOutOfHomeTopicChange } from "../src/out-of-home-persona-prompt.js";
 import { cleanKnowledgeCandidate } from "../src/shared-knowledge-validation.js";
 import { cleanPersonaMemoryCandidate, MEMORY_TOPICS } from "../src/persona-memory.js";
 import { selectHouseholdSkills } from "../src/household-skills.js";
@@ -873,7 +873,7 @@ const app = http.createServer(async (request, response) => {
       ? messages[messages.length - 2].content
       : "";
     const latestTurnText = messages[messages.length - 1]?.content || "";
-    const explicitTrainingTopicChange = /\b(change (?:the )?topic|change subject|different topic|something unrelated|back to (?:my )?(?:home|household)|switch to (?:my )?(?:home|household)|let's talk about (?:my )?home)\b/i.test(latestTurnText);
+    const explicitTrainingTopicChange = isOutOfHomeTopicChange(latestTurnText);
     const hasExplicitOutOfHomeContext = Object.prototype.hasOwnProperty.call(body || {}, "outOfHomeScenarioContext");
     const suppliedOutOfHomeContext = hasExplicitOutOfHomeContext
       ? cleanOutOfHomeScenarioContext(body.outOfHomeScenarioContext)
@@ -941,7 +941,7 @@ const app = http.createServer(async (request, response) => {
       : "";
     const roomJourneyContext = !outOfHomeScenario && roomJourney
       ? [
-          "STRICT CURRENT ROOM FOCUS: The active room for this conversation is " + roomJourney.activeRoomName + ". This is the only room to advance in the monthly journey unless the user explicitly asks to switch rooms or directly asks about another room. Never pivot to another room because older memories or preferences mention it. Ignore out-of-room memories for the current learning question unless the user brings that room up.",
+          "STRICT CURRENT ROOM FOCUS: The active room for this conversation is " + roomJourney.activeRoomName + ". This is the only room to advance in the current scenario unless the user explicitly asks to switch rooms or directly asks about another room. Never pivot to another room because older memories or preferences mention it. Ignore out-of-room memories for the current learning question unless the user brings that room up.",
           roomJourney.activeTaskTitle
             ? "CURRENT TASK: The user has selected " + roomJourney.activeTaskTitle + " in the " + roomJourney.activeRoomName + ". Treat that as the task currently being worked on. If asked what we are working on, answer directly that we are working on " + roomJourney.activeTaskTitle + " in the " + roomJourney.activeRoomName + ". Do not replace it with a different room or task."
             : "CURRENT ROOM: The user is working through the " + roomJourney.activeRoomName + " journey. No task has been explicitly selected as in progress. The next pending task is " + (roomJourney.nextPendingTaskTitle || "not available") + ". If asked what we are working on, identify the " + roomJourney.activeRoomName + " journey and describe that next pending task as the next task, not as already in progress.",

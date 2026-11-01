@@ -38,3 +38,15 @@ export function availableScenarioCount(value) {
   const firstIncomplete = SCENARIOS.findIndex((scenario) => !done.has(scenario.id));
   return firstIncomplete < 0 ? SCENARIOS.length : firstIncomplete + 1;
 }
+
+export function buildScenarioStartPatch(scenario, roomProgress = {}, startedAt = new Date().toISOString()) {
+  const progress = roomProgress && typeof roomProgress === 'object' && !Array.isArray(roomProgress) ? roomProgress : {};
+  const prior = progress.scenario_journey_v1 && typeof progress.scenario_journey_v1 === 'object' ? progress.scenario_journey_v1 : {};
+  const next = { ...prior, started: scenario.id, startedAt: prior.started === scenario.id && prior.startedAt ? prior.startedAt : startedAt };
+  const patch = { room_progress: { ...progress, scenario_journey_v1: next } };
+  if (scenario.kind === 'room') {
+    patch.active_room_id = scenario.roomId;
+    patch.active_task_id = null;
+  }
+  return patch;
+}

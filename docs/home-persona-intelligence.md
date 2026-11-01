@@ -4,15 +4,15 @@
 
 SYNQ.ME should help a person build a useful digital persona for a future compatible home robot. Freya must answer what the person actually said, preserve the details and exceptions they give, and surface relevant home-robot questions they might not have thought to specify. She should not behave like a generic chatbot or a long onboarding form.
 
-This is a Groq inference and conversation-orchestration improvement. It does **not** train a new foundation model, implement an independently verified causal simulator, or mean a physical robot has been connected.
+This is a DeepSeek inference and conversation-orchestration improvement. It does **not** train a new foundation model, implement an independently verified causal simulator, or mean a physical robot has been connected.
 
 ## Current implementation
 
 - src/home-persona-reasoning.js constructs the home-persona reasoning instructions and a bounded context summary.
-- server/index.js adds those instructions to its existing Freya system prompt **on the server**, then calls Groq. The browser's system messages are filtered out by the server, so the prompt must remain server-owned.
+- server/index.js adds those instructions to its existing Freya system prompt **on the server**, then calls DeepSeek. The browser's system messages are filtered out by the server, so the prompt must remain server-owned.
 - The existing user message history, profile, preference records, selected domestic interests, pending clarification, and repair-mode flag are passed into the prompt builder.
-- Groq remains the sole model provider. The default is openai/gpt-oss-120b, with high reasoning effort; GROQ_REASONING_EFFORT can override the effort. A legacy GROQ_MODEL=openai/gpt-oss-20b value is upgraded to the 120B default, while another explicitly configured model is preserved.
-- public/sw.js uses shell cache synqme-shell-v35; the change does not deliberately delete stored voice/model caches.
+- DeepSeek supplies conversation and memory extraction. Phonic handles real-time voice; AMÏA supplies the decisions and response text.
+- public/sw.js manages the app shell cache and removes obsolete voice model caches.
 - test/home-persona-reasoning.test.js covers prompt content, persona context, recently asked questions, and malformed/missing input. test/home-memory-index.test.js covers topic synonyms, short-answer context, stable message keys and relevance ranking. npm test is part of the GitHub Actions build workflow.
 
 ## Conversation persistence and searchable memory
