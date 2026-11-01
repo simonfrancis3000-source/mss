@@ -948,7 +948,7 @@ const app = http.createServer(async (request, response) => {
           "Room tasks already learned: " + JSON.stringify(roomJourney.tasks.filter((task) => task.completed).map((task) => task.title)) + ". " +
             "Outstanding room tasks: " + JSON.stringify(roomJourney.tasks.filter((task) => !task.completed).map((task) => task.title)) + ". " +
             "Use these as learning objectives, not as a rigid questionnaire. Never ask again about a task already learned. Choose one useful outstanding detail at a time, and acknowledge new information naturally. Ask only about this active room unless the user explicitly broadens the topic.",
-          "New rooms unlock on this individual user's monthly anniversary; " + roomJourney.unlockedRoomCount + " room(s) are currently released. The user may revisit earlier rooms. Do not claim an unreleased room is available, and do not imply a physical robot is connected or performing tasks."
+          "Rooms are available as part of the user's scenario journey; " + roomJourney.unlockedRoomCount + " room(s) are currently released. The user may revisit earlier rooms. Do not claim an unreleased room is available, and do not imply a physical robot is connected or performing tasks."
         ].join(" ")
       : "";
     const combinedSystemPrompt = systemPrompt + "\n\n" + personaDomainSystemPrompt +

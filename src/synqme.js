@@ -1,3 +1,4 @@
+import { SCENARIOS, completedScenarioIds, availableScenarioCount } from "./scenario-journey.js";
 import { createClient } from "@supabase/supabase-js";
 import { createPhonicVoiceConversation } from "./phonic-voice.js";
 import { buildPexiCapabilityPlan, cleanPexiCapabilityManifest } from "./pexi-readiness.js";
@@ -173,7 +174,7 @@ const ACTIVITIES = [
 
 const MILESTONES = [
   { id: "first-spark", title: "First spark", reward: "Starter badge", description: "Set your name, choose a home interest, or share your first preference.", unlocked: (s) => Boolean(s.profile.ownerName.trim() || s.functions.length || s.preferences.length) },
-  { id: "home-explorer", title: "Home explorer", reward: "Explorer badge", description: "Capture three personal preferences through your monthly room journey.", unlocked: (s) => s.preferences.length >= 3 },
+  { id: "home-explorer", title: "Home explorer", reward: "Explorer badge", description: "Capture three personal preferences through your journey.", unlocked: (s) => s.preferences.length >= 3 },
   { id: "first-memory", title: "First memory", reward: "Memory badge", description: "Capture your first personal preference in conversation.", unlocked: (s) => s.preferences.length >= 1 },
   { id: "pattern-finder", title: "Pattern finder", reward: "Personalisation badge", description: "Share five preferences and begin to form recognisable patterns.", unlocked: (s) => s.preferences.length >= 5 },
   { id: "secondself-builder", title: "SecondSelf builder", reward: "Foundation badge", description: "Choose three functions and capture eight preferences.", unlocked: (s) => s.functions.length >= 3 && s.preferences.length >= 8 }
@@ -461,6 +462,100 @@ let roomJourneyLoadInFlight = false;
 let roomJourneyTableUnavailable = false;
 let roomJourneyWarningShown = false;
 let roomJourneySaveInFlight = false;
+let selectedJourneyScenario = null;
+const SCENARIO_PROGRESS_KEY = "scenario_journey_v1";
+function scenarioData() {
+  const stored = roomJourney?.room_progress?.[SCENARIO_PROGRESS_KEY];
+  return stored && typeof stored === "object" ? stored : {};
+}
+function renderScenarioJourney() {
+  const target = document.querySelector("#scenarioJourneyContent");
+  const counter = document.querySelector("#scenarioJourneyCount");
+  const header = document.querySelector("#scenarioHeaderProgress");
+  if (!target) return;
+  const data = scenarioData();
+  const done = completedScenarioIds(data.completed);
+  if (counter) counter.textContent = done.length + " / 25 COMPLETE";
+  if (header) { header.textContent = "Progress: " + done.length + "/25"; header.setAttribute("aria-label", done.length + " of 25 scenarios completed"); }
+  target.replaceChildren();
+  if (!cloudUserId || !profileComplete() || !roomJourney) {
+    target.textContent = roomJourneyTableUnavailable ? "Your scenario progress could not connect to your account. Try again when account sync is available." : "Sign in and complete your profile to begin your journey.";
+    return;
+  }
+  const available = availableScenarioCount(done);
+  const selected = SCENARIOS.findIndex((item) => item.id === selectedJourneyScenario);
+  const index = selected >= 0 && selected < available ? selected : Math.min(available - 1, SCENARIOS.length - 1);
+  const scenario = SCENARIOS[index];
+  selectedJourneyScenario = scenario.id;
+  const nav = document.createElement("select");
+  nav.setAttribute("aria-label", "Choose a scenario");
+  SCENARIOS.forEach((item, i) => {
+    const option = document.createElement("option"); option.value = item.id;
+    option.disabled = i >= available;
+    option.textContent = (i + 1) + ". " + item.title + (done.includes(item.id) ? " ✓" : i >= available ? " · locked" : " · current");
+    nav.append(option);
+  });
+  nav.value = scenario.id; nav.addEventListener("change", () => { selectedJourneyScenario = nav.value; renderScenarioJourney(); });
+  const title = document.createElement("h3"); title.textContent = scenario.title;
+  const desc = document.createElement("p"); desc.textContent = scenario.description;
+  const start = document.createElement("button"); start.type = "button"; start.className = "out-of-home-scenario-action";
+  start.textContent = done.includes(scenario.id) ? "Revisit this scenario" : data.started === scenario.id ? "Continue conversation" : "Start conversation";
+  start.addEventListener("click", () => void startJourneyScenario(scenario));
+  target.append(nav, title, desc, start);
+  if (done.includes(scenario.id)) {
+    const notice = document.createElement("p"); notice.textContent = "Completed. You can revisit this conversation and update your preferences."; target.append(notice); return;
+  }
+  if (data.started !== scenario.id) return;
+  const startedAt = Date.parse(data.startedAt || "");
+  const responses = state.messages.filter((message) => message.role === "user" && Date.parse(message.timestamp || "") >= startedAt && !/^SYNQ\.ME TRAINING SCENARIO:/i.test(message.content || "") && !/^Let's explore .+\. Ask me one question at a time/i.test(message.content || "") && String(message.content || "").trim().length >= 3);
+  if (!responses.length) {
+    const reminder = document.createElement("p"); reminder.textContent = "Talk about this scenario first, then return here to review what you have covered."; target.append(reminder); return;
+  }
+  const checklist = document.createElement("fieldset");
+  const legend = document.createElement("legend"); legend.textContent = "Ready to finish? Confirm what you have covered together:"; checklist.append(legend);
+  ["I have explained the behaviour or preferences that matter to me.", "We have discussed relevant boundaries, privacy or safety.", "I have covered when I want my companion to ask, wait or stop, or confirmed that this is not relevant."].forEach((text) => {
+    const label = document.createElement("label"); const input = document.createElement("input"); input.type = "checkbox";
+    label.append(input, document.createTextNode(" " + text)); checklist.append(label);
+  });
+  const finish = document.createElement("button"); finish.type = "button"; finish.className = "out-of-home-scenario-action"; finish.textContent = "Complete scenario and unlock next"; finish.disabled = true;
+  checklist.addEventListener("change", () => { finish.disabled = [...checklist.querySelectorAll("input")].some((input) => !input.checked); });
+  finish.addEventListener("click", async () => {
+    finish.disabled = true;
+    const current = scenarioData();
+    const next = { ...current, completed: completedScenarioIds([...(current.completed || []), scenario.id]), started: null };
+    const progress = { ...roomJourney.room_progress, [SCENARIO_PROGRESS_KEY]: next };
+    const saved = await persistRoomJourneyChanges({ room_progress: progress });
+    if (!saved) { finish.disabled = false; alert("Your progress could not be saved. Please try again."); return; }
+    selectedJourneyScenario = SCENARIOS.find((item) => !next.completed.includes(item.id))?.id || scenario.id;
+    renderScenarioJourney();
+  });
+  target.append(checklist, finish);
+}
+async function startJourneyScenario(scenario) {
+  if (!roomJourney || roomJourneySaveInFlight) return;
+  const data = scenarioData();
+  const progress = { ...roomJourney.room_progress, [SCENARIO_PROGRESS_KEY]: { ...data, started: scenario.id, startedAt: data.started === scenario.id && data.startedAt ? data.startedAt : new Date().toISOString() } };
+  if (!(await persistRoomJourneyChanges({ room_progress: progress }))) { alert("Your scenario could not be saved. Please try again."); return; }
+  if (scenario.kind === "room") {
+    activeOutOfHomeScenarioContext = null;
+    await setRoomJourneyFocus(scenario.roomId);
+    if (roomJourney.active_task_id) {
+      const saved = await persistRoomJourneyChanges({ active_task_id: null });
+      if (!saved) { alert("Your scenario focus could not be saved. Please try again."); return; }
+    }
+    const room = ROOM_JOURNEY_ROOMS.find((item) => item.id === scenario.roomId);
+    elements.messageInput.value = "Let's explore " + room.name + ". Ask me one question at a time about my preferences, relevant boundaries, and when you should ask, wait or stop. This may be a place I visit, not necessarily a room in my home.";
+  } else {
+    const match = findOutOfHomeScenario(scenario.categoryId, scenario.scenarioId);
+    activeOutOfHomeScenarioContext = { categoryId: scenario.categoryId, scenarioId: scenario.scenarioId };
+    elements.messageInput.value = buildOutOfHomeScenarioPrompt(match.category, match.scenario);
+  }
+  elements.messageInput.dispatchEvent(new Event("input", { bubbles: true }));
+  if (elements.chatStage?.hidden) elements.welcomeAudioOffer?.scrollIntoView({ behavior: "smooth", block: "center" });
+  else { elements.chatStage?.scrollIntoView({ behavior: "smooth", block: "center" }); elements.messageInput.focus({ preventScroll: true }); }
+  renderScenarioJourney();
+}
+
 let authMode = "signin";
 let authBusy = false;
 let authRecoveryInProgress = Boolean(/type=recovery/i.test(window.location.hash || ""));
@@ -1952,6 +2047,8 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   cloudUserEmail = user.email;
   profileCreatedAt = null;
   roomJourney = null;
+  selectedJourneyScenario = null;
+  renderScenarioJourney();
   roomJourneyTableUnavailable = false;
   roomJourneyWarningShown = false;
   personaMemoryRecords = [];
@@ -2505,7 +2602,7 @@ function roomJourneyEvidenceRecords() {
 
 function roomSchedule() {
   if (!roomJourney?.journey_started_at) return null;
-  try { return getRoomJourneySchedule(roomJourney.journey_started_at, new Date()); }
+  try { return { unlockedRooms: ROOM_JOURNEY_ROOMS, unlockedCount: ROOM_JOURNEY_ROOMS.length, nextUnlockAt: null, completedReleaseSchedule: true }; }
   catch (error) { console.info("Room journey schedule unavailable.", error); return null; }
 }
 
@@ -2702,8 +2799,10 @@ async function persistRoomJourneyChanges(patch) {
       .eq("user_id", userId).select("*").maybeSingle();
     if (error) throw error;
     if (userId !== cloudUserId) return false;
-    if (data) roomJourney = data;
+    if (!data) throw new Error("Account progress update returned no row.");
+    roomJourney = data;
     renderRoomJourney();
+    renderScenarioJourney();
     return true;
   } catch (error) {
     console.info("SYNQ.ME could not save room journey progress.", error);
@@ -2720,7 +2819,7 @@ async function refreshRoomJourneyProgress() {
   }
   const derived = buildRoomProgressSnapshot(ROOM_JOURNEY_ROOMS, roomJourneyEvidenceRecords());
   const previous = roomJourney.room_progress && typeof roomJourney.room_progress === "object" ? roomJourney.room_progress : {};
-  const merged = {};
+  const merged = { ...previous };
   for (const room of ROOM_JOURNEY_ROOMS) {
     const oldIds = Array.isArray(previous[room.id]?.completed_task_ids) ? previous[room.id].completed_task_ids : [];
     const newIds = Array.isArray(derived[room.id]?.completed_task_ids) ? derived[room.id].completed_task_ids : [];
@@ -2780,13 +2879,14 @@ async function ensureRoomJourney() {
         ? result.data.room_progress : {}
     };
     roomJourneyTableUnavailable = false;
-    const schedule = getRoomJourneySchedule(roomJourney.journey_started_at);
+    const schedule = roomSchedule();
     if (!schedule.unlockedRooms.some((room) => room.id === roomJourney.active_room_id)) {
       roomJourney.active_room_id = schedule.unlockedRooms[0]?.id || "kitchen";
       await persistRoomJourneyChanges({ active_room_id: roomJourney.active_room_id });
     }
     await refreshRoomJourneyProgress();
     renderRoomJourney();
+    renderScenarioJourney();
     return true;
   } catch (error) {
     const missing = error?.code === "42P01" || /synqme_room_journeys.*does not exist|could not find the table.*synqme_room_journeys/i.test(String(error?.message || ""));
@@ -3468,7 +3568,7 @@ function renderSettingsDetails() {
 function updateDecisionSummary() {
   const preferences = state.preferences;
   if (!preferences.length && !state.functions.length) {
-    elements.decisionSummary.textContent = "Your monthly room journey gives you one clear focus at a time. Start with the Kitchen and build your SecondSelf through natural conversation.";
+    elements.decisionSummary.textContent = "Your scenario journey gives you one clear focus at a time. Start with the Kitchen and build your SecondSelf through natural conversation.";
     elements.amyaState.textContent = "Getting started";
     elements.pexiState.textContent = "Not connected";
     elements.amyaState.classList.remove("ready");
@@ -3491,6 +3591,7 @@ function renderAll() {
   renderSettingsDetails();
   renderPexiReadiness();
   renderRoomJourney();
+  renderScenarioJourney();
   renderOutOfHomeTraining();
 
   const name = state.profile.ownerName.trim();
@@ -3509,7 +3610,7 @@ function renderAll() {
   if (elements.mobileJourneyText) {
     const activeRoom = ROOM_JOURNEY_ROOMS.find((room) => room.id === roomJourney?.active_room_id);
     elements.mobileJourneyText.textContent = activeRoom
-      ? activeRoom.name + " · monthly room journey"
+      ? activeRoom.name + " · your scenario journey"
       : count
         ? count + (count === 1 ? " preference captured" : " preferences captured") + " · your SecondSelf is growing"
         : "Your Kitchen journey starts here";
