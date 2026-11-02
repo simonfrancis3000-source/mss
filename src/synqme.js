@@ -1,3 +1,4 @@
+import { parseReminderCommand, matchReminder, validReminderTitle } from "./reminders.js";
 import { simulationCapabilitySummary } from "./simulation.js";
 import { conversationIntent } from "./conversation-plan.js";
 import { createMemoryJobRunner, memoryRetryDelaySeconds, memoryJobKey } from "./memory-job-runner.js";
@@ -511,6 +512,106 @@ let selectedJourneyScenario = null;
 let journeyDisplay = "chart";
 let selectedReviewArea = null;
 let simulationSession = null;
+let todoItems = [];
+let todoLoadedUserId = null;
+let todoEditingId = null;
+let todoAwaitingTitle = false;
+let lastVoiceWasTodo = false;
+function todoCommandForMessage(message) {
+  const explicit = parseReminderCommand(message);
+  if (explicit) return explicit;
+  if (!todoAwaitingTitle) return null;
+  return /^(?:cancel|never mind|nevermind|forget it)[.! ]*$/i.test(message) ? {action:'cancel'} : {action:'add',title:message};
+}
+function todoStatus(text) { const node=document.querySelector('#todoStatus'); if(node) node.textContent=text; }
+async function loadTodoReminders() {
+  const owner=cloudUserId;
+  if (!owner || !supabase) { todoItems=[]; todoLoadedUserId=null; renderTodoReminders(); return false; }
+  try {
+    const {data,error}=await supabase.from('synqme_reminders').select('id,title,completed,scenario_id,created_at,updated_at').eq('user_id',owner).order('created_at',{ascending:false}).limit(500);
+    if(error) throw error;
+    if(owner!==cloudUserId) return false;
+    todoItems=Array.isArray(data)?data:[]; todoLoadedUserId=owner; renderTodoReminders(); return true;
+  } catch { if(owner===cloudUserId) { todoLoadedUserId=null; todoStatus('Your reminders could not be loaded. Please try again.'); renderTodoReminders(); } return false; }
+}
+async function writeTodoReminder(action, item, title) {
+  const owner=cloudUserId;
+  if(!owner || !supabase) throw Error('Sign in to use your to-do list.');
+  let query;
+  if(action==='add') query=supabase.from('synqme_reminders').insert({user_id:owner,title,completed:false});
+  else if(action==='delete') query=supabase.from('synqme_reminders').delete().eq('user_id',owner).eq('id',item.id);
+  else query=supabase.from('synqme_reminders').update(action==='edit'?{title,updated_at:new Date().toISOString()}:{completed:action==='complete',updated_at:new Date().toISOString()}).eq('user_id',owner).eq('id',item.id);
+  const {data,error}=await query.select('id').maybeSingle();
+  if(error || !data) throw Error('The reminder could not be saved. Please try again.');
+  if(owner!==cloudUserId) throw Error('The account changed before the reminder was confirmed.');
+  todoEditingId=null;
+  await loadTodoReminders();
+}
+function renderTodoReminders() {
+  const summary=document.querySelector('#todoSummary'), active=document.querySelector('#todoActive'), completed=document.querySelector('#todoCompletedList'), count=document.querySelector('#todoCompletedCount');
+  if(!summary || !active || !completed) return;
+  const loaded=Boolean(cloudUserId && todoLoadedUserId===cloudUserId);
+  const open=loaded?todoItems.filter(item=>!item.completed):[], done=loaded?todoItems.filter(item=>item.completed):[];
+  summary.textContent=loaded ? open.length+' open · View list' : cloudUserId ? 'List unavailable · Open to retry' : 'Sign in to view your list';
+  if(count) count.textContent=loaded?'('+done.length+')':'';
+  active.replaceChildren(); completed.replaceChildren();
+  if(!loaded) return;
+  if(!open.length) { const empty=document.createElement('p'); empty.textContent='No open reminders.'; active.append(empty); }
+  function renderItem(item, parent) {
+    const row=document.createElement('div'); row.className='todo-item';
+    if(todoEditingId===item.id) {
+      const form=document.createElement('form'); form.className='todo-edit';
+      const input=document.createElement('input'); input.value=item.title; input.maxLength=500; input.required=true; input.setAttribute('aria-label','Edit reminder');
+      const save=document.createElement('button'); save.type='submit'; save.textContent='Save';
+      const cancel=document.createElement('button'); cancel.type='button'; cancel.textContent='Cancel'; cancel.addEventListener('click',()=>{todoEditingId=null;renderTodoReminders();});
+      form.addEventListener('submit',async event=>{event.preventDefault();const title=validReminderTitle(input.value);if(!title){todoStatus('Enter a reminder between 3 and 500 characters.');return;}save.disabled=true;try{await writeTodoReminder('edit',item,title);todoStatus('Reminder updated.');}catch(error){todoStatus(error.message);}finally{save.disabled=false;}});
+      form.append(input,save,cancel);row.append(form);
+    } else {
+      const title=document.createElement('span');title.className='todo-title';title.textContent=item.title;row.append(title);
+      const actions=document.createElement('div');actions.className='todo-actions';
+      const button=(label,handler)=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.setAttribute('aria-label',label+' '+item.title);b.addEventListener('click',handler);return b;};
+      actions.append(button(item.completed?'Reopen':'Complete',async event=>{event.currentTarget.disabled=true;try{await writeTodoReminder(item.completed?'reopen':'complete',item);todoStatus(item.completed?'Reminder reopened.':'Reminder completed.');}catch(error){todoStatus(error.message);event.currentTarget.disabled=false;}}));
+      actions.append(button('Edit',()=>{todoEditingId=item.id;renderTodoReminders();document.querySelector('.todo-edit input')?.focus();}));
+      actions.append(button('Delete',async event=>{event.currentTarget.disabled=true;try{await writeTodoReminder('delete',item);todoStatus('Reminder deleted.');}catch(error){todoStatus(error.message);event.currentTarget.disabled=false;}}));
+      row.append(actions);
+    }
+    parent.append(row);
+  }
+  open.forEach(item=>renderItem(item,active)); done.forEach(item=>renderItem(item,completed));
+}
+async function handleTodoCommand(command) {
+  if(!command) return null;
+  if(command.action==='cancel') { todoAwaitingTitle=false; return 'Okay, I will leave your to-do list as it is.'; }
+  if(command.action!=='add') todoAwaitingTitle=false;
+  if(command.action==='help') return 'You can say “Add finding the dishwasher model to my to-do list”, “What are my reminders?”, or name a reminder to complete or remove it.';
+  if(!cloudUserId || !supabase) return 'Sign in to use your to-do list.';
+  if(!(await loadTodoReminders())) return 'I could not load your to-do list. Please try again.';
+  if(command.action==='list') {
+    const items=todoItems.filter(item=>!item.completed);
+    if(!items.length) return 'Your to-do list has no open reminders.';
+    return 'Your open to-do reminders are: '+items.slice(0,30).map((item,index)=>(index+1)+'. '+item.title).join(' ') + (items.length>30?' You can see the rest in Journey.':'');
+  }
+  if(command.action==='add') {
+    const title=validReminderTitle(command.title);
+    if(!title) { todoAwaitingTitle=true; return 'What would you like me to add to your to-do list? Please describe the reminder.'; }
+    todoAwaitingTitle=false;
+    try { await writeTodoReminder('add',null,title); return 'Added to your to-do list: '+title+'.'; } catch { return 'I could not save that reminder. Please try again.'; }
+  }
+  const relevant=command.action==='complete'?todoItems.filter(item=>!item.completed):todoItems;
+  const match=matchReminder(relevant,command.query);
+  if(match.status==='ambiguous') return 'More detail is needed to identify that reminder. Please tell me its name.';
+  if(match.status==='missing') return 'I could not find that reminder. You can ask me to list your reminders.';
+  if(command.action==='edit' && !validReminderTitle(command.title)) return 'Please tell me what you would like the reminder to say.';
+  try { await writeTodoReminder(command.action,match.item,validReminderTitle(command.title));
+    return command.action==='delete'?'Removed from your to-do list: '+match.item.title+'.':command.action==='complete'?'Marked as complete: '+match.item.title+'.':'Updated your reminder to: '+validReminderTitle(command.title)+'.';
+  } catch { return 'I could not update that reminder. Please try again.'; }
+}
+document.querySelector('#todoReminders')?.addEventListener('toggle', event=>{if(event.currentTarget.open) void loadTodoReminders();});
+document.querySelector('#todoAddForm')?.addEventListener('submit',async event=>{
+  event.preventDefault();const input=document.querySelector('#todoInput'),title=validReminderTitle(input?.value);if(!title){todoStatus('Enter a reminder between 3 and 500 characters.');return;}
+  const submit=event.currentTarget.querySelector('button');submit.disabled=true;try{await writeTodoReminder('add',null,title);input.value='';todoStatus('Reminder added.');}catch(error){todoStatus(error.message);}finally{submit.disabled=false;}
+});
+
 const SCENARIO_PROGRESS_KEY = "scenario_journey_v1";
 function scenarioData() {
   const stored = roomJourney?.room_progress?.[SCENARIO_PROGRESS_KEY];
@@ -1335,6 +1436,7 @@ function writePendingMemoryJobs(userId, revision, jobs) {
   catch { if (elements.personaMemoryStatus) elements.personaMemoryStatus.textContent = "Memory updates are waiting to sync. Keep this page open until connected."; }
 }
 function queueStructuredMemoryTurn(userMessage, userTimestamp) {
+  if (todoCommandForMessage(userMessage)) return;
   const userId = cloudUserId, revision = trainingRevision;
   if (!userId || !supabase || !API_BASE || !userTimestamp || !String(userMessage || "").trim() ||
       SENSITIVE_MEMORY_PATTERN.test(userMessage) || /^SYNQ\.ME TRAINING SCENARIO:/i.test(userMessage) ||
@@ -2530,6 +2632,7 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   welcomeBackPending = false;
   selectedJourneyScenario = null;
   simulationSession = null;
+  todoItems = []; todoLoadedUserId = null; todoEditingId = null; todoAwaitingTitle = false; renderTodoReminders();
   renderScenarioJourney();
   roomJourneyTableUnavailable = false;
   roomJourneyWarningShown = false;
@@ -2629,6 +2732,7 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   await loadPersonaMemories({ backfillPreferences: true });
   await ensureRoomJourney();
   await refreshRoomJourneyProgress();
+  await loadTodoReminders();
   if (draft) {
     try { localStorage.removeItem(ACCOUNT_DRAFT_KEY); } catch {}
   }
@@ -3494,6 +3598,7 @@ function extractExplicitPreferenceFacets(text) {
 }
 
 function savePreference(message) {
+  if (todoCommandForMessage(message)) return;
   if (!["answer", "correction"].includes(conversationIntent(message))) return;
   const statements = splitPreferenceStatements(message);
   for (const statement of statements) {
@@ -4494,7 +4599,7 @@ function syncPhonicTranscriptItems(items) {
 
     const clarificationRequest = isClarificationRequest(textValue);
     const preferenceIdsBeforeTurn = new Set(state.preferences.map((preference) => String(preference.id)));
-    const answeredPendingClarification = resolvePendingClarification(textValue);
+    const answeredPendingClarification = todoCommandForMessage(textValue) ? false : resolvePendingClarification(textValue);
     if (!answeredPendingClarification && !clarificationRequest) savePreference(textValue);
     const preferenceWasAdded = state.preferences.some((preference) => !preferenceIdsBeforeTurn.has(String(preference.id)));
     const shouldExtractStructuredMemory = shouldExtractPersonaMemory(textValue, preferenceWasAdded) ||
@@ -4573,6 +4678,7 @@ function handlePhonicVoiceEvent(event) {
       if (elements.conversationStatus) elements.conversationStatus.textContent = companion + " is listening";
       break;
     case "user_started_speaking":
+      lastVoiceWasTodo = false;
       voicePauseAfterReply = false;
       clearVoiceIdle();
       if (phonicAssistantSpeechStartedAt) {
@@ -4639,7 +4745,7 @@ function handlePhonicVoiceEvent(event) {
       const latestAssistant = state.messages[state.messages.length - 1]?.role === "assistant"
         ? state.messages[state.messages.length - 1].content
         : "";
-      if (latestUser && latestAssistant) state.pendingClarification = detectPendingClarification(latestUser, latestAssistant);
+      if (!lastVoiceWasTodo && latestUser && latestAssistant) state.pendingClarification = detectPendingClarification(latestUser, latestAssistant);
       persist();
       renderAll();
       void flushCloudSave();
@@ -4685,6 +4791,7 @@ async function handlePhonicAmiaToolCall({ name, parameters = {}, items = [] } = 
   );
   const latestUserText = String(latestItem?.text || parameters.latest_user_message || "").trim();
   if (!latestUserText) return { status: "error", assistant_text: unavailable };
+  lastVoiceWasTodo = Boolean(todoCommandForMessage(latestUserText));
   voicePauseAfterReply = conversationIntent(latestUserText) === "pause";
   if (isOutOfHomeTopicChange(latestUserText)) activeOutOfHomeScenarioContext = null;
 
@@ -4697,7 +4804,7 @@ async function handlePhonicAmiaToolCall({ name, parameters = {}, items = [] } = 
     if (latestKey) phonicItemMap.set(latestKey, state.messages.length - 1);
     const preferenceIdsBeforeTurn = new Set(state.preferences.map((preference) => String(preference.id)));
     const clarificationRequest = isClarificationRequest(latestUserText);
-    const answeredPendingClarification = resolvePendingClarification(latestUserText);
+    const answeredPendingClarification = lastVoiceWasTodo ? false : resolvePendingClarification(latestUserText);
     if (!answeredPendingClarification && !clarificationRequest) savePreference(latestUserText);
     const preferenceWasAdded = state.preferences.some((preference) => !preferenceIdsBeforeTurn.has(String(preference.id)));
     phonicTurnMetadata.set(latestKey || "fallback", {
@@ -4739,7 +4846,7 @@ async function handlePhonicAmiaToolCall({ name, parameters = {}, items = [] } = 
       reply.trim() || unavailable,
       selectedCompanionDisplayName()
     ));
-    state.pendingClarification = detectPendingClarification(latestUserText, spokenReply);
+    if (!lastVoiceWasTodo) state.pendingClarification = detectPendingClarification(latestUserText, spokenReply);
     void refreshRoomJourneyProgress();
     phonicTurnMetadata.delete(latestKey || "fallback");
     if (state.profile.shareAnonymizedLearning === true) void contributeSharedKnowledgeFromTurn();
@@ -5176,6 +5283,13 @@ async function saveApplianceRecord(appliance) {
 }
 
 async function requestAIReply(repairMode = false) {
+  const latestReminderText = [...state.messages].reverse().find(item => item.role === "user")?.content || "";
+  const reminderCommand = todoCommandForMessage(latestReminderText);
+  if (reminderCommand) {
+    const reminderReply = await handleTodoCommand(reminderCommand);
+    const reply = welcomeBackPending ? welcomeBackReply(reminderReply, state.profile.ownerName, state.profile.preferredLanguage || "en") : reminderReply;
+    welcomeBackPending = false; lastAIReplyUsedFallback = true; return reply;
+  }
   const requestUserId = cloudUserId;
   if (roomJourney) {
     const currentUser = [...state.messages].reverse().find(item => item.role === "user");
@@ -5378,6 +5492,7 @@ async function sendMessage(rawText) {
   }
   const message = rawText.trim();
   if (!message || isSending) return;
+  const todoTurn = Boolean(todoCommandForMessage(message));
   welcomeBackPending ||= shouldWelcomeBack(state.messages);
   if (isOutOfHomeTopicChange(message)) {
     activeOutOfHomeScenarioContext = null;
@@ -5407,7 +5522,7 @@ async function sendMessage(rawText) {
     : null;
   if (!state.pendingClarification && inferredPending) state.pendingClarification = inferredPending;
   const pendingBeforeAnswer = state.pendingClarification ? { ...state.pendingClarification } : null;
-  const answeredPendingClarification = resolvePendingClarification(message);
+  const answeredPendingClarification = todoTurn ? false : resolvePendingClarification(message);
   const preferenceIdsBeforeTurn = new Set(state.preferences.map((item) => String(item.id)));
   if (!answeredPendingClarification && !clarificationRequest) savePreference(message);
   const preferenceWasAdded = state.preferences.some((item) => !preferenceIdsBeforeTurn.has(String(item.id)));
@@ -5445,7 +5560,7 @@ async function sendMessage(rawText) {
   }
   reply = enforceFirstPersonTaskQuestions(reply, selectedCompanionDisplayName());
   state.messages.push({ role: "assistant", content: reply, timestamp: new Date().toISOString() });
-  state.pendingClarification = detectPendingClarification(message, reply);
+  if (!todoTurn) state.pendingClarification = detectPendingClarification(message, reply);
   if (state.profile.shareAnonymizedLearning === true) {
     void contributeSharedKnowledgeFromTurn();
   }
@@ -5863,6 +5978,7 @@ elements.signOutButton?.addEventListener("click", async () => {
     cloudMode = "local";
     personaMemoryRecords = [];
     simulationSession = null;
+    todoItems = []; todoLoadedUserId = null; todoEditingId = null; todoAwaitingTitle = false; renderTodoReminders();
     personaMemoryTableUnavailable = false;
     personaMemoryWarningShown = false;
     personaMemoryWriteInFlight = false;

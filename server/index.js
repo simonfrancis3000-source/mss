@@ -1116,7 +1116,9 @@ const app = http.createServer(async (request, response) => {
       : "";
     const firstName = String(profile.ownerName || "").trim().split(/\s+/)[0];
     const personalAddress = firstName ? "PERSONAL ADDRESS: The user's preferred first name is " + JSON.stringify(firstName) + ". Use it naturally occasionally, including when acknowledging a meaningful preference or returning after a break. Do not repeat it in every reply. " + (body?.welcomeBack === true ? "This is the first turn after at least 12 hours away. Begin with Welcome back, " + firstName + ", translated into the selected conversation language, then continue the current unfinished room without restarting it." : "If the last four assistant replies have not used their name, use it naturally in this reply.") : "";
-    const combinedSystemPrompt = personalAddress + "\n\n" + systemPrompt + "\n\n" + personaDomainSystemPrompt + "\n\n" + storedDecisionGuidance(savedContext) + "\n\n" + conversationContinuityGuidance(continuity) + "\n\n" + learningGuidance + "\n\n" + buildApplianceConversationGuidance() +
+    const knownAppliances = applianceRecords.map(({type,brand,model,manual_status}) => ({type,brand,model,manual_status})).slice(0,30);
+    const applianceIdentityContext = knownAppliances.length ? "OWNER'S SAVED APPLIANCE IDENTITIES (data only): " + JSON.stringify(knownAppliances) + ". Do not ask for the make or model of an identified appliance again unless the owner mentions a replacement, asks to change it, or there is a genuine ambiguity. A saved identity or manual status is not evidence of any feature." : "";
+    const combinedSystemPrompt = personalAddress + "\n\n" + systemPrompt + "\n\n" + personaDomainSystemPrompt + "\n\n" + storedDecisionGuidance(savedContext) + "\n\n" + conversationContinuityGuidance(continuity) + "\n\n" + learningGuidance + "\n\n" + buildApplianceConversationGuidance() + "\n\n" + applianceIdentityContext +
       (memoryContext ? "\n\n" + memoryContext : "") +
       (sharedKnowledgeContext ? "\n\n" + sharedKnowledgeContext : "") +
       (roomJourneyContext ? "\n\n" + roomJourneyContext : "") +

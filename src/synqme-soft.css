@@ -444,3 +444,17 @@ input[type='checkbox'] { accent-color: #8b73cf; }
 .situation-history { margin-top: 16px; font-size: 13px; }
 .situation-history summary { cursor: pointer; color: var(--ink); font-weight: 600; }
 .situation-history-item { margin-top: 12px; padding: 12px; border: 1px solid #f7fcff; border-radius: 13px; }
+
+/* To-do reminders follow the same soft Journey surfaces. */
+.todo-drawer { margin: 1.25rem 0; }
+.todo-content { padding: 0 1rem 1.2rem; color: #31596a; }
+.todo-content p { line-height: 1.5; }
+.todo-add, .todo-edit { display: flex; gap: .55rem; flex-wrap: wrap; }
+.todo-add input, .todo-edit input { min-width: 0; flex: 1 1 12rem; border: 1px solid #bed7e3; border-radius: 14px; padding: .8rem; background: #e6f2f8; color: #214c5d; font: inherit; }
+.todo-content button { border: 1px solid #fff; border-radius: 13px; padding: .65rem .85rem; background: #e1eff6; color: #31596a; font: inherit; cursor: pointer; }
+.todo-content button:disabled { opacity: .6; }
+.todo-item { margin: .75rem 0; padding: .9rem; border: 1px solid #fff; border-radius: 18px; background: #e0eef5; overflow-wrap: anywhere; }
+.todo-title { display: block; color: #214c5d; }
+.todo-actions { display: flex; gap: .4rem; flex-wrap: wrap; margin-top: .6rem; }
+.todo-actions button { padding: .45rem .65rem; font-size: .9rem; }
+.todo-content details > summary { cursor: pointer; font-weight: 600; padding: .8rem 0; }

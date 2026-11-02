@@ -161,6 +161,17 @@
         <div id="scenarioJourneyContent" aria-live="polite"></div>
       </section>
 
+      <details class="persona-insights-drawer todo-drawer" id="todoReminders">
+        <summary class="persona-insights-summary"><span class="insights-summary-mark" aria-hidden="true">✓</span><span class="insights-summary-copy"><strong>To-Do Reminders</strong><small id="todoSummary">Sign in to view your list</small></span><span class="insights-chevron" aria-hidden="true">+</span></summary>
+        <div class="todo-content">
+          <p>Things you would like to come back to. In Chat or Talk, say “Add finding the dishwasher model number to my to-do list.”</p>
+          <form id="todoAddForm" class="todo-add"><label for="todoInput" class="sr-only">New to-do reminder</label><input id="todoInput" maxlength="500" required placeholder="Add a reminder"><button type="submit">Add</button></form>
+          <p id="todoStatus" role="status" aria-live="polite"></p>
+          <div id="todoActive"></div>
+          <details id="todoCompleted"><summary>Completed <span id="todoCompletedCount"></span></summary><div id="todoCompletedList"></div></details>
+        </div>
+      </details>
+
       <details class="persona-insights-drawer" id="personaInsights">
         <summary class="persona-insights-summary">
           <span class="insights-summary-mark" aria-hidden="true">S</span>
