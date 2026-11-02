@@ -409,3 +409,15 @@ input[type='checkbox'] { accent-color: #8b73cf; }
 .chat-composer textarea::placeholder { font-size: 12px; line-height: 1.5; }
 .conversation-panel > .scenario-live-progress { transform: translateY(calc(-50% - 24px)); margin-bottom: -40px; }
 .voice-experience .voice-experience-content .voice-companion-name { display: none; }
+/* Talk content flows below the circle; only Chat uses the lifted progress card. */
+.voice-experience .voice-experience-content { flex: 1 0 auto; min-height: 0; }
+.voice-experience .voice-experience-content .voice-orb { width: min(48vw,210px,max(150px,calc(100dvh - 580px))); margin: 16px 0 20px; }
+.voice-experience .voice-experience-content > .scenario-live-progress { transform: none; flex: 0 0 auto; margin: 0 0 16px; }
+.voice-experience .voice-experience-content .voice-experience-status { flex: 0 0 auto; }
+.voice-experience .voice-experience-content .voice-controls { margin-top: auto; padding-top: 20px; }
+@media (max-height:680px) {
+  .voice-experience .voice-experience-content { padding-top: 12px; padding-bottom: calc(126px + env(safe-area-inset-bottom)); }
+  .voice-experience .voice-experience-content .voice-orb { width: min(38vw,130px,max(90px,calc(100dvh - 520px - env(safe-area-inset-top) - env(safe-area-inset-bottom)))); margin: 12px 0 16px; }
+  .voice-experience .voice-experience-content .voice-controls { padding-top: 16px; }
+  .voice-experience .voice-control-icon { width: 52px; height: 52px; border-radius: 17px; }
+}
