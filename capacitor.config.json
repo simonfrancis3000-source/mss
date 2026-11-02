@@ -1,5 +1,12 @@
 {
   "appId": "app.mysecondself",
   "appName": "MySecondSelf",
-  "webDir": "dist"
+  "webDir": "dist",
+  "plugins": {
+    "LiveUpdate": {
+      "autoUpdateStrategy": "none",
+      "autoBlockRolledBackBundles": true,
+      "readyTimeout": 15000
+    }
+  }
 }
