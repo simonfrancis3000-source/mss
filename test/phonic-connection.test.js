@@ -203,7 +203,7 @@ test('speaking indicator ends before a long silent tail of a buffered audio chun
   contexts[1].currentTime=audioSources[0].startAt+.05;t.mock.timers.tick(20);
   assert.equal(events.at(-1).type,'assistant_started_speaking');
   contexts[1].currentTime=audioSources[0].startAt+1;t.mock.timers.tick(20);
-  assert.equal(events.at(-1).type,'assistant_waiting_for_audio');
+  assert.equal(events.at(-1).type,'assistant_awaiting_user');
   await conversation.stop();
 });
 
@@ -313,3 +313,30 @@ test("silent and very quiet lead-in packets have no audible onset", () => {
   pcm.fill(1200, 4410);
   assert.equal(firstAudibleSample(pcm), 4410);
 });
+
+ test('a question returns to waiting after audible output even if provider completion is late',async(t)=>{
+  t.mock.timers.enable({apis:['setTimeout']});
+  const {conversation,Socket,audioSources,contexts,events}=browser(t);
+  const starting=conversation.start();const socket=await waitForSocket(Socket);socket.open();socket.message({type:'ready_to_start_conversation'});await starting;
+  socket.message({type:'assistant_started_speaking'});
+  socket.message({type:'audio_chunk',text:'Where should I put your papers?',audio:pcmAudio()});
+  contexts[1].currentTime=audioSources[0].startAt+.01;t.mock.timers.tick(20);
+  assert.equal(events.at(-1).type,'assistant_started_speaking');
+  contexts[1].currentTime=audioSources[0].startAt+.11;audioSources[0].onended();
+  assert.equal(events.at(-1).type,'assistant_awaiting_user');
+  socket.message({type:'assistant_finished_speaking'});
+  assert.equal(events.at(-1).type,'assistant_finished_speaking');
+  await conversation.stop();
+ });
+ test('a buffered future sentence prevents an early waiting status during a speech pause',async(t)=>{
+  t.mock.timers.enable({apis:['setTimeout']});
+  const {conversation,Socket,audioSources,contexts,events}=browser(t);
+  const starting=conversation.start();const socket=await waitForSocket(Socket);socket.open();socket.message({type:'ready_to_start_conversation'});await starting;
+  socket.message({type:'audio_chunk',text:'Understood.',audio:pcmAudio()});
+  socket.message({type:'audio_chunk',text:'Where should I put them?',audio:pcmAudio()});
+  socket.message({type:'assistant_finished_speaking'});
+  contexts[1].currentTime=audioSources[0].startAt+.01;t.mock.timers.tick(20);
+  contexts[1].currentTime=audioSources[0].startAt+.11;audioSources[0].onended();
+  assert.equal(events.some(event=>event.type==='assistant_awaiting_user'),false);
+  await conversation.stop();
+ });

@@ -503,6 +503,7 @@ let phonicUsageSubmitted = false;
 const phonicItemMap = new Map();
 const phonicTurnMetadata = new Map();
 let assistantIsSpeaking = false;
+let voiceAudioPauseTimer = null;
 let taskRunning = false;
 let lastFocusedElement = null;
 let cloudUserId = null;
@@ -4643,6 +4644,7 @@ function applyRobotAppearance() {
 }
 
 function updateVoiceExperience(mode, message) {
+  if (mode !== "speech-pause" && voiceAudioPauseTimer !== null) { window.clearTimeout(voiceAudioPauseTimer); voiceAudioPauseTimer = null; }
   if (elements.voiceOrb) elements.voiceOrb.dataset.state = mode || "idle";
   syncRobotSpeaking(document, mode === "speaking");
   if (elements.voiceExperience) {
@@ -4826,6 +4828,40 @@ async function submitPhonicUsage() {
   }
 }
 
+function showVoiceAudioPause() {
+  const wasSpeaking = assistantIsSpeaking || elements.voiceOrb?.dataset.state === "speech-pause";
+  assistantIsSpeaking = false;
+  if (!wasSpeaking) {
+    updateVoiceExperience("thinking", companionThinkingMessage(selectedCompanionDisplayName()));
+    if (elements.conversationStatus) elements.conversationStatus.textContent = companionThinkingMessage(selectedCompanionDisplayName());
+    return;
+  }
+  // Preserve the turn label across packet/sentence gaps, but stop the face
+  // immediately. A genuine stall can still show a thinking state.
+  updateVoiceExperience("speech-pause");
+  if (voiceAudioPauseTimer !== null) window.clearTimeout(voiceAudioPauseTimer);
+  voiceAudioPauseTimer = window.setTimeout(() => {
+    voiceAudioPauseTimer = null;
+    if (!voiceModeActive || elements.voiceOrb?.dataset.state !== "speech-pause") return;
+    updateVoiceExperience("thinking", companionThinkingMessage(selectedCompanionDisplayName()));
+    if (elements.conversationStatus) elements.conversationStatus.textContent = companionThinkingMessage(selectedCompanionDisplayName());
+  }, 1200);
+}
+
+function showVoiceWaitingForUser() {
+  armVoiceIdle();
+  if (phonicAssistantSpeechStartedAt) {
+    phonicAssistantSpeechMs += Math.max(0, Date.now() - phonicAssistantSpeechStartedAt);
+    phonicAssistantSpeechStartedAt = 0;
+  }
+  assistantIsSpeaking = false;
+  const owner = String(state.profile.ownerName || "").trim();
+  const message = owner ? "Waiting on " + owner + "." : "Waiting on you.";
+  updateVoiceExperience(voiceInputMuted ? "muted" : "listening", voiceInputMuted ? "Microphone muted. Turn it on when you are ready." : message);
+  if (elements.voiceStatus) elements.voiceStatus.textContent = voiceInputMuted ? "Microphone muted" : message;
+  if (elements.conversationStatus) elements.conversationStatus.textContent = voiceInputMuted ? "Microphone muted" : message;
+}
+
 function handlePhonicVoiceEvent(event) {
   const companion = selectedCompanionDisplayName();
   switch (event.type) {
@@ -4868,14 +4904,14 @@ function handlePhonicVoiceEvent(event) {
       if (elements.conversationStatus) elements.conversationStatus.textContent = companionThinkingMessage(companion);
       break;
     case "input_cancelled":
-      armVoiceIdle();
+      showVoiceWaitingForUser();
       break;
     case "input_text": {
       // Save the user's live speech transcription immediately, not only when
       // the subsequent assistant tool call arrives.
       const synced = syncPhonicTranscriptItems(event.items);
       if (synced.userAdded) void flushCloudSave();
-      if (elements.conversationStatus) elements.conversationStatus.textContent = companionThinkingMessage(companion);
+      if (!assistantIsSpeaking && elements.voiceOrb?.dataset.state !== "speech-pause" && elements.conversationStatus) elements.conversationStatus.textContent = companionThinkingMessage(companion);
       break;
     }
     case "assistant_waiting_for_audio":
@@ -4884,9 +4920,10 @@ function handlePhonicVoiceEvent(event) {
         phonicAssistantSpeechMs += Math.max(0, Date.now() - phonicAssistantSpeechStartedAt);
         phonicAssistantSpeechStartedAt = 0;
       }
-      assistantIsSpeaking = false;
-      updateVoiceExperience("thinking", companionThinkingMessage(companion));
-      if (elements.conversationStatus) elements.conversationStatus.textContent = companionThinkingMessage(companion);
+      showVoiceAudioPause();
+      break;
+    case "assistant_awaiting_user":
+      showVoiceWaitingForUser();
       break;
     case "assistant_started_speaking":
       clearVoiceIdle();
@@ -4922,9 +4959,7 @@ function handlePhonicVoiceEvent(event) {
         stopVoiceConversation("Paused. Press Start to continue.");
         break;
       }
-      updateVoiceExperience(voiceInputMuted ? "muted" : "listening", voiceInputMuted ? "Microphone muted. Turn it on when you are ready." : companion + " is listening. Speak naturally.");
-      if (elements.voiceStatus) elements.voiceStatus.textContent = voiceInputMuted ? "Microphone muted" : "Voice ready";
-      if (elements.conversationStatus) elements.conversationStatus.textContent = companion + " is ready for your next turn";
+      showVoiceWaitingForUser();
       break;
     }
     case "error": {

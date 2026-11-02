@@ -2,20 +2,22 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
+import {createAuthTurnstile} from '../src/auth-turnstile.js';
 
 async function harness(fetchImpl) {
   const nodes=new Map();
   const element=(id)=>{
-    if(!nodes.has(id))nodes.set(id,{hidden:id==='dashboard',value:'30d',textContent:'',innerHTML:'',dataset:{},selectedOptions:[{textContent:'Last 30 days'}],addEventListener(){}});
+    if(!nodes.has(id))nodes.set(id,{hidden:id==='dashboard',value:'30d',textContent:'',innerHTML:'',dataset:{},selectedOptions:[{textContent:'Last 30 days'}],addEventListener(){},querySelector(){return null;}});
     return nodes.get(id);
   };
   const session={access_token:'fixture-token',user:{id:'fixture-admin'}};
   const client={auth:{getSession:async()=>({data:{session}}),onAuthStateChange(){},signOut:async()=>{}}};
   const source=(await readFile(new URL('../src/admin.js',import.meta.url),'utf8'))
     .replace('import { createClient } from "@supabase/supabase-js";','')
+    .replace('import { createAuthTurnstile } from "./auth-turnstile.js";','')
     .replaceAll('import.meta.env','env');
   const context=vm.createContext({Intl,Date,Number,Set,Map,URL,Blob,console,
-    env:{VITE_SUPABASE_URL:'https://fixture.test',VITE_SUPABASE_ANON_KEY:'public-key'},createClient:()=>client,
+    env:{VITE_SUPABASE_URL:'https://fixture.test',VITE_SUPABASE_ANON_KEY:'public-key'},createClient:()=>client,createAuthTurnstile,
     document:{getElementById:element},window:{setTimeout(){}},fetch:fetchImpl});
   vm.runInContext(source+'\n;globalThis.harness={loadDashboard,showLogin,showDashboard,getData:()=>currentData,setSession:(s)=>{currentSession=s}};',context);
   // Let the initial getSession-driven request settle.

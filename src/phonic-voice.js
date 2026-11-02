@@ -121,6 +121,8 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
   const sentencePauses = createSentencePausePlanner(SAMPLE_RATE);
   let providerFinishedSpeaking = false;
   let playbackActive = false;
+  let playedAssistantAudio = false;
+  let awaitingUserAnnounced = false;
   let playbackMonitorTimer = null;
   let playbackGeneration = 0;
   let stopped = true;
@@ -148,6 +150,7 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
     sentencePauses.reset();
     if (playbackMonitorTimer !== null) globalThis.clearTimeout(playbackMonitorTimer);
     playbackMonitorTimer = null;
+    awaitingUserAnnounced = true;
     emit({ type: "assistant_finished_speaking" });
   }
 
@@ -163,10 +166,21 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
       audibleAt !== null && audibleUntil !== null && now >= audibleAt && now < audibleUntil);
     if (!playbackActive && audible) {
       playbackActive = true;
+      playedAssistantAudio = true;
+      awaitingUserAnnounced = false;
       emit({ type: "assistant_started_speaking" });
     } else if (playbackActive && (!running || !audible)) {
       playbackActive = false;
       emit({ type: "assistant_waiting_for_audio" });
+    }
+    // A completed question can have a silent buffered tail or a late provider
+    // completion event. Once its last audible sample has played, await the owner.
+    const last = conversationItems[conversationItems.length - 1];
+    const questionEnded = last?.role === "assistant" && /[?？؟][\s”'"’)]*$/u.test(last.text || "");
+    const futureAudio = [...playbackTimings.values()].some(item => item.audibleUntil !== null && item.audibleUntil > now);
+    if (running && playedAssistantAudio && !playbackActive && !futureAudio && !awaitingUserAnnounced && (providerFinishedSpeaking || questionEnded)) {
+      awaitingUserAnnounced = true;
+      emit({ type: "assistant_awaiting_user" });
     }
     finishPlaybackIfDrained();
     if (playbackSources.size) playbackMonitorTimer = globalThis.setTimeout(monitorPlayback, 20);
@@ -174,6 +188,8 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
 
   function stopPlayback() {
     playbackGeneration++;
+    playedAssistantAudio = false;
+    awaitingUserAnnounced = false;
     providerFinishedSpeaking = false;
     playbackActive = false;
     sentencePauses.reset();
@@ -318,7 +334,7 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
       case "assistant_finished_speaking":
         if (userIsSpeaking) break;
         providerFinishedSpeaking = true;
-        finishPlaybackIfDrained();
+        monitorPlayback();
         break;
 
       case "user_started_speaking":
