@@ -4929,8 +4929,8 @@ function handlePhonicVoiceEvent(event) {
       clearVoiceIdle();
       if (!phonicAssistantSpeechStartedAt) phonicAssistantSpeechStartedAt = Date.now();
       assistantIsSpeaking = true;
-      updateVoiceExperience("speaking", companion + " is speaking.");
-      if (elements.conversationStatus) elements.conversationStatus.textContent = companion + " is speaking";
+      updateVoiceExperience("speaking", companionThinkingMessage(companion));
+      if (elements.conversationStatus) elements.conversationStatus.textContent = companionThinkingMessage(companion);
       break;
     case "audio_chunk": {
       const synced = syncPhonicTranscriptItems(event.items);
@@ -5196,7 +5196,7 @@ function toggleVoiceInputMute() {
   voiceInputMuted = !voiceInputMuted;
   if (phonicVoiceConversation) phonicVoiceConversation.setMuted(voiceInputMuted);
   if (assistantIsSpeaking) {
-    updateVoiceExperience("speaking", selectedCompanionDisplayName() + " is speaking." + (voiceInputMuted ? " Microphone muted." : ""));
+    updateVoiceExperience("speaking", companionThinkingMessage(selectedCompanionDisplayName()) + (voiceInputMuted ? " Microphone muted." : ""));
   } else if (voiceInputMuted) {
     updateVoiceExperience("muted", "Microphone muted. Turn it on when you are ready.");
   } else {
