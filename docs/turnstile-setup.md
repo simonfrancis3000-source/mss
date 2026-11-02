@@ -1,6 +1,6 @@
 # MySecondSelf: Cloudflare Turnstile activation
 
-The web `main` branch and the mobile `mobile/current-mss` branch include Turnstile UI and pass `captchaToken` to Supabase for **sign-in, sign-up, and password-recovery requests**. Password *update* after clicking a recovery link remains unchanged.
+The web `main` branch and the mobile `mobile/current-mss` branch include Turnstile UI and pass `captchaToken` to Supabase for **sign-in (including the admin portal), sign-up, and password-recovery requests**. Password *update* after clicking a recovery link remains unchanged.
 
 **Important:** This code is deliberately opt-in. Until a real site key is provided at build time, it does not display a challenge or change existing sign-in behavior. A browser challenge alone is not protection: Supabase must verify the token server-side.
 
@@ -8,7 +8,7 @@ The web `main` branch and the mobile `mobile/current-mss` branch include Turnsti
 
 1. Create a **Cloudflare Turnstile** widget in your Cloudflare account. The production hostname is `synqme.mysecondself.app`. Copy the widget's **Site Key** and **Secret Key**.
 2. Set **`VITE_TURNSTILE_SITE_KEY`** (public site key only) in the build/deployment environment for the web app, and for any mobile/OTA bundles. This is a Vite build-time variable and requires a fresh build. Do **not** put the Secret Key in this variable or commit it to GitHub.
-3. Deploy a frontend build containing the site key **before** enabling server-side CAPTCHA. Verify the challenge can be completed on web sign-in, sign-up and Forgot password, and that an actual `captchaToken` is sent for each action.
+3. Deploy a frontend build containing the site key **before** enabling server-side CAPTCHA. Verify the challenge can be completed on web sign-in, admin sign-in, sign-up and Forgot password, and that an actual `captchaToken` is sent for each action.
 4. On the MySecondSelf Supabase project (`ltqbjqtzsdzglswuqkip`), open **Authentication > Bot and Abuse Protection** (Auth CAPTCHA settings), enable CAPTCHA, select **Cloudflare Turnstile**, and enter the **Secret Key**. Save.
 5. Test with a **real email inbox**: create/confirm a new account, sign in, request a password-reset email, follow it, set a new password, and sign in again. Check failed and repeated attempts, and verify server-side rejection of requests with no valid token.
 6. Review Supabase Auth logs for successful requests and CAPTCHA failures. Do not use `example.com` addresses for email tests.
