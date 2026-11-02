@@ -1,3 +1,4 @@
+import { simulationCapabilitySummary } from "./simulation.js";
 import { createMemoryJobRunner, memoryRetryDelaySeconds, memoryJobKey } from "./memory-job-runner.js";
 import { areaLearningState, areaStatusLabel, scenarioLearningObjectives, scenarioForId } from "./scenario-learning.js";
 import { buildConversationContinuity } from "./conversation-continuity.js";
@@ -29,6 +30,7 @@ import {
   deriveMemoryTopic,
   makePersonaMemoryKey,
   memoryIsActive,
+  isUsefulStandalonePreference,
   preferenceToPersonaMemory,
   rankPersonaMemories,
   shouldExtractPersonaMemory, SENSITIVE_MEMORY_PATTERN
@@ -506,6 +508,7 @@ let welcomeBackPending = false;
 let selectedJourneyScenario = null;
 let journeyDisplay = "chart";
 let selectedReviewArea = null;
+let simulationSession = null;
 const SCENARIO_PROGRESS_KEY = "scenario_journey_v1";
 function scenarioData() {
   const stored = roomJourney?.room_progress?.[SCENARIO_PROGRESS_KEY];
@@ -630,6 +633,7 @@ function renderScenarioJourney() {
   start.textContent = done.includes(scenario.id) ? "Revisit this scenario" : data.started === scenario.id ? "Continue conversation" : "Start conversation";
   start.addEventListener("click", () => void startJourneyScenario(scenario));
   target.append(navLabel, nav, title, desc, start);
+  target.append(renderSituationPreview(scenario));
   const tasks = document.createElement("section"); tasks.className = "journey-tasks";
   const tasksHeading = document.createElement("h4"); tasksHeading.textContent = "Tasks to explore";
   tasks.append(tasksHeading);
@@ -759,6 +763,129 @@ function renderScenarioJourney() {
   });
   target.append(checklist, finish);
 }
+function renderSituationPreview(scenario) {
+  const section = document.createElement("section"); section.className = "situation-preview";
+  const heading = document.createElement("h4"); heading.textContent = "Try a situation";
+  const intro = document.createElement("p"); intro.textContent = "Explore how your companion might use what you have taught it. This is a hypothetical preview.";
+  const areaLabel = document.createElement("label"); areaLabel.textContent = "Choose an area";
+  const select = document.createElement("select"); select.setAttribute("aria-label", "Choose an area for the situation");
+  const areas = scenarioTasks(scenario);
+  for (const area of areas) { const option = document.createElement("option"); option.value = area.id; option.textContent = area.title; select.append(option); }
+  if (simulationSession?.scenarioId === scenario.id && areas.some(area => area.id === simulationSession.areaId)) select.value = simulationSession.areaId;
+  areaLabel.append(select);
+  const start = document.createElement("button"); start.type = "button"; start.className = "journey-task-button"; start.textContent = "Create a situation";
+  const output = document.createElement("div"); output.className = "situation-result"; output.setAttribute("aria-live", "polite");
+  if (simulationSession?.scenarioId === scenario.id && simulationSession.loading) start.disabled = true;
+  const capabilityLabel = document.createElement("label"); capabilityLabel.textContent = "Compare robot capabilities";
+  const capability = document.createElement("select"); capability.setAttribute("aria-label", "Select a task to compare robot capabilities");
+  const blank = document.createElement("option"); blank.value = ""; blank.textContent = "Choose a task"; capability.append(blank);
+  for (const activity of ACTIVITIES) { const option = document.createElement("option"); option.value = activity.id; option.textContent = activity.label; capability.append(option); }
+  const capabilityText = document.createElement("p"); capabilityText.className = "situation-capability";
+  const updateCapability = () => { capabilityText.textContent = simulationCapabilitySummary({ functionId: capability.value, manifest: pexiCapabilityManifest, robotType: state.profile.robotType }).text; };
+  capability.addEventListener("change", updateCapability); capabilityLabel.append(capability); updateCapability();
+
+  function showResult() {
+    output.replaceChildren();
+    const current = simulationSession?.scenarioId === scenario.id && simulationSession?.areaId === select.value ? simulationSession : null;
+    if (!current) return;
+    if (current.loading) { const message = document.createElement("p"); message.textContent = "Preparing your situation…"; output.append(message); return; }
+    if (current.error) { const message = document.createElement("p"); message.textContent = current.error; output.append(message); return; }
+    if (!current.preview) return;
+    const title = document.createElement("strong"); title.textContent = "Imagine this";
+    const situation = document.createElement("p"); situation.textContent = current.preview.situation;
+    const proposedTitle = document.createElement("strong"); proposedTitle.textContent = selectedCompanionDisplayName() + " might respond";
+    const proposed = document.createElement("p"); proposed.textContent = current.preview.proposed_response;
+    output.append(title, situation, proposedTitle, proposed);
+    if (current.preview.follow_up_question) { const question = document.createElement("p"); question.textContent = current.preview.follow_up_question; output.append(question); }
+    const why = document.createElement("details"); const whyTitle = document.createElement("summary"); whyTitle.textContent = "Tell me why"; why.append(whyTitle);
+    if (current.preview.sources.length) {
+      const explanation = document.createElement("p"); explanation.textContent = "These saved preferences were used for this proposed response:"; why.append(explanation);
+      const list = document.createElement("ul");
+      current.preview.sources.forEach(source => { const item = document.createElement("li"); item.textContent = source.statement + (source.status === "user_confirmed" ? " (reviewed)" : " (you stated)") + (source.conditions?.length ? " · Conditions: " + source.conditions.join(", ") : ""); list.append(item); });
+      why.append(list);
+    } else { const empty = document.createElement("p"); empty.textContent = "There is no linked saved preference that settles this situation yet."; why.append(empty); }
+    output.append(why);
+    const feedback = document.createElement("div"); feedback.className = "situation-actions";
+    const right = document.createElement("button"); right.type = "button"; right.className = "journey-task-button"; right.textContent = "That's right"; right.disabled = Boolean(current.feedback);
+    const different = document.createElement("button"); different.type = "button"; different.className = "journey-task-button"; different.textContent = "I would do it differently";
+    const feedbackStatus = document.createElement("p"); feedbackStatus.setAttribute("role", "status");
+    if (current.feedback === "agreed") feedbackStatus.textContent = "Your feedback on this situation is saved.";
+    right.addEventListener("click", async () => {
+      right.disabled = true;
+      try { await saveSituationFeedback(current, "agreed"); current.feedback = "agreed"; feedbackStatus.textContent = "Your feedback on this situation is saved."; }
+      catch { right.disabled = false; feedbackStatus.textContent = "Feedback could not be saved. Please try again."; }
+    });
+    different.addEventListener("click", async () => {
+      different.disabled = true;
+      try { await saveSituationFeedback(current, "different"); } catch { /* The user can still correct their preference in chat. */ }
+      const area = areas.find(item => item.id === current.areaId);
+      if (!(await startJourneyScenario(scenario, area))) { different.disabled = false; return; }
+      elements.messageInput.value = "For the practice situation ‘" + current.preview.situation.slice(0, 550) + "’, I would prefer: ";
+      elements.messageInput.dispatchEvent(new Event("input", { bubbles: true })); elements.messageInput.focus();
+    });
+    feedback.append(right, different); output.append(feedback, feedbackStatus);
+  }
+  select.addEventListener("change", showResult);
+  start.addEventListener("click", async () => {
+    const userId = cloudUserId, areaId = select.value;
+    if (!userId) return;
+    const run = { userId, scenarioId: scenario.id, areaId, loading: true, preview: null, feedback: null, runId: globalThis.crypto?.randomUUID?.() || Date.now().toString(36) + Math.random().toString(36).slice(2) };
+    simulationSession = run; start.disabled = true; showResult();
+    try {
+      const response = await fetch(API_BASE + "/api/simulation", { method: "POST", headers: await authenticatedApiHeaders(), body: JSON.stringify({ scenarioId: scenario.id, areaId, preferredLanguage: state.profile.preferredLanguage || "en" }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "The situation could not be prepared.");
+      if (simulationSession !== run || cloudUserId !== userId) return;
+      run.preview = result;
+    } catch (error) { if (simulationSession === run && cloudUserId === userId) run.error = error.message || "The situation could not be prepared."; }
+    finally { if (simulationSession === run) { run.loading = false; start.disabled = false; if (output.isConnected) showResult(); else renderScenarioJourney(); } }
+  });
+  const history = document.createElement("details"); history.className = "situation-history";
+  const historyTitle = document.createElement("summary"); historyTitle.textContent = "Past situation feedback"; history.append(historyTitle);
+  const historyItems = document.createElement("div"); history.append(historyItems);
+  history.addEventListener("toggle", async () => {
+    if (!history.open || !cloudUserId) return;
+    const userId = cloudUserId; historyItems.textContent = "Loading…";
+    try {
+      const { data, error } = await supabase.from("synqme_evaluation_records").select("id,checks,created_at").eq("user_id", userId).eq("scope_key", scenario.id)
+        .eq("evaluation_kind", "conversation_turn").contains("checks", { event: "hypothetical_situation_feedback" }).order("created_at", { ascending: false }).limit(10);
+      if (error || userId !== cloudUserId) throw error || new Error("Account changed.");
+      historyItems.replaceChildren();
+      if (!data?.length) { const empty = document.createElement("p"); empty.textContent = "Your feedback will appear here after you review a situation."; historyItems.append(empty); return; }
+      for (const entry of data) {
+        const item = document.createElement("div"); item.className = "situation-history-item";
+        const label = document.createElement("strong"); label.textContent = entry.checks?.user_feedback === "agreed" ? "You agreed with this response" : "You wanted a different response";
+        const situation = document.createElement("p"); situation.textContent = String(entry.checks?.situation || "").slice(0, 700);
+        const response = document.createElement("p"); response.textContent = String(entry.checks?.proposed_response || "").slice(0, 1000);
+        const remove = document.createElement("button"); remove.type = "button"; remove.className = "journey-task-button"; remove.textContent = "Remove feedback";
+        remove.addEventListener("click", async () => {
+          remove.disabled = true;
+          const { error } = await supabase.from("synqme_evaluation_records").delete().eq("user_id", userId).eq("id", entry.id);
+          if (error || userId !== cloudUserId) { remove.disabled = false; return; }
+          item.remove();
+          if (!historyItems.children.length) historyItems.textContent = "No saved feedback yet.";
+        });
+        item.append(label, situation, response, remove); historyItems.append(item);
+      }
+    } catch { historyItems.textContent = "Past feedback could not be loaded. Try again."; }
+  });
+  section.append(heading, intro, areaLabel, start, output, capabilityLabel, capabilityText, history);
+  showResult(); return section;
+}
+
+async function saveSituationFeedback(run, feedback) {
+  if (!supabase || !cloudUserId || run.userId !== cloudUserId || !["agreed", "different"].includes(feedback)) throw new Error("Sign in to save feedback.");
+  const { error } = await supabase.from("synqme_evaluation_records").upsert({
+    user_id: run.userId, evaluation_key: "simulation-feedback:" + run.runId, scope_key: run.scenarioId,
+    evaluation_kind: "conversation_turn", origin: "runtime_observation", outcome: "observed",
+    checks: { event: "hypothetical_situation_feedback", user_feedback: feedback, area_id: run.areaId,
+      situation: String(run.preview?.situation || "").slice(0, 700), proposed_response: String(run.preview?.proposed_response || "").slice(0, 1000),
+      evidence_versions: (run.preview?.sources || []).map(source => ({ id: source.id, version: source.rule_version })).slice(0, 8) },
+    source_refs: [{ scenario_id: run.scenarioId, area_id: run.areaId }], engine_version: "simulation-preview-v1"
+  }, { onConflict: "user_id,evaluation_key", ignoreDuplicates: false });
+  if (error) throw error;
+}
+
 async function startJourneyScenario(scenario, task = null) {
   if (!roomJourney || roomJourneySaveInFlight) return false;
   const done = completedScenarioIds(scenarioData().completed);
@@ -864,7 +991,7 @@ async function syncHomeMemoryIndex(messages, { backfill = false } = {}) {
 }
 
 function activePersonaMemories() {
-  return personaMemoryRecords.filter((item) => memoryIsActive(item));
+  return personaMemoryRecords.filter((item) => memoryIsActive(item) && isUsefulStandalonePreference(item.statement));
 }
 
 function renderPersonaMemoryLibrary() {
@@ -2399,6 +2526,7 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   roomJourney = null;
   welcomeBackPending = false;
   selectedJourneyScenario = null;
+  simulationSession = null;
   renderScenarioJourney();
   roomJourneyTableUnavailable = false;
   roomJourneyWarningShown = false;
@@ -3354,7 +3482,7 @@ function savePreference(message) {
   const statements = splitPreferenceStatements(message);
   for (const statement of statements) {
     const preference = cleanPreference(statement);
-    if (!preference) continue;
+    if (!preference || !isUsefulStandalonePreference(statement)) continue;
     const extracted = extractExplicitPreferenceFacets(statement);
     preference.explicitFacets = extracted.explicitFacets;
     preference.unresolvedFields = extracted.unresolvedFields;
@@ -3587,23 +3715,36 @@ function addElement(parent, className, text) {
 
 function activeLegacyPreferences() {
   return state.preferences.filter((item) =>
-    !["superseded", "rejected"].includes(String(item.status || item.preference_status || "").toLowerCase())
+    !["superseded", "rejected"].includes(String(item.status || item.preference_status || "").toLowerCase()) && isUsefulStandalonePreference(item.text)
   );
 }
 
+function curatedPreferences() {
+  const results = [], seen = new Set();
+  const linkedPreferenceIds = new Set(activePersonaMemories().map(memory => String(memory.source_preference_id || "")).filter(Boolean));
+  for (const memory of activePersonaMemories()) {
+    if (!["user_stated", "user_confirmed"].includes(memory.status)) continue;
+    const key = String(memory.statement || "").trim().toLocaleLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key); results.push({ text: memory.statement, category: memory.topic?.replace(/_/g, " ") || "Personal preference" });
+  }
+  for (const preference of activeLegacyPreferences()) {
+    if (linkedPreferenceIds.has(String(preference.id))) continue;
+    const key = String(preference.text || "").trim().toLocaleLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key); results.push(preference);
+  }
+  return results;
+}
+
 function renderPreferences() {
-  const activePreferences = activeLegacyPreferences();
+  const activePreferences = curatedPreferences();
   const count = activePreferences.length;
   elements.memoryCount.textContent = count + (count === 1 ? " MEMORY" : " MEMORIES");
   elements.preferenceCount.textContent = String(count);
-  elements.personaProgress.style.width = Math.min(100, count * 12.5) + "%";
-  elements.foundationValue.textContent = count === 0
-    ? "Waiting for your first preference"
-    : count === 1
-      ? "First preference captured"
-      : count < 5
-        ? "Your preferences are taking shape"
-        : "A richer personal pattern is emerging";
+  const scenarioSummary = scenarioProgressSummary(scenarioData().completed);
+  elements.personaProgress.style.width = scenarioSummary.percent + "%";
+  elements.foundationValue.textContent = scenarioSummary.completed + " of " + scenarioSummary.total + " scenarios reviewed";
   $(".memory-pulse")?.classList.toggle("active", count > 0);
   elements.memoryFootnote.textContent = cloudMode === "cloud"
     ? "Saved to your account · " + count + (count === 1 ? " preference" : " preferences") + " and conversation history sync automatically"
@@ -3666,7 +3807,7 @@ function renderPreferences() {
 }
 
 function milestoneUnlocked(milestone) {
-  return Boolean(milestone.unlocked(state));
+  return Boolean(milestone.unlocked({ ...state, preferences: curatedPreferences() }));
 }
 
 function formatPexiCapabilityLabel(value) {
@@ -3890,7 +4031,7 @@ function renderSettingsDetails() {
 function updateDecisionSummary() {
   const summaryTitle = document.querySelector("#decisionTitle");
   if (summaryTitle) summaryTitle.textContent = progressOwnerLabel(state.profile.ownerName,"learning summary");
-  const preferences = state.preferences;
+  const preferences = curatedPreferences();
   if (!preferences.length && !state.functions.length) {
     elements.decisionSummary.textContent = "Your scenario journey gives you one clear focus at a time. Start with the Kitchen and build your SecondSelf through natural conversation.";
     elements.amyaState.textContent = "Getting started";
@@ -3929,7 +4070,7 @@ function renderAll() {
       : "Tell " + selectedCompanionDisplayName() + " how you like things.";
   }
   if (elements.mobileOwnerTitle) elements.mobileOwnerTitle.textContent = name ? name + "’s SecondSelf" : "Your SecondSelf";
-  const count = state.preferences.length;
+  const count = curatedPreferences().length;
   const functionsCount = state.functions.length;
   if (elements.mobileJourneyText) {
     const activeRoom = ROOM_JOURNEY_ROOMS.find((room) => room.id === roomJourney?.active_room_id);
@@ -5526,8 +5667,8 @@ elements.runTask.addEventListener("click", () => {
     makeTaskStep(1, "Start with your interests", state.functions.length
       ? "Use the domestic functions you selected: " + state.functions.map((id) => ACTIVITIES.find((activity) => activity.id === id)?.label).filter(Boolean).join(", ") + "."
       : "No domestic functions selected yet. Choose the areas of home life you want your SecondSelf to learn about in Settings.");
-    makeTaskStep(2, "Use your personal preferences", state.preferences.length
-      ? "Reference the " + state.preferences.length + (state.preferences.length === 1 ? " preference" : " preferences") + " saved to your account."
+    makeTaskStep(2, "Use your personal preferences", curatedPreferences().length
+      ? "Reference the " + curatedPreferences().length + (curatedPreferences().length === 1 ? " preference" : " preferences") + " saved to your account."
       : "No preferences recorded yet. Start a conversation with your chosen companion to add details to your persona.");
     makeTaskStep(3, "Build the persona, not a robot connection", "The preview shows a conceptual structure for personalisation. No physical robot is connected, and no action is executed.");
     elements.amyaState.textContent = "Context outlined";
@@ -5697,6 +5838,7 @@ elements.signOutButton?.addEventListener("click", async () => {
     cloudUserEmail = "";
     cloudMode = "local";
     personaMemoryRecords = [];
+    simulationSession = null;
     personaMemoryTableUnavailable = false;
     personaMemoryWarningShown = false;
     personaMemoryWriteInFlight = false;

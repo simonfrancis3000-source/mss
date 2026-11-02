@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { deriveMemoryTopic, rankPersonaMemories, SENSITIVE_MEMORY_PATTERN, makePersonaMemoryKey, buildPersonaMemorySearchKeys } from '../src/persona-memory.js';
+import { deriveMemoryTopic, rankPersonaMemories, isUsefulStandalonePreference, SENSITIVE_MEMORY_PATTERN, makePersonaMemoryKey, buildPersonaMemorySearchKeys } from '../src/persona-memory.js';
 import { ruleSourceReferences } from '../src/amia-persistence.js';
 
 const digest = (value) => createHash('sha256').update(value).digest('hex');
@@ -104,6 +104,20 @@ export function createAmiaStore({ supabaseUrl, publishableKey, fetchImpl = fetch
       return true;
     } catch (error) { console.warn('AMIA appliance reference could not be saved',{code:error.message}); return false; }
   }
+  async function loadScenarioMemories(auth, scenarioId) {
+    const params = new URLSearchParams({ user_id: 'eq.' + auth.user.id,
+      'attributes->>scenario_id': 'eq.' + scenarioId,
+      select: 'id,statement,status,conditions,permission_policy,rule_version,attributes,source_timestamp',
+      status: 'in.(user_stated,user_confirmed)', order: 'updated_at.desc', limit: '100' });
+    try {
+      const rows = await request(auth, 'synqme_persona_memories?' + params);
+      if (!Array.isArray(rows)) throw new Error('invalid_storage_response');
+      return { available: true, rules: rows.filter(row => row.attributes?.scenario_id === scenarioId && ["user_stated", "user_confirmed"].includes(row.status) && isUsefulStandalonePreference(row.statement)) };
+    } catch (error) {
+      console.warn('Scenario memories could not be loaded', { code: error.message });
+      return { available: false, rules: [] };
+    }
+  }
   async function loadSharedKnowledge(auth, scopeKey) {
     const scenarioId = scopeKey.startsWith('room:') ? scopeKey.split(':').slice(0,2).join(':') : scopeKey;
     if (!/^(room|outside):/.test(scenarioId)) return [];
@@ -116,7 +130,7 @@ export function createAmiaStore({ supabaseUrl, publishableKey, fetchImpl = fetch
       return [...new Map([...common,...novel].map(item=>[item.prompt_pattern,item])).values()].slice(0,6);
     } catch { return []; }
   }
-  return { loadContext, recordTurn, saveAppliance, loadSharedKnowledge };
+  return { loadContext, recordTurn, saveAppliance, loadSharedKnowledge, loadScenarioMemories };
 }
 
 export function storedDecisionGuidance(context) {

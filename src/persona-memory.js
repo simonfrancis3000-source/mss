@@ -49,6 +49,23 @@ export function makePersonaMemoryKey(value) {
   return normalised ? "mem-" + fnv1a(normalised) : "";
 }
 
+// Standalone preference cards must make sense without the preceding question.
+// The complete conversation is retained so short contextual answers can still
+// be interpreted by the structured extraction queue.
+export function isUsefulStandalonePreference(value) {
+  const text = String(value || "").normalize("NFKC").trim().replace(/\s+/g, " ");
+  if (!text || SENSITIVE_MEMORY_PATTERN.test(text) || text.length > 1600) return false;
+  const simple = text.toLocaleLowerCase().replace(/[’]/g, "'").replace(/[.!?,;:…]+$/gu, "").trim();
+  if (/^[\p{Script=Latin}0-9\x27’\-]+$/u.test(simple)) return false;
+  if (/^(?:i|we|you|it|yes|yeah|yep|no|nope|okay|ok|sure|correct|right|quietly|gently|slowly|separately|separate|that'?s correct|that is correct|that'?s right|that is right|exactly|thank you|thanks|we already (?:covered|discussed|did) (?:that|this|it)|already (?:covered|discussed) (?:that|this|it)|just do it|do it|leave it|put it back|tell me more)$/i.test(simple)) return false;
+  if (/^(?:(?:i|we|you)\s+)?(?:(?:would|will|can|should|must|want to|want you to|prefer to)\s+)?(?:(?:quietly|gently|slowly|carefully|just|please)\s+)*(?:do|put|move|leave|take|clean|wash|keep|replace|return|handle|arrange)\s+(?:it|that|this|them|those)\b/i.test(simple)) return false;
+  if (/^(?:we|i|you) (?:already )?(?:covered|discussed|talked about) (?:that|this|it)\b/i.test(simple)) return false;
+  if (/^(?:for|regarding|about) the practice situation\b/i.test(simple)) return false;
+  if (/^(?:that|this|it) (?:is|was|will be|would be|looks|sounds) (?:fine|right|correct|good|okay|ok)$/i.test(simple)) return false;
+  if (/^(?:what|why|how|when|where|which|who|can you|could you|would you)\b/i.test(simple) && /[?？]$/.test(text)) return false;
+  return true;
+}
+
 export function deriveMemoryKind(value) {
   const text = String(value || "");
   if (/\b(never|must not|do not|don't|without asking|ask me before|check with me|permission|keep .*where it is|leave .* alone)\b/i.test(text)) return "boundary";
@@ -93,7 +110,7 @@ export function cleanPersonaMemoryCandidate(input) {
   const statement = typeof input.statement === "string"
     ? input.statement.replace(/\u0000/g, "").trim().replace(/\s+/g, " ").slice(0, 420)
     : "";
-  if (statement.length < 8 || SENSITIVE_MEMORY_PATTERN.test(statement)) return null;
+  if (statement.length < 8 || !isUsefulStandalonePreference(statement)) return null;
 
   const inferredTopic = deriveMemoryTopic(statement);
   const topic = MEMORY_TOPICS.has(input.topic) ? input.topic : inferredTopic;
@@ -164,7 +181,7 @@ export function rankPersonaMemories(query, memories, { limit = 8 } = {}) {
   const queryKeys = new Set(buildPersonaMemorySearchKeys(queryText));
   const queryTopics = new Set(extractPersonaMemoryTopics(queryText));
   const prepared = memories.map((memory) => {
-    if (!memoryIsActive(memory) || typeof memory.statement !== "string" || !memory.statement.trim()) return null;
+    if (!memoryIsActive(memory) || !isUsefulStandalonePreference(memory.statement)) return null;
     // Always derive current keys as well as using stored keys. This makes
     // newer concept aliases work for older records without a database rewrite.
     const keys = new Set([
@@ -197,7 +214,7 @@ export function rankPersonaMemories(query, memories, { limit = 8 } = {}) {
 export function preferenceToPersonaMemory(preference, userId) {
   if (!preference || typeof preference.text !== "string" || !preference.text.trim() || !userId) return null;
   const statement = preference.text.trim().slice(0, 420);
-  if (statement.length < 8 || SENSITIVE_MEMORY_PATTERN.test(statement)) return null;
+  if (statement.length < 8 || !isUsefulStandalonePreference(statement)) return null;
   const topic = deriveMemoryTopic(statement, preference.category);
   const kind = deriveMemoryKind(statement);
   const id = String(preference.id || makePersonaMemoryKey(statement)).slice(0, 180);
