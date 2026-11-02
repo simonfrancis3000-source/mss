@@ -33,6 +33,10 @@
           <input id="emailInput" name="email" type="email" autocomplete="username" required placeholder="admin@company.com" />
           <label for="passwordInput">Password</label>
           <input id="passwordInput" name="password" type="password" autocomplete="current-password" required placeholder="Your account password" />
+          <div id="adminTurnstile" class="admin-turnstile" hidden aria-label="Security verification">
+            <div data-turnstile-widget></div>
+            <p class="admin-turnstile-status" data-turnstile-status role="status" aria-live="polite"></p>
+          </div>
           <p class="notice" id="loginNotice" role="status" aria-live="polite"></p>
           <button class="primary-button" id="loginButton" type="submit">Sign in securely <span>↗</span></button>
         </form>
