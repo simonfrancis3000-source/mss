@@ -548,3 +548,12 @@ input[type='checkbox'] { accent-color: #8b73cf; }
   .voice-experience .voice-brand img { width: 34px; height: 34px; }
   .voice-experience .voice-brand .brand-wordmark { font-size: 15px; }
 }
+
+/* A flat white login background, including mobile safe areas. */
+body.auth-required { background: #fff; }
+#authGate.auth-overlay { background: #fff; backdrop-filter: none; }
+#authGate .auth-card {
+  background: #fff;
+  border-color: #fff;
+  box-shadow: none;
+}
