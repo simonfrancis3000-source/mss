@@ -24,7 +24,8 @@ function loadTurnstile() {
 }
 
 export function createAuthTurnstile({ siteKey, container }) {
-  const key = String(siteKey || "").trim();
+  // Cloudflare Turnstile site key is public. Vite can override it per deployment.
+  const key = String(siteKey || "0x4AAAAAAFxQtK2-J-A-K9oc").trim();
   const configured = Boolean(key);
   const target = container?.querySelector("[data-turnstile-widget]") || null;
   const status = container?.querySelector("[data-turnstile-status]") || null;
