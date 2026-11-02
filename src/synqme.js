@@ -1,4 +1,6 @@
+import { syncRobotSpeaking } from "./robot-speaking.js";
 import { collectReviewableFragments, preferenceDisplayLabel, preferenceIdentity } from "./preference-review.js";
+import { scenarioSummary, passportEligibleMemories, buildPersonaPassport, passportText } from "./persona-passport.js";
 import { createVoiceBreakTracker, breakResponse, responseBeforeBreak, standardBreakPhrase } from "./voice-break.js";
 import { parseReminderCommand, matchReminder, validReminderTitle } from "./reminders.js";
 import { simulationCapabilitySummary } from "./simulation.js";
@@ -643,6 +645,86 @@ function renderLiveScenarioProgress() {
     node.append(header, track);
   });
 }
+let passportSelection = new Set();
+function renderScenarioSummary(scenario) {
+  const section=document.createElement('section'); section.className='persona-scenario-summary';
+  const heading=document.createElement('h4');heading.textContent='What you have taught me';section.append(heading);
+  const intro=document.createElement('p');intro.textContent='Review the preferences you shared for this scenario. Your words and conditions remain yours to change.';section.append(intro);
+  const groups=scenarioSummary(scenario,scenarioTasks(scenario),personaMemoryRecords);
+  if(!groups.length){const empty=document.createElement('p');empty.textContent='No preferences have been linked to this scenario yet.';section.append(empty);}
+  for(const group of groups){
+    const block=document.createElement('div');block.className='persona-summary-group';const title=document.createElement('h5');title.textContent=group.title;block.append(title);
+    for(const memory of group.rules){
+      const item=document.createElement('article');item.className='persona-summary-rule';
+      const statement=document.createElement('p');statement.textContent=memory.statement;item.append(statement);
+      if(memory.conditions?.length){const condition=document.createElement('p');condition.textContent='Conditions: '+memory.conditions.join('; ');item.append(condition);}
+      const detail=document.createElement('details');const summary=document.createElement('summary');summary.textContent='Review or change';detail.append(summary);
+      const form=document.createElement('form');form.className='persona-rule-form';
+      const label=document.createElement('label');label.textContent='Preference';const input=document.createElement('textarea');input.rows=3;input.maxLength=420;input.required=true;input.value=memory.statement;label.append(input);
+      const conditionsLabel=document.createElement('label');conditionsLabel.textContent='Conditions or exceptions, one per line';const conditions=document.createElement('textarea');conditions.rows=2;conditions.value=(memory.conditions||[]).join('\n');conditionsLabel.append(conditions);
+      const permissionLabel=document.createElement('label');permissionLabel.textContent='Permission for this specific action';const permission=document.createElement('select');
+      for(const [value,text] of [['unspecified','Not specified'],['ask_first','Ask me first'],['allowed','I explicitly allow it'],['prohibited','Do not do it']]){const option=document.createElement('option');option.value=value;option.textContent=text;permission.append(option);}permission.value=memory.permission_policy||'unspecified';permissionLabel.append(permission);
+      const globalLabel=document.createElement('label');globalLabel.className='persona-global-choice';const global=document.createElement('input');global.type='checkbox';global.checked=memory.attributes?.apply_across_scenarios===true;globalLabel.append(global,document.createTextNode('Consider this guidance in other relevant situations, with the same conditions and permissions.'));
+      const origin=document.createElement('p');origin.textContent=memory.source_timestamp?'Saved from your conversation on '+new Date(memory.source_timestamp).toLocaleDateString()+'.':'Saved from your conversation.';
+      const save=document.createElement('button');save.type='submit';save.className='journey-task-button';save.textContent='Save changes';const feedback=document.createElement('p');feedback.setAttribute('role','status');
+      form.addEventListener('submit',async event=>{event.preventDefault();const owner=cloudUserId,value=input.value.trim().replace(/\s+/g,' '), nextConditions=conditions.value.split('\n').map(x=>x.trim()).filter(Boolean);
+        if(!owner || !isUsefulStandalonePreference(value) || value.length<8 || nextConditions.length>8 || nextConditions.some(c=>c.length>180 || SENSITIVE_MEMORY_PATTERN.test(c))){feedback.textContent='Enter a complete preference and up to eight short, non-sensitive conditions.';return;}
+        save.disabled=true;try{const kind=deriveMemoryKind(value);await updatePersonaMemoryRow(memory.id,{statement:value,kind,conditions:nextConditions,permission_policy:permission.value,attributes:{...(memory.attributes||{}),apply_across_scenarios:global.checked},search_keys:buildPersonaMemorySearchKeys(value,[],memory.topic),status:'user_confirmed',confidence:0.98,reviewed_at:new Date().toISOString()});if(owner!==cloudUserId)return;renderScenarioJourney();}
+        catch{feedback.textContent='The change could not be saved. Please try again.';save.disabled=false;}});
+      form.append(label,conditionsLabel,permissionLabel,globalLabel,origin,save,feedback);detail.append(form);item.append(detail);block.append(item);
+    }section.append(block);
+  }
+  const proposals=personaMemoryRecords.filter(item=>item.status==='inferred_pending_confirmation' && item.attributes?.pending_replaces && item.attributes?.scenario_id===scenario.id);
+  for(const proposal of proposals){
+    const original=personaMemoryRecords.find(item=>item.id===proposal.attributes.pending_replaces && ['user_stated','user_confirmed'].includes(item.status));
+    if(!original)continue;
+    const box=document.createElement('div');box.className='persona-summary-group';
+    const label=document.createElement('h5');label.textContent='Review a suggested change';
+    const before=document.createElement('p');before.textContent='Currently saved: '+original.statement;
+    const explain=document.createElement('p');explain.textContent='A conversation suggested this change. Check the wording and conditions before saving.';
+    const form=document.createElement('form');form.className='persona-rule-form';
+    const nextLabel=document.createElement('label');nextLabel.textContent='Suggested preference';const next=document.createElement('textarea');next.required=true;next.maxLength=420;next.rows=3;next.value=proposal.statement;nextLabel.append(next);
+    const condLabel=document.createElement('label');condLabel.textContent='Conditions or exceptions, one per line';const cond=document.createElement('textarea');cond.rows=2;cond.value=(proposal.conditions||[]).join('\n');condLabel.append(cond);
+    const permissionLabel=document.createElement('label');permissionLabel.textContent='Permission for this specific action';const permission=document.createElement('select');for(const [value,text] of [['unspecified','Not specified'],['ask_first','Ask me first'],['allowed','I explicitly allow it'],['prohibited','Do not do it']]){const option=document.createElement('option');option.value=value;option.textContent=text;permission.append(option);}permission.value=original.permission_policy||'unspecified';permissionLabel.append(permission);
+    const save=document.createElement('button');save.type='submit';save.textContent='Confirm change';const discard=document.createElement('button');discard.type='button';discard.textContent='Discard suggestion';const feedback=document.createElement('p');feedback.setAttribute('role','status');
+    form.addEventListener('submit',async event=>{event.preventDefault();const owner=cloudUserId,value=next.value.trim().replace(/\s+/g,' '),conditions=cond.value.split('\n').map(x=>x.trim()).filter(Boolean);
+      if(!owner||!isUsefulStandalonePreference(value)||conditions.length>8||conditions.some(c=>c.length>180||SENSITIVE_MEMORY_PATTERN.test(c))){feedback.textContent='Enter a complete preference and up to eight short, non-sensitive conditions.';return;}
+      if(proposal.attributes.pending_target_updated_at && original.updated_at!==proposal.attributes.pending_target_updated_at){feedback.textContent='This preference has changed since the suggestion was made. Review the current preference instead.';return;}
+      save.disabled=discard.disabled=true;try{await updatePersonaMemoryRow(original.id,{statement:value,conditions,permission_policy:permission.value,search_keys:buildPersonaMemorySearchKeys(value,[],original.topic),status:'user_confirmed',confidence:0.98,reviewed_at:new Date().toISOString()});if(owner!==cloudUserId)return;await updatePersonaMemoryRow(proposal.id,{status:'archived',archived_at:new Date().toISOString()});if(owner===cloudUserId)renderScenarioJourney();}catch{feedback.textContent='The change could not be fully saved. Refresh and check the current preference.';save.disabled=discard.disabled=false;}});
+    discard.addEventListener('click',async()=>{discard.disabled=true;try{await updatePersonaMemoryRow(proposal.id,{status:'archived',archived_at:new Date().toISOString()});renderScenarioJourney();}catch{feedback.textContent='The suggestion could not be discarded. Try again.';discard.disabled=false;}});
+    form.append(nextLabel,condLabel,permissionLabel,save,discard,feedback);box.append(label,before,explain,form);section.append(box);
+  }
+  if(groups.length){const reflection=document.createElement('p');reflection.className='persona-reflection';reflection.textContent='You told me: “'+groups[0].rules[0].statement+'” You can review or change this above.';section.append(reflection);}
+  const readiness=document.createElement('details');readiness.className='persona-readiness';const rs=document.createElement('summary');rs.textContent='Robot readiness';readiness.append(rs);
+  const explanation=document.createElement('p');explanation.textContent='Compare your selected tasks with an imported robot specification. Declarations have not been independently verified, and no physical robot test is implied.';readiness.append(explanation);
+  const plan=buildPexiCapabilityPlan({selectedFunctions:state.functions,targetRobotType:state.profile.robotType||'Humanoid robot',capabilityManifest:pexiCapabilityManifest});
+  if(!plan.tasks.length){const p=document.createElement('p');p.textContent='Choose home interests in Settings to see a task comparison.';readiness.append(p);}
+  for(const task of plan.tasks){const p=document.createElement('p');const result=simulationCapabilitySummary({functionId:task.function_id,manifest:pexiCapabilityManifest,robotType:state.profile.robotType});p.textContent=task.label+': '+result.text;readiness.append(p);}
+  const settings=document.createElement('button');settings.type='button';settings.className='journey-task-button';settings.textContent='Manage robot specification';settings.addEventListener('click',()=>{openSettings();const button=document.querySelector('#viewPexiReadiness');if(button?.getAttribute('aria-expanded')!=='true')button?.click();button?.scrollIntoView({block:'center'});button?.focus();});readiness.append(settings);section.append(readiness);
+  return section;
+}
+const PASSPORT_EXPORT_ENABLED = false;
+function downloadPassportFile(filename,content,type){if (!PASSPORT_EXPORT_ENABLED) return;const blob=new Blob([content],{type});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=filename;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);}
+function renderPersonaPassport(){
+ const content=document.querySelector('#personaPassportContent');if(!content)return;content.replaceChildren();
+ if(!cloudUserId){const p=document.createElement('p');p.textContent='Sign in to choose preferences for your Passport.';content.append(p);return;}
+ const available=passportEligibleMemories(personaMemoryRecords);const eligible=new Set(available.map(item=>item.id));passportSelection=new Set([...passportSelection].filter(id=>eligible.has(id)));
+ const intro=document.createElement('p');intro.textContent=PASSPORT_EXPORT_ENABLED ? 'Choose the preferences to include. Review the preview before downloading. Nothing is sent to a robot or another company.' : 'Passport export is temporarily unavailable. You can still review your preferences here.';content.append(intro);
+ if(!available.length){const p=document.createElement('p');p.textContent='Your stated or confirmed structured preferences will appear here.';content.append(p);return;}
+ const list=document.createElement('div');list.className='passport-choices';
+ for(const item of available){const label=document.createElement('label');const input=document.createElement('input');input.type='checkbox';input.checked=passportSelection.has(item.id);input.addEventListener('change',()=>{if(input.checked)passportSelection.add(item.id);else passportSelection.delete(item.id);refresh();});const copy=document.createElement('span');copy.textContent=preferenceDisplayLabel(item,SCENARIOS,scenarioTasks)+' · '+item.statement;label.append(input,copy);list.append(label);}content.append(list);
+ const preview=document.createElement('pre');preview.className='passport-preview';preview.setAttribute('aria-label','Passport preview');
+ const status=document.createElement('p');status.setAttribute('role','status');
+ const json=document.createElement('button');json.type='button';json.textContent='Download structured JSON';
+ const text=document.createElement('button');text.type='button';text.textContent='Download readable report';
+ function selected(){return buildPersonaPassport(personaMemoryRecords,passportSelection,SCENARIOS);}
+ function refresh(){const result=selected();preview.textContent=passportText(result);status.textContent=result.preferences.length+' selected';json.disabled=text.disabled=!PASSPORT_EXPORT_ENABLED || result.preferences.length===0;}
+ json.addEventListener('click',()=>{if(!PASSPORT_EXPORT_ENABLED)return;const data=selected();if(data.preferences.length)downloadPassportFile('mysecondself-persona-passport.json',JSON.stringify(data,null,2)+'\n','application/json;charset=utf-8');});
+ text.addEventListener('click',()=>{if(!PASSPORT_EXPORT_ENABLED)return;const data=selected();if(data.preferences.length)downloadPassportFile('mysecondself-persona-passport.txt',passportText(data)+'\n','text/plain;charset=utf-8');});
+ content.append(status,preview,json,text);refresh();
+}
+document.querySelector('#personaPassport')?.addEventListener('toggle',event=>{if(event.currentTarget.open)renderPersonaPassport();});
+
 function renderScenarioJourney() {
   renderLiveScenarioProgress();
   const target = document.querySelector("#scenarioJourneyContent");
@@ -741,6 +823,7 @@ function renderScenarioJourney() {
   start.textContent = done.includes(scenario.id) ? "Revisit this scenario" : data.started === scenario.id ? "Continue conversation" : "Start conversation";
   start.addEventListener("click", () => void startJourneyScenario(scenario));
   target.append(navLabel, nav, title, desc, start);
+  target.append(renderScenarioSummary(scenario));
   target.append(renderSituationPreview(scenario));
   const tasks = document.createElement("section"); tasks.className = "journey-tasks";
   const tasksHeading = document.createElement("h4"); tasksHeading.textContent = "Tasks to explore";
@@ -807,17 +890,7 @@ function renderScenarioJourney() {
     }
     tasks.append(card);
   });
-  const learnings = document.createElement("section"); learnings.className = "journey-learnings";
-  const learningHeading = document.createElement("h4"); learningHeading.textContent = "What you have taught me"; learnings.append(learningHeading);
-  const saved = scenarioLearnings(scenario, [...activePersonaMemories(), ...activeLegacyPreferences()]);
-  if (saved.length) {
-    const list = document.createElement("ul");
-    saved.forEach(text => { const item = document.createElement("li"); item.textContent = text; list.append(item); });
-    learnings.append(list);
-  } else {
-    const empty = document.createElement("p"); empty.textContent = "No matching saved preferences yet. Your stated or confirmed preferences for this scenario will appear here."; learnings.append(empty);
-  }
-  target.append(tasks, learnings);
+  target.append(tasks);
   if (done.includes(scenario.id)) {
     const notice = document.createElement("p"); notice.textContent = "Completed. You can revisit this conversation and update your preferences."; target.append(notice); return;
   }
@@ -909,7 +982,7 @@ function renderSituationPreview(scenario) {
     if (current.preview.sources.length) {
       const explanation = document.createElement("p"); explanation.textContent = "These saved preferences were used for this proposed response:"; why.append(explanation);
       const list = document.createElement("ul");
-      current.preview.sources.forEach(source => { const item = document.createElement("li"); item.textContent = source.statement + (source.status === "user_confirmed" ? " (reviewed)" : " (you stated)") + (source.conditions?.length ? " · Conditions: " + source.conditions.join(", ") : ""); list.append(item); });
+      current.preview.sources.forEach(source => { const item = document.createElement("li"); item.textContent = source.statement + (source.status === "user_confirmed" ? " (reviewed)" : " (you stated)") + (source.owner_marked_general ? " · General guidance" : "") + (source.conditions?.length ? " · Conditions: " + source.conditions.join(", ") : "") + (source.permission_policy && source.permission_policy !== "unspecified" ? " · Permission: " + source.permission_policy.replaceAll("_", " ") : ""); list.append(item); });
       why.append(list);
     } else { const empty = document.createElement("p"); empty.textContent = "There is no linked saved preference that settles this situation yet."; why.append(empty); }
     output.append(why);
@@ -1320,37 +1393,25 @@ async function getRelevantPersonaMemories(query) {
     if (keys.length) {
       try {
         const activeStatuses = ["user_stated", "user_confirmed", "inferred_pending_confirmation", "conflicting"];
-        const { data: keyData, error: keyError } = await supabase
-          .from("synqme_persona_memories")
-          .select(PERSONA_MEMORY_SELECT_COLUMNS)
-          .eq("user_id", cloudUserId)
-          .overlaps("search_keys", keys)
-          .in("status", activeStatuses)
-          .order("updated_at", { ascending: false })
-          .limit(80);
-        if (keyError) throw keyError;
-
-        // Combine lexical topic/keyword matches with PostgreSQL full-text search.
-        let textData = [];
-        try {
-          const { data, error } = await supabase
-            .from("synqme_persona_memories")
-            .select(PERSONA_MEMORY_SELECT_COLUMNS)
-            .eq("user_id", cloudUserId)
-            .in("status", activeStatuses)
-            .textSearch("search_document", String(query).slice(0, 320), {
-              type: "websearch",
-              config: "simple"
-            })
-            .order("updated_at", { ascending: false })
-            .limit(60);
-          if (error) throw error;
-          textData = Array.isArray(data) ? data : [];
-        } catch (textError) {
-          if (!personaMemoryWarningShown) {
-            console.info("SYNQ.ME full-text memory search fell back to topic and keyword matches.", textError);
-            personaMemoryWarningShown = true;
-          }
+        let keyRequest = supabase.from("synqme_persona_memories")
+          .select(PERSONA_MEMORY_SELECT_COLUMNS).eq("user_id", cloudUserId)
+          .overlaps("search_keys", keys).in("status", activeStatuses)
+          .order("updated_at", { ascending: false }).limit(80);
+        let textRequest = supabase.from("synqme_persona_memories")
+          .select(PERSONA_MEMORY_SELECT_COLUMNS).eq("user_id", cloudUserId)
+          .in("status", activeStatuses).textSearch("search_document", String(query).slice(0, 320), { type: "websearch", config: "simple" })
+          .order("updated_at", { ascending: false }).limit(60);
+        if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
+          if (typeof keyRequest.abortSignal === "function") keyRequest = keyRequest.abortSignal(AbortSignal.timeout(1200));
+          if (typeof textRequest.abortSignal === "function") textRequest = textRequest.abortSignal(AbortSignal.timeout(1200));
+        }
+        const [keyResult, textResult] = await Promise.allSettled([keyRequest, textRequest]);
+        const keyData = keyResult.status === "fulfilled" && !keyResult.value.error && Array.isArray(keyResult.value.data) ? keyResult.value.data : [];
+        const textData = textResult.status === "fulfilled" && !textResult.value.error && Array.isArray(textResult.value.data) ? textResult.value.data : [];
+        if (!keyData.length && !textData.length && keyResult.status === "rejected" && textResult.status === "rejected") throw keyResult.reason;
+        if ((keyResult.status === "rejected" || keyResult.value?.error || textResult.status === "rejected" || textResult.value?.error) && !personaMemoryWarningShown) {
+          console.info("SYNQ.ME memory search used available account results.");
+          personaMemoryWarningShown = true;
         }
 
         const byId = new Map();
@@ -1555,7 +1616,7 @@ async function processStructuredMemoryJob(job) {
       if (memoryUserId !== cloudUserId) throw new Error("Memory account changed.");
       const target = personaMemoryRecords.find((item) =>
         (candidate.target_memory_key && item.memory_key === candidate.target_memory_key) ||
-        (candidate.scope_key && item.scope_key === candidate.scope_key && memoryIsActive(item))
+        (candidate.scope_key && item.scope_key === candidate.scope_key && memoryIsActive(item) && !item.attributes?.pending_replaces)
       );
       if (candidate.relation === "no_change") continue;
       if (candidate.relation === "confirms" && target) {
@@ -1585,15 +1646,20 @@ async function processStructuredMemoryJob(job) {
       let status = candidate.status;
       let supersedesId = null;
       if (target && candidate.relation === "updates") {
-        supersedesId = target.id;
-        await updatePersonaMemoryRow(target.id, {
-          status: "superseded",
-          archived_at: new Date().toISOString(),
-          reviewed_at: new Date().toISOString(),
-          relation: "updates"
-        });
-        await setLinkedPreferenceStatus(target.source_preference_id, "superseded");
-        status = "user_stated";
+        // A conversational correction is a proposal until the owner reviews it.
+        const row = {
+          user_id: memoryUserId, memory_key: makePersonaMemoryKey('revision ' + target.id + ' ' + candidate.statement),
+          source_preference_id: null, topic: target.topic, kind: target.kind, scope_key: target.scope_key,
+          statement: candidate.statement, status: 'inferred_pending_confirmation', relation: 'updates',
+          confidence: candidate.confidence, conditions: [...new Set([...(target.conditions || []), ...(candidate.conditions || [])])].slice(0, 8),
+          permission_policy: 'unspecified', source_refs: ruleSourceReferences([], userTimestamp),
+          attributes: { ...(target.attributes || {}), pending_replaces: target.id, pending_target_updated_at: target.updated_at || null },
+          search_terms: candidate.search_terms, search_keys: buildPersonaMemorySearchKeys(candidate.statement, candidate.search_terms, target.topic),
+          source_message: candidate.statement, source_timestamp: userTimestamp || new Date().toISOString(), source_conversation_key: 'main'
+        };
+        const { error } = await supabase.from('synqme_persona_memories').upsert(row, { onConflict: 'user_id,memory_key', ignoreDuplicates: true });
+        if (error) throw error;
+        continue;
       } else if (target && candidate.relation === "conflicts") {
         await updatePersonaMemoryRow(target.id, {
           status: "conflicting",
@@ -2643,7 +2709,7 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   roomJourneyTableUnavailable = false;
   roomJourneyWarningShown = false;
   personaMemoryRecords = [];
-  preferenceReviewDrafts.clear();
+  preferenceReviewDrafts.clear(); passportSelection.clear(); renderPersonaPassport();
   personaMemoryTableUnavailable = false;
   personaMemoryWarningShown = false;
   personaMemoryWriteInFlight = false;
@@ -3181,6 +3247,7 @@ function renderMessages() {
   elements.chatMessages.replaceChildren();
   // Render in conversation order so newer turns naturally appear at the bottom.
   state.messages.slice(-50).forEach((message) => appendMessage(message.role, message.content, message.timestamp, message.scenario_id));
+  syncRobotSpeaking(document, elements.voiceOrb?.dataset.state === "speaking");
   window.requestAnimationFrame(() => {
     elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
     updateChatScrollbar();
@@ -4260,6 +4327,7 @@ function renderAll() {
   renderOwnerAvatarPreview();
   renderPreferences();
   renderPersonaMemoryLibrary();
+  if (document.querySelector("#personaPassport")?.open) renderPersonaPassport();
   updateDecisionSummary();
   renderSettingsDetails();
   renderPexiReadiness();
@@ -4461,8 +4529,9 @@ function robotSvgMarkup(robotId) {
     '<ellipse cx="60" cy="104" rx="31" ry="5" fill="#1d2937" opacity=".08"/>' +
     '<g stroke="#aab5c3" stroke-width="2.5" stroke-linejoin="round" fill="#fbfcfe">' + shell + extra + '</g>' +
     '<rect x="33" y="43" width="54" height="34" rx="13" fill="#192432"/>' +
-    eyes +
-    '<path d="M52 68q8 5 16 0" fill="none" stroke="#dce6f2" stroke-width="2" stroke-linecap="round"/>' +
+    '<g class="robot-eyes">' + eyes + '</g>' +
+    '<path class="robot-mouth-rest" d="M52 68q8 5 16 0" fill="none" stroke="#dce6f2" stroke-width="2" stroke-linecap="round"/>' +
+    '<g class="robot-mouth-speaking"><ellipse cx="60" cy="69" rx="7" ry="4" fill="#dce6f2"/><ellipse cx="60" cy="71" rx="3.5" ry="1.5" fill="' + accent + '"/></g>' +
     '<circle cx="60" cy="86" r="3" fill="' + accent + '"/>' +
     '<path d="M42 94v5m36-5v5" stroke="' + accent + '" stroke-width="3" stroke-linecap="round"/>' +
     '</svg>';
@@ -4567,6 +4636,7 @@ function applyRobotAppearance() {
 
 function updateVoiceExperience(mode, message) {
   if (elements.voiceOrb) elements.voiceOrb.dataset.state = mode || "idle";
+  syncRobotSpeaking(document, mode === "speaking");
   if (elements.voiceExperience) {
     elements.voiceExperience.dataset.state = mode || "idle";
     elements.voiceExperience.classList.toggle("is-muted", voiceInputMuted);
@@ -4605,8 +4675,10 @@ function buildPhonicConfig() {
     system_prompt: systemPrompt,
     voice_id: voiceId,
     audio_speed: 1,
-    no_input_end_conversation_sec: 30,
-    websocket_timeout_sec: 30,
+    // The app enforces 30 seconds while listening for the user. The provider
+    // gets a longer fallback so it does not end a session while AMÏA is replying.
+    no_input_end_conversation_sec: 60,
+    websocket_timeout_sec: 90,
     default_language: language,
     additional_languages: [],
     multilingual_mode: "request",
@@ -4779,7 +4851,7 @@ function handlePhonicVoiceEvent(event) {
       if (elements.conversationStatus) elements.conversationStatus.textContent = "Listening";
       break;
     case "user_finished_speaking":
-      armVoiceIdle();
+      clearVoiceIdle();
       if (phonicUserSpeechStartedAt) {
         phonicUserSpeechMs += Math.max(0, Date.now() - phonicUserSpeechStartedAt);
         phonicUserSpeechStartedAt = 0;
@@ -4799,7 +4871,7 @@ function handlePhonicVoiceEvent(event) {
       break;
     }
     case "assistant_waiting_for_audio":
-      armVoiceIdle();
+      clearVoiceIdle();
       if (phonicAssistantSpeechStartedAt) {
         phonicAssistantSpeechMs += Math.max(0, Date.now() - phonicAssistantSpeechStartedAt);
         phonicAssistantSpeechStartedAt = 0;
@@ -5450,13 +5522,13 @@ async function requestAIReply(repairMode = false) {
     const currentUserText = state.messages[state.messages.length - 1]?.content || "";
     const activeRoomName = ROOM_JOURNEY_ROOMS.find(room => room.id === roomJourney?.active_room_id)?.name || "";
     const retrievalQuery = currentUserText + (activeOutOfHomeScenarioContext ? "" : " " + activeRoomName);
-    const [memoryReferences, sharedKnowledgeReferences, relevantPersonaMemories] = await Promise.all([
+    const [memoryReferences, sharedKnowledgeReferences, relevantPersonaMemories, requestHeaders] = await Promise.all([
       getHomeMemoryReferences(retrievalQuery),
       Promise.resolve([]),
-      getRelevantPersonaMemories(retrievalQuery)
+      getRelevantPersonaMemories(retrievalQuery),
+      authenticatedApiHeaders()
     ]);
     if (!requestUserId || requestUserId !== cloudUserId) return null;
-    const requestHeaders = await authenticatedApiHeaders();
     if (requestUserId !== cloudUserId) return null;
     const response = await fetch(API_BASE + "/api/chat", {
       method: "POST",
@@ -6091,7 +6163,7 @@ elements.signOutButton?.addEventListener("click", async () => {
     cloudUserEmail = "";
     cloudMode = "local";
     personaMemoryRecords = [];
-    preferenceReviewDrafts.clear();
+    preferenceReviewDrafts.clear(); passportSelection.clear(); renderPersonaPassport();
     simulationSession = null;
     todoItems = []; todoLoadedUserId = null; todoEditingId = null; todoAwaitingTitle = false; renderTodoReminders();
     personaMemoryTableUnavailable = false;

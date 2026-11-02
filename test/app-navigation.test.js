@@ -40,7 +40,7 @@ test('returning from Talk reveals saved chat and scrolls to the latest message w
   const document = { body: { dataset: { appView: 'chat' } }, querySelectorAll: () => [], querySelector: () => ({ open: false }) };
   const context = vm.createContext({ elements, state, document, cloudUserId: 'account-a',
     localStorage: { getItem: () => null }, introAudioStorageKey: () => 'intro-account-a',
-    updateChatScrollbar() {}, renderScenarioJourney() {}, appendMessage: (role, content) => shown.push(content),
+    syncRobotSpeaking() {}, updateChatScrollbar() {}, renderScenarioJourney() {}, appendMessage: (role, content) => shown.push(content),
     closeVoiceExperience() { elements.voiceExperience.hidden = true; },
     window: { requestAnimationFrame(callback) { callback(); }, scrollTo() {} } });
   vm.runInContext(functions + '\nselectAppView("chat");', context);

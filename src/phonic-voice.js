@@ -21,6 +21,7 @@ export function voiceFailureMessage(value) {
     }
     return "Microphone access is needed to start a voice conversation. Allow it in your browser settings, then try again.";
   }
+  if (/\b4500\b|input was not received in time/i.test(detail)) return "The voice connection paused because sound was not received in time. Press Start to continue.";
   if (/credit|balance|billing|quota/i.test(detail)) return "The voice service has reached its account or billing limit. Text chat is still available.";
   if (/voice_id|(?:unknown|invalid|unsupported) voice/i.test(detail)) return "The selected voice is unavailable. " + detail;
   if (/timed out|timeout/i.test(detail)) return "The voice service did not become ready in time. Please try again.";
@@ -92,6 +93,18 @@ export function firstAudibleSample(pcm, sampleRate = SAMPLE_RATE) {
   return -1;
 }
 
+export function lastAudibleSample(pcm, sampleRate = SAMPLE_RATE) {
+  const windowSize = Math.max(1, Math.round(sampleRate * 0.01));
+  for (let offset = Math.max(0, pcm.length - windowSize); offset >= 0; offset -= windowSize) {
+    const end = Math.min(pcm.length, offset + windowSize);
+    let energy = 0;
+    for (let index = offset; index < end; index += 1) energy += (pcm[index] / 32768) ** 2;
+    if (Math.sqrt(energy / (end - offset)) >= 0.003) return end;
+    if (offset < windowSize && offset > 0) offset = windowSize;
+  }
+  return -1;
+}
+
 export function createPhonicVoiceConversation({ getSession, getConfig, onEvent = () => {}, onToolCall = async () => ({ status: "error", assistant_text: "I’m having trouble preparing a response right now. Please try again in a moment." }) }) {
   let socket = null;
   let microphoneStream = null;
@@ -146,14 +159,14 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
     if (stopped || !playbackContext || userIsSpeaking) return;
     const running = playbackContext.state === "running";
     const now = playbackContext.currentTime;
-    const audible = running && [...playbackTimings.values()].some(({ audibleAt, endsAt }) =>
-      audibleAt !== null && now >= audibleAt && now < endsAt);
+    const audible = running && [...playbackTimings.values()].some(({ audibleAt, audibleUntil }) =>
+      audibleAt !== null && audibleUntil !== null && now >= audibleAt && now < audibleUntil);
     if (!playbackActive && audible) {
       playbackActive = true;
       emit({ type: "assistant_started_speaking" });
-    } else if (playbackActive && (!running || !playbackSources.size)) {
+    } else if (playbackActive && (!running || !audible)) {
       playbackActive = false;
-      if (!providerFinishedSpeaking) emit({ type: "assistant_waiting_for_audio" });
+      emit({ type: "assistant_waiting_for_audio" });
     }
     finishPlaybackIfDrained();
     if (playbackSources.size) playbackMonitorTimer = globalThis.setTimeout(monitorPlayback, 20);
@@ -196,9 +209,10 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
     playbackSources.add(source);
     const sourceGeneration = playbackGeneration;
     const firstAudible = firstAudibleSample(pcm);
+    const lastAudible = lastAudibleSample(pcm);
     playbackTimings.set(source, {
       audibleAt: firstAudible < 0 ? null : startAt + firstAudible / SAMPLE_RATE,
-      endsAt: nextPlaybackTime
+      audibleUntil: lastAudible < 0 ? null : startAt + lastAudible / SAMPLE_RATE
     });
     source.onended = () => {
       if (sourceGeneration !== playbackGeneration) { try { source.disconnect(); } catch {} return; }

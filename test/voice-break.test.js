@@ -26,3 +26,12 @@ test('repeated waiting events do not extend the 30-second microphone timeout',as
  now+=20000;context.armVoiceIdle();assert.equal(context.voiceIdleDeadline,deadline);assert.equal(pending.size,1);
  now+=10000;for(const timer of pending.values()) if(timer.at<=now) timer.fn();assert.equal(stopped,1);
 });
+test('user inactivity is counted while listening, rather than while a reply is being prepared',async()=>{
+ const source=await readFile(new URL('../src/synqme.js',import.meta.url),'utf8');
+ const userFinished=source.split('case "user_finished_speaking":')[1].split('case "input_cancelled":')[0];
+ const waiting=source.split('case "assistant_waiting_for_audio":')[1].split('case "assistant_started_speaking":')[0];
+ const assistantFinished=source.split('case "assistant_finished_speaking":')[1].split('case "error":')[0];
+ assert.match(userFinished,/clearVoiceIdle\(\)/);assert.doesNotMatch(userFinished,/armVoiceIdle\(\)/);
+ assert.match(waiting,/clearVoiceIdle\(\)/);assert.match(assistantFinished,/armVoiceIdle\(\)/);
+ assert.match(source,/no_input_end_conversation_sec: 60/);assert.match(source,/voiceIdleDeadline = Date.now\(\) \+ 30000/);
+});

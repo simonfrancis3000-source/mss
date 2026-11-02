@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createPhonicVoiceConversation, voiceFailureMessage, createFloat32Resampler, firstAudibleSample } from "../src/phonic-voice.js";
+import { createPhonicVoiceConversation, voiceFailureMessage, createFloat32Resampler, firstAudibleSample, lastAudibleSample } from "../src/phonic-voice.js";
 
 function browser(t, { getUserMedia, inputSampleRate = 44100 } = {}) {
   const originals = new Map();
@@ -186,6 +186,26 @@ test("streaming resampling preserves duration and continuity across source rates
 
 
 function pcmAudio(length=4410){return Buffer.from(new Int16Array(length).fill(1200).buffer).toString('base64');}
+
+test('input timeout uses a helpful message without a technical error code',()=>{
+  const message=voiceFailureMessage('The voice service closed the connection (4500): Input was not received in time');
+  assert.match(message,/Press Start to continue/); assert.doesNotMatch(message,/4500|failed/i);
+});
+
+test('speaking indicator ends before a long silent tail of a buffered audio chunk',async(t)=>{
+  t.mock.timers.enable({apis:['setTimeout']});
+  const {conversation,Socket,audioSources,contexts,events}=browser(t);
+  const starting=conversation.start(); const socket=await waitForSocket(Socket); socket.open();socket.message({type:'ready_to_start_conversation'});await starting;
+  const pcm=new Int16Array(44100*3);pcm.fill(1200,0,4410);
+  assert.ok(lastAudibleSample(pcm)<pcm.length);
+  socket.message({type:'audio_chunk',audio:Buffer.from(pcm.buffer).toString('base64')});
+  socket.message({type:'assistant_finished_speaking'});
+  contexts[1].currentTime=audioSources[0].startAt+.05;t.mock.timers.tick(20);
+  assert.equal(events.at(-1).type,'assistant_started_speaking');
+  contexts[1].currentTime=audioSources[0].startAt+1;t.mock.timers.tick(20);
+  assert.equal(events.at(-1).type,'assistant_waiting_for_audio');
+  await conversation.stop();
+});
 
 test("sentence gaps are scheduled into playback and speaking finishes only after audio drains",async(t)=>{
  const {conversation,Socket,audioSources,events,contexts}=browser(t);
