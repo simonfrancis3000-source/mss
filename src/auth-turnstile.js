@@ -26,7 +26,15 @@ function loadTurnstile() {
 export function createAuthTurnstile({ siteKey, container }) {
   // Cloudflare Turnstile site key is public. Vite can override it per deployment.
   const key = String(siteKey || "0x4AAAAAAFxQtK2-J-A-K9oc").trim();
-  const configured = Boolean(key);
+  // The production widget is restricted to synqme.mysecondself.app.
+  // Do not force an untested CAPTCHA in bundled Capacitor localhost WebViews.
+  // Explicit VITE_TURNSTILE_SITE_KEY overrides can enable other verified hosts.
+  const hostname = String(window.location?.hostname || "").toLowerCase();
+  const configured = Boolean(key) && (
+    Boolean(String(siteKey || "").trim()) ||
+    !hostname ||
+    hostname === "synqme.mysecondself.app"
+  );
   const target = container?.querySelector("[data-turnstile-widget]") || null;
   const status = container?.querySelector("[data-turnstile-status]") || null;
   let widgetId = null;
