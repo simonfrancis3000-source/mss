@@ -37,7 +37,7 @@ workflows:
       groups:
         - mss_mobile
       android_signing:
-        - mss_upload_v2
+        - mss_upload
       node: 24
       java: 21
 
