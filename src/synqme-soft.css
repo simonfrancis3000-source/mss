@@ -421,3 +421,11 @@ input[type='checkbox'] { accent-color: #8b73cf; }
   .voice-experience .voice-experience-content .voice-controls { padding-top: 16px; }
   .voice-experience .voice-control-icon { width: 52px; height: 52px; border-radius: 17px; }
 }
+
+.journey-area-objectives { margin-top: 10px; color: var(--secondary); font-size: 12px; line-height: 1.5; }
+.journey-area-objectives summary, .journey-area-review summary { cursor: pointer; color: var(--ink); font-weight: 600; }
+.journey-area-objectives ul, .journey-area-review ul { padding-left: 19px; margin: 9px 0; }
+.journey-area-review { grid-column: 1 / -1; min-width: 0; padding-top: 10px; color: var(--ink); font-size: 13px; line-height: 1.55; }
+.journey-area-review li + li { margin-top: 7px; }
+.journey-area-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.journey-area-actions button:disabled { opacity: .5; }

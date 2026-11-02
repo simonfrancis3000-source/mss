@@ -1,3 +1,5 @@
+import { createMemoryJobRunner, memoryRetryDelaySeconds, memoryJobKey } from "./memory-job-runner.js";
+import { areaLearningState, areaStatusLabel, scenarioLearningObjectives, scenarioForId } from "./scenario-learning.js";
 import { buildConversationContinuity } from "./conversation-continuity.js";
 import { progressOwnerLabel, shareProgressImage } from "./progress-share.js";
 import { PHONIC_LANGUAGES, CONVERSATION_LANGUAGE_NAMES } from "./conversation-languages.js";
@@ -29,7 +31,7 @@ import {
   memoryIsActive,
   preferenceToPersonaMemory,
   rankPersonaMemories,
-  shouldExtractPersonaMemory
+  shouldExtractPersonaMemory, SENSITIVE_MEMORY_PATTERN
 } from "./persona-memory.js";
 
 const STORAGE_KEY = "synqme-demo-v1";
@@ -503,6 +505,7 @@ let roomJourneySaveInFlight = false;
 let welcomeBackPending = false;
 let selectedJourneyScenario = null;
 let journeyDisplay = "chart";
+let selectedReviewArea = null;
 const SCENARIO_PROGRESS_KEY = "scenario_journey_v1";
 function scenarioData() {
   const stored = roomJourney?.room_progress?.[SCENARIO_PROGRESS_KEY];
@@ -518,10 +521,11 @@ function renderLiveScenarioProgress() {
     node.hidden = false;
     const tasks = scenarioTasks(scenario);
     const reviewed = new Set(data.reviewed?.[scenario.id] || []);
-    const count = done.includes(scenario.id) ? tasks.length : tasks.filter(task => reviewed.has(task.id)).length;
+    const discussed = tasks.filter(task => areaLearningState(scenario.id, task.id, personaMemoryRecords, [...reviewed]).evidence.length).length;
+    const count = done.includes(scenario.id) ? tasks.length : tasks.filter(task => areaLearningState(scenario.id, task.id, personaMemoryRecords, [...reviewed]).status === "reviewed").length;
     const header = document.createElement("div"); header.className = "scenario-live-label";
     const title = document.createElement("strong"); title.textContent = scenario.title;
-    const value = document.createElement("span"); value.textContent = done.includes(scenario.id) && !data.reviewed?.[scenario.id] ? "Previously completed" : count + " / " + tasks.length + " areas reviewed";
+    const value = document.createElement("span"); value.textContent = done.includes(scenario.id) && !data.reviewed?.[scenario.id] ? "Previously completed" : count + " / " + tasks.length + " reviewed" + (discussed ? " · " + discussed + " discussed" : "");
     header.append(title, value);
     const track = document.createElement("div"); track.className = "scenario-live-track"; track.setAttribute("role", "progressbar"); track.setAttribute("aria-label", scenario.title + " areas reviewed"); track.setAttribute("aria-valuemin", "0"); track.setAttribute("aria-valuemax", String(tasks.length)); track.setAttribute("aria-valuenow", String(count));
     const fill = document.createElement("span"); fill.style.width = (tasks.length ? count / tasks.length * 100 : 0) + "%"; track.append(fill);
@@ -636,12 +640,60 @@ function renderScenarioJourney() {
     const heading = document.createElement("h5"); heading.textContent = task.title;
     const description = document.createElement("p"); description.textContent = task.description;
     const status = document.createElement("span"); status.className = "journey-task-status";
-    status.textContent = done.includes(scenario.id) ? "Reviewed" : covered.includes(task.id) ? "Preferences saved" : data.started === scenario.id && (room ? roomJourney.active_task_id === task.id : taskIndex === 0) ? "In conversation" : "To explore";
-    const button = document.createElement("button"); button.type = "button"; button.className = "journey-task-button"; button.textContent = done.includes(scenario.id) || covered.includes(task.id) ? "Review" : "Explore";
+    const reviewedIds = done.includes(scenario.id) ? scenarioTasks(scenario).map(item => item.id) : data.reviewed?.[scenario.id] || [];
+    const readyIds = selectedReviewArea === scenario.id + ":" + task.id ? [task.id] : [];
+    const learning = areaLearningState(scenario.id, task.id, personaMemoryRecords, reviewedIds, readyIds);
+    status.textContent = learning.status === "not_started" && data.started === scenario.id ? "No linked learning yet" : areaStatusLabel(learning.status);
+    const button = document.createElement("button"); button.type = "button"; button.className = "journey-task-button"; button.textContent = learning.evidence.length ? "Continue" : "Explore";
     button.setAttribute("aria-label", button.textContent + " " + task.title);
     button.addEventListener("click", () => void startJourneyScenario(scenario, task));
     const copy = document.createElement("div"); copy.append(status, heading, description);
-    card.append(copy, button); tasks.append(card);
+    const objectives = document.createElement("details"); objectives.className = "journey-area-objectives";
+    const objectiveTitle = document.createElement("summary"); objectiveTitle.textContent = "What we can cover"; objectives.append(objectiveTitle);
+    const objectiveList = document.createElement("ul");
+    const objective = scenarioLearningObjectives(scenario).find(item => item.id === task.id);
+    for (const text of objective?.decisions || []) { const item = document.createElement("li"); item.textContent = text; objectiveList.append(item); }
+    objectives.append(objectiveList); copy.append(objectives);
+    card.append(copy, button);
+    if (learning.evidence.length) {
+      const review = document.createElement("details"); review.className = "journey-area-review";
+      review.open = readyIds.length > 0;
+      const summary = document.createElement("summary"); summary.textContent = "Review what I learned"; review.append(summary);
+      review.addEventListener("toggle", () => { selectedReviewArea = review.open ? scenario.id + ":" + task.id : null; status.textContent = areaStatusLabel(areaLearningState(scenario.id, task.id, personaMemoryRecords, reviewedIds, review.open ? [task.id] : []).status); });
+      const list = document.createElement("ul");
+      for (const memory of learning.evidence) { const item = document.createElement("li"); item.textContent = memory.statement + (memory.status === "conflicting" ? " (needs your decision)" : memory.status === "inferred_pending_confirmation" ? " (needs confirmation)" : ""); list.append(item); }
+      review.append(list);
+      const actions = document.createElement("div"); actions.className = "journey-area-actions";
+      const confirm = document.createElement("button"); confirm.type = "button"; confirm.className = "journey-task-button"; confirm.textContent = "Looks right";
+      confirm.disabled = learning.evidence.some(memory => ["conflicting", "inferred_pending_confirmation"].includes(memory.status));
+      confirm.addEventListener("click", async () => {
+        confirm.disabled = true;
+        const userId = cloudUserId;
+        const memoryIds = learning.evidence.map(memory => memory.id).filter(Boolean);
+        if (!userId || memoryIds.length !== learning.evidence.length) { confirm.disabled = false; return; }
+        const { data: confirmed, error } = await supabase.from("synqme_persona_memories")
+          .update({ status: "user_confirmed", reviewed_at: new Date().toISOString(), relation: "confirms" })
+          .eq("user_id", userId).in("id", memoryIds).in("status", ["user_stated", "user_confirmed"]).select("id");
+        if (error || userId !== cloudUserId || confirmed?.length !== memoryIds.length) { confirm.disabled = false; alert("Your memories could not be confirmed. Refresh and try again."); return; }
+        personaMemoryRecords = personaMemoryRecords.map(memory => memoryIds.includes(memory.id) ? { ...memory, status: "user_confirmed" } : memory);
+        const current = scenarioData(); const ids = [...new Set([...(current.reviewed?.[scenario.id] || []), task.id])];
+        const progress = { ...roomJourney.room_progress, [SCENARIO_PROGRESS_KEY]: { ...current, reviewed: { ...(current.reviewed || {}), [scenario.id]: ids } } };
+        if (!(await persistRoomJourneyChanges({ room_progress: progress }))) { confirm.disabled = false; alert("Your review could not be saved. Please try again."); return; }
+        selectedReviewArea = null; renderScenarioJourney();
+      });
+      const change = document.createElement("button"); change.type = "button"; change.className = "journey-task-button"; change.textContent = "Change something";
+      change.addEventListener("click", async () => {
+        selectedReviewArea = null;
+        if (!(await startJourneyScenario(scenario, task))) return;
+        elements.messageInput.value = "I would like to change what you learned about " + task.title.toLowerCase() + ". ";
+        elements.messageInput.dispatchEvent(new Event("input", { bubbles: true })); elements.messageInput.focus();
+      });
+      const later = document.createElement("button"); later.type = "button"; later.className = "journey-task-button"; later.textContent = "Discuss later"; later.addEventListener("click", () => { review.open = false; });
+      actions.append(confirm, change, later); review.append(actions);
+      if (confirm.disabled) { const note = document.createElement("p"); note.textContent = "Some details need clarification before this area can be reviewed."; review.append(note); }
+      card.append(review);
+    }
+    tasks.append(card);
   });
   const learnings = document.createElement("section"); learnings.className = "journey-learnings";
   const learningHeading = document.createElement("h4"); learningHeading.textContent = "What you have taught me"; learnings.append(learningHeading);
@@ -684,7 +736,9 @@ function renderScenarioJourney() {
   });
   checklist.append(saveReview);
   const finish = document.createElement("button"); finish.type = "button"; finish.className = "out-of-home-scenario-action"; finish.textContent = "Complete scenario and unlock next"; finish.disabled = true;
-  checklist.addEventListener("change", () => { finish.disabled = [...checklist.querySelectorAll("input")].some((input) => !input.checked); });
+  const needsClarification = scenarioTasks(scenario).some(task => areaLearningState(scenario.id, task.id, personaMemoryRecords, data.reviewed?.[scenario.id] || []).status === "needs_clarification");
+  if (needsClarification) { const note = document.createElement("p"); note.textContent = "Resolve the areas marked Needs clarification before completing this scenario."; checklist.append(note); }
+  checklist.addEventListener("change", () => { finish.disabled = needsClarification || [...checklist.querySelectorAll("input")].some((input) => !input.checked); });
   finish.addEventListener("click", async () => {
     finish.disabled = true;
     const reviewUserId = cloudUserId;
@@ -706,18 +760,18 @@ function renderScenarioJourney() {
   target.append(checklist, finish);
 }
 async function startJourneyScenario(scenario, task = null) {
-  if (!roomJourney || roomJourneySaveInFlight) return;
+  if (!roomJourney || roomJourneySaveInFlight) return false;
   const done = completedScenarioIds(scenarioData().completed);
   const currentId = scenarioData().started || "room:" + roomJourney.active_room_id;
   if (currentId !== scenario.id && !done.includes(currentId)) {
-    alert("Finish and review the current scenario in Journey before moving to another one. You can pause and return at any time."); return;
+    alert("Finish and review the current scenario in Journey before moving to another one. You can pause and return at any time."); return false;
   }
   // Commit the scenario and room focus together so a failed save cannot leave
   // AMÏA working on a different room from the one shown in the journey.
   const patch = buildScenarioStartPatch(scenario, roomJourney.room_progress);
   patch.room_progress[SCENARIO_PROGRESS_KEY].focusStartedAt = new Date().toISOString();
   if (scenario.kind === "room") patch.active_task_id = task?.id || (scenarioData().started === scenario.id ? roomJourney.active_task_id : null);
-  if (!(await persistRoomJourneyChanges(patch))) { alert("Your scenario could not be saved. Please try again."); return; }
+  if (!(await persistRoomJourneyChanges(patch))) { alert("Your scenario could not be saved. Please try again."); return false; }
   if (scenario.kind === "room") {
     activeOutOfHomeScenarioContext = null;
     state.pendingClarification = null;
@@ -733,6 +787,7 @@ async function startJourneyScenario(scenario, task = null) {
   if (elements.chatStage?.hidden) elements.welcomeAudioOffer?.scrollIntoView({ behavior: "smooth", block: "center" });
   else { elements.chatStage?.scrollIntoView({ behavior: "smooth", block: "center" }); elements.messageInput.focus({ preventScroll: true }); }
   renderScenarioJourney();
+  return true;
 }
 
 let authMode = "signin";
@@ -960,14 +1015,16 @@ function createPersonaMemoryButton(action, id, label, extraClass = "") {
 
 async function queryPersonaMemoryRecords() {
   if (!supabase || !cloudUserId || personaMemoryTableUnavailable) return [];
-  const { data, error } = await supabase
-    .from("synqme_persona_memories")
-    .select(PERSONA_MEMORY_SELECT_COLUMNS)
-    .eq("user_id", cloudUserId)
-    .order("updated_at", { ascending: false })
-    .limit(500);
-  if (error) throw error;
-  return Array.isArray(data) ? data : [];
+  const userId = cloudUserId, rows = [], pageSize = 500;
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await supabase.from("synqme_persona_memories").select(PERSONA_MEMORY_SELECT_COLUMNS)
+      .eq("user_id", userId).order("updated_at", { ascending: false }).order("id", { ascending: false }).range(offset, offset + pageSize - 1);
+    if (error) throw error;
+    if (userId !== cloudUserId) throw new Error("Memory account changed.");
+    const page = Array.isArray(data) ? data : [];
+    rows.push(...page);
+    if (page.length < pageSize) return rows;
+  }
 }
 
 async function backfillPersonaMemoriesFromPreferences() {
@@ -1130,18 +1187,110 @@ async function setLinkedPreferenceStatus(preferenceId, status) {
   if (!saved) throw new Error("The associated preference status could not be confirmed as saved.");
 }
 
-async function processStructuredMemoryTurn(userMessage, userTimestamp, shouldExtract = false) {
-  const memoryUserId = cloudUserId;
-  const latestUserIndex = state.messages.findLastIndex((item) => item.role === "user" && item.timestamp === userTimestamp);
-  const previousQuestion = latestUserIndex > 0 && state.messages[latestUserIndex - 1]?.role === "assistant"
-    ? state.messages[latestUserIndex - 1].content : "";
-  const identityAnswer = isApplianceIdentityAnswer(userMessage, previousQuestion);
-  if ((!shouldExtract && !identityAnswer) || !API_BASE || !supabase || !cloudUserId || personaMemoryTableUnavailable || personaMemoryWriteInFlight) return;
+let memoryQueueRunner = null;
+let memoryQueueTimer = null;
+let memoryQueueFlushing = false;
+const volatileMemoryJobs = new Map();
+const memoryQueueLocalKey = (userId, revision) => "synqme-memory-pending:" + userId + ":" + revision;
+
+function pendingMemoryJobs(userId, revision) {
+  const key = memoryQueueLocalKey(userId, revision);
+  let stored = [];
+  try { const value = JSON.parse(localStorage.getItem(key) || "[]"); if (Array.isArray(value)) stored = value; } catch {}
+  return [...new Map([...stored, ...(volatileMemoryJobs.get(key) || [])].map(job => [job.source_key, job])).values()];
+}
+function writePendingMemoryJobs(userId, revision, jobs) {
+  const key = memoryQueueLocalKey(userId, revision);
+  if (jobs.length) volatileMemoryJobs.set(key, jobs); else volatileMemoryJobs.delete(key);
+  try { if (jobs.length) localStorage.setItem(key, JSON.stringify(jobs)); else localStorage.removeItem(key); }
+  catch { if (elements.personaMemoryStatus) elements.personaMemoryStatus.textContent = "Memory updates are waiting to sync. Keep this page open until connected."; }
+}
+function queueStructuredMemoryTurn(userMessage, userTimestamp) {
+  const userId = cloudUserId, revision = trainingRevision;
+  if (!userId || !supabase || !API_BASE || !userTimestamp || !String(userMessage || "").trim() ||
+      SENSITIVE_MEMORY_PATTERN.test(userMessage) || /^SYNQ\.ME TRAINING SCENARIO:/i.test(userMessage)) return;
+  const index = state.messages.findLastIndex(item => item.role === "user" && item.timestamp === userTimestamp);
+  if (index < 0) return;
+  const recent = state.messages.slice(Math.max(0, index - 7), index + 1).map((item, itemIndex, items) => ({ role: item.role, content: SENSITIVE_MEMORY_PATTERN.test(String(item.content || "")) ? "[Sensitive content omitted]" : String(item.content || "").slice(0, itemIndex === items.length - 1 ? 12000 : 1200) }));
+  const scenarioId = state.messages[index].scenario_id || scenarioData().started || (roomJourney?.active_room_id ? "room:" + roomJourney.active_room_id : null);
+  const job = { user_id: userId, source_timestamp: userTimestamp, source_key: memoryJobKey(userTimestamp, userMessage), user_message: userMessage.slice(0, 1600), messages: recent, scenario_id: scenarioForId(scenarioId) ? scenarioId : null };
+  try {
+    const jobs = pendingMemoryJobs(userId, revision);
+    if (!jobs.some(item => item.source_key === job.source_key)) jobs.push(job);
+    writePendingMemoryJobs(userId, revision, jobs);
+  } catch (error) {
+    if (elements.personaMemoryStatus) elements.personaMemoryStatus.textContent = "Memory update is waiting for a connection. Your conversation remains available.";
+  }
+  void flushMemoryQueue(userId, revision);
+}
+async function flushMemoryQueue(userId = cloudUserId, revision = trainingRevision) {
+  if (!userId || userId !== cloudUserId || revision !== trainingRevision || !supabase || memoryQueueFlushing) return;
+  memoryQueueFlushing = true;
+  try {
+    for (const job of pendingMemoryJobs(userId, revision)) {
+      if (userId !== cloudUserId || revision !== trainingRevision) return;
+      const { error } = await supabase.from("synqme_memory_jobs").upsert(job, { onConflict: "user_id,source_key", ignoreDuplicates: true });
+      if (error) throw error;
+      // Re-read so another message queued during the request is not lost.
+      writePendingMemoryJobs(userId, revision, pendingMemoryJobs(userId, revision).filter(item => item.source_key !== job.source_key));
+    }
+    if (userId === cloudUserId && revision === trainingRevision) {
+      if (!memoryQueueRunner) memoryQueueRunner = createMemoryJobRunner({
+        claim: async () => {
+          if (userId !== cloudUserId || revision !== trainingRevision) return null;
+          const { data, error } = await supabase.rpc("synqme_claim_memory_job");
+          if (error) throw error;
+          return Array.isArray(data) ? data[0] || null : data || null;
+        },
+        process: async job => processStructuredMemoryJob(job),
+        complete: async job => {
+          const { data, error } = await supabase.from("synqme_memory_jobs").update({ status: "done", messages: [], user_message: "", lease_until: null, lease_token: null, updated_at: new Date().toISOString() }).eq("user_id", userId).eq("id", job.id).eq("lease_token", job.lease_token).select("id").maybeSingle();
+          if (error || !data) throw error || new Error("Memory job lease expired.");
+        },
+        retry: async job => {
+          if (userId !== cloudUserId || revision !== trainingRevision) return;
+          const { error } = await supabase.from("synqme_memory_jobs").update({ status: "pending", available_at: new Date(Date.now() + memoryRetryDelaySeconds(job.attempts) * 1000).toISOString(), lease_until: null, lease_token: null, updated_at: new Date().toISOString() }).eq("user_id", userId).eq("id", job.id).eq("lease_token", job.lease_token);
+          if (error) throw error;
+        }
+      });
+      await memoryQueueRunner.drain();
+    }
+  } catch (error) {
+    console.info("SYNQ.ME memory queue will retry.", String(error?.code || error?.message || "storage unavailable").slice(0, 120));
+    if (elements.personaMemoryStatus) elements.personaMemoryStatus.textContent = "Memory updates are waiting to sync and will retry automatically.";
+  } finally { memoryQueueFlushing = false; }
+}
+function startMemoryQueue() {
+  // A reset invalidates old local pending copies; the database kept only jobs
+  // whose source turn survived that reset.
+  const prefix = "synqme-memory-pending:" + cloudUserId + ":";
+  const currentKey = memoryQueueLocalKey(cloudUserId, trainingRevision);
+  try { for (let i = localStorage.length - 1; i >= 0; i--) { const key = localStorage.key(i); if (key?.startsWith(prefix) && key !== currentKey) localStorage.removeItem(key); } } catch {}
+  for (const key of volatileMemoryJobs.keys()) if (key.startsWith(prefix) && key !== currentKey) volatileMemoryJobs.delete(key);
+  if (memoryQueueTimer) clearInterval(memoryQueueTimer);
+  memoryQueueRunner = null;
+  void flushMemoryQueue();
+  memoryQueueTimer = setInterval(() => { if (document.visibilityState === "visible") void flushMemoryQueue(); }, 15000);
+}
+
+async function processStructuredMemoryJob(job) {
+  const memoryUserId = job.user_id;
+  const userMessage = job.messages?.at(-1)?.role === "user" ? job.messages.at(-1).content : job.user_message;
+  const userTimestamp = job.source_timestamp;
+  if (!memoryUserId || memoryUserId !== cloudUserId) throw new Error("Memory account changed.");
   personaMemoryWriteInFlight = true;
   if (elements.personaMemoryStatus) elements.personaMemoryStatus.textContent = "Updating your personal memory…";
   try {
-    const recent = state.messages.slice(0, -1).slice(-8).map((item) => ({ role: item.role, content: item.content }));
-    if (!recent.length || recent[recent.length - 1].role !== "user") return;
+    // Recover a queued turn if the originating device closed before its cloud
+    // conversation save completed. Do not clear the job until that save succeeds.
+    if (!state.messages.some(item => item.role === "user" && Date.parse(item.timestamp || "") === Date.parse(userTimestamp) && item.content === userMessage)) {
+      state.messages.push({ role: "user", content: userMessage, timestamp: new Date(userTimestamp).toISOString(), ...(scenarioForId(job.scenario_id) ? { scenario_id: job.scenario_id } : {}) });
+      persist(); renderAll();
+    }
+    if (!(await flushCloudSave())) throw new Error("Conversation has not synced yet.");
+    if (memoryUserId !== cloudUserId) throw new Error("Memory account changed.");
+    const recent = job.messages;
+    if (!Array.isArray(recent) || !recent.length || recent[recent.length - 1].role !== "user") throw new Error("Memory source is unavailable.");
     const existingMemories = activePersonaMemories().slice(0, 20).map((item) => ({
       memory_key: item.memory_key,
       topic: item.topic,
@@ -1154,18 +1303,18 @@ async function processStructuredMemoryTurn(userMessage, userTimestamp, shouldExt
     const response = await fetch(API_BASE + "/api/memory/extract", {
       method: "POST",
       headers: await authenticatedApiHeaders(),
-      body: JSON.stringify({ messages: recent, existingMemories })
+      body: JSON.stringify({ messages: recent, existingMemories, scenarioId: job.scenario_id })
     });
     let data = {};
     try { data = await response.json(); } catch {}
-    if (memoryUserId !== cloudUserId) return;
+    if (memoryUserId !== cloudUserId) throw new Error("Memory account changed.");
     if (!response.ok || String(data.provider || "").toLowerCase() !== "deepseek") {
       throw new Error(String(data.error || "DeepSeek memory extraction did not complete."));
     }
     const candidates = (Array.isArray(data.memories) ? data.memories : [])
-      .map(cleanPersonaMemoryCandidate).filter(Boolean).slice(0, 5);
+      .map(cleanPersonaMemoryCandidate).filter(Boolean).slice(0, 8);
     for (const candidate of candidates) {
-      if (memoryUserId !== cloudUserId) return;
+      if (memoryUserId !== cloudUserId) throw new Error("Memory account changed.");
       const target = personaMemoryRecords.find((item) =>
         (candidate.target_memory_key && item.memory_key === candidate.target_memory_key) ||
         (candidate.scope_key && item.scope_key === candidate.scope_key && memoryIsActive(item))
@@ -1223,6 +1372,7 @@ async function processStructuredMemoryTurn(userMessage, userTimestamp, shouldExt
         item.memory_key === memoryKey ||
         (item.statement?.trim().toLowerCase() === candidate.statement.trim().toLowerCase() && item.scope_key === candidate.scope_key && memoryIsActive(item))
       );
+      if (sameRecord?.status === "user_confirmed" && candidate.relation === "new" && sameRecord.statement?.trim().toLowerCase() === candidate.statement.trim().toLowerCase()) status = "user_confirmed";
       const row = {
         user_id: memoryUserId,
         memory_key: sameRecord?.memory_key || memoryKey,
@@ -1237,7 +1387,7 @@ async function processStructuredMemoryTurn(userMessage, userTimestamp, shouldExt
         conditions: candidate.conditions,
         permission_policy: candidate.permission_policy,
         source_refs: ruleSourceReferences(sameRecord?.source_refs,userTimestamp),
-        attributes: { ...(candidate.attributes || {}), scenario_id: state.messages.find(message => message.timestamp === userTimestamp)?.scenario_id || null },
+        attributes: { ...(candidate.attributes || {}), scenario_id: job.scenario_id || null },
         search_terms: candidate.search_terms,
         search_keys: buildPersonaMemorySearchKeys(candidate.statement, candidate.search_terms, candidate.topic),
         source_message: candidate.statement,
@@ -1254,18 +1404,21 @@ async function processStructuredMemoryTurn(userMessage, userTimestamp, shouldExt
       if (error) throw error;
     }
 
-    if (memoryUserId !== cloudUserId) return;
+    if (memoryUserId !== cloudUserId) throw new Error("Memory account changed.");
+    personaMemoryRecords = await queryPersonaMemoryRecords();
     await backfillPersonaMemoriesFromPreferences();
     const refreshedMemories = await queryPersonaMemoryRecords();
-    if (memoryUserId !== cloudUserId) return;
+    if (memoryUserId !== cloudUserId) throw new Error("Memory account changed.");
     personaMemoryRecords = refreshedMemories;
     renderPersonaMemoryLibrary();
+    renderScenarioJourney();
     if (candidates.length && elements.personaMemoryStatus) {
       elements.personaMemoryStatus.textContent = "Saved " + candidates.length + (candidates.length === 1 ? " memory." : " memories.") + " You can edit or forget them here.";
     }
   } catch (error) {
     console.info("SYNQ.ME could not update structured persona memory this turn.", error);
-    if (elements.personaMemoryStatus) elements.personaMemoryStatus.textContent = "Memory update did not complete. Your conversation was saved and can be retried on a later turn.";
+    if (elements.personaMemoryStatus) elements.personaMemoryStatus.textContent = "Memory updates will retry automatically when connected.";
+    throw error;
   } finally {
     personaMemoryWriteInFlight = false;
   }
@@ -2253,6 +2406,8 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   personaMemoryTableUnavailable = false;
   personaMemoryWarningShown = false;
   personaMemoryWriteInFlight = false;
+  if (memoryQueueTimer) clearInterval(memoryQueueTimer);
+  memoryQueueTimer = null; memoryQueueRunner = null;
   showArchivedPersonaMemories = false;
   homeMemoryIndexUnavailable = false;
   homeMemoryIndexBackfilledUserId = null;
@@ -2353,6 +2508,7 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   if (!profileComplete()) openSettings();
   else updateSettingsMode();
   startCloudConversationSync();
+  startMemoryQueue();
   // Phonic provides spoken output; do not download the legacy Kokoro voice model.
   return true;
 }
@@ -4397,6 +4553,7 @@ async function handlePhonicAmiaToolCall({ name, parameters = {}, items = [] } = 
     text: latestUserText
   };
 
+  queueStructuredMemoryTurn(latestUserText, metadata.timestamp);
   try {
     let reply = await requestAIReply();
     const replyNeedsRepair = (value) => !value ||
@@ -4420,7 +4577,6 @@ async function handlePhonicAmiaToolCall({ name, parameters = {}, items = [] } = 
     ));
     state.pendingClarification = detectPendingClarification(latestUserText, spokenReply);
     void refreshRoomJourneyProgress();
-    void processStructuredMemoryTurn(latestUserText, metadata.timestamp, metadata.shouldExtractStructuredMemory);
     phonicTurnMetadata.delete(latestKey || "fallback");
     if (state.profile.shareAnonymizedLearning === true) void contributeSharedKnowledgeFromTurn();
 
@@ -4915,6 +5071,11 @@ async function requestAIReply(repairMode = false) {
       body: JSON.stringify({
         messages: conversationMessages,
         sourceMessageTimestamp: state.messages[state.messages.length - 1]?.timestamp || null,
+        areaLearningStatus: (() => {
+          const id = activeOutOfHomeScenarioContext ? "outside:" + activeOutOfHomeScenarioContext.categoryId + ":" + activeOutOfHomeScenarioContext.scenarioId : "room:" + (roomJourney?.active_room_id || "kitchen");
+          const scenario = scenarioForId(id);
+          return scenario ? scenarioTasks(scenario).map(task => ({ id: task.id, status: areaLearningState(id, task.id, personaMemoryRecords, scenarioData().reviewed?.[id] || []).status })) : [];
+        })(),
         conversationContinuity: buildConversationContinuity(state.messages, activeOutOfHomeScenarioContext ? "outside:" + activeOutOfHomeScenarioContext.categoryId + ":" + activeOutOfHomeScenarioContext.scenarioId : "room:" + (roomJourney?.active_room_id || "kitchen")),
         preferences,
         profile: {
@@ -5092,6 +5253,7 @@ async function sendMessage(rawText) {
   // Persist the user's message before waiting for the model so a closed tab or
   // interrupted provider request does not leave the turn only in browser memory.
   void flushCloudSave();
+  queueStructuredMemoryTurn(message, userMessageTimestamp);
 
   const sentToAIThisTurn = true;
   let reply = await requestAIReply();
@@ -5119,7 +5281,6 @@ async function sendMessage(rawText) {
   reply = enforceFirstPersonTaskQuestions(reply, selectedCompanionDisplayName());
   state.messages.push({ role: "assistant", content: reply, timestamp: new Date().toISOString() });
   state.pendingClarification = detectPendingClarification(message, reply);
-  void processStructuredMemoryTurn(message, userMessageTimestamp, shouldExtractStructuredMemory);
   if (state.profile.shareAnonymizedLearning === true) {
     void contributeSharedKnowledgeFromTurn();
   }
@@ -5624,10 +5785,12 @@ resetExecute?.addEventListener("click", async () => {
     clearTimeout(cloudSaveTimer); cloudSaveTimer = null;
     await cloudSaveChain;
     if (isSending || personaMemoryWriteInFlight || roomJourneySaveInFlight) throw new Error("Wait for the current save to finish, then try again.");
+    await flushMemoryQueue(cloudUserId, trainingRevision);
+    if (pendingMemoryJobs(cloudUserId, trainingRevision).length || personaMemoryWriteInFlight || memoryQueueFlushing || memoryQueueRunner?.running) throw new Error("Wait for pending memory updates to sync before resetting training.");
     const { data, error } = await supabase.rpc("synqme_reset_training", { p_confirmation: resetInput.value, p_scenario_id: resetTarget });
     if (error) throw error;
     // Keep this page on its old revision until reload so late async writes are rejected.
-    try { localStorage.removeItem(STORAGE_KEY); localStorage.removeItem(ACCOUNT_DRAFT_KEY); } catch {}
+    try { localStorage.removeItem(STORAGE_KEY); localStorage.removeItem(ACCOUNT_DRAFT_KEY); writePendingMemoryJobs(cloudUserId, trainingRevision, []); } catch {}
     window.location.reload();
   } catch (error) {
     document.querySelector("#trainingResetError").textContent = error.message || "Reset failed. Nothing was deleted. Try again.";
