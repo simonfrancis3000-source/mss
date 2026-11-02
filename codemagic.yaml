@@ -1,0 +1,28 @@
+workflows:
+  android-test:
+    name: MSS Android Test
+    max_build_duration: 90
+    instance_type: mac_mini_m2
+    environment:
+      node: 24
+      java: 21
+    scripts:
+      - name: Install dependencies
+        script: npm ci
+
+      - name: Build MSS mobile
+        script: npm run build -- --mode mobile
+
+      - name: Sync Android
+        script: |
+          npx cap sync android
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > "$CM_BUILD_DIR/android/local.properties"
+
+      - name: Build Android APK
+        script: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+    artifacts:
+      - android/app/build/outputs/apk/debug/*.apk
