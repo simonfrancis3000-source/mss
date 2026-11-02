@@ -24,6 +24,30 @@ test("Turnstile is opt-in until the public site key is configured", async () => 
   assert.equal(await guard.requireToken(), undefined);
 });
 
+test("Default public site key is enabled for the hosted MSS site but not the native localhost WebView", async () => {
+  const previousWindow = globalThis.window;
+  try {
+    globalThis.window = { location: { hostname: "localhost", protocol: "http:" } };
+    const { container } = fakeContainer();
+    const native = createAuthTurnstile({ siteKey: "", container });
+    assert.equal(native.configured, false);
+    native.setMode("signin");
+    assert.equal(container.hidden, true);
+    assert.equal(await native.requireToken(), undefined);
+
+    globalThis.window = { location: { hostname: "synqme.mysecondself.app", protocol: "https:" } };
+    const website = createAuthTurnstile({ siteKey: "", container: fakeContainer().container });
+    assert.equal(website.configured, true);
+
+    globalThis.window = { location: { hostname: "localhost", protocol: "http:" } };
+    const explicitMobileTest = createAuthTurnstile({ siteKey: "an-explicit-test-site-key", container: fakeContainer().container });
+    assert.equal(explicitMobileTest.configured, true);
+  } finally {
+    if (previousWindow === undefined) delete globalThis.window;
+    else globalThis.window = previousWindow;
+  }
+});
+
 test("Turnstile protects auth actions and rejects missing, stale and reused tokens", async () => {
   const previousWindow = globalThis.window;
   let options;
