@@ -34,6 +34,24 @@ export function exactModelMentioned(model, text) {
   const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/[-_ /]+/g, '[-_ /]*');
   return new RegExp('(?:^|[^a-z0-9])' + escaped + '(?![a-z0-9])', 'i').test(String(text || ''));
 }
+// Select readable passages from across the returned document instead of only
+// its opening pages, where tables of contents often crowd out useful features.
+// The provider may return partial content, so callers must never call this a
+// complete reading of the manual.
+export function manualEvidenceExcerpt(content, maxCharacters = 30000) {
+  const text = String(content || '');
+  if (text.length <= maxCharacters) return text;
+  const windows = [[0, Math.min(6000, text.length)]];
+  const feature = /\b(?:wi[ -]?fi|wireless|connect(?:ion|ivity|ed)?|bluetooth|remote (?:control|start)|app|programme|program|cycle|sensor|automatic|delay(?:ed)? start|safety|lock)\b/gi;
+  for (const match of text.matchAll(feature)) {
+    const start = Math.max(0, match.index - 500), end = Math.min(text.length, match.index + 1000);
+    const last = windows.at(-1);
+    if (start <= last[1] + 100) last[1] = Math.max(last[1], end);
+    else windows.push([start, end]);
+    if (windows.reduce((total, [a,b]) => total + b - a, 0) >= maxCharacters) break;
+  }
+  return windows.map(([start,end]) => text.slice(start,end)).join('\n\n[Other sections omitted]\n\n').slice(0,maxCharacters);
+}
 async function providerCall(path, body, key, fetchImpl) {
   const res = await fetchImpl('https://api.deepseek.com/v1/tools/' + path, {
     method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
@@ -61,7 +79,7 @@ export async function findApplianceManual({ brand, model, type, key, fetchImpl =
     await onUsage('fetch');
     const text = page.title + '\n' + page.content;
     if (!exactModelMentioned(model, text) || !/\b(manual|user guide|instructions|operating instructions|instruction manual)\b/i.test(String(page.title || '') + ' ' + url)) continue;
-    return { status: 'matched', url, excerpt: page.content.slice(0, 14000) };
+    return { status: 'matched', url, excerpt: manualEvidenceExcerpt(page.content) };
   }
   return { status: 'manual_unverified' };
 }
@@ -77,7 +95,7 @@ export function validateApplianceIdentity(candidate, messages) {
   const type = String(candidate?.type || '').trim().slice(0, 80);
   const brand = String(candidate?.brand || '').trim().slice(0, 80);
   const model = String(candidate?.model || '').trim().slice(0, 80);
-  if (!type || !brand || !model || !manufacturerDomains(brand).length) return null;
+  if (!type || !brand || !model) return null;
   const userText = (messages || []).filter((message) => message.role === 'user').map((message) => message.content).join('\n');
   const last = [...(messages || [])].reverse().find((message) => message.role === 'user')?.content || '';
   if (!canonical(userText).includes(canonical(brand)) || !exactModelMentioned(model, last)) return null;
@@ -92,6 +110,6 @@ export async function readSavedApplianceManual({ brand, model, url, key, fetchIm
     if (typeof page.content !== 'string' || !page.content.trim()) return null;
     await onUsage('fetch');
     if (!exactModelMentioned(model, String(page.title || '') + '\n' + page.content) || !/\b(manual|user guide|instructions|operating instructions|instruction manual)\b/i.test(String(page.title || '') + ' ' + safeUrl)) return null;
-    return { url: safeUrl, excerpt: page.content.slice(0, 14000) };
+    return { url: safeUrl, excerpt: manualEvidenceExcerpt(page.content) };
   } catch { return null; }
 }

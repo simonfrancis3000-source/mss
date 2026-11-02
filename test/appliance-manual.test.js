@@ -1,6 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { manufacturerDomains, validateManualUrl, exactModelMentioned, findApplianceManual } from '../server/appliance-manual.js';
+import { manufacturerDomains, validateManualUrl, exactModelMentioned, findApplianceManual, manualEvidenceExcerpt } from '../server/appliance-manual.js';
+
+test('manual evidence includes useful passages beyond the opening pages without saving the manual', () => {
+  const manual = 'Introduction '.repeat(1800) + ' Wi-Fi connectivity lets the user monitor status. ' + 'Other text '.repeat(3000);
+  const excerpt = manualEvidenceExcerpt(manual);
+  assert.ok(excerpt.length <= 30000);
+  assert.match(excerpt, /Wi-Fi connectivity/);
+  assert.notEqual(excerpt, manual);
+});
 
 test('manual links must use the correct manufacturer domain over HTTPS', () => {
   const domains = manufacturerDomains('Bosch');

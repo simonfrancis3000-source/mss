@@ -12,7 +12,9 @@ globalThis.fetch = async (input, options = {}) => {
     return response(memories);
   }
   if (url.includes('/rest/v1/synqme_decision_states')) return response([]);
-  if (url.includes('/rest/v1/synqme_appliance_references')) return response(memories.map((item) => item.attributes?.appliance_v1).filter(Boolean));
+  // The actual application stores these records in persona memory. Do not
+  // invent normalized appliance rows in the fixture.
+  if (url.includes('/rest/v1/synqme_appliance_references')) return response([]);
   if (url.endsWith('/v1/tools/search')) return response({results:[{url:'https://bosch-home.com/manual',title:'User manual'}]});
   if (url.endsWith('/v1/tools/fetch')) return response({title:'User manual', content:'Model ABC1234/01 user manual. A delicate programme is available.'});
   if (url.endsWith('/chat/completions')) {
