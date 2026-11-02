@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { createAuthTurnstile } from "./auth-turnstile.js";
 import { createPhonicVoiceConversation } from "./phonic-voice.js";
 
 const STORAGE_KEY = "synqme-demo-v1";
@@ -955,6 +956,12 @@ function setAuthGateVisible(visible) {
   if (visible) window.setTimeout(() => elements.authEmail?.focus(), 0);
 }
 
+const authTurnstile = createAuthTurnstile({
+  siteKey: import.meta.env.VITE_TURNSTILE_SITE_KEY,
+  container: document.querySelector("#authTurnstile")
+});
+authTurnstile.setMode("signin");
+
 function setAuthMode(mode, message = "") {
   authMode = mode;
   const isSignup = mode === "signup";
@@ -992,6 +999,7 @@ function setAuthMode(mode, message = "") {
     elements.authPassword.minLength = 8;
   }
   if (elements.authStatus) elements.authStatus.textContent = message;
+  authTurnstile.setMode(mode);
 }
 
 function renderAccountStatus() {
@@ -3669,6 +3677,7 @@ async function submitAccountForm(event) {
   }
 
   try {
+    const captchaToken = authMode === "recovery" ? undefined : await authTurnstile.requireToken();
     if (authMode === "recovery") {
       const { error } = await supabase.auth.updateUser({ password });
       if (error) throw error;
@@ -3698,7 +3707,7 @@ async function submitAccountForm(event) {
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
-        options: { emailRedirectTo: AUTH_REDIRECT_URL }
+        options: { emailRedirectTo: AUTH_REDIRECT_URL, ...(captchaToken ? { captchaToken } : {}) }
       });
       if (error) throw error;
       if (data.session && data.user && !data.user.is_anonymous) {
@@ -3715,14 +3724,16 @@ async function submitAccountForm(event) {
       }
     }
 
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password, ...(captchaToken ? { options: { captchaToken } } : {}) });
     if (error) throw error;
     if (!data.session || !data.user || data.user.is_anonymous) throw new Error("We couldn’t establish your account session. Please try again.");
     await loadSignedInAccount(data.session, { migrateDraft: true });
     if (elements.authPassword) elements.authPassword.value = "";
   } catch (error) {
     const raw = String(error?.message || "");
-    const message = /invalid login credentials/i.test(raw)
+    const message = /captcha|security check/i.test(raw)
+      ? "Complete the security check and try again."
+      : /invalid login credentials/i.test(raw)
       ? "That email and password combination was not recognised. Check your details or create an account."
       : /email not confirmed/i.test(raw)
         ? "Please confirm your email address using the link we sent you, then sign in."
@@ -3739,6 +3750,7 @@ async function submitAccountForm(event) {
     setAuthMode(authMode, message);
     console.info("SYNQ.ME account action failed.", error);
   } finally {
+    authTurnstile.reset();
     authBusy = false;
     if (elements.authSubmit) {
       elements.authSubmit.disabled = false;
@@ -3756,6 +3768,7 @@ elements.authModeToggle?.addEventListener("click", () => {
   setAuthMode(authMode === "signup" ? "signin" : "signup");
 });
 elements.authForgotPassword?.addEventListener("click", async () => {
+  if (authBusy) return;
   if (!supabase) {
     setAuthMode("signin", "Password reset is unavailable because Supabase is not configured.");
     return;
@@ -3766,15 +3779,24 @@ elements.authForgotPassword?.addEventListener("click", async () => {
     elements.authEmail?.focus();
     return;
   }
+  authBusy = true;
   try {
+    const captchaToken = await authTurnstile.requireToken();
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: AUTH_REDIRECT_URL
+      redirectTo: AUTH_REDIRECT_URL,
+      ...(captchaToken ? { captchaToken } : {})
     });
     if (error) throw error;
     setAuthMode("signin", "If an account exists for that address, a password-reset email has been sent. Follow its link to choose a new password.");
   } catch (error) {
-    setAuthMode("signin", "We couldn’t send a reset email right now. Check your connection and try again.");
+    const detail = String(error?.message || "");
+    setAuthMode("signin", /security check|captcha/i.test(detail)
+      ? "Complete the security check and try again."
+      : "We couldn’t send a reset email right now. Check your connection and try again.");
     console.info("SYNQ.ME password reset request failed.", error);
+  } finally {
+    authTurnstile.reset();
+    authBusy = false;
   }
 });
 elements.signOutButton?.addEventListener("click", async () => {
