@@ -1,6 +1,6 @@
 # MySecondSelf: Cloudflare Turnstile activation
 
-The web `main` branch and the mobile `mobile/current-mss` branch include Turnstile UI and pass `captchaToken` to Supabase for **sign-in (including the admin portal), sign-up, and password-recovery requests**. Password *update* after clicking a recovery link remains unchanged.
+The production web deployment `synqme-demo` uses branch `SYNQ.ME`. Turnstile now sends `captchaToken` from this branch for **sign-in (including the admin portal), sign-up, and password-recovery requests**. The separate Android app uses `mobile/current-mss` and must be verified independently before project-wide enforcement. Password *update* after clicking a recovery link remains unchanged.
 
 **Important:** The public site key supplied by the owner is now configured as a fallback in `src/auth-turnstile.js`. It activates on `synqme.mysecondself.app` after deployment, or on other explicitly configured builds using `VITE_TURNSTILE_SITE_KEY`. Local Capacitor WebViews are deliberately excluded from the fallback to avoid locking out existing mobile app users. A browser challenge alone is not protection: Supabase must verify tokens server-side.
 
@@ -8,7 +8,7 @@ The web `main` branch and the mobile `mobile/current-mss` branch include Turnsti
 
 1. Create a **Cloudflare Turnstile** widget in your Cloudflare account. The production hostname is `synqme.mysecondself.app`. Copy the widget's **Site Key** and **Secret Key**.
 2. The public Site Key is already in the source fallback and does **not** need a separate web build variable. For additional tested hostnames, set **`VITE_TURNSTILE_SITE_KEY`** (public Site Key only) at build time. Do **not** put the Secret Key in this variable or commit it to GitHub.
-3. Deploy the updated web frontend **before** enabling server-side CAPTCHA. Verify the challenge can be completed on web sign-in, admin sign-in, sign-up and Forgot password, and that an actual `captchaToken` is sent for each action.
+3. Deploy the updated Render `synqme-demo` static site from branch **`SYNQ.ME`** before enabling server-side CAPTCHA. Verify the challenge can be completed on web sign-in, admin sign-in, sign-up and Forgot password, and that an actual `captchaToken` is sent for each action.
 4. On the MySecondSelf Supabase project (`ltqbjqtzsdzglswuqkip`), open **Authentication > Bot and Abuse Protection** (Auth CAPTCHA settings), enable CAPTCHA, select **Cloudflare Turnstile**, and enter the **Secret Key**. Save.
 5. Test with a **real email inbox**: create/confirm a new account, sign in, request a password-reset email, follow it, set a new password, and sign in again. Check failed and repeated attempts, and verify server-side rejection of requests with no valid token.
 6. Review Supabase Auth logs for successful requests and CAPTCHA failures. Do not use `example.com` addresses for email tests.

@@ -14,3 +14,32 @@ export function isApplianceIdentityAnswer(answer, previousQuestion) {
   if (!text || text.length > 120 || /^(?:i (?:do not|don't) know|not sure|skip|later|no|yes|unknown|no idea)[.! ]*$/i.test(text)) return false;
   return /\b(?:brand|manufacturer|make|model(?:\s+(?:number|code|name))?|e-?nr)\b/i.test(String(previousQuestion || '')) && /\?/.test(String(previousQuestion || ''));
 }
+
+const DEVICE_NAMES = /\b(dishwasher|washing machine|washer|tumble dryer|dryer|vacuum(?: cleaner)?|air fryer|microwave|coffee (?:maker|machine))\b/i;
+const IDENTITY_QUESTION = /\b(?:make|brand|manufacturer|model|product number|pnc|e-?nr)\b/i;
+// Intake is driven by the current exchange and account records, never by a
+// shared owner's appliance. A skipped or already answered request stays skipped.
+export function applianceIntakeRequirement(messages = [], records = [], exchanges = []) {
+  const latest = messages.at(-1)?.role === 'user' ? messages.at(-1).content || '' : '';
+  const previous = messages.at(-2)?.role === 'assistant' ? messages.at(-2).content || '' : '';
+  const earlierType = IDENTITY_QUESTION.test(previous) ? messages.slice(0,-2).reverse().map(item=>String(item.content||'').match(DEVICE_NAMES)).find(Boolean) : null;
+  const type = (latest.match(DEVICE_NAMES) || previous.match(DEVICE_NAMES) || earlierType)?.[1]?.toLowerCase();
+  if (!type || /\b(?:don't|do not|no longer) (?:have|own|use)\b|\b(?:hypothetical|for example|imagine|what is a)\b/i.test(latest)) return null;
+  if (/^(?:no|nope)[.! ]*$/i.test(latest) && /\b(?:own|have)\b/i.test(previous)) return null;
+  const key = value => String(value || '').toLowerCase().replace(/washing machine|washer/g,'washer').replace(/tumble dryer/g,'dryer').replace(/coffee machine/g,'coffee maker').replace(/vacuum cleaner/g,'vacuum');
+  const saved = records.filter(item => key(item.type) === key(type));
+  if (saved.some(item => item.brand && item.model) && !/\b(?:new|replacement|replaced)\b/i.test(latest)) return null;
+  const history = [...exchanges, ...messages.flatMap((item,index) => item.role === 'assistant' && messages[index+1]?.role === 'user' ? [{question:item.content,answer:messages[index+1].content}] : [])];
+  const asked = history.filter(item => IDENTITY_QUESTION.test(item.question || '') && (key(item.question).includes(key(type)) || item.question === previous));
+  if (asked.some(item => /\b(?:don't know|do not know|not sure|no idea|later|skip|not now|can't find|cannot find)\b/i.test(item.answer || ''))) return null;
+  const previousAsksIdentity = IDENTITY_QUESTION.test(previous) && /[?？؟]/u.test(previous);
+  if (previousAsksIdentity && /\b(?:model|product number|pnc|e-?nr)\b/i.test(previous)) return null;
+  if (previousAsksIdentity && isApplianceIdentityAnswer(latest,previous)) return {type,field:'model'};
+  if (asked.length) return null;
+  return {type,field:saved.some(item=>item.brand) ? 'model' : 'identity'};
+}
+
+export function applianceIntakeGuidance(requirement) {
+  if (!requirement) return '';
+  return 'APPLIANCE INTAKE REQUIRED: ' + JSON.stringify(requirement) + '. This appliance is relevant to the current routine and has no complete saved identity. Before settling this routine, ask one question for its make if not already stated; otherwise ask its exact model number. Do not ask the make again when the owner just supplied it. When asking for a model, explain a likely label location and that letters, numbers and suffixes matter. If the owner skips or cannot provide it, accept that and continue to another useful question. Never invent identity, features or manual access.';
+}

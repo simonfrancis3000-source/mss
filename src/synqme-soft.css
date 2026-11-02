@@ -524,3 +524,27 @@ input[type='checkbox'] { accent-color: #8b73cf; }
   [data-robot-speaking="true"] .robot-mouth-speaking { display: none; }
   [data-robot-speaking="true"] .robot-mouth-rest { display: inline; }
 }
+
+/* Account details use the same light surfaces as the rest of Settings. */
+.settings-sheet .account-status-panel {
+  background: var(--soft-light);
+  border: 1px solid #f5fbff;
+  border-radius: 18px;
+  box-shadow: var(--raised-small);
+  color: var(--ink);
+}
+.settings-sheet .account-status-panel .settings-subhead span,
+.settings-sheet #accountEmail,
+.settings-sheet .account-status-panel .account-signout {
+  color: var(--ink);
+  font-family: inherit;
+}
+.settings-sheet .account-status-panel .settings-subhead span:last-child { color: #506f84; }
+.voice-experience .voice-experience-topbar { display: flex; justify-content: flex-start; min-height: 74px; }
+.voice-experience .voice-brand { display: flex; align-items: center; gap: 13px; }
+.voice-experience .voice-brand img { width: 42px; height: 40px; object-fit: contain; }
+.voice-experience .voice-brand .brand-wordmark { font-size: 17px; letter-spacing: .25em; }
+@media (max-width: 520px) {
+  .voice-experience .voice-brand img { width: 34px; height: 34px; }
+  .voice-experience .voice-brand .brand-wordmark { font-size: 15px; }
+}

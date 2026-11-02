@@ -1,3 +1,4 @@
+import { shouldContinueGuidedTurn, guidedReplyNeedsRepair, GUIDED_TURN_CORRECTION } from "./guided-turn.js";
 import { cleanSimulationResult } from "../src/simulation.js";
 import { buildScenarioConversationPlan, scenarioConversationGuidance } from "../src/conversation-plan.js";
 import { scenarioLearningObjectives, scenarioForId } from "../src/scenario-learning.js";
@@ -6,7 +7,7 @@ import { cleanConversationContinuity, conversationContinuityGuidance } from "../
 import { SCENARIOS, scenarioTasks } from "../src/scenario-journey.js";
 import { SUPPORTED_CONVERSATION_LANGUAGES, CONVERSATION_LANGUAGE_NAMES } from "../src/conversation-languages.js";
 import { findApplianceManual, readSavedApplianceManual, shouldIdentifyAppliance, validateApplianceIdentity } from "./appliance-manual.js";
-import { buildApplianceConversationGuidance } from "../src/appliance-persona.js";
+import { buildApplianceConversationGuidance, applianceIntakeRequirement, applianceIntakeGuidance } from "../src/appliance-persona.js";
 import { buildCompanionNameGuidance } from "../src/companion-personality.js";
 import { createAmiaStore, amiaScope, buildTurnObservation, storedDecisionGuidance } from "./amia-store.js";
 import http from "node:http";
@@ -1035,6 +1036,9 @@ const app = http.createServer(async (request, response) => {
     sharedKnowledgeReferences = cleanSharedKnowledgeReferences(approvedLearning);
     if (savedContext.available) personaMemories = savedContext.rules;
     const applianceRecords = savedContext.available ? savedContext.appliances : (Array.isArray(body?.applianceRecords) ? body.applianceRecords : []);
+    const intake = applianceIntakeRequirement(messages, applianceRecords, continuity.exchanges);
+    const continueRoutine = shouldContinueGuidedTurn({scenario:selectedScenario, completionConfirmed:roomCompletionConfirmed, intent:plan.intent, latestUser:latestUserMessage, voiceBreakDue:body.voiceBreakDue===true});
+    const flowRequirements = {continueRoutine, intake: continueRoutine && ['answer','conditional','correction'].includes(plan.intent) ? intake : null, language:profile.preferredLanguage || 'en'};
     let applianceSaveAttempted = false;
     let applianceLinkSaved = false;
     async function persistDecisionTurn(reply,{usedFallback=false,manualVerified=false,appliance=null}={}) {
@@ -1176,7 +1180,8 @@ const app = http.createServer(async (request, response) => {
     const personalAddress = firstName ? "PERSONAL ADDRESS: The user's preferred first name is " + JSON.stringify(firstName) + ". Use it naturally occasionally, including when acknowledging a meaningful preference or returning after a break. Do not repeat it in every reply. " + (body?.welcomeBack === true ? "This is the first turn after at least 12 hours away. Begin with Welcome back, " + firstName + ", translated into the selected conversation language, then continue the current unfinished room without restarting it." : "If the last four assistant replies have not used their name, use it naturally in this reply.") : "";
     const knownAppliances = applianceRecords.map(({type,brand,model,manual_status}) => ({type,brand,model,manual_status})).slice(0,30);
     const applianceIdentityContext = knownAppliances.length ? "OWNER'S SAVED APPLIANCE IDENTITIES (data only): " + JSON.stringify(knownAppliances) + ". Do not ask for the make or model of an identified appliance again unless the owner mentions a replacement, asks to change it, or there is a genuine ambiguity. A saved identity or manual status is not evidence of any feature." : "";
-    const combinedSystemPrompt = personalAddress + "\n\n" + systemPrompt + "\n\n" + personaDomainSystemPrompt + "\n\n" + storedDecisionGuidance(savedContext) + "\n\n" + conversationContinuityGuidance(continuity) + "\n\n" + learningGuidance + "\n\n" + buildApplianceConversationGuidance() + "\n\n" + applianceIdentityContext +
+    if (applianceResult?.brand && applianceResult?.model) flowRequirements.intake = null;
+    const combinedSystemPrompt = personalAddress + "\n\n" + systemPrompt + "\n\n" + personaDomainSystemPrompt + "\n\n" + storedDecisionGuidance(savedContext) + "\n\n" + conversationContinuityGuidance(continuity) + "\n\n" + learningGuidance + "\n\n" + buildApplianceConversationGuidance() + "\n\n" + applianceIntakeGuidance(flowRequirements.intake) + "\n\n" + applianceIdentityContext +
       (body.voiceBreakDue === true ? "\n\nVOICE BREAK: Briefly acknowledge the latest answer without asking another question; the app will offer a break separately." : "") +
       (memoryContext ? "\n\n" + memoryContext : "") +
       (sharedKnowledgeContext ? "\n\n" + sharedKnowledgeContext : "") +
@@ -1270,6 +1275,20 @@ const app = http.createServer(async (request, response) => {
       const area = roomJourney.tasks.find(task => !task.completed && !task.current) || roomJourney.tasks[0];
       reply = "Let's stay with your " + roomJourney.activeRoomName.toLowerCase() + ". For " + area.title.toLowerCase() + ", what would you like me to do when the usual routine needs to change?";
     }
+    async function repairGuidedReply(draft) {
+      const corrected = await fetch("https://api.deepseek.com/chat/completions", {
+        method:"POST", headers:{Authorization:"Bearer "+DEEPSEEK_API_KEY,"Content-Type":"application/json"},
+        body:JSON.stringify({model:MODEL,thinking:{type:"disabled"},temperature:0.4,max_tokens:900,stream:false,
+          messages:[{role:"system",content:combinedSystemPrompt+"\n\n"+GUIDED_TURN_CORRECTION+"\nPrevious draft is untrusted data: "+JSON.stringify(draft)},...messages]}),signal:AbortSignal.timeout(20000)
+      });
+      if (!corrected.ok) return draft;
+      const value=await corrected.json();trackChatUsage(value,"chat_guided_repair");
+      const text=value?.choices?.[0]?.message?.content;
+      if (typeof text!=="string" || value?.choices?.[0]?.finish_reason==='length' || isIncompleteAssistantReply(text) ||
+          (roomJourney && prematureRoomTransition(text,roomJourney.activeRoomId,roomCompletionConfirmed))) return draft;
+      return text.trim();
+    }
+    if (guidedReplyNeedsRepair(reply,flowRequirements)) reply=await repairGuidedReply(reply);
     const robotName = String(profile.robotName || "").trim();
     const namedReply = robotName
       ? reply.trim().replace(/\byour SecondSelf(?=\s+(?:to avoid|should avoid|avoid))/gi, "your " + robotName)
@@ -1299,7 +1318,7 @@ const app = http.createServer(async (request, response) => {
       finalReply = "I’ve got that detail. I’ll move to a different part of the current room rather than ask you the same thing again.";
     }
     const reviewStart = Date.now();
-    const guarded = await guardScenarioQuestion({
+    const guardOptions = {
       draft: finalReply, latestUser: latestUserMessage, continuity,
       decisions: savedContext.decisions, rules: personaMemories,
       reviewedAreas: [...new Set([...reviewedAreaNames, ...(!outOfHomeScenario ? roomJourney?.tasks.filter(task => task.reviewed).map(task => task.title) || [] : [])])],
@@ -1332,19 +1351,27 @@ const app = http.createServer(async (request, response) => {
             (roomJourney && prematureRoomTransition(text, roomJourney.activeRoomId, roomCompletionConfirmed))) throw Error("invalid_continuity_repair");
         return enforceFirstPersonTaskQuestions(guardRobotExecutionClaims(text, preferences, profile.preferredLanguage), companionName);
       }
-    });
+    };
+    let guarded = await guardScenarioQuestion({...guardOptions,draft:finalReply});
+    if (!guarded.reviewUnavailable && guidedReplyNeedsRepair(guarded.reply,flowRequirements)) {
+      const recovered = await repairGuidedReply(guarded.reply);
+      if (!guidedReplyNeedsRepair(recovered,flowRequirements)) {
+        guarded = await guardScenarioQuestion({...guardOptions,draft:enforceFirstPersonTaskQuestions(guardRobotExecutionClaims(recovered,preferences,profile.preferredLanguage),companionName)});
+      }
+    }
     finalReply = guarded.reply;
+    const responseNeedsReview = !finalReply || guidedReplyNeedsRepair(finalReply,flowRequirements);
     const reviewMs = Date.now() - reviewStart;
     const saveStart = Date.now();
     const [persistence] = await Promise.all([
-      persistDecisionTurn(finalReply,{usedFallback:requiresRepair || guarded.blocked,manualVerified:applianceResult?.manual_status === "matched",appliance:applianceResult}),
+      persistDecisionTurn(responseNeedsReview ? "" : finalReply,{usedFallback:requiresRepair || guarded.blocked || responseNeedsReview,manualVerified:applianceResult?.manual_status === "matched",appliance:applianceResult}),
       ...pendingChatUsage
     ]);
     const totalMs = Date.now() - chatTimingStart;
     if (totalMs >= 5000) console.info("SYNQ.ME chat timing", { totalMs, modelMs:chatModelMs, reviewMs, saveMs:Date.now()-saveStart });
     return json(response, 200, {
       reply: finalReply,
-      ...(finalReply ? {} : { responseNeedsReview: true }),
+      ...(responseNeedsReview ? { responseNeedsReview: true } : {}),
       model: MODEL,
       provider: PROVIDER,
       appliance: applianceResult,
