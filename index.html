@@ -42,6 +42,10 @@
             <input type="checkbox" id="authImportDraft" name="authImportDraft" />
             <span>Import this browser’s existing persona and chat history (optional)</span>
           </label>
+          <div id="authTurnstile" class="auth-turnstile" hidden aria-label="Security verification">
+            <div data-turnstile-widget></div>
+            <p class="auth-turnstile-status" data-turnstile-status role="status" aria-live="polite"></p>
+          </div>
           <p class="auth-status" id="authStatus" role="status" aria-live="polite"></p>
           <button class="auth-submit" id="authSubmit" type="submit">Sign in</button>
           <button class="auth-mode-toggle" id="authModeToggle" type="button">New to SYNQ.ME? Create an account</button>
