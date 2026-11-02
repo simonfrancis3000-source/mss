@@ -490,7 +490,7 @@ const app = http.createServer(async (request, response) => {
   // Filenames are strictly allowlisted to prevent path traversal.
   const otaName = url.pathname.slice("/ota/".length);
   if (request.method === "GET" && url.pathname.startsWith("/ota/") &&
-      /^(?:internal-(?:android|ios)\\.json|mss-[a-f0-9]{32}\\.zip)$/.test(otaName)) {
+      /^(?:internal-(?:android|ios)\.json|mss-[a-f0-9]{32}\.zip)$/.test(otaName)) {
     if (origin && headers === null) return json(response, 403, { error: "Origin not allowed." });
     const path = fileURLToPath(new URL("../public/ota/" + otaName, import.meta.url));
     try {
