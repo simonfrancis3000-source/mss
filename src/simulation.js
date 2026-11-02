@@ -11,7 +11,7 @@ export function cleanSimulationResult(input, memories = []) {
   if (ids.some(id => !available.has(id))) return null;
   const sources = ids.slice(0, 8).map(id => {
     const memory = available.get(id);
-    return { id, statement: memory.statement, status: memory.status, rule_version: Number.isInteger(memory.rule_version) ? memory.rule_version : null, conditions: Array.isArray(memory.conditions) ? memory.conditions : [], permission_policy: memory.permission_policy || 'unspecified' };
+    return { id, statement: memory.statement, status: memory.status, rule_version: Number.isInteger(memory.rule_version) ? memory.rule_version : null, conditions: Array.isArray(memory.conditions) ? memory.conditions : [], permission_policy: memory.permission_policy || 'unspecified', owner_marked_general: memory.attributes?.apply_across_scenarios === true };
   });
   return {
     situation,

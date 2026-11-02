@@ -467,3 +467,18 @@ input[type='checkbox'] { accent-color: #8b73cf; }
 .preference-review-form label, .preference-review-form textarea { display: block; width: 100%; }
 .preference-review-form textarea { box-sizing: border-box; margin: .5rem 0; padding: .7rem; border: 1px solid #bed7e3; border-radius: 12px; background: #eaf5fa; color: #214c5d; font: inherit; }
 .preference-conditions { margin-top: .5rem; color: #496f82; font-size: .9rem; line-height: 1.4; }
+
+.persona-scenario-summary, .passport-content { margin:1rem 0; padding:1rem; border:1px solid #fff; border-radius:18px; background:#e1eff6; color:#31596a; }
+.persona-summary-group { margin:.8rem 0; padding:.8rem; border-radius:15px; background:#e9f4f9; }
+.persona-summary-group h5 { margin:.2rem 0 .5rem; }
+.persona-summary-rule { padding:.6rem 0; border-top:1px solid #c9dfea; overflow-wrap:anywhere; }
+.persona-summary-rule p,.persona-reflection,.persona-readiness p,.passport-content p { line-height:1.5; }
+.persona-summary-rule summary,.persona-readiness summary { cursor:pointer; font-weight:600; }
+.persona-rule-form label { display:block; margin:.7rem 0; }
+.persona-rule-form textarea,.persona-rule-form select { box-sizing:border-box; display:block; width:100%; margin:.4rem 0; padding:.65rem; border:1px solid #bed7e3; border-radius:12px; background:#eaf5fa; color:#214c5d; font:inherit; }
+.persona-global-choice { display:flex !important; gap:.6rem; align-items:flex-start; }
+.passport-choices { max-height:20rem; overflow:auto; }
+.passport-choices label { display:flex; gap:.7rem; align-items:flex-start; padding:.6rem 0; border-top:1px solid #c9dfea; overflow-wrap:anywhere; }
+.passport-preview { white-space:pre-wrap; overflow-wrap:anywhere; max-height:18rem; overflow:auto; padding:.8rem; border-radius:12px; background:#eaf5fa; color:#214c5d; font:inherit; }
+.passport-content button { margin:.3rem .4rem .3rem 0; border:1px solid #fff; border-radius:12px; padding:.65rem; color:#31596a; background:#dcecf4; font:inherit; }
+.passport-content button:disabled { opacity:.5; }

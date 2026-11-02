@@ -60,7 +60,7 @@ test("Journey integrates public scenarios without a second training browser", as
   assert.doesNotMatch(html, /id="outOfHomeTraining"/);
   assert.doesNotMatch(html, /id="outOfHomeScenarioList"/);
   assert.match(source, /scenarioTasks\(scenario\)/);
-  assert.match(source, /scenarioLearnings\(scenario,/);
+  assert.match(source, /renderScenarioSummary\(scenario\)/);
   assert.match(source, /startJourneyScenario\(scenario, task\)/);
 });
 
