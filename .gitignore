@@ -6,3 +6,7 @@ src/simulation.js
 
 # Supabase CLI state
 supabase/.temp/
+
+# Android signing keys
+*.keystore
+*.jks

@@ -6142,7 +6142,7 @@ initialiseCloudStorage().finally(() => {
   }
 });
 
-if ("serviceWorker" in navigator && import.meta.env.PROD) {
+if ("serviceWorker" in navigator && import.meta.env.PROD && import.meta.env.MODE !== "mobile") {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("/sw.js").catch((error) => {
       console.info("SYNQ.ME offline install features are unavailable on this load.", error);
