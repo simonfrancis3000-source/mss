@@ -151,3 +151,10 @@ tbody tr:hover td { background: rgba(141,215,208,.025); }
   .user-tools input { flex: 1; }
   .dashboard-footer { display: grid; }
 }
+
+/* Turnstile validation for administrator sign-in */
+.admin-turnstile { display: flex; flex-direction: column; align-items: center; gap: .45rem; margin: .65rem auto; max-width: 100%; }
+.admin-turnstile[hidden] { display: none !important; }
+.admin-turnstile [data-turnstile-widget] { max-width: 100%; }
+.admin-turnstile-status { margin: 0; text-align: center; font-size: .8rem; line-height: 1.4; }
+.admin-turnstile-status:empty { display: none; }
