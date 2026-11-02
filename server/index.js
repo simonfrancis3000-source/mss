@@ -10,6 +10,9 @@ import { buildApplianceConversationGuidance } from "../src/appliance-persona.js"
 import { buildCompanionNameGuidance } from "../src/companion-personality.js";
 import { createAmiaStore, amiaScope, buildTurnObservation, storedDecisionGuidance } from "./amia-store.js";
 import http from "node:http";
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { createHash, randomUUID } from "node:crypto";
 import { authenticateSupabaseRequest, rateLimitIdentity } from "./supabase-auth.js";
 import { buildDeepSeekUsageEvent, createPhonicUsageSession, verifyPhonicUsageSession, clampVoiceDuration } from "./usage.js";
@@ -483,6 +486,29 @@ const app = http.createServer(async (request, response) => {
   }
 
   const url = new URL(request.url || "/", "http://localhost");
+  // Serve only explicitly published, immutable OTA artifacts. The manifest starts disabled.
+  // Filenames are strictly allowlisted to prevent path traversal.
+  const otaName = url.pathname.slice("/ota/".length);
+  if (request.method === "GET" && url.pathname.startsWith("/ota/") &&
+      /^(?:internal-(?:android|ios)\\.json|mss-[a-f0-9]{32}\\.zip)$/.test(otaName)) {
+    if (origin && headers === null) return json(response, 403, { error: "Origin not allowed." });
+    const path = fileURLToPath(new URL("../public/ota/" + otaName, import.meta.url));
+    try {
+      const info = await stat(path);
+      if (!info.isFile() || info.size > 50 * 1024 * 1024) throw new Error("Artifact unavailable");
+      response.writeHead(200, {
+        ...(headers || {}),
+        "Content-Type": otaName.endsWith(".zip") ? "application/zip" : "application/json; charset=utf-8",
+        "Content-Length": info.size,
+        "Cache-Control": otaName.endsWith(".zip") ? "public, max-age=31536000, immutable" : "no-store",
+        "X-Content-Type-Options": "nosniff"
+      });
+      return createReadStream(path).pipe(response);
+    } catch {
+      return json(response, 404, { error: "Update not found." }, headers || {});
+    }
+  }
+
   const authenticatedRoutes = new Set([
     "/api/chat", "/api/memory/extract", "/api/knowledge/extract", "/api/simulation", "/api/voice/break-offer",
     "/api/phonic/session", "/api/phonic/usage"
