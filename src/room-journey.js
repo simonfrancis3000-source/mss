@@ -293,10 +293,11 @@ export function buildRoomJourneyConversationContext(input, rooms = ROOM_JOURNEY_
       ? input.completedTaskIds.filter((id) => room.tasks.some((task) => task.id === id))
       : []
   );
+  const reviewedIds = new Set(Array.isArray(input.reviewedTaskIds) ? input.reviewedTaskIds.filter(id => room.tasks.some(task => task.id === id)) : []);
   const activeTask = room.tasks.find((task) =>
-    task.id === input.activeTaskId && !completedIds.has(task.id)
+    task.id === input.activeTaskId && !completedIds.has(task.id) && !reviewedIds.has(task.id)
   ) || null;
-  const nextPendingTask = room.tasks.find((task) => !completedIds.has(task.id)) || null;
+  const nextPendingTask = room.tasks.find((task) => !completedIds.has(task.id) && !reviewedIds.has(task.id)) || null;
   const unlockedCount = Number.isInteger(input.unlockedRoomCount)
     ? Math.max(1, Math.min(rooms.length, input.unlockedRoomCount))
     : 1;
@@ -315,6 +316,7 @@ export function buildRoomJourneyConversationContext(input, rooms = ROOM_JOURNEY_
       title: task.title,
       description: task.description,
       completed: completedIds.has(task.id),
+      reviewed: reviewedIds.has(task.id),
       current: activeTask?.id === task.id
     }))
   };

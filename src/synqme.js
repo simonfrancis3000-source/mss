@@ -1,3 +1,4 @@
+import { buildConversationContinuity } from "./conversation-continuity.js";
 import { progressOwnerLabel, shareProgressImage } from "./progress-share.js";
 import { PHONIC_LANGUAGES, CONVERSATION_LANGUAGE_NAMES } from "./conversation-languages.js";
 import { shouldWelcomeBack, welcomeBackReply, spokenSentenceBreaks, addressByNameReply } from "./conversation-return.js";
@@ -394,13 +395,14 @@ function sanitiseConversationMessage(item) {
   // not a complete assistant message. Remove this legacy artefact on restore.
   if (item.role === "assistant" && /^i(?:['’]m| am)?$/i.test(item.content.trim())) return null;
   const timestamp = normaliseMessageTimestamp(item);
+  const scenarioMetadata = SCENARIOS.some(scenario => scenario.id === item.scenario_id) ? { scenario_id: item.scenario_id } : {};
   if (item.role === "assistant" && /what matters most to you when getting that right\?|what detail would matter most to get right\?|let'?s make that preference more precise/i.test(item.content)) {
-    return { role: "assistant", content: "Let’s focus on one practical detail at a time.", timestamp };
+    return { role: "assistant", content: "Let’s focus on one practical detail at a time.", timestamp, ...scenarioMetadata };
   }
   if (item.role === "assistant" && /I've captured this preference for your browser-based SecondSelf|I've added it to your local digital persona|That's useful context for your SecondSelf/i.test(item.content)) {
-    return { role: "assistant", content: "Let’s focus on one practical detail at a time.", timestamp };
+    return { role: "assistant", content: "Let’s focus on one practical detail at a time.", timestamp, ...scenarioMetadata };
   }
-  return { role: item.role, content: item.content, timestamp };
+  return { role: item.role, content: item.content, timestamp, ...scenarioMetadata };
 }
 
 function loadState() {
@@ -2051,6 +2053,10 @@ function mergeConversationMessages(...groups) {
     for (let offset = 0; offset < count; offset++) {
       const targetIndex = targetStart + offset;
       const sourceIndex = sourceStart + offset;
+      if (target[targetIndex] && source[sourceIndex] && key(target[targetIndex]) === key(source[sourceIndex]) &&
+          !target[targetIndex].scenario_id && SCENARIOS.some(scenario => scenario.id === source[sourceIndex].scenario_id)) {
+        target[targetIndex] = { ...target[targetIndex], scenario_id: source[sourceIndex].scenario_id };
+      }
       if (
         target[targetIndex] &&
         source[sourceIndex] &&
@@ -2067,7 +2073,7 @@ function mergeConversationMessages(...groups) {
     const incoming = (Array.isArray(group) ? group : [])
       .map(sanitiseConversationMessage)
       .filter((item) => item && item.content.trim())
-      .map((item) => ({ role: item.role, content: item.content.trim(), timestamp: normaliseMessageTimestamp(item) }));
+      .map((item) => ({ role: item.role, content: item.content.trim(), timestamp: normaliseMessageTimestamp(item), ...(SCENARIOS.some(scenario => scenario.id === item.scenario_id) ? { scenario_id: item.scenario_id } : {}) }));
     if (!incoming.length) continue;
     if (!messages.length) {
       messages = incoming;
@@ -2798,6 +2804,7 @@ function buildCurrentRoomJourneyContext() {
     activeRoomId: room.id,
     activeTaskId: room.id === roomJourney.active_room_id ? roomJourney.active_task_id || null : null,
     completedTaskIds: roomCompletedIds(room),
+    reviewedTaskIds: scenarioData().reviewed?.["room:" + room.id] || [],
     completionConfirmed: completedScenarioIds(scenarioData().completed).includes("room:" + room.id),
     unlockedRoomCount: schedule.unlockedCount
   };
@@ -4699,6 +4706,7 @@ function selectAppView(view) {
   const workspace = document.querySelector("#moreWorkspace");
   if (workspace) workspace.open = view === "journey";
   if (view === "journey") { journeyDisplay = "chart"; renderScenarioJourney(); }
+  else { prepareWelcomeAudioOffer(); renderMessages(); }
   syncAppNavigation();
   window.requestAnimationFrame(updateChatScrollbar);
   window.scrollTo({top:0,behavior:"smooth"});
@@ -4726,6 +4734,8 @@ function prepareWelcomeAudioOffer() {
   if (!cloudUserId || !elements.welcomeAudioOffer || !elements.chatStage) return;
   let dismissed = false;
   try { dismissed = localStorage.getItem(introAudioStorageKey()) === "true"; } catch {}
+  // An existing conversation always opens directly, including on a new device.
+  dismissed ||= state.messages.some(message => message.role === "user" && message.content?.trim());
   elements.welcomeAudioOffer.hidden = dismissed;
   elements.chatStage.hidden = !dismissed;
   if (elements.introAudioReplay) elements.introAudioReplay.hidden = !dismissed;
@@ -4905,6 +4915,7 @@ async function requestAIReply(repairMode = false) {
       body: JSON.stringify({
         messages: conversationMessages,
         sourceMessageTimestamp: state.messages[state.messages.length - 1]?.timestamp || null,
+        conversationContinuity: buildConversationContinuity(state.messages, activeOutOfHomeScenarioContext ? "outside:" + activeOutOfHomeScenarioContext.categoryId + ":" + activeOutOfHomeScenarioContext.scenarioId : "room:" + (roomJourney?.active_room_id || "kitchen")),
         preferences,
         profile: {
           ownerName: state.profile.ownerName,
