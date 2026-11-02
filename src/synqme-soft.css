@@ -458,3 +458,12 @@ input[type='checkbox'] { accent-color: #8b73cf; }
 .todo-actions { display: flex; gap: .4rem; flex-wrap: wrap; margin-top: .6rem; }
 .todo-actions button { padding: .45rem .65rem; font-size: .9rem; }
 .todo-content details > summary { cursor: pointer; font-weight: 600; padding: .8rem 0; }
+
+.preference-review { margin: 1rem 0; padding: 1rem; color: #31596a; border: 1px solid #fff; border-radius: 18px; background: #e1eff6; }
+.preference-review > summary, .preference-review-item > summary { cursor: pointer; font-weight: 600; }
+.preference-review p { line-height: 1.45; overflow-wrap: anywhere; }
+.preference-review-item { padding: .8rem 0; border-top: 1px solid #c9dfeb; }
+.preference-review button { border: 1px solid #fff; border-radius: 12px; padding: .6rem .8rem; background: #dfedf5; color: #31596a; font: inherit; cursor: pointer; }
+.preference-review-form label, .preference-review-form textarea { display: block; width: 100%; }
+.preference-review-form textarea { box-sizing: border-box; margin: .5rem 0; padding: .7rem; border: 1px solid #bed7e3; border-radius: 12px; background: #eaf5fa; color: #214c5d; font: inherit; }
+.preference-conditions { margin-top: .5rem; color: #496f82; font-size: .9rem; line-height: 1.4; }

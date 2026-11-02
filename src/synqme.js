@@ -1,3 +1,4 @@
+import { collectReviewableFragments, preferenceDisplayLabel, preferenceIdentity } from "./preference-review.js";
 import { createVoiceBreakTracker, breakResponse, responseBeforeBreak, standardBreakPhrase } from "./voice-break.js";
 import { parseReminderCommand, matchReminder, validReminderTitle } from "./reminders.js";
 import { simulationCapabilitySummary } from "./simulation.js";
@@ -2642,6 +2643,7 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   roomJourneyTableUnavailable = false;
   roomJourneyWarningShown = false;
   personaMemoryRecords = [];
+  preferenceReviewDrafts.clear();
   personaMemoryTableUnavailable = false;
   personaMemoryWarningShown = false;
   personaMemoryWriteInFlight = false;
@@ -3840,6 +3842,82 @@ function addElement(parent, className, text) {
   return element;
 }
 
+const preferenceReviewDrafts = new Map();
+let preferenceReviewOpenKey = null;
+function renderPreferenceReview() {
+  const panel=document.querySelector('#preferenceReview'), list=document.querySelector('#preferenceReviewList'), counter=document.querySelector('#preferenceReviewCount');
+  if(!panel || !list) return;
+  const items=collectReviewableFragments(personaMemoryRecords,state.preferences,state.messages);
+  panel.hidden=!items.length;
+  if(counter) counter.textContent='('+items.length+')';
+  list.replaceChildren();
+  for(const item of items) {
+    const key=item.kind+':'+item.id, draft=preferenceReviewDrafts.get(key) || {value:'',status:''};
+    preferenceReviewDrafts.set(key,draft);
+    const card=document.createElement('details'); card.className='preference-review-item'; card.open=preferenceReviewOpenKey===key;
+    card.addEventListener('toggle',()=>{if(card.open)preferenceReviewOpenKey=key;else if(preferenceReviewOpenKey===key)preferenceReviewOpenKey=null;});
+    const heading=document.createElement('summary'); heading.textContent=item.text; card.append(heading);
+    const source=document.createElement('p');
+    source.textContent=item.source ? 'Original question: '+item.source.question : 'The original question could not be matched with certainty. Enter a complete preference below.';
+    card.append(source);
+    if(item.source) {
+      const answer=document.createElement('p'); answer.textContent='Your answer: '+item.source.answer; card.append(answer);
+      const suggest=document.createElement('button'); suggest.type='button'; suggest.textContent='Suggest wording';
+      suggest.addEventListener('click',async()=>{
+        const owner=cloudUserId;if(!owner)return; suggest.disabled=true;draft.status='Preparing a suggestion…'; status.textContent=draft.status;
+        try {
+          const response=await fetch(API_BASE+'/api/memory/extract',{method:'POST',headers:await authenticatedApiHeaders(),body:JSON.stringify({messages:[{role:'assistant',content:item.source.question},{role:'user',content:item.source.answer}],existingMemories:[],scenarioId:item.source.scenarioId})});
+          const result=await response.json();if(!response.ok)throw Error('Suggestion unavailable. You can write the preference yourself.');
+          if(owner!==cloudUserId)return;
+          const candidates=(Array.isArray(result.memories)?result.memories:[]).map(cleanPersonaMemoryCandidate).filter(value=>value && ['user_stated','user_confirmed'].includes(value.status));
+          if(!candidates.length) throw Error('There is not enough context for a reliable suggestion. Please write the preference yourself.');
+          const suggestion=candidates.map(candidate=>candidate.statement + (candidate.conditions?.length ? ' (Conditions: '+candidate.conditions.join('; ')+')' : '')).join(' ');
+          if(candidates.length>3 || suggestion.length>420) throw Error('The exchange may contain several preferences. Please write the one you want to save.');
+          draft.value=suggestion; input.value=draft.value;draft.status='Suggested wording - check and edit it before saving.';
+        } catch(error) {draft.status=error.message || 'Suggestion unavailable. Please write the preference yourself.';}
+        finally { if(owner===cloudUserId){suggest.disabled=false;status.textContent=draft.status;if(card.isConnected === false)renderPreferenceReview();} }
+      });card.append(suggest);
+    }
+    const form=document.createElement('form'); form.className='preference-review-form';
+    const label=document.createElement('label'); label.textContent='Complete preference';
+    const input=document.createElement('textarea'); input.value=draft.value;input.maxLength=420;input.rows=3;input.required=true;input.placeholder='Describe the situation and what you prefer';
+    input.addEventListener('input',()=>{draft.value=input.value;});label.append(input);
+    const save=document.createElement('button');save.type='submit';save.textContent='Save preference';
+    const status=document.createElement('p');status.setAttribute('role','status');status.textContent=draft.status;
+    form.addEventListener('submit',async event=>{
+      event.preventDefault();const owner=cloudUserId, statement=String(input.value||'').trim().replace(/\s+/g,' ');
+      if(!owner || !supabase){status.textContent='Sign in to save your preference.';return;}
+      if(statement.length<8 || !isUsefulStandalonePreference(statement)){status.textContent='Please include what the preference refers to and what you want to happen.';return;}
+      save.disabled=true;
+      try {
+        if(item.kind==='memory') {
+          const original=personaMemoryRecords.find(row=>String(row.id)===String(item.id));
+          if(!original || !memoryIsActive(original))throw Error('This memory is no longer available.');
+          const topic=deriveMemoryTopic(statement), kind=deriveMemoryKind(statement);
+          const attributes={...(original.attributes || {})};
+          if(!attributes.scenario_id && item.source?.scenarioId && scenarioForId(item.source.scenarioId)) attributes.scenario_id=item.source.scenarioId;
+          await updatePersonaMemoryRow(original.id,{statement,topic,kind,attributes,scope_key:deriveMemoryScopeKey(statement,topic,kind),search_terms:[],search_keys:buildPersonaMemorySearchKeys(statement,[],topic),status:'user_confirmed',confidence:0.98,reviewed_at:new Date().toISOString()});
+        } else {
+          const original=state.preferences.find(row=>String(row.id)===String(item.id));
+          if(!original)throw Error('This preference is no longer available.');
+          const row=preferenceToPersonaMemory({...original,text:statement,status:'user_confirmed'},owner);
+          if(!row)throw Error('Please write a complete preference without sensitive personal information.');
+          if(item.source?.scenarioId && scenarioForId(item.source.scenarioId))row.attributes={...row.attributes,scenario_id:item.source.scenarioId};
+          const {data,error}=await supabase.from('synqme_persona_memories').insert(row).select(PERSONA_MEMORY_SELECT_COLUMNS).single();
+          if(error || !data)throw error || Error('Could not save this preference.');
+          if(owner!==cloudUserId)return;
+          personaMemoryRecords=[data,...personaMemoryRecords];
+        }
+        if(owner!==cloudUserId)return;
+        preferenceReviewDrafts.delete(key);preferenceReviewOpenKey=null;renderAll();
+        const foot=document.querySelector('#memoryFootnote');if(foot)foot.textContent='Preference saved and confirmed.';
+      } catch(error) {draft.status=error.message || 'Could not save the preference. Please try again.';status.textContent=draft.status;}
+      finally {save.disabled=false;}
+    });
+    form.append(label,save,status);card.append(form);list.append(card);
+  }
+}
+
 function activeLegacyPreferences() {
   return state.preferences.filter((item) =>
     !["superseded", "rejected"].includes(String(item.status || item.preference_status || "").toLowerCase()) && isUsefulStandalonePreference(item.text)
@@ -3851,15 +3929,15 @@ function curatedPreferences() {
   const linkedPreferenceIds = new Set(activePersonaMemories().map(memory => String(memory.source_preference_id || "")).filter(Boolean));
   for (const memory of activePersonaMemories()) {
     if (!["user_stated", "user_confirmed"].includes(memory.status)) continue;
-    const key = String(memory.statement || "").trim().toLocaleLowerCase();
+    const key = preferenceIdentity(memory.statement, memory.conditions, memory.permission_policy);
     if (!key || seen.has(key)) continue;
-    seen.add(key); results.push({ text: memory.statement, category: memory.topic?.replace(/_/g, " ") || "Personal preference" });
+    seen.add(key); results.push({ text: memory.statement, category: preferenceDisplayLabel(memory, SCENARIOS, scenarioTasks), conditions: memory.conditions || [] });
   }
   for (const preference of activeLegacyPreferences()) {
     if (linkedPreferenceIds.has(String(preference.id))) continue;
-    const key = String(preference.text || "").trim().toLocaleLowerCase();
+    const key = preferenceIdentity(preference.text, preference.unresolvedFields);
     if (!key || seen.has(key)) continue;
-    seen.add(key); results.push(preference);
+    seen.add(key); results.push({ ...preference, category: "Scenario not linked · " + (preference.category || "Personal preference") });
   }
   return results;
 }
@@ -3903,11 +3981,13 @@ function renderPreferences() {
       copy.className = "preference-copy";
       addElement(copy, "preference-category", preference.category || classifyPreference(preference.text));
       addElement(copy, "preference-text", preference.text);
+      if (Array.isArray(preference.conditions) && preference.conditions.length) addElement(copy, "preference-conditions", "Conditions: " + preference.conditions.join("; "));
       item.append(copy);
       elements.preferenceList.append(item);
     });
   }
 
+  renderPreferenceReview();
   if (elements.settingsPreferenceCount) elements.settingsPreferenceCount.textContent = String(count);
   if (elements.settingsPreferenceList) {
     elements.settingsPreferenceList.replaceChildren();
@@ -6011,6 +6091,7 @@ elements.signOutButton?.addEventListener("click", async () => {
     cloudUserEmail = "";
     cloudMode = "local";
     personaMemoryRecords = [];
+    preferenceReviewDrafts.clear();
     simulationSession = null;
     todoItems = []; todoLoadedUserId = null; todoEditingId = null; todoAwaitingTitle = false; renderTodoReminders();
     personaMemoryTableUnavailable = false;

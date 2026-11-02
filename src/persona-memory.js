@@ -58,7 +58,10 @@ export function isUsefulStandalonePreference(value) {
   const simple = text.toLocaleLowerCase().replace(/[’]/g, "'").replace(/[.!?,;:…]+$/gu, "").trim();
   if (/^[\p{Script=Latin}0-9\x27’\-]+$/u.test(simple)) return false;
   if (/^(?:i|we|you|it|yes|yeah|yep|no|nope|okay|ok|sure|correct|right|quietly|gently|slowly|separately|separate|that'?s correct|that is correct|that'?s right|that is right|exactly|thank you|thanks|we already (?:covered|discussed|did) (?:that|this|it)|already (?:covered|discussed) (?:that|this|it)|just do it|do it|leave it|put it back|tell me more)$/i.test(simple)) return false;
-  if (/^(?:(?:i|we|you)\s+)?(?:(?:would|will|can|should|must|want to|want you to|prefer to)\s+)?(?:(?:quietly|gently|slowly|carefully|just|please)\s+)*(?:do|put|move|leave|take|clean|wash|keep|replace|return|handle|arrange)\s+(?:it|that|this|them|those)\b/i.test(simple)) return false;
+  if (/^(?:all|any|either|both|the first|the second|the third|number)\s+(?:of\s+)?(?:them|those|these|one|two|three|four|five|\d+)$/i.test(simple)) return false;
+  if (/^tell me what (?:you(?:'re| are)|you(?:'re| are) still) (?:unsure|uncertain) (?:about|of)$/i.test(simple)) return false;
+  if (/^(?:i\s+)?(?:want|prefer|would like)\s+(?:it|this|that|them|those)\b/i.test(simple)) return false;
+  if (/^(?:(?:i|we|you)\s+)?(?:(?:would|will|can|should|must|want to|want you to|prefer to)\s+)?(?:(?:quietly|gently|slowly|carefully|just|please)\s+)*(?:do|put|pick|move|leave|take|clean|wash|keep|replace|return|handle|arrange)\s+(?:it|that|this|them|those)\b/i.test(simple)) return false;
   if (/^(?:we|i|you) (?:already )?(?:covered|discussed|talked about) (?:that|this|it)\b/i.test(simple)) return false;
   if (/^(?:for|regarding|about) the practice situation\b/i.test(simple)) return false;
   if (/^(?:that|this|it) (?:is|was|will be|would be|looks|sounds) (?:fine|right|correct|good|okay|ok)$/i.test(simple)) return false;
