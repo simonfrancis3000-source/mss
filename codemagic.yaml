@@ -4,6 +4,8 @@ workflows:
     max_build_duration: 90
     instance_type: mac_mini_m2
     environment:
+      groups:
+        - mss_mobile
       node: 24
       java: 21
     scripts:
