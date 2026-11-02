@@ -3,3 +3,7 @@ dist/
 public/models/franka_emika_panda/
 public/models/panda_cup_scene.xml
 src/simulation.js
+
+# Android signing keys
+*.keystore
+*.jks

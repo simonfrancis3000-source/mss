@@ -28,3 +28,37 @@ workflows:
 
     artifacts:
       - android/app/build/outputs/apk/debug/*.apk
+
+  android-play:
+    name: MSS Google Play Bundle
+    max_build_duration: 90
+    instance_type: mac_mini_m2
+    environment:
+      groups:
+        - mss_mobile
+      android_signing:
+        - mss_upload
+      node: 24
+      java: 21
+
+    scripts:
+      - name: Install dependencies
+        script: npm ci
+
+      - name: Build MSS mobile
+        script: npm run build -- --mode mobile
+
+      - name: Sync Android
+        script: |
+          npx cap sync android
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > "$CM_BUILD_DIR/android/local.properties"
+
+      - name: Build signed Google Play bundle
+        script: |
+          test -f "$CM_KEYSTORE_PATH" || exit 1
+          cd android
+          chmod +x gradlew
+          ./gradlew bundleRelease
+
+    artifacts:
+      - android/app/build/outputs/bundle/release/*.aab
