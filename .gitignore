@@ -10,3 +10,7 @@ supabase/.temp/
 # Android signing keys
 *.keystore
 *.jks
+
+
+# Manually staged OTA bundles; never publish by accident
+ota-publish/
