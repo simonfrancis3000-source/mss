@@ -3,6 +3,12 @@ export function progressOwnerLabel(name, noun) {
   return first ? first + "'s " + noun : 'Your ' + noun;
 }
 
+export const MYSECONDSELF_URL = 'https://mysecondself.app';
+export function progressShareMessage(name) {
+  const first = String(name || '').trim().split(/\s+/)[0] || 'Someone';
+  return first + ' is preparing for the arrival of their domestic humanoid robot. Are you? Learn more at MySecondSelf.';
+}
+
 export async function createProgressShareFile(progress, name) {
   const canvas = document.createElement('canvas');
   canvas.width = 1080; canvas.height = 1350;
@@ -13,9 +19,14 @@ export async function createProgressShareFile(progress, name) {
   function text(value,x,y,size,color=ink,weight=500) {
     ctx.fillStyle=color; ctx.font=weight+' '+size+'px Quicksand, sans-serif'; ctx.textAlign='center'; ctx.fillText(value,x,y,950);
   }
-  text('S Y N Q . M E',540,90,30,ink,600);
-  text(progressOwnerLabel(name,'progress'),540,172,48);
-  const x=540,y=475,r=205;
+  const first = String(name || '').trim().split(/\s+/)[0] || 'Someone';
+  text('S Y N Q . M E',540,62,29,ink,600);
+  text(first + ' is preparing for the arrival of their',540,120,30,ink,600);
+  text('domestic humanoid robot. Are you?',540,161,30,ink,600);
+  text('Learn more at MySecondSelf',540,204,27,'#7756c6',600);
+  text('mysecondself.app',540,239,22,secondary);
+  text(progressOwnerLabel(name,'progress'),540,295,42);
+  const x=540,y=535,r=175;
   ctx.save(); ctx.shadowColor='#b9d5e5'; ctx.shadowBlur=32; ctx.shadowOffsetY=14;
   ctx.beginPath(); ctx.arc(x,y,r+42,0,Math.PI*2); ctx.fillStyle=bg; ctx.fill(); ctx.restore();
   ctx.lineWidth=60; ctx.strokeStyle='#cde3ee'; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.stroke();
@@ -23,8 +34,8 @@ export async function createProgressShareFile(progress, name) {
     const gradient=ctx.createLinearGradient(300,300,760,650); gradient.addColorStop(0,'#6cbfd1'); gradient.addColorStop(1,'#8e70d6');
     ctx.strokeStyle=gradient; ctx.lineCap='round'; ctx.beginPath(); ctx.arc(x,y,r,-Math.PI/2,-Math.PI/2+2*Math.PI*progress.percent/100); ctx.stroke();
   }
-  text(progress.percent+'%',540,477,76,'#7756c6',700);
-  text('scenarios complete',540,536,28,secondary);
+  text(progress.percent+'%',540,535,72,'#7756c6',700);
+  text('scenarios complete',540,590,27,secondary);
   text(progress.completed+' of '+progress.total+' scenarios confirmed complete',540,790,27,secondary);
   const colors=['#65bfd0','#8870d8','#efb567','#df8bc4'];
   progress.groups.forEach((group,i)=>{
@@ -44,7 +55,7 @@ export async function createProgressShareFile(progress, name) {
 export async function shareProgressImage(progress,name) {
   const file=await createProgressShareFile(progress,name);
   if(navigator.canShare?.({files:[file]})) {
-    try { await navigator.share({files:[file],title:progressOwnerLabel(name,'SYNQ.ME progress')});return 'shared'; }
+    try { await navigator.share({files:[file],title:progressOwnerLabel(name,'SYNQ.ME progress'),text:progressShareMessage(name),url:MYSECONDSELF_URL});return 'shared'; }
     catch(error) { if(error.name==='AbortError') return 'cancelled'; }
   }
   const url=URL.createObjectURL(file), link=document.createElement('a');
