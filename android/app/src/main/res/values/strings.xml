@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">MySecondSelf</string>
+    <string name="title_activity_main">MySecondSelf</string>
+    <string name="package_name">app.mysecondself</string>
+    <string name="custom_url_scheme">app.mysecondself</string>
+</resources>
