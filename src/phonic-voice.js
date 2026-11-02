@@ -1,4 +1,5 @@
 import { createSentencePausePlanner } from "./sentence-pause.js";
+import { Capacitor } from "@capacitor/core";
 // Real-time browser voice adapter for Phonic's Speech-to-Speech WebSocket.
 // Adapted from Phonic-Co/phonic-web-demo (MIT): https://github.com/Phonic-Co/phonic-web-demo
 
@@ -15,6 +16,9 @@ export function voiceFailureMessage(value) {
     .replace(/Bearer\s+\S+/gi, "Bearer [redacted]")
     .replace(/[\r\n\t]+/g, " ").slice(0, 350);
   if (/microphone|NotAllowedError|permission.*(?:microphone|denied)/i.test(detail)) {
+    if (Capacitor.isNativePlatform()) {
+      return "Microphone access is needed to speak with your robot. Allow access when your phone asks. If you previously denied it, enable Microphone in your phone Settings > Apps > MySecondSelf > Permissions.";
+    }
     return "Microphone access is needed to start a voice conversation. Allow it in your browser settings, then try again.";
   }
   if (/credit|balance|billing|quota/i.test(detail)) return "The voice service has reached its account or billing limit. Text chat is still available.";
