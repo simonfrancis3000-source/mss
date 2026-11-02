@@ -21,7 +21,7 @@ git commit -m "Sync Capawesome native plugins and lockfile"
 git push
 ```
 
-Publish the Android **1.3 (versionCode 4)** AAB via the existing Codemagic
+Publish the Android **1.4 (versionCode 5)** AAB via the existing Codemagic
 `android-play` workflow with `mss_upload`. A native app-store update is
 required to install the plugin. Do not use the OTA channel for native SDK,
 permission, Info.plist, Capacitor plugin, or app entitlement changes.
@@ -30,7 +30,7 @@ permission, Info.plist, Capacitor plugin, or app entitlement changes.
 
 1. Incorporate the latest reviewed MSS UI changes into the mobile branch.
 2. Run tests, then `npm run build -- --mode mobile`.
-3. Run `python3 scripts/package-mobile-ota.py --platform android --native-code 4`.
+3. Run `python3 scripts/package-mobile-ota.py --platform android --native-code 5`.
 4. Inspect `ota-publish/`: a zip with `index.html` at root and
    `internal-android.json`. Keep source maps, tokens, and private files out of
    public bundles. The script validates the relative Vite asset base and prints
