@@ -1621,3 +1621,10 @@ body:not(.auth-required):not(.profile-setup-required) {
   background: #f2f7ff;
   border-color: #bcd4f6;
 }
+
+/* Cloudflare Turnstile authentication challenge */
+.auth-turnstile { display: flex; flex-direction: column; align-items: center; gap: 0.4rem; margin: 0.6rem auto; max-width: 100%; }
+.auth-turnstile[hidden] { display: none !important; }
+.auth-turnstile [data-turnstile-widget] { max-width: 100%; }
+.auth-turnstile-status { margin: 0; text-align: center; font-size: 0.78rem; line-height: 1.4; color: inherit; }
+.auth-turnstile-status:empty { display: none; }
