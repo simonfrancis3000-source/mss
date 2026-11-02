@@ -1,3 +1,4 @@
+import { createVoiceBreakTracker, breakResponse, responseBeforeBreak, standardBreakPhrase } from "./voice-break.js";
 import { parseReminderCommand, matchReminder, validReminderTitle } from "./reminders.js";
 import { simulationCapabilitySummary } from "./simulation.js";
 import { conversationIntent } from "./conversation-plan.js";
@@ -458,6 +459,8 @@ let isSending = false;
 let sendSequence = 0;
 let lastAIReplyUsedFallback = false;
 let voiceModeActive = false;
+const voiceBreakTracker = createVoiceBreakTracker();
+let voiceBreakOfferDue = false;
 let voicePauseAfterReply = false;
 let voiceWakeLock = null;
 let voiceIdleTimer = null;
@@ -473,8 +476,7 @@ async function requestVoiceWakeLock() {
 }
 function clearVoiceIdle() { clearTimeout(voiceIdleTimer); voiceIdleTimer = null; voiceIdleDeadline = 0; }
 function armVoiceIdle() {
-  clearVoiceIdle();
-  if (!voiceModeActive) return;
+  if (!voiceModeActive || voiceIdleDeadline) return;
   voiceIdleDeadline = Date.now() + 30000;
   voiceIdleTimer = setTimeout(() => {
     if (voiceModeActive) stopVoiceConversation("Paused after 30 seconds of silence. Press Start to continue.");
@@ -517,7 +519,9 @@ let todoLoadedUserId = null;
 let todoEditingId = null;
 let todoAwaitingTitle = false;
 let lastVoiceWasTodo = false;
+let lastVoiceWasBreak = false;
 function todoCommandForMessage(message) {
+  if (voiceModeActive && breakResponse(message) === "pause") return null;
   const explicit = parseReminderCommand(message);
   if (explicit) return explicit;
   if (!todoAwaitingTitle) return null;
@@ -1436,6 +1440,7 @@ function writePendingMemoryJobs(userId, revision, jobs) {
   catch { if (elements.personaMemoryStatus) elements.personaMemoryStatus.textContent = "Memory updates are waiting to sync. Keep this page open until connected."; }
 }
 function queueStructuredMemoryTurn(userMessage, userTimestamp) {
+  if (voiceModeActive && voiceBreakTracker.awaiting() && breakResponse(userMessage) !== 'other') return;
   if (todoCommandForMessage(userMessage)) return;
   const userId = cloudUserId, revision = trainingRevision;
   if (!userId || !supabase || !API_BASE || !userTimestamp || !String(userMessage || "").trim() ||
@@ -3598,6 +3603,7 @@ function extractExplicitPreferenceFacets(text) {
 }
 
 function savePreference(message) {
+  if (voiceModeActive && voiceBreakTracker.awaiting() && breakResponse(message) !== 'other') return;
   if (todoCommandForMessage(message)) return;
   if (!["answer", "correction"].includes(conversationIntent(message))) return;
   const statements = splitPreferenceStatements(message);
@@ -4599,7 +4605,7 @@ function syncPhonicTranscriptItems(items) {
 
     const clarificationRequest = isClarificationRequest(textValue);
     const preferenceIdsBeforeTurn = new Set(state.preferences.map((preference) => String(preference.id)));
-    const answeredPendingClarification = todoCommandForMessage(textValue) ? false : resolvePendingClarification(textValue);
+    const answeredPendingClarification = todoCommandForMessage(textValue) || (voiceBreakTracker.awaiting() && breakResponse(textValue) !== 'other') ? false : resolvePendingClarification(textValue);
     if (!answeredPendingClarification && !clarificationRequest) savePreference(textValue);
     const preferenceWasAdded = state.preferences.some((preference) => !preferenceIdsBeforeTurn.has(String(preference.id)));
     const shouldExtractStructuredMemory = shouldExtractPersonaMemory(textValue, preferenceWasAdded) ||
@@ -4669,6 +4675,7 @@ function handlePhonicVoiceEvent(event) {
       if (elements.conversationStatus) elements.conversationStatus.textContent = "Getting ready to listen";
       break;
     case "ready":
+      voiceBreakTracker.start();
       armVoiceIdle();
       updateVoiceExperience("listening", companion + " is listening. Speak naturally.");
       if (elements.voiceStatus) {
@@ -4679,6 +4686,7 @@ function handlePhonicVoiceEvent(event) {
       break;
     case "user_started_speaking":
       lastVoiceWasTodo = false;
+      lastVoiceWasBreak = false;
       voicePauseAfterReply = false;
       clearVoiceIdle();
       if (phonicAssistantSpeechStartedAt) {
@@ -4745,7 +4753,7 @@ function handlePhonicVoiceEvent(event) {
       const latestAssistant = state.messages[state.messages.length - 1]?.role === "assistant"
         ? state.messages[state.messages.length - 1].content
         : "";
-      if (!lastVoiceWasTodo && latestUser && latestAssistant) state.pendingClarification = detectPendingClarification(latestUser, latestAssistant);
+      if (!lastVoiceWasTodo && !lastVoiceWasBreak && latestUser && latestAssistant) state.pendingClarification = detectPendingClarification(latestUser, latestAssistant);
       persist();
       renderAll();
       void flushCloudSave();
@@ -4778,6 +4786,16 @@ function handlePhonicVoiceEvent(event) {
   }
 }
 
+async function translatedVoiceBreakQuestion(language, kind = "offer") {
+  const standard = standardBreakPhrase(language, kind);
+  if (standard) return standard;
+  try {
+    const response = await fetch(API_BASE + "/api/voice/break-offer", { method:"POST", headers:await authenticatedApiHeaders(), body:JSON.stringify({language,kind}), signal:AbortSignal.timeout(15000) });
+    const result = await response.json();
+    return response.ok && typeof result?.question === "string" && result.question.length <= 350 ? result.question : null;
+  } catch { return null; }
+}
+
 async function handlePhonicAmiaToolCall({ name, parameters = {}, items = [] } = {}) {
   const language = state.profile.preferredLanguage || "en";
   const unavailable = localizedAIUnavailable(language);
@@ -4791,8 +4809,10 @@ async function handlePhonicAmiaToolCall({ name, parameters = {}, items = [] } = 
   );
   const latestUserText = String(latestItem?.text || parameters.latest_user_message || "").trim();
   if (!latestUserText) return { status: "error", assistant_text: unavailable };
+  const answeringBreak = voiceBreakTracker.awaiting();
+  const breakChoice = answeringBreak ? breakResponse(latestUserText) : null;
   lastVoiceWasTodo = Boolean(todoCommandForMessage(latestUserText));
-  voicePauseAfterReply = conversationIntent(latestUserText) === "pause";
+  voicePauseAfterReply = conversationIntent(latestUserText) === "pause" || breakResponse(latestUserText) === "pause";
   if (isOutOfHomeTopicChange(latestUserText)) activeOutOfHomeScenarioContext = null;
 
   const latestKey = latestItem ? String(latestItem.itemIdx) : "";
@@ -4804,7 +4824,7 @@ async function handlePhonicAmiaToolCall({ name, parameters = {}, items = [] } = 
     if (latestKey) phonicItemMap.set(latestKey, state.messages.length - 1);
     const preferenceIdsBeforeTurn = new Set(state.preferences.map((preference) => String(preference.id)));
     const clarificationRequest = isClarificationRequest(latestUserText);
-    const answeredPendingClarification = lastVoiceWasTodo ? false : resolvePendingClarification(latestUserText);
+    const answeredPendingClarification = lastVoiceWasTodo || answeringBreak ? false : resolvePendingClarification(latestUserText);
     if (!answeredPendingClarification && !clarificationRequest) savePreference(latestUserText);
     const preferenceWasAdded = state.preferences.some((preference) => !preferenceIdsBeforeTurn.has(String(preference.id)));
     phonicTurnMetadata.set(latestKey || "fallback", {
@@ -4826,12 +4846,16 @@ async function handlePhonicAmiaToolCall({ name, parameters = {}, items = [] } = 
 
   queueStructuredMemoryTurn(latestUserText, metadata.timestamp);
   try {
-    let reply = await requestAIReply();
+    if (answeringBreak && breakChoice !== "clarify") voiceBreakTracker.resume();
+    voiceBreakOfferDue = !answeringBreak && !lastVoiceWasTodo && !voicePauseAfterReply && voiceBreakTracker.due();
+    let reply = answeringBreak && ["pause", "clarify"].includes(breakChoice)
+      ? await translatedVoiceBreakQuestion(language, breakChoice) || unavailable
+      : await requestAIReply();
     const replyNeedsRepair = (value) => !value ||
       value === "__SYNQME_UNHELPFUL_AI_RESPONSE__" ||
       responseRepeatsUser(value, latestUserText) ||
       responseRepeatsRecentAssistant(value);
-    if (replyNeedsRepair(reply) && state.apiConnected && !lastAIReplyUsedFallback) {
+    if (!answeringBreak && replyNeedsRepair(reply) && state.apiConnected && !lastAIReplyUsedFallback) {
       const retriedReply = await requestAIReply(true);
       if (retriedReply && retriedReply !== "__SYNQME_UNHELPFUL_AI_RESPONSE__" && !replyNeedsRepair(retriedReply)) {
         reply = retriedReply;
@@ -4842,11 +4866,20 @@ async function handlePhonicAmiaToolCall({ name, parameters = {}, items = [] } = 
       reply = unavailable;
     }
 
+    if (voiceBreakOfferDue && voiceModeActive) {
+      const question = await translatedVoiceBreakQuestion(language);
+      if (question && voiceModeActive && voiceBreakTracker.due()) {
+        reply = [responseBeforeBreak(reply), question].filter(Boolean).join("\n\n");
+        voiceBreakTracker.offered();
+      }
+    }
+    lastVoiceWasBreak = answeringBreak && breakChoice !== "other" || voiceBreakTracker.awaiting();
+    voiceBreakOfferDue = false;
     const spokenReply = spokenSentenceBreaks(enforceFirstPersonTaskQuestions(
       reply.trim() || unavailable,
       selectedCompanionDisplayName()
     ));
-    if (!lastVoiceWasTodo) state.pendingClarification = detectPendingClarification(latestUserText, spokenReply);
+    if (!lastVoiceWasTodo && !answeringBreak && !voiceBreakTracker.awaiting()) state.pendingClarification = detectPendingClarification(latestUserText, spokenReply);
     void refreshRoomJourneyProgress();
     phonicTurnMetadata.delete(latestKey || "fallback");
     if (state.profile.shareAnonymizedLearning === true) void contributeSharedKnowledgeFromTurn();
@@ -5090,6 +5123,7 @@ function updateVoiceModeButton() {
 }
 
 function stopVoiceConversation(statusMessage = "Voice conversation stopped.") {
+  voiceBreakTracker.stop(); voiceBreakOfferDue = false;
   voicePauseAfterReply = false;
   clearVoiceIdle();
   if (voiceWakeLock) { void voiceWakeLock.release().catch(() => {}); voiceWakeLock = null; }
@@ -5376,7 +5410,7 @@ async function requestAIReply(repairMode = false) {
           memory_key, topic, kind, scope_key, statement, status, confidence, conditions, source_message, source_timestamp, conflict_group
         })),
         sharedKnowledgeReferences,
-        repairMode, welcomeBack: welcomeBackPending
+        repairMode, voiceBreakDue: voiceModeActive && voiceBreakOfferDue, welcomeBack: welcomeBackPending
       })
     });
     let data = {};

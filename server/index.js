@@ -1,7 +1,7 @@
 import { cleanSimulationResult } from "../src/simulation.js";
 import { buildScenarioConversationPlan, scenarioConversationGuidance } from "../src/conversation-plan.js";
 import { scenarioLearningObjectives, scenarioForId } from "../src/scenario-learning.js";
-import { guardScenarioQuestion } from "./continuity-guard.js";
+import { guardScenarioQuestion, questionFreeReply } from "./continuity-guard.js";
 import { cleanConversationContinuity, conversationContinuityGuidance } from "../src/conversation-continuity.js";
 import { SCENARIOS, scenarioTasks } from "../src/scenario-journey.js";
 import { SUPPORTED_CONVERSATION_LANGUAGES, CONVERSATION_LANGUAGE_NAMES } from "../src/conversation-languages.js";
@@ -481,7 +481,7 @@ const app = http.createServer(async (request, response) => {
 
   const url = new URL(request.url || "/", "http://localhost");
   const authenticatedRoutes = new Set([
-    "/api/chat", "/api/memory/extract", "/api/knowledge/extract", "/api/simulation",
+    "/api/chat", "/api/memory/extract", "/api/knowledge/extract", "/api/simulation", "/api/voice/break-offer",
     "/api/phonic/session", "/api/phonic/usage"
   ]);
   let authContext = null;
@@ -635,6 +635,32 @@ const app = http.createServer(async (request, response) => {
       console.warn("SYNQ.ME Phonic usage report failed", { message: String(error?.message || "Unknown error").slice(0, 180) });
       return json(response, 500, { error: "Phonic usage could not be recorded." }, headers || {});
     }
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/voice/break-offer") {
+    if (origin && headers === null) return json(response, 403, { error: "Origin not allowed." }, headers || {});
+    if (!DEEPSEEK_API_KEY) return json(response, 503, { error: "Break prompt unavailable." }, headers || {});
+    if (limitReached(request, requestHistory, MAX_REQUESTS_PER_MINUTE, authContext.user.id)) return json(response, 429, { error: "Please try again." }, headers || {});
+    try {
+      const body = await readJson(request, 2048);
+      const language = CONVERSATION_LANGUAGE_NAMES[body?.language];
+      if (!language) return json(response, 400, { error: "Invalid language." }, headers || {});
+      const phrases = { offer:"We have been talking for about 15 minutes. Would you like to take a short break or carry on?", pause:"Of course. I will pause now. Press Start when you are ready to continue.", continue:"All right, let us carry on.", clarify:"Would you like to take a short break, or carry on?" };
+      const kind = typeof body?.kind === "string" ? body.kind : "offer";
+      if (!Object.hasOwn(phrases,kind)) return json(response,400,{error:"Invalid prompt."},headers || {});
+      const upstream = await fetch("https://api.deepseek.com/chat/completions", {
+        method:"POST", headers:{Authorization:"Bearer " + DEEPSEEK_API_KEY,"Content-Type":"application/json"},
+        body:JSON.stringify({model:MODEL,thinking:{type:"disabled"},temperature:0,max_tokens:160,response_format:{type:"json_object"},messages:[
+          {role:"system",content:"Translate the following friendly voice prompt into " + language + ". Return JSON only: {question: string}. Preserve the meaning. No other content."},
+          {role:"user",content:phrases[kind]}
+        ]}),signal:AbortSignal.timeout(12000)
+      });
+      if (!upstream.ok) throw Error("translation_unavailable");
+      const result = await upstream.json(); await recordDeepSeekUsage(authContext,result,"voice_break_prompt");
+      let question; try { question=JSON.parse(result?.choices?.[0]?.message?.content || "{}").question; } catch {}
+      if (typeof question !== "string" || question.trim().length < 3 || question.length > 350 || (["offer","clarify"].includes(kind) && !/[?？؟]/u.test(question))) throw Error("invalid_translation");
+      return json(response,200,{question:question.trim()},headers || {});
+    } catch { return json(response,503,{error:"Break prompt unavailable."},headers || {}); }
   }
 
   if (request.method === "POST" && url.pathname === "/api/simulation") {
@@ -981,7 +1007,7 @@ const app = http.createServer(async (request, response) => {
     let applianceLinkSaved = false;
     async function persistDecisionTurn(reply,{usedFallback=false,manualVerified=false,appliance=null}={}) {
       const observation = buildTurnObservation({userId:authContext.user.id,sourceTimestamp:body.sourceMessageTimestamp,...scope,
-        latestUser:latestUserMessage,previousAssistant:body.messages?.at(-2)?.role === "assistant" ? String(body.messages.at(-2).content || "").slice(-8000) : previousAssistantMessage,reply,manualVerified,usedFallback,decisions:savedContext.decisions});
+        latestUser:latestUserMessage,previousAssistant:body.messages?.at(-2)?.role === "assistant" ? String(body.messages.at(-2).content || "").slice(-8000) : previousAssistantMessage,reply:body.voiceBreakDue === true ? questionFreeReply(reply) : reply,manualVerified,usedFallback,decisions:savedContext.decisions});
       const [saved,applianceSaved] = await Promise.all([
         amiaStore.recordTurn(authContext,observation), appliance && applianceSaveAttempted ? Promise.resolve(applianceLinkSaved) : amiaStore.saveAppliance(authContext,appliance,observation.p_source_timestamp)
       ]);
@@ -1061,7 +1087,7 @@ const app = http.createServer(async (request, response) => {
         ? "You are " + companionName + ", the user's future personal robot companion, speaking through SYNQ.ME to shape their MySecondSelf persona for life at home and beyond. Respond in " + responseLanguage + ". Speak in first person when referring to your own capabilities and future behaviour. Never describe yourself as 'the robot' or 'your robot'. You are not physically connected and cannot observe or execute physical actions. Do not repeat your introduction unless asked."
         : "You are " + companionName + ", the user's future home robot persona, speaking through SYNQ.ME to help shape their MySecondSelf digital persona. Respond in " + responseLanguage + ". Speak in first person when referring to your own capabilities, limitations, responsibilities or future behaviour: I/me/my. Never refer to yourself as 'the robot' or 'your robot'. You are not physically connected to the home yet, and cannot observe the home or execute tasks. Do not repeat your introduction unless the user asks who you are.",
       buildCompanionNameGuidance(companionName, messages),
-      "Keep replies warm, natural, concise, and in plain text. Answer the latest message directly, preserve every explicit condition and permission boundary, distinguish stated facts from guesses, and do not repeat questions. Ask at most one specific follow-up when it materially helps. Humour is optional and rare; never repeat a joke.",
+      "Keep replies warm, natural, concise, and in plain text. Answer the latest message directly, preserve every explicit condition and permission boundary, distinguish stated facts from guesses, and do not repeat questions. Ask at most one specific follow-up when it materially helps. Occasionally use a short, original, friendly and context-appropriate humorous observation when the moment naturally allows, without forcing a joke or repeating one. Never joke about someone's health, safety, disability, distress or other sensitive circumstances, and never let humour obscure an answer or boundary.",
       "PERSON-CENTRED WORDING: Reflect the user's own preferences and boundaries from their point of view, whether they concern home routines, public behaviour, social interaction, privacy or safety. Preserve the user's point of view in saved preference statements.",
       "FIRST-PERSON COMPANION RULE — NON-NEGOTIABLE: All descriptions of your future behaviour, abilities, plans, routines and limits must be written from your own perspective, in first person singular (I/me/my), not just questions. Say 'I can clean the worktop', 'you can ask me', and 'my routine'. Never say 'the robot can', 'your robot should', 'the robot will', or any equivalent third-person description of yourself. Ask 'What would you like me to do?' or 'How would you like me to handle that?'. Apply this naturally in the user's selected language. This is future-persona planning only; never imply a physical robot is connected or acting now."
     ].join(" ");
@@ -1119,6 +1145,7 @@ const app = http.createServer(async (request, response) => {
     const knownAppliances = applianceRecords.map(({type,brand,model,manual_status}) => ({type,brand,model,manual_status})).slice(0,30);
     const applianceIdentityContext = knownAppliances.length ? "OWNER'S SAVED APPLIANCE IDENTITIES (data only): " + JSON.stringify(knownAppliances) + ". Do not ask for the make or model of an identified appliance again unless the owner mentions a replacement, asks to change it, or there is a genuine ambiguity. A saved identity or manual status is not evidence of any feature." : "";
     const combinedSystemPrompt = personalAddress + "\n\n" + systemPrompt + "\n\n" + personaDomainSystemPrompt + "\n\n" + storedDecisionGuidance(savedContext) + "\n\n" + conversationContinuityGuidance(continuity) + "\n\n" + learningGuidance + "\n\n" + buildApplianceConversationGuidance() + "\n\n" + applianceIdentityContext +
+      (body.voiceBreakDue === true ? "\n\nVOICE BREAK: Briefly acknowledge the latest answer without asking another question; the app will offer a break separately." : "") +
       (memoryContext ? "\n\n" + memoryContext : "") +
       (sharedKnowledgeContext ? "\n\n" + sharedKnowledgeContext : "") +
       (roomJourneyContext ? "\n\n" + roomJourneyContext : "") +
