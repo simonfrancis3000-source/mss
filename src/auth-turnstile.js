@@ -29,12 +29,9 @@ export function createAuthTurnstile({ siteKey, container }) {
   // The production widget is restricted to synqme.mysecondself.app.
   // Do not force an untested CAPTCHA in bundled Capacitor localhost WebViews.
   // Explicit VITE_TURNSTILE_SITE_KEY overrides can enable other verified hosts.
-  const hostname = String(window.location?.hostname || "").toLowerCase();
-  const configured = Boolean(key) && (
-    Boolean(String(siteKey || "").trim()) ||
-    !hostname ||
-    hostname === "synqme.mysecondself.app"
-  );
+  const hostname = typeof window === "undefined" ? "" : String(window.location?.hostname || "").toLowerCase();
+  const explicitlyConfigured = typeof window !== "undefined" && Boolean(String(siteKey || "").trim());
+  const configured = Boolean(key) && (hostname === "synqme.mysecondself.app" || explicitlyConfigured);
   const target = container?.querySelector("[data-turnstile-widget]") || null;
   const status = container?.querySelector("[data-turnstile-status]") || null;
   let widgetId = null;
