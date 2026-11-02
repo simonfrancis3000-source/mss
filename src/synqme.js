@@ -4283,6 +4283,16 @@ function handlePhonicVoiceEvent(event) {
       if (elements.conversationStatus) elements.conversationStatus.textContent = companionThinkingMessage(companion);
       break;
     }
+    case "assistant_waiting_for_audio":
+      armVoiceIdle();
+      if (phonicAssistantSpeechStartedAt) {
+        phonicAssistantSpeechMs += Math.max(0, Date.now() - phonicAssistantSpeechStartedAt);
+        phonicAssistantSpeechStartedAt = 0;
+      }
+      assistantIsSpeaking = false;
+      updateVoiceExperience("thinking", companionThinkingMessage(companion));
+      if (elements.conversationStatus) elements.conversationStatus.textContent = companionThinkingMessage(companion);
+      break;
     case "assistant_started_speaking":
       clearVoiceIdle();
       if (!phonicAssistantSpeechStartedAt) phonicAssistantSpeechStartedAt = Date.now();

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createPhonicVoiceConversation, voiceFailureMessage, createFloat32Resampler } from "../src/phonic-voice.js";
+import { createPhonicVoiceConversation, voiceFailureMessage, createFloat32Resampler, firstAudibleSample } from "../src/phonic-voice.js";
 
 function browser(t, { getUserMedia, inputSampleRate = 44100 } = {}) {
   const originals = new Map();
@@ -18,7 +18,10 @@ function browser(t, { getUserMedia, inputSampleRate = 44100 } = {}) {
   const stream = { getTracks: () => tracks };
   const nodes = [];
   const audioSources = [];
+  const contexts = [];
   class AudioContext {
+    constructor() { contexts.push(this); }
+    state = "running";
     sampleRate = inputSampleRate;
     currentTime = 0;
     destination = {};
@@ -68,7 +71,7 @@ function browser(t, { getUserMedia, inputSampleRate = 44100 } = {}) {
     onEvent: (event) => events.push(event)
   });
   t.after(() => conversation.stop());
-  return { conversation, events, tracks, stream, nodes, Socket, audioSources };
+  return { conversation, events, tracks, stream, nodes, Socket, audioSources, contexts };
 }
 
 async function waitForSocket(Socket) {
@@ -185,7 +188,7 @@ test("streaming resampling preserves duration and continuity across source rates
 function pcmAudio(length=4410){return Buffer.from(new Int16Array(length).fill(1200).buffer).toString('base64');}
 
 test("sentence gaps are scheduled into playback and speaking finishes only after audio drains",async(t)=>{
- const {conversation,Socket,audioSources,events}=browser(t);
+ const {conversation,Socket,audioSources,events,contexts}=browser(t);
  const starting=conversation.start();const socket=await waitForSocket(Socket);socket.open();socket.message({type:'ready_to_start_conversation'});await starting;
  socket.message({type:'assistant_started_speaking'});
  socket.message({type:'audio_chunk',text:'Understood.',audio:pcmAudio()});
@@ -196,6 +199,7 @@ test("sentence gaps are scheduled into playback and speaking finishes only after
  assert.ok(Math.abs(audioSources[2].startAt-(audioSources[1].startAt+.1))<1e-8);
  socket.message({type:'assistant_finished_speaking'});
  assert.equal(events.filter(e=>e.type==='assistant_finished_speaking').length,0);
+ contexts[1].currentTime=audioSources[0].startAt+.01;
  await new Promise(resolve=>setTimeout(resolve,25));
  assert.equal(events.filter(e=>e.type==='assistant_started_speaking').length,1);
  audioSources[0].onended();audioSources[1].onended();
@@ -219,4 +223,73 @@ test("interrupting speech cancels queued pauses and stale playback callbacks",as
  assert.equal(events.filter(e=>e.type==='assistant_finished_speaking').length,0);
  socket.message({type:'audio_chunk',text:'Late audio.',audio:pcmAudio()});
  assert.equal(audioSources.length,2);
+});
+
+
+test("silent PCM and provider generation signals never announce speaking before audible playback", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { conversation, Socket, audioSources, contexts, events } = browser(t);
+  const starting = conversation.start();
+  const socket = await waitForSocket(Socket);
+  socket.open(); socket.message({ type: "ready_to_start_conversation" }); await starting;
+  socket.message({ type: "user_finished_speaking" });
+  socket.message({ type: "assistant_started_speaking" });
+  const pcm = new Int16Array(44100 * 3);
+  pcm.fill(1200, 44100 * 2);
+  socket.message({ type: "audio_chunk", audio: Buffer.from(pcm.buffer).toString("base64") });
+  const playback = contexts[1];
+  playback.currentTime = audioSources[0].startAt + 1.9;
+  t.mock.timers.tick(2000);
+  assert.equal(events.filter(e => e.type === "assistant_started_speaking").length, 0);
+  playback.currentTime = audioSources[0].startAt + 2.01;
+  t.mock.timers.tick(20);
+  assert.equal(events.filter(e => e.type === "assistant_started_speaking").length, 1);
+  socket.message({ type: "assistant_finished_speaking" });
+  assert.equal(events.filter(e => e.type === "assistant_finished_speaking").length, 0);
+  audioSources[0].onended();
+  assert.equal(events.filter(e => e.type === "assistant_finished_speaking").length, 1);
+});
+
+test("queued speech waits for a running audio clock and returns to thinking during a stream stall", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { conversation, Socket, audioSources, contexts, events } = browser(t);
+  const starting = conversation.start();
+  const socket = await waitForSocket(Socket);
+  socket.open(); socket.message({ type: "ready_to_start_conversation" }); await starting;
+  socket.message({ type: "audio_chunk", audio: pcmAudio() });
+  const playback = contexts[1];
+  playback.state = "suspended";
+  playback.currentTime = audioSources[0].startAt + .01;
+  t.mock.timers.tick(3000);
+  assert.equal(events.filter(e => e.type === "assistant_started_speaking").length, 0);
+  playback.state = "running";
+  t.mock.timers.tick(20);
+  assert.equal(events.filter(e => e.type === "assistant_started_speaking").length, 1);
+  playback.state = "suspended";
+  t.mock.timers.tick(20);
+  assert.equal(events.at(-1).type, "assistant_waiting_for_audio");
+  playback.state = "running";
+  t.mock.timers.tick(20);
+  assert.equal(events.at(-1).type, "assistant_started_speaking");
+  playback.currentTime = audioSources[0].startAt + .1;
+  audioSources[0].onended();
+  assert.equal(events.at(-1).type, "assistant_waiting_for_audio");
+  socket.message({ type: "audio_chunk", audio: pcmAudio() });
+  assert.equal(events.at(-1).type, "audio_chunk");
+  playback.currentTime = audioSources[1].startAt + .01;
+  t.mock.timers.tick(20);
+  assert.equal(events.at(-1).type, "assistant_started_speaking");
+  await conversation.stop();
+  const count = events.length;
+  t.mock.timers.tick(3000);
+  audioSources[1].onended();
+  assert.equal(events.length, count);
+});
+
+test("silent and very quiet lead-in packets have no audible onset", () => {
+  assert.equal(firstAudibleSample(new Int16Array(4410)), -1);
+  assert.equal(firstAudibleSample(new Int16Array(4410).fill(20)), -1);
+  const pcm = new Int16Array(8820);
+  pcm.fill(1200, 4410);
+  assert.equal(firstAudibleSample(pcm), 4410);
 });

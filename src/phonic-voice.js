@@ -76,6 +76,18 @@ function base64ToInt16Array(base64) {
   return new Int16Array(bytes.buffer);
 }
 
+// Ignore silent lead-in packets when deciding whether speech is playing.
+export function firstAudibleSample(pcm, sampleRate = SAMPLE_RATE) {
+  const windowSize = Math.max(1, Math.round(sampleRate * 0.01));
+  for (let offset = 0; offset < pcm.length; offset += windowSize) {
+    const end = Math.min(pcm.length, offset + windowSize);
+    let energy = 0;
+    for (let index = offset; index < end; index += 1) energy += (pcm[index] / 32768) ** 2;
+    if (Math.sqrt(energy / (end - offset)) >= 0.003) return offset;
+  }
+  return -1;
+}
+
 export function createPhonicVoiceConversation({ getSession, getConfig, onEvent = () => {}, onToolCall = async () => ({ status: "error", assistant_text: "I’m having trouble preparing a response right now. Please try again in a moment." }) }) {
   let socket = null;
   let microphoneStream = null;
@@ -87,11 +99,12 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
   let playbackGain = null;
   let playbackLimiter = null;
   let playbackSources = new Set();
+  const playbackTimings = new Map();
   let nextPlaybackTime = 0;
   const sentencePauses = createSentencePausePlanner(SAMPLE_RATE);
   let providerFinishedSpeaking = false;
   let playbackActive = false;
-  let playbackStartedTimer = null;
+  let playbackMonitorTimer = null;
   let playbackGeneration = 0;
   let stopped = true;
   let muted = false;
@@ -116,9 +129,30 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
     providerFinishedSpeaking = false;
     playbackActive = false;
     sentencePauses.reset();
-    if (playbackStartedTimer !== null) globalThis.clearTimeout(playbackStartedTimer);
-    playbackStartedTimer = null;
+    if (playbackMonitorTimer !== null) globalThis.clearTimeout(playbackMonitorTimer);
+    playbackMonitorTimer = null;
     emit({ type: "assistant_finished_speaking" });
+  }
+
+  // Provider generation events precede speaker output. Watch the audio clock,
+  // including suspended contexts, rather than treating receipt as playback.
+  function monitorPlayback() {
+    if (playbackMonitorTimer !== null) globalThis.clearTimeout(playbackMonitorTimer);
+    playbackMonitorTimer = null;
+    if (stopped || !playbackContext || userIsSpeaking) return;
+    const running = playbackContext.state === "running";
+    const now = playbackContext.currentTime;
+    const audible = running && [...playbackTimings.values()].some(({ audibleAt, endsAt }) =>
+      audibleAt !== null && now >= audibleAt && now < endsAt);
+    if (!playbackActive && audible) {
+      playbackActive = true;
+      emit({ type: "assistant_started_speaking" });
+    } else if (playbackActive && (!running || !playbackSources.size)) {
+      playbackActive = false;
+      if (!providerFinishedSpeaking) emit({ type: "assistant_waiting_for_audio" });
+    }
+    finishPlaybackIfDrained();
+    if (playbackSources.size) playbackMonitorTimer = globalThis.setTimeout(monitorPlayback, 20);
   }
 
   function stopPlayback() {
@@ -126,10 +160,11 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
     providerFinishedSpeaking = false;
     playbackActive = false;
     sentencePauses.reset();
-    if (playbackStartedTimer !== null) globalThis.clearTimeout(playbackStartedTimer);
-    playbackStartedTimer = null;
+    if (playbackMonitorTimer !== null) globalThis.clearTimeout(playbackMonitorTimer);
+    playbackMonitorTimer = null;
     const sources = [...playbackSources];
     playbackSources.clear();
+    playbackTimings.clear();
     for (const source of sources) {
       try { source.stop(); } catch {}
     }
@@ -156,21 +191,20 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
     nextPlaybackTime = startAt + buffer.duration;
     playbackSources.add(source);
     const sourceGeneration = playbackGeneration;
-    if (!playbackActive) {
-      playbackActive = true;
-      const generation = playbackGeneration;
-      playbackStartedTimer = window.setTimeout(() => {
-        playbackStartedTimer = null;
-        if (!stopped && generation === playbackGeneration && playbackActive && !userIsSpeaking) emit({ type: "assistant_started_speaking" });
-      }, Math.max(0, (startAt - playbackContext.currentTime) * 1000));
-    }
+    const firstAudible = firstAudibleSample(pcm);
+    playbackTimings.set(source, {
+      audibleAt: firstAudible < 0 ? null : startAt + firstAudible / SAMPLE_RATE,
+      endsAt: nextPlaybackTime
+    });
     source.onended = () => {
       if (sourceGeneration !== playbackGeneration) { try { source.disconnect(); } catch {} return; }
       playbackSources.delete(source);
+      playbackTimings.delete(source);
       try { source.disconnect(); } catch {}
-      finishPlaybackIfDrained();
+      monitorPlayback();
     };
     source.start(startAt);
+    monitorPlayback();
   }
 
   async function handleToolCall(message) {
@@ -291,6 +325,7 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
       }
 
       case "tool_call":
+        if (!playbackActive && !userIsSpeaking) emit({ type: "assistant_waiting_for_audio" });
         void handleToolCall(message);
         break;
 
