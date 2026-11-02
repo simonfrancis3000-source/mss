@@ -15,6 +15,14 @@ workflows:
       - name: Build MSS mobile
         script: VITE_API_BASE_URL=https://synqme-api.onrender.com npm run build -- --mode mobile
 
+      - name: Generate MySecondSelf native app icons
+        script: |
+          npx --yes @capacitor/assets@3.0.5 generate --android \
+            --iconBackgroundColor '#ffffff' \
+            --iconBackgroundColorDark '#ffffff' \
+            --splashBackgroundColor '#ffffff' \
+            --splashBackgroundColorDark '#ffffff'
+
       - name: Sync Android
         script: |
           npx cap sync android
@@ -47,6 +55,14 @@ workflows:
 
       - name: Build MSS mobile
         script: VITE_API_BASE_URL=https://synqme-api.onrender.com npm run build -- --mode mobile
+
+      - name: Generate MySecondSelf native app icons
+        script: |
+          npx --yes @capacitor/assets@3.0.5 generate --android \
+            --iconBackgroundColor '#ffffff' \
+            --iconBackgroundColorDark '#ffffff' \
+            --splashBackgroundColor '#ffffff' \
+            --splashBackgroundColorDark '#ffffff'
 
       - name: Sync Android
         script: |
