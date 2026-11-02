@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { deriveMemoryTopic, rankPersonaMemories, isUsefulStandalonePreference, SENSITIVE_MEMORY_PATTERN, makePersonaMemoryKey, buildPersonaMemorySearchKeys } from '../src/persona-memory.js';
 import { ruleSourceReferences } from '../src/amia-persistence.js';
+import { conversationIntent } from '../src/conversation-plan.js';
 
 const digest = (value) => createHash('sha256').update(value).digest('hex');
 const normalized = (value) => String(value || '').normalize('NFKC').toLocaleLowerCase().replace(/\s+/g, ' ').trim();
@@ -28,12 +29,14 @@ export function buildTurnObservation({ userId, sourceTimestamp, scopeKey, topic,
   const priorKey = questionKey(previous.question);
   // A new message is evidence of a response, not evidence that a question is
   // resolved. Explicit short deferrals are kept separately, without raw text.
-  const deferred = /^(?:not now|later|skip(?: (?:it|that|this))?|another time|let'?s (?:skip|leave) (?:it|that)|ahora no|más tarde|mas tarde|pas maintenant|plus tard)[.! ]*$/i.test(String(latestUser || '').trim());
+  const intent = conversationIntent(latestUser);
+  const deferred = intent === 'deferred' || intent === 'not_applicable';
+  const responseKey = ['explain', 'progress', 'pause'].includes(intent) ? null : priorKey;
   return {
     p_turn_key: 'turn:' + digest(userId + '\n' + source + '\n' + latestUser),
     p_scope_key: scopeKey, p_topic: topic,
     p_question_key: questionKey(selected.question), p_question: selected.question,
-    p_response_question_key: priorKey, p_response_outcome: priorKey ? deferred ? 'deferred' : 'response_received' : null,
+    p_response_question_key: responseKey, p_response_outcome: responseKey ? deferred ? 'deferred' : 'response_received' : null,
     p_source_timestamp: source,
     p_checks: { question_count: selected.count, used_fallback: Boolean(usedFallback), manual_source_verified: Boolean(manualVerified),
       repeated_question: Boolean(selected.question && decisions.some((item) => item.decision_key===questionKey(selected.question))) }

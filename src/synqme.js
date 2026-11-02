@@ -1,4 +1,5 @@
 import { simulationCapabilitySummary } from "./simulation.js";
+import { conversationIntent } from "./conversation-plan.js";
 import { createMemoryJobRunner, memoryRetryDelaySeconds, memoryJobKey } from "./memory-job-runner.js";
 import { areaLearningState, areaStatusLabel, scenarioLearningObjectives, scenarioForId } from "./scenario-learning.js";
 import { buildConversationContinuity } from "./conversation-continuity.js";
@@ -456,6 +457,7 @@ let isSending = false;
 let sendSequence = 0;
 let lastAIReplyUsedFallback = false;
 let voiceModeActive = false;
+let voicePauseAfterReply = false;
 let voiceWakeLock = null;
 let voiceIdleTimer = null;
 let voiceIdleDeadline = 0;
@@ -1335,7 +1337,8 @@ function writePendingMemoryJobs(userId, revision, jobs) {
 function queueStructuredMemoryTurn(userMessage, userTimestamp) {
   const userId = cloudUserId, revision = trainingRevision;
   if (!userId || !supabase || !API_BASE || !userTimestamp || !String(userMessage || "").trim() ||
-      SENSITIVE_MEMORY_PATTERN.test(userMessage) || /^SYNQ\.ME TRAINING SCENARIO:/i.test(userMessage)) return;
+      SENSITIVE_MEMORY_PATTERN.test(userMessage) || /^SYNQ\.ME TRAINING SCENARIO:/i.test(userMessage) ||
+      !["answer", "correction"].includes(conversationIntent(userMessage))) return;
   const index = state.messages.findLastIndex(item => item.role === "user" && item.timestamp === userTimestamp);
   if (index < 0) return;
   const recent = state.messages.slice(Math.max(0, index - 7), index + 1).map((item, itemIndex, items) => ({ role: item.role, content: SENSITIVE_MEMORY_PATTERN.test(String(item.content || "")) ? "[Sensitive content omitted]" : String(item.content || "").slice(0, itemIndex === items.length - 1 ? 12000 : 1200) }));
@@ -2973,7 +2976,7 @@ function formatMessageTimestamp(value) {
   return `${part("month")}/${part("day")}/${part("year")} ${part("hour")}:${part("minute")}${part("dayPeriod").toUpperCase()}`;
 }
 
-function appendMessage(role, content, timestamp = null) {
+function appendMessage(role, content, timestamp = null, messageScenarioId = null) {
   const article = document.createElement("article");
   article.className = "message " + (role === "user" ? "user-message" : "assistant-message");
   const avatar = document.createElement("div");
@@ -3020,6 +3023,18 @@ function appendMessage(role, content, timestamp = null) {
   else timestampLabel.classList.add("timestamp-unavailable");
   timestampLabel.textContent = formatMessageTimestamp(safeTimestamp);
   body.append(meta, paragraph, timestampLabel);
+  if (role === "assistant" && /(?:try|explore|open|offer).{0,70}(?:practice |hypothetical )?situation/i.test(content)) {
+    const scenarioId = messageScenarioId || scenarioData().started || (roomJourney?.active_room_id ? "room:" + roomJourney.active_room_id : null);
+    if (scenarioForId(scenarioId)) {
+      const practice = document.createElement("button"); practice.type = "button";
+      practice.className = "out-of-home-scenario-action"; practice.textContent = "Try a situation";
+      practice.addEventListener("click", () => {
+        selectAppView("journey"); selectedJourneyScenario = scenarioId; journeyDisplay = "scenarios";
+        renderScenarioJourney(); document.querySelector(".situation-preview")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+      body.append(practice);
+    }
+  }
   article.append(avatar, body);
   elements.chatMessages.append(article);
 }
@@ -3054,7 +3069,7 @@ function updateChatScrollbar() {
 function renderMessages() {
   elements.chatMessages.replaceChildren();
   // Render in conversation order so newer turns naturally appear at the bottom.
-  state.messages.slice(-50).forEach((message) => appendMessage(message.role, message.content, message.timestamp));
+  state.messages.slice(-50).forEach((message) => appendMessage(message.role, message.content, message.timestamp, message.scenario_id));
   window.requestAnimationFrame(() => {
     elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
     updateChatScrollbar();
@@ -3479,6 +3494,7 @@ function extractExplicitPreferenceFacets(text) {
 }
 
 function savePreference(message) {
+  if (!["answer", "correction"].includes(conversationIntent(message))) return;
   const statements = splitPreferenceStatements(message);
   for (const statement of statements) {
     const preference = cleanPreference(statement);
@@ -4557,6 +4573,7 @@ function handlePhonicVoiceEvent(event) {
       if (elements.conversationStatus) elements.conversationStatus.textContent = companion + " is listening";
       break;
     case "user_started_speaking":
+      voicePauseAfterReply = false;
       clearVoiceIdle();
       if (phonicAssistantSpeechStartedAt) {
         phonicAssistantSpeechMs += Math.max(0, Date.now() - phonicAssistantSpeechStartedAt);
@@ -4626,6 +4643,11 @@ function handlePhonicVoiceEvent(event) {
       persist();
       renderAll();
       void flushCloudSave();
+      if (voicePauseAfterReply) {
+        voicePauseAfterReply = false;
+        stopVoiceConversation("Paused. Press Start to continue.");
+        break;
+      }
       updateVoiceExperience(voiceInputMuted ? "muted" : "listening", voiceInputMuted ? "Microphone muted. Turn it on when you are ready." : companion + " is listening. Speak naturally.");
       if (elements.voiceStatus) elements.voiceStatus.textContent = voiceInputMuted ? "Microphone muted" : "Voice ready";
       if (elements.conversationStatus) elements.conversationStatus.textContent = companion + " is ready for your next turn";
@@ -4663,6 +4685,7 @@ async function handlePhonicAmiaToolCall({ name, parameters = {}, items = [] } = 
   );
   const latestUserText = String(latestItem?.text || parameters.latest_user_message || "").trim();
   if (!latestUserText) return { status: "error", assistant_text: unavailable };
+  voicePauseAfterReply = conversationIntent(latestUserText) === "pause";
   if (isOutOfHomeTopicChange(latestUserText)) activeOutOfHomeScenarioContext = null;
 
   const latestKey = latestItem ? String(latestItem.itemIdx) : "";
@@ -4960,6 +4983,7 @@ function updateVoiceModeButton() {
 }
 
 function stopVoiceConversation(statusMessage = "Voice conversation stopped.") {
+  voicePauseAfterReply = false;
   clearVoiceIdle();
   if (voiceWakeLock) { void voiceWakeLock.release().catch(() => {}); voiceWakeLock = null; }
   void submitPhonicUsage();
