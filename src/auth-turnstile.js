@@ -82,6 +82,9 @@ export function createAuthTurnstile({ siteKey, container }) {
     container.hidden = !configured || mode === "recovery";
     if (container.hidden) {
       captchaToken = "";
+      if (widgetId !== null && window.turnstile?.reset) {
+        try { window.turnstile.reset(widgetId); } catch { /* The challenge can reload next time. */ }
+      }
       return;
     }
     void ensureReady().catch(() => {});
