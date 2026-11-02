@@ -492,7 +492,7 @@ const app = http.createServer(async (request, response) => {
   if (request.method === "GET" && url.pathname.startsWith("/ota/") &&
       /^(?:internal-(?:android|ios)\.json|mss-[a-f0-9]{32}\.zip)$/.test(otaName)) {
     if (origin && headers === null) return json(response, 403, { error: "Origin not allowed." });
-    const path = fileURLToPath(new URL("../public/ota/" + otaName, import.meta.url));
+    const path = fileURLToPath(new URL("../ota-bundles/" + otaName, import.meta.url));
     try {
       const info = await stat(path);
       if (!info.isFile() || info.size > 50 * 1024 * 1024) throw new Error("Artifact unavailable");
