@@ -4818,6 +4818,20 @@ async function submitPhonicUsage() {
   }
 }
 
+function showVoiceWaitingForUser() {
+  armVoiceIdle();
+  if (phonicAssistantSpeechStartedAt) {
+    phonicAssistantSpeechMs += Math.max(0, Date.now() - phonicAssistantSpeechStartedAt);
+    phonicAssistantSpeechStartedAt = 0;
+  }
+  assistantIsSpeaking = false;
+  const owner = String(state.profile.ownerName || "").trim();
+  const message = owner ? "Waiting on " + owner + "." : "Waiting on you.";
+  updateVoiceExperience(voiceInputMuted ? "muted" : "listening", voiceInputMuted ? "Microphone muted. Turn it on when you are ready." : message);
+  if (elements.voiceStatus) elements.voiceStatus.textContent = voiceInputMuted ? "Microphone muted" : message;
+  if (elements.conversationStatus) elements.conversationStatus.textContent = voiceInputMuted ? "Microphone muted" : message;
+}
+
 function handlePhonicVoiceEvent(event) {
   const companion = selectedCompanionDisplayName();
   switch (event.type) {
@@ -4860,7 +4874,7 @@ function handlePhonicVoiceEvent(event) {
       if (elements.conversationStatus) elements.conversationStatus.textContent = companionThinkingMessage(companion);
       break;
     case "input_cancelled":
-      armVoiceIdle();
+      showVoiceWaitingForUser();
       break;
     case "input_text": {
       // Save the user's live speech transcription immediately, not only when
@@ -4879,6 +4893,9 @@ function handlePhonicVoiceEvent(event) {
       assistantIsSpeaking = false;
       updateVoiceExperience("thinking", companionThinkingMessage(companion));
       if (elements.conversationStatus) elements.conversationStatus.textContent = companionThinkingMessage(companion);
+      break;
+    case "assistant_awaiting_user":
+      showVoiceWaitingForUser();
       break;
     case "assistant_started_speaking":
       clearVoiceIdle();
@@ -4914,9 +4931,7 @@ function handlePhonicVoiceEvent(event) {
         stopVoiceConversation("Paused. Press Start to continue.");
         break;
       }
-      updateVoiceExperience(voiceInputMuted ? "muted" : "listening", voiceInputMuted ? "Microphone muted. Turn it on when you are ready." : companion + " is listening. Speak naturally.");
-      if (elements.voiceStatus) elements.voiceStatus.textContent = voiceInputMuted ? "Microphone muted" : "Voice ready";
-      if (elements.conversationStatus) elements.conversationStatus.textContent = companion + " is ready for your next turn";
+      showVoiceWaitingForUser();
       break;
     }
     case "error": {
