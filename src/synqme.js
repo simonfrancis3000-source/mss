@@ -702,12 +702,13 @@ function renderScenarioSummary(scenario) {
   const settings=document.createElement('button');settings.type='button';settings.className='journey-task-button';settings.textContent='Manage robot specification';settings.addEventListener('click',()=>{openSettings();const button=document.querySelector('#viewPexiReadiness');if(button?.getAttribute('aria-expanded')!=='true')button?.click();button?.scrollIntoView({block:'center'});button?.focus();});readiness.append(settings);section.append(readiness);
   return section;
 }
-function downloadPassportFile(filename,content,type){const blob=new Blob([content],{type});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=filename;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);}
+const PASSPORT_EXPORT_ENABLED = false;
+function downloadPassportFile(filename,content,type){if (!PASSPORT_EXPORT_ENABLED) return;const blob=new Blob([content],{type});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=filename;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);}
 function renderPersonaPassport(){
  const content=document.querySelector('#personaPassportContent');if(!content)return;content.replaceChildren();
  if(!cloudUserId){const p=document.createElement('p');p.textContent='Sign in to choose preferences for your Passport.';content.append(p);return;}
  const available=passportEligibleMemories(personaMemoryRecords);const eligible=new Set(available.map(item=>item.id));passportSelection=new Set([...passportSelection].filter(id=>eligible.has(id)));
- const intro=document.createElement('p');intro.textContent='Choose the preferences to include. Review the preview before downloading. Nothing is sent to a robot or another company.';content.append(intro);
+ const intro=document.createElement('p');intro.textContent=PASSPORT_EXPORT_ENABLED ? 'Choose the preferences to include. Review the preview before downloading. Nothing is sent to a robot or another company.' : 'Passport export is temporarily unavailable. You can still review your preferences here.';content.append(intro);
  if(!available.length){const p=document.createElement('p');p.textContent='Your stated or confirmed structured preferences will appear here.';content.append(p);return;}
  const list=document.createElement('div');list.className='passport-choices';
  for(const item of available){const label=document.createElement('label');const input=document.createElement('input');input.type='checkbox';input.checked=passportSelection.has(item.id);input.addEventListener('change',()=>{if(input.checked)passportSelection.add(item.id);else passportSelection.delete(item.id);refresh();});const copy=document.createElement('span');copy.textContent=preferenceDisplayLabel(item,SCENARIOS,scenarioTasks)+' · '+item.statement;label.append(input,copy);list.append(label);}content.append(list);
@@ -716,9 +717,9 @@ function renderPersonaPassport(){
  const json=document.createElement('button');json.type='button';json.textContent='Download structured JSON';
  const text=document.createElement('button');text.type='button';text.textContent='Download readable report';
  function selected(){return buildPersonaPassport(personaMemoryRecords,passportSelection,SCENARIOS);}
- function refresh(){const result=selected();preview.textContent=passportText(result);status.textContent=result.preferences.length+' selected';json.disabled=text.disabled=result.preferences.length===0;}
- json.addEventListener('click',()=>{const data=selected();if(data.preferences.length)downloadPassportFile('mysecondself-persona-passport.json',JSON.stringify(data,null,2)+'\n','application/json;charset=utf-8');});
- text.addEventListener('click',()=>{const data=selected();if(data.preferences.length)downloadPassportFile('mysecondself-persona-passport.txt',passportText(data)+'\n','text/plain;charset=utf-8');});
+ function refresh(){const result=selected();preview.textContent=passportText(result);status.textContent=result.preferences.length+' selected';json.disabled=text.disabled=!PASSPORT_EXPORT_ENABLED || result.preferences.length===0;}
+ json.addEventListener('click',()=>{if(!PASSPORT_EXPORT_ENABLED)return;const data=selected();if(data.preferences.length)downloadPassportFile('mysecondself-persona-passport.json',JSON.stringify(data,null,2)+'\n','application/json;charset=utf-8');});
+ text.addEventListener('click',()=>{if(!PASSPORT_EXPORT_ENABLED)return;const data=selected();if(data.preferences.length)downloadPassportFile('mysecondself-persona-passport.txt',passportText(data)+'\n','text/plain;charset=utf-8');});
  content.append(status,preview,json,text);refresh();
 }
 document.querySelector('#personaPassport')?.addEventListener('toggle',event=>{if(event.currentTarget.open)renderPersonaPassport();});
