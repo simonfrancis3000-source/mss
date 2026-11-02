@@ -42,7 +42,10 @@ const DEFAULT_ALLOWED_ORIGINS = [
   "https://synqme.mysecondself.app",
   "https://demo.mysecondself.app",
   "https://mysecondself.app",
-  "https://www.mysecondself.app"
+  "https://www.mysecondself.app",
+  // Default Capacitor WebView origins. API routes still require Supabase bearer authentication.
+  "https://localhost",
+  "capacitor://localhost"
 ];
 const ALLOWED_ORIGINS = new Set([
   ...DEFAULT_ALLOWED_ORIGINS,
