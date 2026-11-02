@@ -1,3 +1,4 @@
+import { syncRobotSpeaking } from "./robot-speaking.js";
 import { collectReviewableFragments, preferenceDisplayLabel, preferenceIdentity } from "./preference-review.js";
 import { scenarioSummary, passportEligibleMemories, buildPersonaPassport, passportText } from "./persona-passport.js";
 import { createVoiceBreakTracker, breakResponse, responseBeforeBreak, standardBreakPhrase } from "./voice-break.js";
@@ -3246,6 +3247,7 @@ function renderMessages() {
   elements.chatMessages.replaceChildren();
   // Render in conversation order so newer turns naturally appear at the bottom.
   state.messages.slice(-50).forEach((message) => appendMessage(message.role, message.content, message.timestamp, message.scenario_id));
+  syncRobotSpeaking(document, elements.voiceOrb?.dataset.state === "speaking");
   window.requestAnimationFrame(() => {
     elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
     updateChatScrollbar();
@@ -4527,8 +4529,9 @@ function robotSvgMarkup(robotId) {
     '<ellipse cx="60" cy="104" rx="31" ry="5" fill="#1d2937" opacity=".08"/>' +
     '<g stroke="#aab5c3" stroke-width="2.5" stroke-linejoin="round" fill="#fbfcfe">' + shell + extra + '</g>' +
     '<rect x="33" y="43" width="54" height="34" rx="13" fill="#192432"/>' +
-    eyes +
-    '<path d="M52 68q8 5 16 0" fill="none" stroke="#dce6f2" stroke-width="2" stroke-linecap="round"/>' +
+    '<g class="robot-eyes">' + eyes + '</g>' +
+    '<path class="robot-mouth-rest" d="M52 68q8 5 16 0" fill="none" stroke="#dce6f2" stroke-width="2" stroke-linecap="round"/>' +
+    '<g class="robot-mouth-speaking"><ellipse cx="60" cy="69" rx="7" ry="4" fill="#dce6f2"/><ellipse cx="60" cy="71" rx="3.5" ry="1.5" fill="' + accent + '"/></g>' +
     '<circle cx="60" cy="86" r="3" fill="' + accent + '"/>' +
     '<path d="M42 94v5m36-5v5" stroke="' + accent + '" stroke-width="3" stroke-linecap="round"/>' +
     '</svg>';
@@ -4633,6 +4636,7 @@ function applyRobotAppearance() {
 
 function updateVoiceExperience(mode, message) {
   if (elements.voiceOrb) elements.voiceOrb.dataset.state = mode || "idle";
+  syncRobotSpeaking(document, mode === "speaking");
   if (elements.voiceExperience) {
     elements.voiceExperience.dataset.state = mode || "idle";
     elements.voiceExperience.classList.toggle("is-muted", voiceInputMuted);

@@ -482,3 +482,45 @@ input[type='checkbox'] { accent-color: #8b73cf; }
 .passport-preview { white-space:pre-wrap; overflow-wrap:anywhere; max-height:18rem; overflow:auto; padding:.8rem; border-radius:12px; background:#eaf5fa; color:#214c5d; font:inherit; }
 .passport-content button { margin:.3rem .4rem .3rem 0; border:1px solid #fff; border-radius:12px; padding:.65rem; color:#31596a; background:#dcecf4; font:inherit; }
 .passport-content button:disabled { opacity:.5; }
+
+/* Selected companion movement follows actual speaker output. */
+.robot-mouth-speaking { display: none; }
+[data-robot-speaking="true"] .robot-mouth-rest { display: none; }
+[data-robot-speaking="true"] .robot-mouth-speaking {
+  display: inline;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: robot-mouth-talk .34s linear infinite;
+}
+[data-robot-speaking="true"] .robot-eyes {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: robot-speech-blink 3.6s linear infinite;
+}
+[data-robot-speaking="true"] > .robot-svg,
+[data-robot-speaking="true"] > img {
+  transform-origin: 50% 85%;
+  animation: robot-speech-motion .95s ease-in-out infinite;
+}
+@keyframes robot-mouth-talk {
+  0%, 100% { transform: scale(.85,.35); }
+  22% { transform: scale(1,1); }
+  48% { transform: scale(.9,.5); }
+  72% { transform: scale(.95,.85); }
+}
+@keyframes robot-speech-blink {
+  0%, 42%, 48%, 100% { transform: scaleY(1); }
+  45% { transform: scaleY(.12); }
+}
+@keyframes robot-speech-motion {
+  0%, 100% { transform: translateY(0) rotate(-.6deg); }
+  50% { transform: translateY(-1.5%) rotate(.6deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-robot-speaking="true"] > .robot-svg,
+  [data-robot-speaking="true"] > img,
+  [data-robot-speaking="true"] .robot-mouth-speaking,
+  [data-robot-speaking="true"] .robot-eyes { animation: none; }
+  [data-robot-speaking="true"] .robot-mouth-speaking { display: none; }
+  [data-robot-speaking="true"] .robot-mouth-rest { display: inline; }
+}
