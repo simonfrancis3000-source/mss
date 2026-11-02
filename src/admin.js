@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { createAuthTurnstile } from "./auth-turnstile.js";
 
 const SUPABASE_URL = String(import.meta.env.VITE_SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || "";
@@ -18,6 +19,11 @@ const dashboard = el("dashboard");
 const loginForm = el("loginForm");
 const loginButton = el("loginButton");
 const loginNotice = el("loginNotice");
+const adminTurnstile = createAuthTurnstile({
+  siteKey: import.meta.env.VITE_TURNSTILE_SITE_KEY,
+  container: el("adminTurnstile")
+});
+adminTurnstile.setMode("signin");
 const signOutButton = el("signOutButton");
 const statusLine = el("statusLine");
 const userSearch = el("userSearch");
@@ -265,14 +271,21 @@ loginForm.addEventListener("submit", async (event) => {
   try {
     const email = el("emailInput").value.trim();
     const password = el("passwordInput").value;
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const captchaToken = await adminTurnstile.requireToken();
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email, password, ...(captchaToken ? { options: { captchaToken } } : {})
+    });
     if (error || !data?.session) throw new Error(error?.message || "Sign-in failed.");
     currentSession = data.session;
     setBusy(false);
     await loadDashboard();
   } catch (error) {
-    setNotice(loginNotice, error?.message || "Could not sign in.", "error");
+    const detail = String(error?.message || "");
+    setNotice(loginNotice, /captcha|security check/i.test(detail)
+      ? "Complete the security check and try again."
+      : detail || "Could not sign in.", "error");
   } finally {
+    adminTurnstile.reset();
     setBusy(false);
   }
 });
