@@ -1,6 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { manufacturerDomains, validateManualUrl, exactModelMentioned, findApplianceManual, manualEvidenceExcerpt } from '../server/appliance-manual.js';
+import { manufacturerDomains, validateManualUrl, exactModelMentioned, findApplianceManual, manualEvidenceExcerpt, shouldIdentifyAppliance } from '../server/appliance-manual.js';
+
+test('appliance identification does not run for ordinary times or quantities',()=>{
+ const prompt={role:'assistant',content:'When should the dishwasher run?'};
+ assert.equal(shouldIdentifyAppliance([prompt,{role:'user',content:'After 30 minutes'}]),false);
+ assert.equal(shouldIdentifyAppliance([prompt,{role:'user',content:'Use 2026 as the reminder year'}]),false);
+ assert.equal(shouldIdentifyAppliance([{role:'assistant',content:'What is the dishwasher model number?'},{role:'user',content:'ABC1234/01'}]),true);
+ assert.equal(shouldIdentifyAppliance([{role:'assistant',content:'What is the dishwasher model number?'},{role:'user',content:'123456'}]),true);
+});
 
 test('manual evidence includes useful passages beyond the opening pages without saving the manual', () => {
   const manual = 'Introduction '.repeat(1800) + ' Wi-Fi connectivity lets the user monitor status. ' + 'Other text '.repeat(3000);

@@ -89,7 +89,13 @@ export function shouldIdentifyAppliance(messages) {
   const list = Array.isArray(messages) ? messages.slice(-8) : [];
   const last = list[list.length - 1];
   if (last?.role !== 'user' || typeof last.content !== 'string' || !/\d/.test(last.content)) return false;
-  return DEVICE_CONTEXT.test(list.map((item) => item.content || '').join(' '));
+  if (!DEVICE_CONTEXT.test(list.map((item) => item.content || '').join(' '))) return false;
+  // A time such as “30 minutes” is not a model number. Numeric-only model
+  // numbers are accepted when the user or the preceding question identifies
+  // the number as a model, product number, PNC or E-Nr.
+  const tokens = last.content.match(/[\p{L}\p{N}][\p{L}\p{N}._/-]{3,79}/gu) || [];
+  const modelPrompt = /\b(?:model|product number|pnc|e-?nr)\b/i.test(last.content + ' ' + (list.at(-2)?.role === 'assistant' ? list.at(-2).content : ''));
+  return tokens.some(token => /\d/.test(token) && (/\p{L}/u.test(token) || (modelPrompt && /^\d{4,}$/.test(token))));
 }
 export function validateApplianceIdentity(candidate, messages) {
   const type = String(candidate?.type || '').trim().slice(0, 80);

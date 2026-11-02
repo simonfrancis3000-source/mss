@@ -1025,6 +1025,7 @@ const app = http.createServer(async (request, response) => {
     const reviewedAreaNames = objectives.filter(area => areaStatuses.some(item => item.id === area.id && item.status === "reviewed")).map(area => area.title);
     const plan = buildScenarioConversationPlan({ objectives, areaStatuses, continuity, messages, latestUser: latestUserMessage, welcomeBack: body?.welcomeBack === true });
     const learningGuidance = scenarioConversationGuidance(plan);
+    const chatTimingStart = Date.now();
     const [savedContext, approvedLearning] = await Promise.all([
       amiaStore.loadContext(authContext,{...scope,query:latestUserMessage+" "+previousAssistantMessage}),
       amiaStore.loadSharedKnowledge(authContext,scope.scopeKey)
@@ -1180,6 +1181,7 @@ const app = http.createServer(async (request, response) => {
       (roomJourneyContext ? "\n\n" + roomJourneyContext : "") +
       (applianceEvidence ? "\n\n" + applianceEvidence : "");
 
+    const chatModelStart = Date.now();
     const upstream = await fetch("https://api.deepseek.com/chat/completions", {
       method: "POST",
       headers: {
@@ -1234,14 +1236,19 @@ const app = http.createServer(async (request, response) => {
     }
 
     let result = await upstream.json();
-    await recordDeepSeekUsage(authContext, result, "chat");
+    const chatModelMs = Date.now() - chatModelStart;
+    const pendingChatUsage = [];
+    const trackChatUsage = (usageResult, operation) => {
+      pendingChatUsage.push(recordDeepSeekUsage(authContext, usageResult, operation).catch(() => false));
+    };
+    trackChatUsage(result, "chat");
     if (roomJourney && prematureRoomTransition(result?.choices?.[0]?.message?.content, roomJourney.activeRoomId, roomCompletionConfirmed)) {
       const corrected = await fetch("https://api.deepseek.com/chat/completions", {
         method: "POST", headers: {"Authorization":"Bearer " + DEEPSEEK_API_KEY,"Content-Type":"application/json"},
         body: JSON.stringify({model:MODEL,thinking:{type:"disabled"},messages:[{role:"system",content:combinedSystemPrompt + "\n\nCORRECTION: The previous draft tried to advance to another room before completion. Remain in " + roomJourney.activeRoomName + ". Respond to the latest answer, then ask one new substantive question about an uncovered aspect of this room. Do not propose a room change."},...messages],temperature:0.5,max_tokens:1200,stream:false}),
         signal: AbortSignal.timeout(30_000)
       });
-      if (corrected.ok) { result = await corrected.json(); await recordDeepSeekUsage(authContext,result,"chat"); }
+      if (corrected.ok) { result = await corrected.json(); trackChatUsage(result,"chat"); }
     }
     const finishReason = result?.choices?.[0]?.finish_reason;
     if (finishReason === "length") {
@@ -1289,6 +1296,7 @@ const app = http.createServer(async (request, response) => {
     if (assistantReplyRepeatsRecentAssistant(finalReply, messages.slice(0, -1))) {
       finalReply = "I’ve got that detail. I’ll move to a different part of the current room rather than ask you the same thing again.";
     }
+    const reviewStart = Date.now();
     const guarded = await guardScenarioQuestion({
       draft: finalReply, latestUser: latestUserMessage, continuity,
       decisions: savedContext.decisions, rules: personaMemories,
@@ -1304,7 +1312,7 @@ const app = http.createServer(async (request, response) => {
         });
         if (!checked.ok) throw Error("continuity_review_unavailable");
         const checkedResult = await checked.json();
-        await recordDeepSeekUsage(authContext, checkedResult, "chat_continuity_review");
+        trackChatUsage(checkedResult, "chat_continuity_review");
         return JSON.parse(checkedResult?.choices?.[0]?.message?.content || "null");
       },
       rewrite: async (rejection) => {
@@ -1316,7 +1324,7 @@ const app = http.createServer(async (request, response) => {
         });
         if (!repaired.ok) throw Error("continuity_repair_unavailable");
         const repairedResult = await repaired.json();
-        await recordDeepSeekUsage(authContext, repairedResult, "chat_continuity_repair");
+        trackChatUsage(repairedResult, "chat_continuity_repair");
         const text = repairedResult?.choices?.[0]?.message?.content;
         if (typeof text !== "string" || repairedResult?.choices?.[0]?.finish_reason === "length" || isIncompleteAssistantReply(text) ||
             (roomJourney && prematureRoomTransition(text, roomJourney.activeRoomId, roomCompletionConfirmed))) throw Error("invalid_continuity_repair");
@@ -1324,13 +1332,21 @@ const app = http.createServer(async (request, response) => {
       }
     });
     finalReply = guarded.reply;
+    const reviewMs = Date.now() - reviewStart;
+    const saveStart = Date.now();
+    const [persistence] = await Promise.all([
+      persistDecisionTurn(finalReply,{usedFallback:requiresRepair || guarded.blocked,manualVerified:applianceResult?.manual_status === "matched",appliance:applianceResult}),
+      ...pendingChatUsage
+    ]);
+    const totalMs = Date.now() - chatTimingStart;
+    if (totalMs >= 5000) console.info("SYNQ.ME chat timing", { totalMs, modelMs:chatModelMs, reviewMs, saveMs:Date.now()-saveStart });
     return json(response, 200, {
       reply: finalReply,
       ...(finalReply ? {} : { responseNeedsReview: true }),
       model: MODEL,
       provider: PROVIDER,
       appliance: applianceResult,
-      amiaPersistence: await persistDecisionTurn(finalReply,{usedFallback:requiresRepair || guarded.blocked,manualVerified:applianceResult?.manual_status === "matched",appliance:applianceResult}),
+      amiaPersistence: persistence,
       usedFallback: requiresRepair || guarded.blocked
     }, headers || {});
   } catch (error) {

@@ -1320,37 +1320,25 @@ async function getRelevantPersonaMemories(query) {
     if (keys.length) {
       try {
         const activeStatuses = ["user_stated", "user_confirmed", "inferred_pending_confirmation", "conflicting"];
-        const { data: keyData, error: keyError } = await supabase
-          .from("synqme_persona_memories")
-          .select(PERSONA_MEMORY_SELECT_COLUMNS)
-          .eq("user_id", cloudUserId)
-          .overlaps("search_keys", keys)
-          .in("status", activeStatuses)
-          .order("updated_at", { ascending: false })
-          .limit(80);
-        if (keyError) throw keyError;
-
-        // Combine lexical topic/keyword matches with PostgreSQL full-text search.
-        let textData = [];
-        try {
-          const { data, error } = await supabase
-            .from("synqme_persona_memories")
-            .select(PERSONA_MEMORY_SELECT_COLUMNS)
-            .eq("user_id", cloudUserId)
-            .in("status", activeStatuses)
-            .textSearch("search_document", String(query).slice(0, 320), {
-              type: "websearch",
-              config: "simple"
-            })
-            .order("updated_at", { ascending: false })
-            .limit(60);
-          if (error) throw error;
-          textData = Array.isArray(data) ? data : [];
-        } catch (textError) {
-          if (!personaMemoryWarningShown) {
-            console.info("SYNQ.ME full-text memory search fell back to topic and keyword matches.", textError);
-            personaMemoryWarningShown = true;
-          }
+        let keyRequest = supabase.from("synqme_persona_memories")
+          .select(PERSONA_MEMORY_SELECT_COLUMNS).eq("user_id", cloudUserId)
+          .overlaps("search_keys", keys).in("status", activeStatuses)
+          .order("updated_at", { ascending: false }).limit(80);
+        let textRequest = supabase.from("synqme_persona_memories")
+          .select(PERSONA_MEMORY_SELECT_COLUMNS).eq("user_id", cloudUserId)
+          .in("status", activeStatuses).textSearch("search_document", String(query).slice(0, 320), { type: "websearch", config: "simple" })
+          .order("updated_at", { ascending: false }).limit(60);
+        if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
+          if (typeof keyRequest.abortSignal === "function") keyRequest = keyRequest.abortSignal(AbortSignal.timeout(1200));
+          if (typeof textRequest.abortSignal === "function") textRequest = textRequest.abortSignal(AbortSignal.timeout(1200));
+        }
+        const [keyResult, textResult] = await Promise.allSettled([keyRequest, textRequest]);
+        const keyData = keyResult.status === "fulfilled" && !keyResult.value.error && Array.isArray(keyResult.value.data) ? keyResult.value.data : [];
+        const textData = textResult.status === "fulfilled" && !textResult.value.error && Array.isArray(textResult.value.data) ? textResult.value.data : [];
+        if (!keyData.length && !textData.length && keyResult.status === "rejected" && textResult.status === "rejected") throw keyResult.reason;
+        if ((keyResult.status === "rejected" || keyResult.value?.error || textResult.status === "rejected" || textResult.value?.error) && !personaMemoryWarningShown) {
+          console.info("SYNQ.ME memory search used available account results.");
+          personaMemoryWarningShown = true;
         }
 
         const byId = new Map();
@@ -4605,8 +4593,10 @@ function buildPhonicConfig() {
     system_prompt: systemPrompt,
     voice_id: voiceId,
     audio_speed: 1,
-    no_input_end_conversation_sec: 30,
-    websocket_timeout_sec: 30,
+    // The app enforces 30 seconds while listening for the user. The provider
+    // gets a longer fallback so it does not end a session while AMÏA is replying.
+    no_input_end_conversation_sec: 60,
+    websocket_timeout_sec: 90,
     default_language: language,
     additional_languages: [],
     multilingual_mode: "request",
@@ -4779,7 +4769,7 @@ function handlePhonicVoiceEvent(event) {
       if (elements.conversationStatus) elements.conversationStatus.textContent = "Listening";
       break;
     case "user_finished_speaking":
-      armVoiceIdle();
+      clearVoiceIdle();
       if (phonicUserSpeechStartedAt) {
         phonicUserSpeechMs += Math.max(0, Date.now() - phonicUserSpeechStartedAt);
         phonicUserSpeechStartedAt = 0;
@@ -4799,7 +4789,7 @@ function handlePhonicVoiceEvent(event) {
       break;
     }
     case "assistant_waiting_for_audio":
-      armVoiceIdle();
+      clearVoiceIdle();
       if (phonicAssistantSpeechStartedAt) {
         phonicAssistantSpeechMs += Math.max(0, Date.now() - phonicAssistantSpeechStartedAt);
         phonicAssistantSpeechStartedAt = 0;
@@ -5450,13 +5440,13 @@ async function requestAIReply(repairMode = false) {
     const currentUserText = state.messages[state.messages.length - 1]?.content || "";
     const activeRoomName = ROOM_JOURNEY_ROOMS.find(room => room.id === roomJourney?.active_room_id)?.name || "";
     const retrievalQuery = currentUserText + (activeOutOfHomeScenarioContext ? "" : " " + activeRoomName);
-    const [memoryReferences, sharedKnowledgeReferences, relevantPersonaMemories] = await Promise.all([
+    const [memoryReferences, sharedKnowledgeReferences, relevantPersonaMemories, requestHeaders] = await Promise.all([
       getHomeMemoryReferences(retrievalQuery),
       Promise.resolve([]),
-      getRelevantPersonaMemories(retrievalQuery)
+      getRelevantPersonaMemories(retrievalQuery),
+      authenticatedApiHeaders()
     ]);
     if (!requestUserId || requestUserId !== cloudUserId) return null;
-    const requestHeaders = await authenticatedApiHeaders();
     if (requestUserId !== cloudUserId) return null;
     const response = await fetch(API_BASE + "/api/chat", {
       method: "POST",

@@ -16,7 +16,8 @@ test("all provider-backed API routes require verified Supabase users", async () 
 
 test("DeepSeek usage is captured for reply and structured extraction calls", async () => {
   const source = await readFile(new URL("../server/index.js", import.meta.url), "utf8");
-  assert.match(source, /recordDeepSeekUsage\(authContext, result, "chat"\)/);
+  assert.match(source, /trackChatUsage\(result, "chat"\)/);
+  assert.match(source, /recordDeepSeekUsage\(authContext, usageResult, operation\)/);
   assert.match(source, /recordDeepSeekUsage\(authContext, result, "memory_extract"\)/);
   assert.match(source, /recordDeepSeekUsage\(authContext, result, "knowledge_extract"\)/);
   assert.match(source, /rest\/v1\/synqme_usage_events/);
@@ -38,7 +39,7 @@ test("frontend sends the signed-in access token with the protected provider requ
   const calls = source.match(/headers: await authenticatedApiHeaders\(\)/g) || [];
   assert.ok(calls.length >= 5);
   assert.match(source, /fetch\(API_BASE \+ "\/api\/simulation", \{ method: "POST", headers: await authenticatedApiHeaders\(\)/);
-  assert.match(source, /const requestHeaders = await authenticatedApiHeaders\(\)/);
+  assert.match(source, /relevantPersonaMemories, requestHeaders\] = await Promise\.all\(/);
   assert.match(source, /headers: requestHeaders/);
   assert.match(source, /if \(requestUserId !== cloudUserId\) return null;/);
 });
