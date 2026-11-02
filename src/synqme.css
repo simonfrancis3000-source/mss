@@ -2965,3 +2965,10 @@ main { padding-top: 24px; }
 .scenario-header-progress span { color: #65656c; font: 600 9px system-ui, sans-serif; text-transform: uppercase; letter-spacing: .06em; }
 .scenario-header-progress strong { font: 700 20px system-ui, sans-serif; letter-spacing: -.04em; }
 @media (max-width: 600px) { .scenario-header-progress { min-width: 76px; padding: 6px 10px; } .scenario-header-progress strong { font-size: 18px; } }
+
+/* Cloudflare Turnstile authentication challenge */
+.auth-turnstile { display: flex; flex-direction: column; align-items: center; gap: 0.4rem; margin: 0.6rem auto; max-width: 100%; }
+.auth-turnstile[hidden] { display: none !important; }
+.auth-turnstile [data-turnstile-widget] { max-width: 100%; }
+.auth-turnstile-status { margin: 0; text-align: center; font-size: 0.78rem; line-height: 1.4; color: inherit; }
+.auth-turnstile-status:empty { display: none; }

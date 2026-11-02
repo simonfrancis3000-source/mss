@@ -13,10 +13,12 @@ async function harness(fetchImpl) {
   const client={auth:{getSession:async()=>({data:{session}}),onAuthStateChange(){},signOut:async()=>{}}};
   const source=(await readFile(new URL('../src/admin.js',import.meta.url),'utf8'))
     .replace('import { createClient } from "@supabase/supabase-js";','')
+    .replace('import { createAuthTurnstile } from "./auth-turnstile.js";','')
     .replaceAll('import.meta.env','env');
   const context=vm.createContext({Intl,Date,Number,Set,Map,URL,Blob,console,
     env:{VITE_SUPABASE_URL:'https://fixture.test',VITE_SUPABASE_ANON_KEY:'public-key'},createClient:()=>client,
-    document:{getElementById:element},window:{setTimeout(){}},fetch:fetchImpl});
+    createAuthTurnstile:()=>({setMode(){},requireToken:async()=>undefined,reset(){}}),
+    document:{getElementById:element},window:{location:{hostname:"localhost"},setTimeout(){}},fetch:fetchImpl});
   vm.runInContext(source+'\n;globalThis.harness={loadDashboard,showLogin,showDashboard,getData:()=>currentData,setSession:(s)=>{currentSession=s}};',context);
   // Let the initial getSession-driven request settle.
   await new Promise(setImmediate);
