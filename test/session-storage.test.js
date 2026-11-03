@@ -38,6 +38,82 @@ test('a pending storage read cannot undo an explicit checkbox selection during l
  const persistent=memory(), temporary=memory();temporary.setItem(key,'older-session');
  const baseGet=persistent.getItem;persistent.getItem=async k=>{await new Promise(resolve=>release=resolve);return baseGet(k);};
  const store=createRememberedSessionStorage({persistent,temporary,getRemember:()=>remember,onRestore:value=>{if(!explicit)remember=value;}});
- const reading=store.getItem(key);remember=true;explicit=true;release();await reading;
+ const reading=store.getItem(key);await new Promise(setImmediate);assert.equal(typeof release,'function');remember=true;explicit=true;release();await reading;
  await store.setItem(key,'new-session');assert.equal(persistent.data.get(key),'new-session');assert.equal(temporary.getItem(key),null);
+});
+
+
+test('an explicit remembered choice promotes a previous temporary session to native storage', async () => {
+ const disk=new Map(), transient=memory(), legacy=memory();
+ transient.setItem(key,'temporary-login');
+ const native=nativePersistentSessionStorage(preferences(disk),legacy);
+ const session=createRememberedSessionStorage({
+  persistent:native,temporary:transient,getRemember:()=>true,
+  hasExplicitChoice:()=>true
+ });
+ assert.equal(await session.getItem(key),'temporary-login');
+ assert.equal(disk.get(key),'temporary-login');
+ assert.equal(transient.getItem(key),null);
+ const reopened=createRememberedSessionStorage({
+  persistent:native,temporary:memory(),getRemember:()=>true,
+  hasExplicitChoice:()=>true
+ });
+ assert.equal(await reopened.getItem(key),'temporary-login');
+});
+
+test('an explicit Remember me off never revives a stale persistent token', async () => {
+ const disk=new Map([[key,'old-persistent-token']]);
+ const session=createRememberedSessionStorage({
+  persistent:nativePersistentSessionStorage(preferences(disk),memory()),
+  temporary:memory(),getRemember:()=>false,hasExplicitChoice:()=>true
+ });
+ assert.equal(await session.getItem(key),null);
+ assert.equal(disk.get(key),'old-persistent-token');
+ await session.setItem(key,'session-only-token');
+ assert.equal(disk.has(key),false);
+});
+
+test('changing the selection migrates the current token without losing it', async () => {
+ const disk=new Map(), transient=memory(), native=nativePersistentSessionStorage(preferences(disk),memory());
+ let remember=false;
+ const session=createRememberedSessionStorage({
+  persistent:native,temporary:transient,getRemember:()=>remember,
+  hasExplicitChoice:()=>true
+ });
+ await session.setItem(key,'signed-in-user');
+ remember=true;
+ await session.syncChoice();
+ assert.equal(disk.get(key),'signed-in-user');
+ assert.equal(transient.getItem(key),null);
+ remember=false;
+ await session.syncChoice();
+ assert.equal(transient.getItem(key),'signed-in-user');
+ assert.equal(disk.has(key),false);
+});
+
+test('restore waits for asynchronous native preference loading', async () => {
+ const disk=new Map([[key,'remembered-token']]);
+ let release;
+ const ready=new Promise(resolve=>{release=resolve;});
+ let nativeReady=false;
+ const session=createRememberedSessionStorage({
+  persistent:nativePersistentSessionStorage(preferences(disk),memory()),
+  temporary:memory(),getRemember:()=>nativeReady,
+  hasExplicitChoice:()=>nativeReady,beforeRead:()=>ready
+ });
+ const pending=session.getItem(key);
+ nativeReady=true;
+ release();
+ assert.equal(await pending,'remembered-token');
+});
+
+test('login no longer offers browser persona import and uses durable native choice', async () => {
+ const { readFile }=await import('node:fs/promises');
+ const html=await readFile(new URL('../index.html',import.meta.url),'utf8');
+ const js=await readFile(new URL('../src/synqme.js',import.meta.url),'utf8');
+ assert.doesNotMatch(html,/authImportDraft|Import this browser.s existing persona/);
+ assert.doesNotMatch(js,/elements\.authImportDraft/);
+ assert.match(js,/Preferences\.get\(\{ key: REMEMBER_CHOICE_KEY \}\)/);
+ assert.match(js,/Preferences\.set\(\{ key: REMEMBER_CHOICE_KEY/);
+ assert.match(js,/rememberMeStorage\.syncChoice\(\)/);
 });

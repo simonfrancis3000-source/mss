@@ -68,27 +68,57 @@ const AUTH_REDIRECT_URL = (() => {
   }
   return "https://synqme.mysecondself.app/";
 })();
-let rememberMeEnabled = (() => {
-  try {
-    const savedChoice = localStorage.getItem("synqme-remember-me-choice");
-    if (savedChoice === "true") return true;
-    if (savedChoice === "false") return false;
-  } catch {}
-  return document.querySelector("#rememberMe")?.checked ?? true;
+const REMEMBER_CHOICE_KEY = "synqme-remember-me-choice";
+const storedRememberChoice = (() => {
+  try { return localStorage.getItem(REMEMBER_CHOICE_KEY); } catch { return null; }
 })();
+let rememberMeEnabled = storedRememberChoice !== "false";
+let rememberChoiceExplicit = storedRememberChoice === "true" || storedRememberChoice === "false";
+let rememberChoiceChangedThisLaunch = false;
 if (document.querySelector("#rememberMe")) {
   document.querySelector("#rememberMe").checked = rememberMeEnabled;
 }
+// Read the durable native selection before Supabase restores its session.
+// A late device read must not reverse a selection the user made this launch.
+const rememberChoiceReady = Capacitor.isNativePlatform()
+  ? Preferences.get({ key: REMEMBER_CHOICE_KEY }).then(({ value }) => {
+      if (rememberChoiceChangedThisLaunch || (value !== "true" && value !== "false")) return;
+      rememberMeEnabled = value === "true";
+      rememberChoiceExplicit = true;
+      const checkbox = document.querySelector("#rememberMe");
+      if (checkbox) checkbox.checked = rememberMeEnabled;
+    }).catch(error => {
+      console.info("MSS remembered sign-in preference could not be restored.", error);
+    })
+  : Promise.resolve();
 
-let rememberChoiceExplicit = false;
+async function setRememberChoice(remember) {
+  rememberChoiceChangedThisLaunch = true;
+  rememberChoiceExplicit = true;
+  rememberMeEnabled = Boolean(remember);
+  const checkbox = document.querySelector("#rememberMe");
+  if (checkbox) checkbox.checked = rememberMeEnabled;
+  try { localStorage.setItem(REMEMBER_CHOICE_KEY, String(rememberMeEnabled)); } catch {}
+  if (Capacitor.isNativePlatform()) {
+    try {
+      await rememberChoiceReady;
+      await Preferences.set({ key: REMEMBER_CHOICE_KEY, value: String(rememberMeEnabled) });
+    } catch (error) {
+      console.warn("MSS could not store the remembered sign-in preference.", error);
+    }
+  }
+}
+
 const rememberMeStorage = createRememberedSessionStorage({
-  persistent: localStorage,
+  persistent: Capacitor.isNativePlatform() ? nativePersistentSessionStorage(Preferences, localStorage) : localStorage,
   temporary: sessionStorage,
   getRemember: () => rememberMeEnabled,
+  hasExplicitChoice: () => rememberChoiceExplicit,
+  beforeRead: () => rememberChoiceReady,
   onRestore: remember => {
     if (rememberChoiceExplicit) return;
     rememberMeEnabled = remember;
-    const checkbox = document.querySelector('#rememberMe');
+    const checkbox = document.querySelector("#rememberMe");
     if (checkbox) checkbox.checked = remember;
   }
 });
@@ -283,8 +313,6 @@ const elements = {
   authPassword: $("#authPassword"),
   authPasswordLabel: $("#authPasswordLabel"),
   rememberMe: $("#rememberMe"),
-  authImportDraft: $("#authImportDraft"),
-  authImportDraftWrap: $("#authImportDraftWrap"),
   authStatus: $("#authStatus"),
   authSubmit: $("#authSubmit"),
   authModeToggle: $("#authModeToggle"),
@@ -2645,14 +2673,6 @@ function setAuthMode(mode, message = "") {
     elements.authModeToggle.textContent = isSignup ? "Already have an account? Sign in" : "New to SYNQ.ME? Create an account";
   }
   if (elements.authForgotPassword) elements.authForgotPassword.hidden = mode !== "signin";
-  const hasLocalBrowserPersona = Boolean(
-    state.preferences.length ||
-    state.functions.length ||
-    state.profile.ownerName.trim() ||
-    state.profile.robotName.trim() ||
-    state.messages.length > 1
-  );
-  if (elements.authImportDraftWrap) elements.authImportDraftWrap.hidden = isRecovery || !hasLocalBrowserPersona;
   if (elements.authEmail) {
     elements.authEmail.hidden = isRecovery;
     elements.authEmail.required = !isRecovery;
@@ -6025,9 +6045,7 @@ async function submitAccountForm(event) {
 
   const email = String(elements.authEmail?.value || "").trim().toLowerCase();
   const password = String(elements.authPassword?.value || "");
-  rememberMeEnabled = Boolean(elements.rememberMe?.checked);
-  rememberChoiceExplicit = true;
-  try { localStorage.setItem("synqme-remember-me-choice", String(rememberMeEnabled)); } catch {}
+  await setRememberChoice(Boolean(elements.rememberMe?.checked));
   if (authMode !== "recovery" && !email) {
     setAuthMode(authMode, "Enter your email address to continue.");
     elements.authEmail?.focus();
@@ -6061,11 +6079,6 @@ async function submitAccountForm(event) {
     }
 
     if (authMode === "signup" || authMode === "signin") {
-      const importingDraft = Boolean(elements.authImportDraft?.checked);
-      if (importingDraft) savePendingAccountDraft(email);
-      else {
-        try { localStorage.removeItem(ACCOUNT_DRAFT_KEY); } catch {}
-      }
       if (authMode === "signup") {
       const { data: currentData, error: currentError } = await supabase.auth.getSession();
       if (currentError) throw currentError;
@@ -6080,14 +6093,13 @@ async function submitAccountForm(event) {
       });
       if (error) throw error;
       if (data.session && data.user && !data.user.is_anonymous) {
+        await rememberMeStorage.syncChoice();
         await loadSignedInAccount(data.session, { migrateDraft: true });
         if (elements.authPassword) elements.authPassword.value = "";
       } else {
         if (elements.authEmail) elements.authEmail.value = email;
         if (elements.authPassword) elements.authPassword.value = "";
-        setAuthMode("signin", importingDraft
-          ? "Account created. Check your email for the confirmation link, then return here and sign in. The browser persona you chose to import will be saved to this account."
-          : "Account created. Check your email for the confirmation link, then return here and sign in.");
+        setAuthMode("signin", "Account created. Check your email for the confirmation link, then return here and sign in.");
       }
       return;
       }
@@ -6096,6 +6108,7 @@ async function submitAccountForm(event) {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password, ...(captchaToken ? { options: { captchaToken } } : {}) });
     if (error) throw error;
     if (!data.session || !data.user || data.user.is_anonymous) throw new Error("We couldn’t establish your account session. Please try again.");
+    await rememberMeStorage.syncChoice();
     await loadSignedInAccount(data.session, { migrateDraft: true });
     if (elements.authPassword) elements.authPassword.value = "";
   } catch (error) {
@@ -6130,9 +6143,11 @@ async function submitAccountForm(event) {
 
 elements.authForm?.addEventListener("submit", submitAccountForm);
 elements.rememberMe?.addEventListener("change", () => {
-  rememberMeEnabled = Boolean(elements.rememberMe.checked);
-  rememberChoiceExplicit = true;
-  try { localStorage.setItem("synqme-remember-me-choice", String(rememberMeEnabled)); } catch {}
+  void setRememberChoice(elements.rememberMe.checked)
+    .then(() => rememberMeStorage.syncChoice())
+    .catch(error => {
+      console.warn("MSS could not move the current session to the selected storage.", error);
+    });
 });
 elements.authModeToggle?.addEventListener("click", () => {
   if (authBusy) return;
