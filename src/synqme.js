@@ -1,7 +1,8 @@
 import { createMssInterface, buildInterfaceModel, COMPANION_HEAD_IMAGE } from "./mss-interface.js";
 import { coalesceTranscriptTurns, preferTranscriptTurn, bestUserTranscript, isServiceErrorText } from "./transcript-turns.js";
 import { createRememberedSessionStorage, nativePersistentSessionStorage } from "./session-storage.js";
-import { conversationCheckpoint } from "./conversation-resume.js";
+import { applianceReminderTurn } from "./appliance-reminders.js";
+import { conversationCheckpoint, englishResumeReply } from "./conversation-resume.js";
 import { syncRobotSpeaking } from "./robot-speaking.js";
 import { collectReviewableFragments, preferenceDisplayLabel, preferenceIdentity } from "./preference-review.js";
 import { scenarioSummary, passportEligibleMemories, buildPersonaPassport, passportText } from "./persona-passport.js";
@@ -531,6 +532,7 @@ let roomJourneyTableUnavailable = false;
 let roomJourneyWarningShown = false;
 let roomJourneySaveInFlight = false;
 let welcomeBackPending = false;
+let chatReturnSummary = "";
 let selectedJourneyScenario = null;
 let journeyDisplay = "chart";
 let selectedReviewArea = null;
@@ -545,6 +547,9 @@ function todoCommandForMessage(message) {
   if (voiceModeActive && breakResponse(message) === "pause") return null;
   const explicit = parseReminderCommand(message);
   if (explicit) return explicit;
+  const turns = state.messages.at(-1)?.role === "user" && state.messages.at(-1)?.content === message ? state.messages : [...state.messages,{role:"user",content:message}];
+  const offered = applianceReminderTurn(turns);
+  if (offered?.command) return offered.command;
   if (!todoAwaitingTitle) return null;
   return /^(?:cancel|never mind|nevermind|forget it)[.! ]*$/i.test(message) ? {action:'cancel'} : {action:'add',title:message};
 }
@@ -620,6 +625,7 @@ async function handleTodoCommand(command) {
     const title=validReminderTitle(command.title);
     if(!title) { todoAwaitingTitle=true; return 'What would you like me to add to your to-do list? Please describe the reminder.'; }
     todoAwaitingTitle=false;
+    if (todoItems.some(item=>!item.completed && item.title.trim().toLowerCase()===title.toLowerCase())) return 'That is already in your to-do list: '+title+'.';
     try { await writeTodoReminder('add',null,title); return 'Added to your to-do list: '+title+'.'; } catch { return 'I could not save that reminder. Please try again.'; }
   }
   const relevant=command.action==='complete'?todoItems.filter(item=>!item.completed):todoItems;
@@ -2722,6 +2728,7 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   profileCreatedAt = null;
   roomJourney = null;
   welcomeBackPending = false;
+  chatReturnSummary = "";
   selectedJourneyScenario = null;
   simulationSession = null;
   todoItems = []; todoLoadedUserId = null; todoEditingId = null; todoAwaitingTitle = false; renderTodoReminders();
@@ -3262,6 +3269,7 @@ function renderMessages() {
   elements.chatMessages.replaceChildren();
   // Render in conversation order so newer turns naturally appear at the bottom.
   state.messages.slice(-50).forEach((message) => appendMessage(message.role, message.content, message.timestamp, message.scenario_id));
+  if (chatReturnSummary) appendMessage("assistant", chatReturnSummary);
   syncRobotSpeaking(document, elements.voiceOrb?.dataset.state === "speaking");
   window.requestAnimationFrame(() => {
     elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
@@ -5381,6 +5389,12 @@ function syncAppNavigation() {
 }
 
 function selectAppView(view) {
+  if (view === "chat" && document.body.dataset.appView !== "chat" && cloudUserId && roomJourney && state.messages.some(item=>item.role==='user')) {
+    welcomeBackPending = true;
+    const scope = activeOutOfHomeScenarioContext ? "outside:" + activeOutOfHomeScenarioContext.categoryId + ":" + activeOutOfHomeScenarioContext.scenarioId : "room:" + roomJourney.active_room_id;
+    const checkpoint = conversationCheckpoint(state.messages,scope);
+    chatReturnSummary = (state.profile.preferredLanguage || "en") === "en" ? (checkpoint ? englishResumeReply(checkpoint,state.profile.ownerName) : "Welcome back, " + state.profile.ownerName.trim().split(/\s+/)[0] + ". We were working on " + (scenarioForId(scope)?.title || roomJourney.active_room_id.replaceAll('_',' ')) + ". Your saved conversation is above.") : "";
+  }
   if (elements.voiceExperience && !elements.voiceExperience.hidden) closeVoiceExperience("Returned to your conversation.");
   document.body.dataset.appView = ["home", "passport", "profile", "journey"].includes(view) ? view : "chat";
   const workspace = document.querySelector("#moreWorkspace");
@@ -5543,6 +5557,8 @@ async function requestAIReply(repairMode = false) {
     const reply = welcomeBackPending ? welcomeBackReply(reminderReply, state.profile.ownerName, state.profile.preferredLanguage || "en") : reminderReply;
     welcomeBackPending = false; lastAIReplyUsedFallback = true; return reply;
   }
+  const deferredInfo = applianceReminderTurn(state.messages);
+  if (deferredInfo?.reply && (state.profile.preferredLanguage || "en") === "en") { lastAIReplyUsedFallback = true; return deferredInfo.reply; }
   const requestUserId = cloudUserId;
   if (roomJourney) {
     const currentUser = [...state.messages].reverse().find(item => item.role === "user");
@@ -5673,6 +5689,7 @@ async function requestAIReply(repairMode = false) {
     const returningReply = welcomeBackPending ? welcomeBackReply(reply.trim(), state.profile.ownerName, state.profile.preferredLanguage || "en") : reply.trim();
     const personalised = addressByNameReply(returningReply, state.profile.ownerName, state.messages);
     welcomeBackPending = false;
+  chatReturnSummary = "";
     return personalised;
   } catch (error) {
     console.info("SYNQ.ME AI request failed; no scripted question will be substituted.", error);
@@ -5746,6 +5763,7 @@ async function sendMessage(rawText) {
     return;
   }
   const message = rawText.trim();
+  chatReturnSummary = "";
   if (!message || isSending) return;
   const todoTurn = Boolean(todoCommandForMessage(message));
   welcomeBackPending ||= shouldWelcomeBack(state.messages);

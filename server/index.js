@@ -1,4 +1,4 @@
-import { shouldContinueGuidedTurn, guidedReplyNeedsRepair, GUIDED_TURN_CORRECTION } from "./guided-turn.js";
+import { shouldContinueGuidedTurn, guidedReplyNeedsRepair, finalizeGuidedReply, GUIDED_TURN_CORRECTION } from "./guided-turn.js";
 import { cleanSimulationResult } from "../src/simulation.js";
 import { buildScenarioConversationPlan, scenarioConversationGuidance } from "../src/conversation-plan.js";
 import { scenarioLearningObjectives, scenarioForId } from "../src/scenario-learning.js";
@@ -1293,6 +1293,7 @@ const app = http.createServer(async (request, response) => {
       reply = "Let's stay with your " + roomJourney.activeRoomName.toLowerCase() + ". For " + area.title.toLowerCase() + ", what would you like me to do when the usual routine needs to change?";
     }
     async function repairGuidedReply(draft) {
+      try {
       const corrected = await fetch("https://api.deepseek.com/chat/completions", {
         method:"POST", headers:{Authorization:"Bearer "+DEEPSEEK_API_KEY,"Content-Type":"application/json"},
         body:JSON.stringify({model:MODEL,thinking:{type:"disabled"},temperature:0.4,max_tokens:900,stream:false,
@@ -1304,6 +1305,7 @@ const app = http.createServer(async (request, response) => {
       if (typeof text!=="string" || value?.choices?.[0]?.finish_reason==='length' || isIncompleteAssistantReply(text) ||
           (roomJourney && prematureRoomTransition(text,roomJourney.activeRoomId,roomCompletionConfirmed))) return draft;
       return text.trim();
+      } catch { return draft; }
     }
     if (guidedReplyNeedsRepair(reply,flowRequirements)) reply=await repairGuidedReply(reply);
     const robotName = String(profile.robotName || "").trim();
@@ -1371,14 +1373,16 @@ const app = http.createServer(async (request, response) => {
       }
     };
     let guarded = await guardScenarioQuestion({...guardOptions,draft:finalReply});
-    if (!guarded.reviewUnavailable && guidedReplyNeedsRepair(guarded.reply,flowRequirements)) {
+    if (!guarded.blocked && !guarded.reviewUnavailable && guidedReplyNeedsRepair(guarded.reply,flowRequirements)) {
       const recovered = await repairGuidedReply(guarded.reply);
       if (!guidedReplyNeedsRepair(recovered,flowRequirements)) {
         guarded = await guardScenarioQuestion({...guardOptions,draft:enforceFirstPersonTaskQuestions(guardRobotExecutionClaims(recovered,preferences,profile.preferredLanguage),companionName)});
       }
     }
     finalReply = guarded.reply.replace(/(^|\n\n)One thing (?:to settle|that follows from that|to check|to decide|to clarify)\s*:\s*/gi,'$1');
-    const responseNeedsReview = !finalReply || (!guarded.reviewUnavailable && guidedReplyNeedsRepair(finalReply,flowRequirements));
+    const finalized = finalizeGuidedReply({...guarded,reply:finalReply},flowRequirements);
+    finalReply = finalized.reply;
+    const responseNeedsReview = finalized.responseNeedsReview;
     if (responseNeedsReview) console.info("SYNQ.ME reply withheld", {continuityBlocked:guarded.blocked,reviewUnavailable:Boolean(guarded.reviewUnavailable),missingFollowup:!/[?？؟]/u.test(finalReply),applianceIntake:Boolean(flowRequirements.intake)});
     const reviewMs = Date.now() - reviewStart;
     const saveStart = Date.now();

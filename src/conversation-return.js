@@ -1,4 +1,4 @@
-export const RETURN_GREETING_GAP_MS = 12 * 60 * 60 * 1000;
+export const RETURN_GREETING_GAP_MS = 5 * 60 * 1000;
 export function shouldWelcomeBack(messages = [], now = Date.now()) {
   const last = [...messages].reverse().find(item => item?.role === 'user' && Number.isFinite(Date.parse(item.timestamp || '')));
   if (!last) return false;
