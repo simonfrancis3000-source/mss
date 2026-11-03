@@ -274,7 +274,7 @@ body[data-app-view='rewards'] .mss-rewards{display:flex}
 .mss-home .mss-progress-heading{gap:12px;margin-bottom:6px}
 .mss-home .mss-progress-heading h2{font-size:14px;font-weight:720;letter-spacing:-.2px}
 .mss-home .mss-progress-heading strong{font-size:15px;font-weight:750;color:#6742c0}
-.mss-home .mss-progress-track{height:7px;background:#ded1f7}
+.mss-home .mss-progress-track{height:7px;background:#bfa7ef}
 .mss-home .mss-progress-track>span{background:linear-gradient(90deg,#7953d4,#aa91eb)}
 .mss-home .mss-progress>p{display:none}
 .mss-home .mss-progress+.mss-rewards-teaser{margin-top:-5px}
@@ -285,8 +285,8 @@ body[data-app-view='rewards'] .mss-rewards{display:flex}
 .mss-rewards-teaser-title>.mss-symbol{width:20px;height:20px;color:#12944f}
 .mss-rewards-teaser-title strong{font-size:14px;font-weight:750;white-space:nowrap}
 .mss-rewards-teaser-value{font-size:13px;font-weight:750;color:#078c43;white-space:nowrap}
-.mss-rewards-teaser-track{display:block;height:7px;max-width:100%;margin-left:29px;overflow:hidden;border-radius:10px;background:#cde9d7}
-.mss-rewards-teaser-track>span{display:block;height:100%;border-radius:10px;background:#13a757}
+.mss-rewards-teaser-track{display:block;height:7px;max-width:100%;margin-left:29px;overflow:hidden;border-radius:10px;background:#eef0f3}
+.mss-rewards-teaser-track>span{display:block;height:100%;border-radius:10px;background:#636a75}
 .mss-rewards-teaser-chevron{position:absolute;right:10px;top:50%;width:23px;height:23px;color:#182639;transform:translateY(-50%)}
 
 .mss-rewards-page{display:flex;flex-direction:column;gap:13px;max-width:650px;margin:0 auto}
@@ -314,7 +314,7 @@ body[data-app-view='rewards'] .mss-rewards{display:flex}
 .mss-rewards-training-heading{display:flex;align-items:center;gap:10px;margin-bottom:10px}
 .mss-rewards-training-heading>.mss-symbol{color:#8153dc}
 .mss-rewards-training-heading strong{margin-left:auto;font-size:17px}
-.mss-rewards-training-track{background:#ded0fa}
+.mss-rewards-training-track{background:#bca3ed}
 .mss-rewards-training-track>span{background:linear-gradient(90deg,#7956d8,#af91ef)}
 .mss-rewards-training>p{margin:9px 0 0;font-size:12px;color:#645779;line-height:1.4}
 .mss-rewards-offer{display:flex;align-items:center;gap:10px;padding:12px 15px;border-radius:15px;background:#edf9f0}
