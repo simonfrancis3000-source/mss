@@ -328,7 +328,13 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
     passport.append(linkCard('What’s next', model.active ? 'Continue with ' + model.active.title + '.' : 'Review and refine your saved preferences.', 'chat', () => navigate('chat')));
     passport.append(linkCard('Your saved preferences', 'Review the details, conditions and permissions you have shared.', 'brain', () => openWorkspace('personaPassport')));
 
-    const profile = screens.profile; profile.replaceChildren(heading('Profile'));
+    const profile = screens.profile;
+    const profileHeading = heading('Profile');
+    profileHeading.classList.add('mss-profile-heading');
+    const profileRewards = action('Robot Rewards', 'mss-profile-rewards-button', () => navigate('rewards'));
+    profileRewards.setAttribute('aria-label', 'Open Robot Rewards');
+    profileHeading.append(profileRewards);
+    profile.replaceChildren(profileHeading);
     const identity = el('div', 'mss-identity'); const photo = el('div', 'mss-owner-photo'); avatar(photo, snapshot);
     const identityCopy = el('div'); identityCopy.append(el('h2', '', snapshot.owner || 'Your profile'), el('p', '', 'MySecondSelf account'));
     const edit = action('Edit profile', 'mss-edit-profile', () => editSettings('ownerName')); edit.prepend(symbol('edit')); identity.append(photo, identityCopy, edit); profile.append(identity, banner(snapshot, true));
