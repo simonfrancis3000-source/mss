@@ -8,7 +8,7 @@ const NONCE = "0123456789abcdef0123456789abcdef";
 
 async function harness() {
   const html = await readFile(HTML, "utf8");
-  const script = html.match(/<script>([\\s\\S]*?)<\\/script>/)?.[1];
+  const script = html.split("<script>")[1]?.split("</script>")[0];
   assert.ok(script, "the hosted page has a token bridge");
   const callbacks = {};
   const posted = [];
