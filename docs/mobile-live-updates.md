@@ -31,7 +31,7 @@ Android 1.5 adds WebView settings for the Cloudflare Turnstile login bridge. It 
 
 1. Incorporate the latest reviewed MSS UI changes into the mobile branch.
 2. Run tests, then `npm run build -- --mode mobile`.
-3. Run `python3 scripts/package-mobile-ota.py --platform android --native-code 7`.
+3. Run `python3 scripts/package-mobile-ota.py --platform android --native-code 8`.
 4. Inspect `ota-publish/`: a zip with `index.html` at root and
    `internal-android.json`. Keep source maps, tokens, and private files out of
    public bundles. The script validates the relative Vite asset base and prints
@@ -67,3 +67,40 @@ Blocked rolled-back IDs are skipped by the mobile update checker.
   against a compromised manifest origin. Use separate tester and production
   channels, signed release approval and controlled rollouts. Capawesome Cloud
   is an optional later improvement, not required for self-hosted ZIPs.
+
+## Internal end-to-end proof test
+
+Use an Android installation with native **versionCode 8** (MSS 1.5); change
+`--native-code` only if the installed native bundle uses a different
+compatible version code. Before publishing, confirm the live API endpoint
+`https://synqme-api.onrender.com/ota/internal-android.json` serves the
+disabled JSON manifest. If it does not, deploy the OTA server route first.
+
+From `mobile/current-mss`, with a clean working tree:
+
+```bash
+git pull --ff-only
+npm ci
+npm test
+VITE_API_BASE_URL=https://synqme-api.onrender.com npm run build -- --mode mobile
+python3 scripts/package-mobile-ota.py --platform android --native-code 8 --test-banner
+```
+
+The `--test-banner` option injects a floating green **MSS LIVE UPDATE TEST
+SUCCESSFUL** label **only into the generated ZIP**. It does not change the
+normal website or the project's mobile source. Inspect both generated files
+under `ota-publish/`. Publishing them means copying the single named ZIP
+and `internal-android.json` into `ota-bundles/` on the actual Render API
+deployment branch. Confirm the bundle URL and manifest return 200 over HTTPS,
+and that the manifest lists the installed native version code. This activates
+the update for **all internal testers with that matching native version**.
+Do not enable the production channel.
+
+Launch the app on Android while online. After the ZIP has had time to stage,
+**fully close** and reopen the app. A visible green banner verifies that the
+new web code was applied without a store update.
+
+To finish the test, build and publish a **new ordinary bundle without**
+`--test-banner`; launch, close, and reopen again, verifying the banner
+disappears. Merely setting `enabled:false` stops new downloads but
+**does not remove** an already applied bundle.
