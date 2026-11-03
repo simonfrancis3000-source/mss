@@ -1,3 +1,4 @@
+import { shouldMeterVoice } from './voice-billing-policy.js';
 import { shouldContinueGuidedTurn, guidedReplyNeedsRepair, finalizeGuidedReply, GUIDED_TURN_CORRECTION } from "./guided-turn.js";
 import { cleanSimulationResult } from "../src/simulation.js";
 import { buildScenarioConversationPlan, scenarioConversationGuidance } from "../src/conversation-plan.js";
@@ -575,7 +576,15 @@ const app = http.createServer(async (request, response) => {
     if (error) return json(response, 503, { error: "Voice credit balances are unavailable." }, headers || {});
     const currentMonthlyMs = data?.monthly_valid_until && Date.parse(data.monthly_valid_until) > Date.now()
       ? Number(data.monthly_remaining_ms || 0) : 0;
+    let allowanceType = 'subscription';
+    if (data?.monthly_valid_until && Date.parse(data.monthly_valid_until) > Date.now()) {
+      const verified = await billingDb.from('mss_voice_credit_grants').select('id')
+        .eq('user_id',authContext.user.id).eq('product_id','mss_premium').eq('period_end',data.monthly_valid_until).limit(1);
+      if (verified.error) return json(response,503,{error:'Voice allowance details are unavailable.'},headers || {});
+      if (!verified.data?.length) allowanceType = 'test';
+    }
     return json(response, 200, {
+      allowanceType,
       billingEnabledForUser: voiceBillingFor(authContext),
       premiumActive: Boolean(data?.monthly_valid_until && Date.parse(data.monthly_valid_until) > Date.now()),
       monthlyRemainingMs: Math.max(0, currentMonthlyMs),
@@ -635,8 +644,7 @@ const app = http.createServer(async (request, response) => {
   }
 
   if (request.method === "POST" && url.pathname === "/api/phonic/session") {
-    const meteredVoice = VOICE_BILLING_ENABLED ||
-      (voiceBillingFor(authContext) && request.headers["x-mss-billing-client"] === "android-1.7");
+    const meteredVoice = shouldMeterVoice({globallyEnabled:VOICE_BILLING_ENABLED,accountEligible:voiceBillingFor(authContext),client:request.headers["x-mss-billing-client"]});
     if (meteredVoice && !voiceRelay) {
       return json(response, 503, { error: "Voice billing is not configured." }, headers || {});
     }

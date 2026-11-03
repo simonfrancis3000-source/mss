@@ -239,10 +239,10 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
     refresh.disabled = snapshot.billing?.status === 'loading'; balanceHead.append(refresh); balance.append(balanceHead);
     if(snapshot.billing?.status === 'ready') {
       const credit = voiceBalanceModel(snapshot.billing.wallet);
-      balance.append(el('strong','mss-balance-total',credit.total + ' available'),el('p','mss-balance-status',credit.active ? 'Premium active' : 'No active subscription'));
-      const monthly = el('div','mss-balance-row'); monthly.append(el('strong','','Subscription'),el('span','',credit.monthlyLabel + ' left of 60 min')); balance.append(monthly);
+      balance.append(el('strong','mss-balance-total',credit.total + ' available'),el('p','mss-balance-status',credit.active ? (credit.isTest ? 'Free test allowance' : 'Premium active') : 'No active subscription'));
+      const monthly = el('div','mss-balance-row'); monthly.append(el('strong','',credit.isTest ? 'Test allowance' : 'Subscription'),el('span','',credit.monthlyLabel + ' left of 60 min')); balance.append(monthly);
       const progress = el('progress','mss-balance-bar'); progress.max=3600000;progress.value=Math.min(3600000,credit.monthly);progress.setAttribute('aria-label','Subscription minutes remaining');balance.append(progress);
-      balance.append(el('p','mss-balance-note',credit.periodEnd ? 'Current period ends ' + new Intl.DateTimeFormat(undefined,{day:'numeric',month:'short',year:'numeric'}).format(new Date(credit.periodEnd)) + '. Allowance resets with the next subscription period.' : 'No subscription reset date yet.'));
+      balance.append(el('p','mss-balance-note',credit.periodEnd ? (credit.isTest ? 'Test allowance expires ' : 'Current period ends ') + new Intl.DateTimeFormat(undefined,{day:'numeric',month:'short',year:'numeric'}).format(new Date(credit.periodEnd)) + (credit.isTest ? '. No payment or automatic renewal.' : '. Allowance resets with the next subscription period.') : 'No subscription reset date yet.'));
       const topup = el('div','mss-balance-row');topup.append(el('strong','','Top-up minutes'),el('span','',credit.topupLabel + ' left'));balance.append(topup,el('p','mss-balance-note','Top-up minutes carry forward until used. Subscription minutes are used first.'));
     } else balance.append(el('p','mss-balance-note',snapshot.billing?.status === 'error' ? 'Your balance could not be loaded. Tap Refresh to try again.' : 'Checking your voice minutes…'));
     profile.append(balance);
