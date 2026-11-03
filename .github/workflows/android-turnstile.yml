@@ -1,0 +1,45 @@
+name: Android Turnstile bridge validation
+
+on:
+  push:
+    branches: [fix/android-turnstile-bridge, mobile/current-mss]
+    paths:
+      - "src/mobile-turnstile-bridge.js"
+      - "src/synqme.js"
+      - "test/mobile-turnstile-bridge.test.js"
+      - "android/app/src/main/java/app/mysecondself/MainActivity.java"
+      - "android/app/build.gradle"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/android-turnstile.yml"
+  pull_request:
+    branches: [mobile/current-mss]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Run authentication and regression tests
+        run: npm test
+      - name: Build mobile web assets
+        run: npm run build -- --mode mobile
+      - name: Sync native Android assets
+        run: npx cap sync android
+      - name: Compile Android debug APK
+        run: cd android && chmod +x gradlew && ./gradlew assembleDebug --no-daemon
