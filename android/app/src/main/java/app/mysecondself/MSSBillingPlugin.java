@@ -154,6 +154,11 @@ public class MSSBillingPlugin extends Plugin implements PurchasesUpdatedListener
      */
     @PluginMethod
     public void startSubscriptionPurchase(PluginCall call) {
+        String accountId = call.getString("obfuscatedAccountId");
+        if (accountId == null || !accountId.matches("[a-f0-9]{64}")) {
+            call.reject("Verified MSS account identifier is required");
+            return;
+        }
         String basePlanId = call.getString("basePlanId");
         if (basePlanId == null || basePlanId.trim().isEmpty()) {
             call.reject("basePlanId is required");
@@ -174,7 +179,8 @@ public class MSSBillingPlugin extends Plugin implements PurchasesUpdatedListener
                             .newBuilder().setProductDetails(product)
                             .setOfferToken(offer.getOfferToken()).build();
                     BillingFlowParams params = BillingFlowParams.newBuilder()
-                            .setProductDetailsParamsList(Collections.singletonList(item)).build();
+                            .setProductDetailsParamsList(Collections.singletonList(item))
+                            .setObfuscatedAccountId(accountId).build();
                     getActivity().runOnUiThread(() -> {
                         BillingResult started = client.launchBillingFlow(getActivity(), params);
                         if (started.getResponseCode() != BillingClient.BillingResponseCode.OK) {
@@ -264,6 +270,11 @@ public class MSSBillingPlugin extends Plugin implements PurchasesUpdatedListener
      */
     @PluginMethod
     public void startVoiceTopUpPurchase(PluginCall call) {
+        String accountId = call.getString("obfuscatedAccountId");
+        if (accountId == null || !accountId.matches("[a-f0-9]{64}")) {
+            call.reject("Verified MSS account identifier is required");
+            return;
+        }
         String productId = call.getString("productId");
         if (!isAllowedTopUp(productId)) {
             call.reject("Unknown voice credit package");
@@ -286,7 +297,8 @@ public class MSSBillingPlugin extends Plugin implements PurchasesUpdatedListener
                                     .setOfferToken(offer.getOfferToken())
                                     .build();
                     BillingFlowParams params = BillingFlowParams.newBuilder()
-                            .setProductDetailsParamsList(Collections.singletonList(item)).build();
+                            .setProductDetailsParamsList(Collections.singletonList(item))
+                            .setObfuscatedAccountId(accountId).build();
                     getActivity().runOnUiThread(() -> {
                         BillingResult started = client.launchBillingFlow(getActivity(), params);
                         if (started.getResponseCode() == BillingClient.BillingResponseCode.OK) {
