@@ -81,6 +81,7 @@ async function refreshToken(session) {
 }
 async function readUserContext(session) {
   await refreshToken(session);
+  if (session.context && Date.now() - session.contextFetchedAt < 30000) return session.context;
   const id = encodeURIComponent(session.userId);
   const suffix = `?user_id=eq.${id}&select=*`;
   const urls = [
@@ -88,12 +89,30 @@ async function readUserContext(session) {
     `${SUPABASE_URL}/rest/v1/synqme_preferences${suffix}&order=created_at.desc&limit=24`,
     `${SUPABASE_URL}/rest/v1/synqme_conversations${suffix}`
   ];
-  const results = await Promise.all(urls.map(url => jsonRequest(url, { headers: supaHeaders(session.token) })));
-  for (const result of results) if (!result.ok) throw new Error(`Supabase profile request failed: ${result.status}`);
+  const options = { headers: supaHeaders(session.token) };
+  const results = await Promise.all(urls.map(url => jsonRequest(url, options)));
+  const names = ['profiles', 'preferences', 'conversations'];
+  // Retry only failed, idempotent reads, sequentially to avoid amplifying DB load.
+  for (let i = 0; i < results.length; i++) {
+    for (let attempt = 0; attempt < 2 && !results[i].ok && [408, 503, 504].includes(results[i].status); attempt++) {
+      console.warn('MSS transient Data API failure:', names[i], results[i].status, 'retry', attempt + 1);
+      await new Promise(resolve => setTimeout(resolve, (500 * (2 ** attempt)) + Math.floor(Math.random() * 150)));
+      results[i] = await jsonRequest(urls[i], options);
+    }
+  }
+  const failed = results.findIndex(result => !result.ok);
+  if (failed !== -1) {
+    if ([408, 503, 504].includes(results[failed].status) &&
+        session.context && Date.now() - session.contextFetchedAt < 300000) {
+      console.warn('MSS Data API unavailable; using previously verified context for same authenticated session');
+      return session.context;
+    }
+    throw new Error(`Supabase ${names[failed]} request failed: ${results[failed].status}`);
+  }
   const p = results[0].data[0] || {};
   const prefs = results[1].data || [];
   const history = results[2].data[0]?.messages || [];
-  return {
+  const context = {
     profile: {
       ownerName: p.owner_name || '', companionName: p.future_robot_name || 'Freya',
       robotName: p.future_robot_name || '', robotType: p.future_robot_type || 'Humanoid robot',
@@ -109,6 +128,9 @@ async function readUserContext(session) {
       .map(id => FUNCTIONS[id]).filter(Boolean),
     history: Array.isArray(history) ? history.filter(m => ['assistant','user'].includes(m.role) && typeof m.content === 'string') : []
   };
+  session.context = context;
+  session.contextFetchedAt = Date.now();
+  return context;
 }
 function prepareMessages(history, unmuteMessages) {
   const recent = (Array.isArray(unmuteMessages) ? unmuteMessages : [])
