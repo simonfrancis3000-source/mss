@@ -1,51 +1,69 @@
-# MySecondSelf Google Play billing: staged integration, not launch-ready
+# MySecondSelf Google Play billing: controlled release checklist
 
-## Store catalogue confirmed by owner (3 November 2026)
+Updated 3 November 2026. Paid checkout is not yet enabled for general customers.
 
-| Play product | Type | USD reference | Voice minutes |
-|---|---|---:|---:|
-| `mss_premium` / `monthly` | Auto-renewing subscription | 9.99/month | 60 per paid billing period |
-| `mss_voice_60` / `buy` | Consumable one-time purchase | 9.99 | 60 |
-| `mss_voice_120` / `buy` | Consumable one-time purchase | 18.99 | 120 |
-| `mss_voice_300` / `buy` | Consumable one-time purchase | 44.99 | 300 |
-| `mss_voice_600` / `buy` | Consumable one-time purchase | 84.99 | 600 |
+## Confirmed Play products
 
-Play account, taxes, country prices and future price changes are managed in Google Play. App purchase UI should display the localized `formattedPrice` returned by BillingClient, not hard-code USD.
+| Product ID | Offer ID | Charge (US base price) | Entitlement |
+|---|---|---:|---|
+| `mss_premium` | `monthly` | $9.99 recurring | 60 voice minutes per current billing period |
+| `mss_voice_60` | `buy` | $9.99 one-time | 60 non-expiring top-up minutes |
+| `mss_voice_120` | `buy` | $18.99 one-time | 120 non-expiring top-up minutes |
+| `mss_voice_300` | `buy` | $44.99 one-time | 300 non-expiring top-up minutes |
+| `mss_voice_600` | `buy` | $84.99 one-time | 600 non-expiring top-up minutes |
 
-## What has been prepared on this feature branch
+Android gets localized prices from BillingClient. Purchased credits use monthly minutes first when those are valid, then top-ups.
 
-- Android native bridge supports Play one-time product discovery, four specific packages and the standard `buy` purchase option, purchase initiation and retrieval of outstanding unconsumed products.
-- Server validates purchase tokens with the Google Android Publisher API, checks purchase state and actual package/product, and maps **only** verified products to minutes.
-- `POST /api/billing/verify` requires a signed-in Supabase bearer token and grants credits using a server-only RLS-protected database function. Duplicate token redemption is idempotent; all token owners are bound to a user.
-- `GET /api/billing/status` returns monthly and prepaid minute balances for the authenticated account.
-- Google acknowledges subscriptions and consumes top-ups **after** the database grant succeeds. Both operations need provider retry handling.
-- Schema migration is staged in `supabase/migrations/20261103190000_mss_play_voice_credit_wallets.sql`. It has **not** been applied automatically.
-- Unit tests cover purchase-state checks, product ID matching, refund quantity and subscription expiration.
+## Completed
 
-## Required owner action in Google Cloud / Google Play
+- Google Play Android Developer API enabled, service account invited with app-scoped financial and order permissions.
+- Android license tester list `MSS Testers` selected and saved.
+- `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` and `SUPABASE_SECRET_KEY` stored in Render backend environment.
+- New Supabase wallet tables, token ownership, grants and prepaid voice-session lease schema applied to project `ltqbjqtzsdzglswuqkip`; migrations:
+  - `20261103191338_mss_play_voice_credit_wallets`
+  - `20261103191520_mss_voice_lease_minimum_one_second`
+- Live tables had zero rows after installation; RLS enabled and security checks performed.
+- Server Google Play verification checks purchase state, product option, product ID, quantity, refund eligibility and hashed account binding; after durable grant, consume top-ups or acknowledge subscriptions.
+- User-specific idempotent voice credits, exact remaining millisecond balances, and native Android purchase/restore flows added.
+- Server-controlled Phonic WebSocket relay reserves credit atomically; new reservation extends a long call without reconnecting. Each lease has a provider-independent hard cutoff if no further minutes are available.
+- Existing free voice remains unchanged when `MSS_VOICE_BILLING_ENABLED` is unset, and billing can be tested on specific accounts without changing all users.
 
-1. Open Google Cloud Console in the desired project. Under **APIs & Services → Library**, enable **Google Play Developer API**.
-2. Under **IAM & Admin → Service Accounts**, create a dedicated server-to-server account (e.g. `mss-play-billing`).
-3. In **Google Play Console → Users and permissions**, invite the service account email as a user, limit it to the MySecondSelf app, and grant **View financial data, orders and cancellation survey responses** and **Manage orders and subscriptions**, as required by the Google Play Developer API.
-4. Create a JSON credential key in the service account credentials page only if needed for the current hosting approach. Store the entire JSON securely in the **Render backend** secret environment variable `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`. Do not place it in this repository, chat messages, the Capacitor app, or any `VITE_` variable.
-5. In the backend service configure `SUPABASE_URL` and a server-only `SUPABASE_SERVICE_ROLE_KEY` (or existing `SUPABASE_SECRET_KEY`) so the RLS-protected grant RPC can execute. Keep these exclusively server side.
-6. After review, apply the staged schema migration to the correct MySecondSelf Supabase project `ltqbjqtzsdzglswuqkip`. Verify policies and RPC permissions before enabling purchase buttons.
+## Deployment structure
 
-Google's current setup: https://developers.google.com/android-publisher/getting_started
+Render **synqme-api** auto-deploys GitHub branch `SYNQ.ME`. The backend work is PR #37 to `SYNQ.ME`, and includes the production OTA-artifact routing behavior.
 
-## Still required before charging customers
+Android code is PR #36, based on `mobile/current-mss`.
+- Android tester bundle versionCode 10, versionName 1.7.
+- `android-test` and `android-play` Codemagic workflows build with `VITE_PLAY_BILLING_ENABLED=true`; older Android builds do not expose the new purchase screen.
+- The mobile UI checks `GET /health` and `GET /api/billing/status` before enabling a purchase. Backend returns `paidVoiceEnabled=false` until a billing flag or test allowlist is present.
 
-**Do not merge or expose checkout solely because the product IDs are Active.**
+## Safe tester-only rollout
 
-- Implement the signed-in client purchase screen, event handling, verification POST and a restore/retry queue for pending transactions.
-- Meter and **enforce** voice minutes in real time. Current `/api/phonic/usage` is client-reported at the end of a voice call and can neither reliably settle simultaneous calls nor prevent an already-issued Phonic WebSocket token from being used beyond the allowance. A server-controlled voice-session lease/cap, recurring consumption and enforceable cutoff or relay are required. Server must deny opening further sessions when credits are exhausted.
-- Decide exactly how a cancelled/expired subscription affects eligibility for **unused separately purchased top-up minutes**. Do not strand purchased consumables.
-- Ensure monthly minutes are used first and reset on verified renewals; top-ups persist. Explicitly define and test refunds/chargebacks, order reversals and Real-Time Developer Notifications (RTDN) or scheduled Play reconciliation.
-- Cover store account changes, offline resumes, restore, reinstall, pending payments, duplicate callbacks, multiple devices, server timeouts, Play billing response codes, acknowledgement/consumption retries and Google license-test orders.
-- Update premium status and balance in app, error messages and paywall disclosure; test Google Play closed track on a tester device.
-- Complete App Store / StoreKit separately before selling these products on iOS.
-- Build and validate the Android release with Gradle and run `npm test` in a connected environment.
+1. Leave Render variable `MSS_VOICE_BILLING_ENABLED` **unset** or `false`.
+2. Add `MSS_VOICE_BILLING_TEST_EMAILS` to the backend **only with verified MSS accounts belonging to Google Play license testers**; comma-separated lowercase email addresses.
+3. Save environment config. Only allowlisted users receive metered voice sessions; other users keep legacy voice sessions. Public health reports billing availability to the tester-enabled Android app.
+4. Build a signed versionCode 10 AAB through Codemagic `android-play` and upload to Google Play **closed testing**, not production. Use matching tester account on installed Play version.
+5. Validate `mss_premium` subscription and all four top-ups with Google Play test payment methods. Verify:
+   - token matches signed-in MSS account; wrong-account tokens fail
+   - pending/cancelled purchases grant nothing
+   - each token grants exactly once, including after restore and reinstall
+   - credits display immediately; minutes debit during connected voice
+   - long session continues past 5 minutes when balance remains
+   - session stops on exhaustion; top-ups survive renewal/cancellation
+   - multiple devices cannot reserve overlapping credit
+   - provider disconnect / backend failure refunds unused reserved time
+   - local price and billing disclosures are correct.
+6. Inspect Render logs for Play verification errors (never log raw tokens), and inspect Supabase grants and voice leases for duplicates or unexpected balances.
 
-## Launch condition
+## Before general customer launch
 
-Only activate **client checkout** when test purchases create **one and only one** credit grant, the user can see their wallet, sessions stop at the approved cap, and refunds/revocations update entitlement. The Google Play store listing status alone is not evidence of backend readiness.
+- Add Real-time Developer Notifications / scheduled subscription reconciliation for renewals, reversals, chargebacks, refunds and cancellation while app is closed. Current subscription renewal is applied when native client re-verifies purchases on sign-in; this is not yet a complete unattended reconciliation system.
+- Test the relay against a real Phonic WebSocket conversation, including duration rollover and abrupt disconnects.
+- Confirm correct on-device purchase UI and complete signed AAB closed-track testing.
+- Decide launch policy for existing users and versions that do not yet display Google Play checkout.
+- Add iOS App Store subscription and consumable products separately before enabling iOS checkout.
+- Enable global `MSS_VOICE_BILLING_ENABLED=true` only after the above tests, release readiness and migration have been confirmed.
+
+## Security
+
+Google service account JSON and Supabase secret key are server-only. Never put either in app source, build variables prefixed with `VITE_`, screenshots or messages. The client only sends purchase IDs/tokens through authenticated endpoints and cannot write balances. The Google token is stored as a SHA-256 hash for idempotent ownership checks; the backend verifies with Google for each purchase.
