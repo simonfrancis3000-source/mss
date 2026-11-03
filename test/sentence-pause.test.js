@@ -8,9 +8,9 @@ const together = (...parts) => Int16Array.from(parts.flatMap(part => [...part]))
 test('only sentence endings add gaps, with a longer pause before a question',()=>{
   const planner=createSentencePausePlanner(1000);
   assert.equal(planner.gapBefore(speech(100),'I will leave'),0);
-  assert.equal(planner.gapBefore(speech(100),' the candle alone.'),0);
-  assert.equal(planner.gapBefore(speech(100),'How about the lamps?'),.42);
-  assert.equal(planner.gapBefore(speech(100),'Next, the rug.'),.28);
+  assert.equal(planner.gapBefore(together(speech(100),quiet(20)),' the candle alone.'),0);
+  assert.ok(Math.abs(planner.gapBefore(together(speech(100),quiet(20)),'How about the lamps?')-.4)<1e-8);
+  assert.ok(Math.abs(planner.gapBefore(speech(100),'Next, the rug.')-.26)<1e-8);
 });
 test('natural trailing and leading silence, silent chunks and network delay are preserved',()=>{
   const planner=createSentencePausePlanner(1000);
@@ -33,9 +33,25 @@ test('abbreviations and numbers do not create mid-phrase gaps',()=>{
 });
 test('multilingual punctuation and closing quotes are handled and reset drops old pauses',()=>{
   const planner=createSentencePausePlanner(1000);
-  planner.gapBefore(speech(100),'了解しました。');
-  assert.equal(planner.gapBefore(speech(100),'次に'),.28);
-  planner.gapBefore(speech(100),'Understood.”');
-  assert.equal(planner.gapBefore(speech(100),'What next?'),.42);
+  planner.gapBefore(together(speech(100),quiet(20)),'了解しました。');
+  assert.ok(Math.abs(planner.gapBefore(speech(100),'次に')-.26)<1e-8);
+  planner.gapBefore(together(speech(100),quiet(20)),'Understood.”');
+  assert.ok(Math.abs(planner.gapBefore(speech(100),'What next?')-.4)<1e-8);
   planner.reset();assert.equal(planner.gapBefore(speech(100),'A new reply'),0);
+});
+
+test('punctuation arriving before its sound never inserts a pause inside continuous voiced audio',()=>{
+  const planner=createSentencePausePlanner(1000);
+  planner.gapBefore(speech(100),'Understood.');
+  assert.equal(planner.gapBefore(speech(100),'How'),0);
+  assert.equal(planner.gapBefore(together(speech(100),quiet(20)),' would'),0);
+  assert.equal(planner.gapBefore(speech(100),' you like'),0);
+});
+
+test('a single zero crossing is not a quiet sentence boundary and voiced samples break accumulated silence',()=>{
+  const planner=createSentencePausePlanner(1000);
+  planner.gapBefore(together(speech(100),quiet(5)),'Okay.');
+  assert.equal(planner.gapBefore(together(quiet(1),speech(100)),'How'),0);
+  assert.equal(planner.gapBefore(together(quiet(7),speech(100)),' about'),0);
+  assert.equal(planner.gapBefore(together(quiet(20),speech(100)),' tomorrow?'),0);
 });
