@@ -211,11 +211,12 @@ test("sentence gaps are scheduled into playback and speaking finishes only after
  const {conversation,Socket,audioSources,events,contexts}=browser(t);
  const starting=conversation.start();const socket=await waitForSocket(Socket);socket.open();socket.message({type:'ready_to_start_conversation'});await starting;
  socket.message({type:'assistant_started_speaking'});
- socket.message({type:'audio_chunk',text:'Understood.',audio:pcmAudio()});
+ const sentencePcm=new Int16Array(4410).fill(1200);sentencePcm.fill(0,4410-882);
+ socket.message({type:'audio_chunk',text:'Understood.',audio:Buffer.from(sentencePcm.buffer).toString('base64')});
  socket.message({type:'audio_chunk',text:'How would you like',audio:pcmAudio()});
  socket.message({type:'audio_chunk',text:' me to handle it?',audio:pcmAudio()});
  assert.equal(audioSources.length,3);
- assert.ok(Math.abs(audioSources[1].startAt-(audioSources[0].startAt+.1)-.42)<1e-8);
+ assert.ok(Math.abs(audioSources[1].startAt-(audioSources[0].startAt+.08)-.42)<1e-8);
  assert.ok(Math.abs(audioSources[2].startAt-(audioSources[1].startAt+.1))<1e-8);
  socket.message({type:'assistant_finished_speaking'});
  assert.equal(events.filter(e=>e.type==='assistant_finished_speaking').length,0);
@@ -226,6 +227,24 @@ test("sentence gaps are scheduled into playback and speaking finishes only after
  assert.equal(events.filter(e=>e.type==='assistant_finished_speaking').length,0);
  audioSources[2].onended();
  assert.equal(events.filter(e=>e.type==='assistant_finished_speaking').length,1);
+});
+
+test('a short jitter buffer keeps late-arriving continuous packets joined without dropping samples',async(t)=>{
+ const {conversation,Socket,audioSources,contexts}=browser(t);
+ const starting=conversation.start();const socket=await waitForSocket(Socket);socket.open();socket.message({type:'ready_to_start_conversation'});await starting;
+ socket.message({type:'assistant_started_speaking'});
+ socket.message({type:'audio_chunk',text:'Keep this',audio:pcmAudio()});
+ assert.equal(audioSources[0].startAt,.08);
+ const end=audioSources[0].startAt+audioSources[0].buffer.duration;
+ contexts[1].currentTime=end-.005;
+ socket.message({type:'audio_chunk',text:' sentence continuous.',audio:pcmAudio()});
+ assert.equal(audioSources[1].startAt,end);
+ assert.equal(audioSources[1].buffer.getChannelData(0).length,4410);
+ assert.ok(audioSources[1].buffer.getChannelData(0).every(value=>value===1200/32768));
+ contexts[1].currentTime=1;
+ socket.message({type:'audio_chunk',text:'A new packet',audio:pcmAudio()});
+ assert.equal(audioSources[2].startAt,1.08);
+ await conversation.stop();
 });
 
 test("interrupting speech cancels queued pauses and stale playback callbacks",async(t)=>{

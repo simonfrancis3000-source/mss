@@ -6,6 +6,7 @@ import { Capacitor } from "@capacitor/core";
 const DEFAULT_WS_URL = "wss://api.phonic.ai/v1/sts/ws";
 const SAMPLE_RATE = 44100;
 const MICROPHONE_PACKET_SAMPLES = Math.floor(SAMPLE_RATE * 0.02);
+const PLAYBACK_BUFFER_SECONDS = 0.08;
 
 // Provider errors can contain a token-bearing URL. Keep useful validation
 // details while ensuring credentials never reach a status label or console.
@@ -219,7 +220,10 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
     const source = playbackContext.createBufferSource();
     source.buffer = buffer;
     source.connect(playbackGain);
-    const baseStart = Math.max(playbackContext.currentTime + 0.015, nextPlaybackTime);
+    // A small initial buffer absorbs packet jitter. Once queued, append samples
+    // contiguously instead of adding a fresh scheduling gap to every packet.
+    const baseStart = nextPlaybackTime > playbackContext.currentTime
+      ? nextPlaybackTime : playbackContext.currentTime + PLAYBACK_BUFFER_SECONDS;
     const elapsedGap = Math.max(0, baseStart - nextPlaybackTime);
     const startAt = baseStart + sentencePauses.gapBefore(pcm, text, elapsedGap);
     nextPlaybackTime = startAt + buffer.duration;
