@@ -281,5 +281,5 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
     const states = { idle: 'is ready', connecting: 'is connecting', listening: 'is listening', 'user-speaking': 'is listening', muted: 'is muted', thinking: 'is thinking', speaking: 'is speaking', 'speech-pause': 'is speaking' };
     voiceTitle.textContent = name + ' ' + (states[mode] || 'is ready');
   }
-  return { render, renderTranscript, renderVoiceState, createProgressChart: () => progressChart(getSnapshot()) };
+  return { render, renderTranscript, renderVoiceState, createProgressChart: () => progressChart(getSnapshot()), getActiveScenarioId: () => { const { model } = getSnapshot(); return model.ready ? model.active?.id : null; } };
 }
