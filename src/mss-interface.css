@@ -425,3 +425,23 @@ body[data-app-view='rewards'] .mss-rewards{display:flex}
 .mss-rewards-terms-section{padding:10px 0;border-top:1px solid #b8bcc5}
 .mss-rewards-terms-section h3{margin:0;color:#20283a;font-size:13px;font-weight:760}
 .mss-rewards-terms-section p{margin:4px 0 0;color:#404958;font-size:12px;line-height:1.55}
+
+
+/* Rewards detail only: match the soft-grey Today's Focus cards without altering
+   the Home reward status, its grey progress fill, or companion artwork. */
+.mss-rewards-page .mss-rewards-partner,
+.mss-rewards-page .mss-rewards-credit,
+.mss-rewards-page .mss-rewards-training,
+.mss-rewards-page .mss-rewards-offer,
+.mss-rewards-page .mss-rewards-partner-footer,
+.mss-rewards-page .mss-rewards-terms{
+  background:linear-gradient(125deg,#f0f0f5,#eceef4);
+  border-color:#d8dce5;
+}
+/* Make the credit track clearly visible even at 0%, and darken earned fill. */
+.mss-rewards-page .mss-rewards-credit-track{
+  background:#a7cfb6;
+}
+.mss-rewards-page .mss-rewards-credit-track>span{
+  background:#08783f;
+}
