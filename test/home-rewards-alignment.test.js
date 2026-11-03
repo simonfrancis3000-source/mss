@@ -11,6 +11,6 @@ test('Home training and rewards status bars have equal bottom insets', async () 
   const css = await readFile(new URL('../src/mss-interface.css', import.meta.url), 'utf8');
   assert.match(css, /\.mss-home \.mss-progress\{padding:10px 14px 11px;/);
   assert.match(css, /\.mss-home \.mss-rewards-teaser\{\s*background:linear-gradient\(125deg,#f0f0f5,#eceef4\);\s*border-color:#d8dce5;\s*min-height:0;\s*box-sizing:border-box;\s*padding-top:10px;\s*padding-bottom:11px;/);
-  assert.match(css, /\.mss-rewards-teaser-track\{[^}]*background:#9ea5af\}/);
+  assert.match(css, /\.mss-rewards-teaser-track\{[^}]*background:#c1c6cf\}/);
   assert.match(css, /\.mss-rewards-teaser-track>span\{[^}]*background:#444b55\}/);
 });
