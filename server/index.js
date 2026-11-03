@@ -494,13 +494,16 @@ const app = http.createServer(async (request, response) => {
   const otaName = url.pathname.slice("/ota/".length);
   if (request.method === "GET" && url.pathname.startsWith("/ota/") &&
       /^(?:internal-(?:android|ios)\.json|mss-[a-f0-9]{32}\.zip)$/.test(otaName)) {
-    if (origin && headers === null) return json(response, 403, { error: "Origin not allowed." });
+    // OTA artifacts are deliberately public. A wildcard CORS origin permits
+    // all native WebView schemes without changing authenticated API routes.
+    const otaHeaders = { "Access-Control-Allow-Origin": "*" };
+    console.info("MSS OTA request", otaName.endsWith(".json") ? "manifest" : "bundle", "origin:", origin || "none");
     const path = fileURLToPath(new URL("../ota-bundles/" + otaName, import.meta.url));
     try {
       const info = await stat(path);
       if (!info.isFile() || info.size > 50 * 1024 * 1024) throw new Error("Artifact unavailable");
       response.writeHead(200, {
-        ...(headers || {}),
+        ...otaHeaders,
         "Content-Type": otaName.endsWith(".zip") ? "application/zip" : "application/json; charset=utf-8",
         "Content-Length": info.size,
         "Cache-Control": otaName.endsWith(".zip") ? "public, max-age=31536000, immutable" : "no-store",
@@ -508,7 +511,7 @@ const app = http.createServer(async (request, response) => {
       });
       return createReadStream(path).pipe(response);
     } catch {
-      return json(response, 404, { error: "Update not found." }, headers || {});
+      return json(response, 404, { error: "Update not found." }, otaHeaders);
     }
   }
 
