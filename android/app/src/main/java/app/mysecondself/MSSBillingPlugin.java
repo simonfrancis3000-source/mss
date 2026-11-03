@@ -192,6 +192,136 @@ public class MSSBillingPlugin extends Plugin implements PurchasesUpdatedListener
         }));
     }
 
+    private static final String[] VOICE_TOPUP_IDS = {
+        "mss_voice_60", "mss_voice_120", "mss_voice_300", "mss_voice_600"
+    };
+
+    private boolean isAllowedTopUp(String id) {
+        if (id == null) return false;
+        for (String allowed : VOICE_TOPUP_IDS) {
+            if (allowed.equals(id)) return true;
+        }
+        return false;
+    }
+
+    private QueryProductDetailsParams topUpQuery(String id) {
+        QueryProductDetailsParams.Product product =
+                QueryProductDetailsParams.Product.newBuilder()
+                        .setProductId(id)
+                        .setProductType(BillingClient.ProductType.INAPP)
+                        .build();
+        return QueryProductDetailsParams.newBuilder()
+                .setProductList(Collections.singletonList(product))
+                .build();
+    }
+
+    /**
+     * Returns country-appropriate prices from Google Play. Never hard-code
+     * USD amounts or trust a client-supplied price for entitlement purposes.
+     */
+    @PluginMethod
+    public void getVoiceTopUpOffers(PluginCall call) {
+        withBilling(call, () -> {
+            List<QueryProductDetailsParams.Product> products = new ArrayList<>();
+            for (String id : VOICE_TOPUP_IDS) {
+                products.add(QueryProductDetailsParams.Product.newBuilder()
+                        .setProductId(id)
+                        .setProductType(BillingClient.ProductType.INAPP)
+                        .build());
+            }
+            QueryProductDetailsParams params = QueryProductDetailsParams.newBuilder()
+                    .setProductList(products).build();
+            client.queryProductDetailsAsync(params, (result, details) -> {
+                if (result.getResponseCode() != BillingClient.BillingResponseCode.OK) {
+                    call.reject("Cannot load voice credit products: " + result.getDebugMessage());
+                    return;
+                }
+                JSArray offers = new JSArray();
+                for (ProductDetails product : details.getProductDetailsList()) {
+                    List<ProductDetails.OneTimePurchaseOfferDetails> list =
+                            product.getOneTimePurchaseOfferDetailsList();
+                    if (list == null) continue;
+                    for (ProductDetails.OneTimePurchaseOfferDetails offer : list) {
+                        if (!"buy".equals(offer.getPurchaseOptionId())) continue;
+                        JSObject item = new JSObject();
+                        item.put("productId", product.getProductId());
+                        item.put("purchaseOptionId", offer.getPurchaseOptionId());
+                        item.put("formattedPrice", offer.getFormattedPrice());
+                        item.put("offerToken", offer.getOfferToken());
+                        offers.put(item);
+                    }
+                }
+                JSObject response = new JSObject();
+                response.put("offers", offers);
+                call.resolve(response);
+            });
+        });
+    }
+
+    /**
+     * Launches a consumable purchase only. Granting minutes is exclusively
+     * a server-side operation after Google Play purchase-token verification.
+     */
+    @PluginMethod
+    public void startVoiceTopUpPurchase(PluginCall call) {
+        String productId = call.getString("productId");
+        if (!isAllowedTopUp(productId)) {
+            call.reject("Unknown voice credit package");
+            return;
+        }
+        withBilling(call, () -> client.queryProductDetailsAsync(topUpQuery(productId), (result, details) -> {
+            if (result.getResponseCode() != BillingClient.BillingResponseCode.OK) {
+                call.reject("Cannot load voice credit package: " + result.getDebugMessage());
+                return;
+            }
+            for (ProductDetails product : details.getProductDetailsList()) {
+                List<ProductDetails.OneTimePurchaseOfferDetails> offers =
+                        product.getOneTimePurchaseOfferDetailsList();
+                if (offers == null) continue;
+                for (ProductDetails.OneTimePurchaseOfferDetails offer : offers) {
+                    if (!"buy".equals(offer.getPurchaseOptionId())) continue;
+                    BillingFlowParams.ProductDetailsParams item =
+                            BillingFlowParams.ProductDetailsParams.newBuilder()
+                                    .setProductDetails(product)
+                                    .setOfferToken(offer.getOfferToken())
+                                    .build();
+                    BillingFlowParams params = BillingFlowParams.newBuilder()
+                            .setProductDetailsParamsList(Collections.singletonList(item)).build();
+                    getActivity().runOnUiThread(() -> {
+                        BillingResult started = client.launchBillingFlow(getActivity(), params);
+                        if (started.getResponseCode() == BillingClient.BillingResponseCode.OK) {
+                            JSObject response = new JSObject();
+                            response.put("started", true);
+                            call.resolve(response);
+                        } else {
+                            call.reject("Could not start voice credit checkout: " + started.getDebugMessage());
+                        }
+                    });
+                    return;
+                }
+            }
+            call.reject("No eligible buy purchase option found for " + productId);
+        }));
+    }
+
+    /**
+     * Supplies purchased but not yet consumed INAPP tokens for backend replay
+     * and recovery. Do not locally consume without a verified server grant.
+     */
+    @PluginMethod
+    public void getExistingVoiceTopUpPurchases(PluginCall call) {
+        withBilling(call, () -> client.queryPurchasesAsync(QueryPurchasesParams.newBuilder()
+                .setProductType(BillingClient.ProductType.INAPP).build(), (result, purchases) -> {
+            if (result.getResponseCode() != BillingClient.BillingResponseCode.OK) {
+                call.reject("Cannot query outstanding voice credit purchases: " + result.getDebugMessage());
+                return;
+            }
+            JSObject response = new JSObject();
+            response.put("purchases", toPurchaseList(purchases));
+            call.resolve(response);
+        }));
+    }
+
     @Override
     public void onPurchasesUpdated(BillingResult result, List<Purchase> purchases) {
         JSObject payload = new JSObject();
