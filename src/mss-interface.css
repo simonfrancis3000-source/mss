@@ -475,3 +475,9 @@ body[data-app-view='rewards'] .mss-rewards{display:flex}
   height:19px;
   transform:none;
 }
+
+/* Match the percentage and reward amount typography at every phone width. */
+.mss-home .mss-rewards-teaser-value{
+  font-size:15px;
+  font-weight:750;
+}
