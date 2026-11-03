@@ -1,0 +1,113 @@
+name: MSS Android V8 Remember me repair OTA
+on:
+  push:
+    branches:
+      - mobile/current-mss
+    paths:
+      - .github/ota-v8-login-fix-request.txt
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mss-login-repair-internal-android-v8
+  cancel-in-progress: false
+
+jobs:
+  publish-only-approved:
+    if: github.repository == 'simonfrancis3000-source/mss'
+    runs-on: ubuntu-latest
+    env:
+      VITE_API_BASE_URL: https://synqme-api.onrender.com
+      VITE_SUPABASE_URL: https://ltqbjqtzsdzglswuqkip.supabase.co
+      VITE_SUPABASE_ANON_KEY: sb_publishable_R3Sl3WZEGDmpzhdeG3Jj7A_ERmuozw3
+    steps:
+      - name: Check out approved mobile source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify this one-time request
+        run: |
+          set -euo pipefail
+          grep -Fx 'deploy_login_fix=remember-me-native-persistence-v8' .github/ota-v8-login-fix-request.txt
+
+      - name: Use Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Run tests and build app
+        run: |
+          set -euo pipefail
+          npm ci
+          npm test
+          npm run build -- --mode mobile
+
+      - name: Verify this is only the reviewed login repair
+        run: |
+          set -euo pipefail
+          git diff --name-only 213661b55312ed2534afd8c4039d54952acfc6df HEAD > changed-files.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          allowed = {
+              "index.html",
+              "src/session-storage.js",
+              "src/synqme.js",
+              "test/session-storage.test.js",
+              ".github/workflows/android-turnstile.yml",
+              ".github/workflows/mss-remember-login-v8.yml",
+              ".github/ota-v8-login-fix-request.txt"
+          }
+          changed=set(Path("changed-files.txt").read_text().splitlines())
+          assert changed and not (changed - allowed), f"Unexpected source changes: {sorted(changed - allowed)}"
+          html=Path("index.html").read_text()
+          client=Path("src/synqme.js").read_text()
+          storage=Path("src/session-storage.js").read_text()
+          assert "authImportDraft" not in html and "authImportDraft" not in client
+          assert "rememberChoiceReady" in client and "rememberMeStorage.syncChoice()" in client
+          assert "hasExplicitChoice" in storage and "nativePersistentSessionStorage" in storage
+          print("PASS: Login UI and remembered-session changes are scoped and reviewed")
+          PY
+
+      - name: Create clean OTA bundle and verify no test banner
+        run: |
+          set -euo pipefail
+          python3 scripts/package-mobile-ota.py --platform android --native-code 8
+          python3 - <<'PY'
+          import json,hashlib,zipfile
+          from pathlib import Path
+          manifest=json.loads(Path("ota-publish/internal-android.json").read_text())
+          assert manifest["enabled"] is True and manifest["channel"] == "internal"
+          assert manifest["minNativeVersionCode"] == manifest["maxNativeVersionCode"] == 8
+          name=manifest["url"].rsplit("/",1)[-1]
+          p=Path("ota-publish")/name
+          assert p.is_file()
+          assert hashlib.sha256(p.read_bytes()).hexdigest()==manifest["checksum"]
+          assert manifest["bundleId"]+".zip"==name
+          with zipfile.ZipFile(p) as z:
+              assert z.testzip() is None
+              assert b"MSS LIVE UPDATE TEST SUCCESSFUL" not in z.read("index.html")
+              assert b"Import this browser" not in z.read("index.html")
+          print("PASS: OTA archive, checksum, manifest verified and proof banner absent")
+          PY
+
+      - name: Publish only OTA files to the Render deployment branch
+        run: |
+          set -euo pipefail
+          git fetch origin SYNQ.ME
+          # Avoid replacing a newer release or unrelated manifest.
+          git show origin/SYNQ.ME:ota-bundles/internal-android.json | grep -F '"bundleId": "mss-671b283486792c042fc98191813e9f26"'
+          git worktree add -b reviewed-login-ota .ota-deploy origin/SYNQ.ME
+          mkdir -p .ota-deploy/ota-bundles
+          cp ota-publish/mss-*.zip .ota-deploy/ota-bundles/
+          cp ota-publish/internal-android.json .ota-deploy/ota-bundles/internal-android.json
+          cd .ota-deploy
+          git config user.name 'MSS OTA Publisher'
+          git config user.email 'mss-ota-bot@users.noreply.github.com'
+          git add ota-bundles/
+          git diff --cached --name-only
+          git commit -m 'Publish Android 8 remembered-login repair OTA bundle'
+          git push origin HEAD:SYNQ.ME
