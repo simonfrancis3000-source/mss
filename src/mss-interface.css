@@ -359,3 +359,58 @@ body[data-app-view='rewards'] .mss-rewards{display:flex}
 @media(max-width:420px){.mss-rewards-teaser-track{margin-left:0}}
 /* Keep unverified balances honest without taking up space for a large placeholder. */
 .mss-rewards-credit-limit{font-weight:600;font-size:13px}
+
+
+/* The rewards programme uses a consistent medium-grey surface on both screens.
+   Keep the green financial and purple training indicators distinct. */
+.mss-home .mss-rewards-teaser,
+.mss-rewards-partner,
+.mss-rewards-credit,
+.mss-rewards-training,
+.mss-rewards-offer,
+.mss-rewards-partner-footer,
+.mss-rewards-terms{
+  background:#d5d7dd;
+  border-color:#bec2ca;
+}
+.mss-home .mss-rewards-teaser{
+  box-shadow:0 4px 14px #222a370a;
+}
+.mss-rewards-terms{border:1px solid #bec2ca}
+.mss-rewards-partner-footer{color:#263044}
+.mss-rewards-offer{color:#20283a}
+
+/* One-tap access from Profile, aligned with its title rather than
+   using another bottom navigation item. */
+.mss-profile .mss-profile-heading{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  flex-wrap:nowrap;
+  gap:12px;
+}
+.mss-profile .mss-profile-heading h1{
+  min-width:0;
+  margin:0;
+}
+.mss-profile-rewards-button{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  flex:0 0 auto;
+  min-height:40px;
+  padding:8px 14px;
+  border:1px solid #bec2ca;
+  border-radius:24px;
+  background:#d5d7dd;
+  color:#172132;
+  font-size:14px;
+  font-weight:700;
+  white-space:nowrap;
+  box-shadow:none;
+}
+.mss-profile-rewards-button:hover{background:#c9ccd3}
+@media(max-width:420px){
+ .mss-profile .mss-profile-heading{gap:8px}
+ .mss-profile-rewards-button{min-height:38px;padding:7px 12px;font-size:13px}
+}
