@@ -5182,7 +5182,9 @@ async function openVoiceExperience({ activate = false } = {}) {
       getSession: async () => {
         const response = await fetch(PHONIC_API_BASE_URL + "/api/phonic/session", {
           method: "POST",
-          headers: await authenticatedApiHeaders(),
+          headers: await authenticatedApiHeaders({
+            ...(googlePlayCheckout.enabled ? { "X-MSS-Billing-Client": "android-1.7" } : {})
+          }),
           body: JSON.stringify({})
         });
         let payload = {};
