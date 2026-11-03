@@ -122,7 +122,7 @@ export async function verifyGooglePlayToken({ productId, purchaseToken, userId }
   if (accountId !== expectedAccountId) {
     throw fail("This Google Play purchase is not linked to the signed-in MySecondSelf account.", 403);
   }
-  return parseVerifiedPlayPurchase(details, { productId });
+  return { ...parseVerifiedPlayPurchase(details, { productId }), isTest: Boolean(details?.testPurchase || details?.testPurchaseContext) };
 }
 
 /** Consume only AFTER the corresponding minute grant has been durably committed. */
