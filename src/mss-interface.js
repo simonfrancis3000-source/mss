@@ -297,14 +297,35 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
     container.append(training);
 
     const offer = el('div', 'mss-rewards-offer');
-    offer.append(symbol('coins'), el('p', '', 'Earn $2 of robot credit for every $1 in eligible MySecondSelf purchases, up to program limits.'));
+    offer.append(symbol('coins'), el('p', '', 'Earn $2 credit for every $1 in eligible spending. Redeem up to 5% off a participating robot, limited by your earned credit.'));
     container.append(offer);
     const footer = el('div', 'mss-rewards-partner-footer');
     footer.append(el('strong', '', 'Partner: Booster Robotics'));
     container.append(footer);
     const details = el('details', 'mss-rewards-terms');
     const opener = el('summary', '', 'How Robot Rewards work');
-    details.append(opener, el('p', '', 'Earn up to $100 credit per month and $1,000 in total. Rewards are non-transferable, subject to verified qualifying payments, participating models and partner terms. Training and a readiness assessment are required before redemption. No robot purchase price is shown until the partner confirms the offer.'));
+    const lead = el('p', 'mss-rewards-terms-lead',
+      'Your discount is the lowest of your unused earned credit, 5% of the eligible robot hardware price and any lower published manufacturer offer limit.');
+    const example = el('p', 'mss-rewards-terms-example',
+      'Example: $900 earned credit on a $5,000 robot = $250 off (5%). The remaining $650 is not lost and stays available for a future qualifying purchase while valid.');
+    details.append(opener, lead, example);
+    const sections = [
+      ['Earning limits', 'Each $1 actually paid for eligible MySecondSelf subscriptions or voice top-ups earns $2 promotional credit, up to $100 per UTC calendar month and $1,000 earned per account over its lifetime. Free trials, licensed tester allowances, complimentary minutes and refunded, reversed or charged-back payments do not qualify. Only payment records verified by the payment provider count.'],
+      ['Currency', 'Robot Rewards balances are currently calculated for verified USD payments. Payments in other currencies remain pending until a published conversion method is supported. Any local-currency redemption, exchange rate and rounding will be disclosed before checkout.'],
+      ['Who can redeem', 'The purchaser must be an adult using the same verified MySecondSelf account that earned the credit. Redemption requires the published Robot Ready criteria: currently at least 80% of core training, a passed readiness assessment and six qualifying paid subscription months. Completing training does not guarantee robot availability.'],
+      ['How the 5% limit is calculated', 'The 5% cap applies to the eligible robot hardware selling price at checkout, after any other price reductions the manufacturer permits. Shipping, taxes, accessories, setup, finance charges, rentals and subscriptions do not count toward the eligible hardware price. The partner must show the complete final purchase price and actual discount before payment.'],
+      ['Eligible robots and restrictions', 'Only participating manufacturer models, locations and authorised purchase channels qualify. One Robot Rewards discount may be applied per robot order, and only one redemption is permitted per verified buyer in any rolling 12-month period. Rewards from multiple accounts cannot be combined. Rewards cannot be transferred, sold, gifted, withdrawn or converted into cash, and cannot be combined with another promotion unless the manufacturer expressly permits it.'],
+      ['Unused credit', 'Only the amount actually deducted from the robot purchase uses the rewards balance. Any unused earned credit remains in your account for a later qualifying purchase while valid, subject to the same program caps and eligibility requirements. No cash change or reimbursement is provided for unused credit.'],
+      ['Verification and refunds', 'Earned credit can be held for up to 45 days before becoming redeemable while payments clear. Refunds, cancellations, chargebacks, purchase reversals, payment errors or confirmed misuse can reduce or reverse credit, including after it was displayed. We may request reasonable identity and transaction checks and may suspend suspicious redemption requests while reviewing them, subject to applicable law.'],
+      ['Cancelled or returned robot purchases', 'If the manufacturer confirms a qualifying robot order cancellation or return, the applied promotional credit is restored to the rewards account, not refunded as cash. The manufacturer handles the hardware purchase, delivery, returns and warranties. Nothing in these rules limits mandatory consumer rights.'],
+      ['Availability, expiry and changes', 'Manufacturer prices, participating models, regions and stock may change. An earned credit balance does not reserve a robot or fix its future price. Any expiry date will be disclosed in your account before credit is earned and displayed while it remains valid. Material program changes will be announced in advance and will apply prospectively, except where corrections are required for refunds, errors, fraud or law.'],
+      ['Before checkout', 'Your exact eligible discount, participating model, any partner-specific limit, applicable taxes, delivery charges and final total will be disclosed before you confirm a purchase. Partner-specific offers cannot remove rights guaranteed by applicable consumer law.']
+    ];
+    for (const [title, description] of sections) {
+      const section = el('section', 'mss-rewards-terms-section');
+      section.append(el('h3', '', title), el('p', '', description));
+      details.append(section);
+    }
     container.append(details);
     return container;
   }
