@@ -122,3 +122,139 @@ end $$;
 
 revoke all on function public.mss_apply_verified_play_purchase(uuid,text,text,timestamptz,text) from public, anon, authenticated;
 grant execute on function public.mss_apply_verified_play_purchase(uuid,text,text,timestamptz,text) to service_role;
+
+-- Billable voice calls use server-authorized reservations. Reserving minutes
+-- atomically prevents simultaneous calls from spending the same balance.
+create table if not exists public.mss_voice_leases (
+  id uuid primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  status text not null default 'active' check (status in ('active','settled')),
+  reserved_monthly_ms bigint not null check (reserved_monthly_ms >= 0),
+  reserved_topup_ms bigint not null check (reserved_topup_ms >= 0),
+  reserved_total_ms bigint generated always as (reserved_monthly_ms + reserved_topup_ms) stored,
+  consumed_ms bigint check (consumed_ms is null or consumed_ms >= 0),
+  created_at timestamptz not null default now(),
+  connection_deadline timestamptz not null,
+  settled_at timestamptz
+);
+create unique index if not exists mss_single_active_voice_lease
+  on public.mss_voice_leases (user_id) where status = 'active';
+create index if not exists mss_voice_leases_user_created
+  on public.mss_voice_leases (user_id, created_at desc);
+
+alter table public.mss_voice_leases enable row level security;
+revoke all on public.mss_voice_leases from anon, authenticated;
+grant select on public.mss_voice_leases to authenticated;
+drop policy if exists mss_voice_lease_owner_read on public.mss_voice_leases;
+create policy mss_voice_lease_owner_read on public.mss_voice_leases
+  for select to authenticated using ((select auth.uid()) = user_id);
+
+-- Payment backend must call this function with a validated logged-in user.
+-- A lease can reserve at most 5 minutes. All decisions are made while holding
+-- the wallet row lock, giving predictable behaviour for simultaneous requests.
+create or replace function public.mss_reserve_voice_lease(
+  p_user_id uuid, p_lease_id uuid
+) returns jsonb language plpgsql security definer
+set search_path = ''
+as $$
+declare
+  v_wallet public.mss_voice_wallets%rowtype;
+  v_remaining_monthly bigint;
+  v_remaining_topup bigint;
+  v_total bigint;
+  v_monthly bigint;
+  v_topup bigint;
+  v_expiry_cap bigint;
+begin
+  if p_user_id is null or p_lease_id is null then
+    raise exception 'invalid_lease_identity';
+  end if;
+  -- Unknown accounts do not receive free voice credit.
+  select * into v_wallet from public.mss_voice_wallets
+    where user_id = p_user_id for update;
+  if not found then raise exception 'no_voice_credits'; end if;
+
+  if exists(select 1 from public.mss_voice_leases
+    where user_id = p_user_id and status = 'active') then
+    raise exception 'voice_session_already_active';
+  end if;
+
+  v_remaining_monthly := case when v_wallet.monthly_valid_until > now()
+    then v_wallet.monthly_remaining_ms else 0 end;
+  v_remaining_topup := v_wallet.topup_remaining_ms;
+  v_total := least(300000::bigint, v_remaining_monthly + v_remaining_topup);
+  if v_total <= 0 then raise exception 'no_voice_credits'; end if;
+  -- Do not reserve monthly minutes beyond subscription expiration. Purchased
+  -- top-ups remain spendable even after the Premium billing period expires.
+  v_expiry_cap := case when v_remaining_monthly > 0 then greatest(0::bigint,
+    floor(extract(epoch from (v_wallet.monthly_valid_until - now())) * 1000)::bigint)
+    else 300000 end;
+  if v_expiry_cap <= 0 then
+    v_remaining_monthly := 0;
+    v_total := least(300000::bigint, v_remaining_topup);
+  else
+    v_total := least(v_total, v_expiry_cap);
+  end if;
+  if v_total <= 0 then raise exception 'no_voice_credits'; end if;
+
+  v_monthly := least(v_remaining_monthly, v_total);
+  v_topup := v_total - v_monthly;
+  update public.mss_voice_wallets set
+    monthly_remaining_ms = case when monthly_valid_until > now()
+      then monthly_remaining_ms - v_monthly else 0 end,
+    topup_remaining_ms = topup_remaining_ms - v_topup,
+    updated_at = now()
+    where user_id = p_user_id;
+
+  insert into public.mss_voice_leases
+    (id, user_id, reserved_monthly_ms, reserved_topup_ms, connection_deadline)
+    values (p_lease_id, p_user_id, v_monthly, v_topup, now() + interval '7 minutes');
+
+  return jsonb_build_object('leaseId',p_lease_id,'reservedMs',v_total);
+end $$;
+
+-- Only the relay computes duration: never trust user-supplied audio clocks.
+-- Replaying settlement is idempotent; refunded top-up minutes never expire.
+create or replace function public.mss_settle_voice_lease(
+  p_user_id uuid, p_lease_id uuid, p_elapsed_ms bigint
+) returns jsonb language plpgsql security definer
+set search_path = ''
+as $$
+declare
+  v_wallet public.mss_voice_wallets%rowtype;
+  v_lease public.mss_voice_leases%rowtype;
+  v_used bigint;
+  v_unused_monthly bigint;
+  v_unused_topup bigint;
+  v_charged_monthly bigint;
+begin
+  if p_user_id is null or p_lease_id is null or p_elapsed_ms < 0 then
+    raise exception 'invalid_lease_settlement';
+  end if;
+  select * into v_wallet from public.mss_voice_wallets where user_id=p_user_id for update;
+  if not found then raise exception 'wallet_not_found'; end if;
+  select * into v_lease from public.mss_voice_leases where user_id=p_user_id and id=p_lease_id for update;
+  if not found then raise exception 'lease_not_found'; end if;
+  if v_lease.status = 'settled' then
+    return jsonb_build_object('settled',false,'alreadySettled',true,'chargedMs',v_lease.consumed_ms);
+  end if;
+  v_used := least(v_lease.reserved_total_ms,p_elapsed_ms);
+  v_charged_monthly := least(v_lease.reserved_monthly_ms,v_used);
+  v_unused_monthly := v_lease.reserved_monthly_ms - v_charged_monthly;
+  v_unused_topup := v_lease.reserved_topup_ms -
+    (v_used - v_charged_monthly);
+  update public.mss_voice_wallets set
+    monthly_remaining_ms = monthly_remaining_ms + case when monthly_valid_until > now()
+      then v_unused_monthly else 0 end,
+    topup_remaining_ms = topup_remaining_ms + v_unused_topup,
+    updated_at = now()
+    where user_id = p_user_id;
+  update public.mss_voice_leases set
+    status='settled',consumed_ms=v_used,settled_at=now()
+    where id=p_lease_id;
+  return jsonb_build_object('settled',true,'chargedMs',v_used);
+end $$;
+revoke all on function public.mss_reserve_voice_lease(uuid,uuid) from public, anon, authenticated;
+revoke all on function public.mss_settle_voice_lease(uuid,uuid,bigint) from public, anon, authenticated;
+grant execute on function public.mss_reserve_voice_lease(uuid,uuid) to service_role;
+grant execute on function public.mss_settle_voice_lease(uuid,uuid,bigint) to service_role;
