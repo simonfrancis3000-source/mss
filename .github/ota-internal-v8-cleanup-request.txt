@@ -1,0 +1,3 @@
+remove_banner_from=mss-5607242063c8d671a1187fdedb9455d3
+native_version_code=8
+reason=remove_successful_ota_test_banner
