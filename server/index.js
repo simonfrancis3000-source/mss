@@ -108,7 +108,7 @@ function corsHeaders(origin) {
     "Access-Control-Allow-Origin": origin,
     "Vary": "Origin",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Training-Revision"
+    "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Training-Revision, X-MSS-Billing-Client"
   };
 }
 
@@ -635,7 +635,8 @@ const app = http.createServer(async (request, response) => {
   }
 
   if (request.method === "POST" && url.pathname === "/api/phonic/session") {
-    const meteredVoice = voiceBillingFor(authContext);
+    const meteredVoice = VOICE_BILLING_ENABLED ||
+      (voiceBillingFor(authContext) && request.headers["x-mss-billing-client"] === "android-1.7");
     if (meteredVoice && !voiceRelay) {
       return json(response, 503, { error: "Voice billing is not configured." }, headers || {});
     }
