@@ -21,6 +21,7 @@ def main():
     parser.add_argument("--platform", choices=("android", "ios"), default="android")
     parser.add_argument("--native-code", type=int, required=True)
     parser.add_argument("--channel", choices=("internal",), default="internal")
+    parser.add_argument("--test-banner", action="store_true", help="Embed a visible OTA proof banner in the ZIP only")
     args = parser.parse_args()
     if args.native_code < 1:
         parser.error("--native-code must be positive")
@@ -43,7 +44,20 @@ def main():
             relative = file.relative_to(DIST).as_posix()
             if relative.startswith("ota/"):
                 continue
-            z.write(file, arcname=relative)
+            if args.test_banner and relative == "index.html":
+                if "</body>" not in html:
+                    parser.error("index.html has no closing body tag")
+                marker = (
+                    '<div id="mss-ota-test-proof" style="position:fixed;z-index:2147483647;'
+                    'left:12px;right:12px;top:calc(12px + env(safe-area-inset-top));'
+                    'padding:14px;border:2px solid #134f3b;border-radius:16px;'
+                    'background:#d8f9e5;color:#10432f;text-align:center;'
+                    'font:700 16px system-ui,sans-serif;box-shadow:0 4px 12px #0003">'
+                    'MSS LIVE UPDATE TEST SUCCESSFUL</div>'
+                )
+                z.writestr("index.html", html.replace("</body>", marker + "</body>", 1))
+            else:
+                z.write(file, arcname=relative)
     size = tmp.stat().st_size
     if size > 50 * 1024 * 1024:
         tmp.unlink(missing_ok=True)
@@ -66,6 +80,8 @@ def main():
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     print(f"Created {final} ({size} bytes)")
     print(f"Created {manifest_path}")
+    if args.test_banner:
+        print("Includes visible green OTA proof banner, without changing source files.")
     print("NOT PUBLISHED. Review and test the bundle before copying it to ota-bundles/.")
 
 if __name__ == "__main__":
