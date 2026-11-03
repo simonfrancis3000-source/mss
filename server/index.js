@@ -567,7 +567,9 @@ const app = http.createServer(async (request, response) => {
     const currentMonthlyMs = data?.monthly_valid_until && Date.parse(data.monthly_valid_until) > Date.now()
       ? Number(data.monthly_remaining_ms || 0) : 0;
     return json(response, 200, {
-      premiumActive: currentMonthlyMs > 0 || Boolean(data?.monthly_valid_until && Date.parse(data.monthly_valid_until) > Date.now()),
+      premiumActive: Boolean(data?.monthly_valid_until && Date.parse(data.monthly_valid_until) > Date.now()),
+      monthlyRemainingMs: Math.max(0, currentMonthlyMs),
+      topupRemainingMs: Math.max(0, Number(data?.topup_remaining_ms || 0)),
       monthlyMinutes: Math.max(0, Math.floor(currentMonthlyMs / 60000)),
       topupMinutes: Math.max(0, Math.floor(Number(data?.topup_remaining_ms || 0) / 60000)),
       monthlyValidUntil: data?.monthly_valid_until || null
