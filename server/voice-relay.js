@@ -64,6 +64,16 @@ export function createVoiceRelay({ db, permittedOrigin = () => false, websocketB
     return { userId, leaseId, reservedMs: Number(data.reservedMs) };
   }
 
+  async function extend({ userId, leaseId }) {
+    const { data, error } = await db.rpc("mss_extend_voice_lease", {
+      p_user_id: userId, p_lease_id: leaseId
+    });
+    if (error || !Number.isFinite(Number(data?.reservedMs))) {
+      throw new Error("No further verified voice minutes are available.");
+    }
+    return Number(data.reservedMs);
+  }
+
   function register(reservation, upstreamSessionToken) {
     if (typeof upstreamSessionToken !== "string" || !upstreamSessionToken) {
       throw new Error("Phonic session token missing.");
@@ -107,14 +117,20 @@ export function createVoiceRelay({ db, permittedOrigin = () => false, websocketB
     let startedAt = 0;
     let closed = false;
     let maxDurationTimer = null;
+    let extensionTimer = null;
+    let extensionPending = null;
     const finish = () => {
       if (closed) return;
       closed = true;
       if (maxDurationTimer) clearTimeout(maxDurationTimer);
-      const elapsedMs = startedAt ? Math.min(item.reservedMs, Math.max(0, Date.now() - startedAt)) : 0;
+      if (extensionTimer) clearTimeout(extensionTimer);
+      const elapsedMs = startedAt ? Math.max(0, Date.now() - startedAt) : 0;
       if (upstream && !upstream.destroyed) upstream.destroy();
       if (!client.destroyed) client.destroy();
-      void settle({ userId: item.userId, leaseId: item.leaseId, elapsedMs }).catch(() => {});
+      void (async () => {
+        if (extensionPending) await extensionPending.catch(() => {});
+        await settle({ userId: item.userId, leaseId: item.leaseId, elapsedMs });
+      })().catch(() => {});
     };
     client.on("error", finish);
     client.on("close", finish);
@@ -166,16 +182,39 @@ export function createVoiceRelay({ db, permittedOrigin = () => false, websocketB
       if (head?.length) upstream.write(head);
       upstream.pipe(client);
       client.pipe(upstream);
-      maxDurationTimer = setTimeout(() => {
+      function hardCutoff() {
         if (closed) return;
-        // Client receives an explicit "credits exhausted" close code.
-        if (client.writable && !client.destroyed) client.write(timeoutCloseFrame(4008, "Voice minutes used"));
-        setTimeout(finish, 150).unref?.();
-      }, item.reservedMs);
-      maxDurationTimer.unref?.();
+        if (upstream && !upstream.destroyed) upstream.unpipe(client);
+        client.unpipe(upstream);
+        if (client.writable && !client.destroyed) {
+          client.write(timeoutCloseFrame(4008, "Voice minutes used"));
+        }
+        setTimeout(finish, 120).unref?.();
+      }
+      function scheduleCreditBoundary() {
+        if (closed) return;
+        const remainingMs = Math.max(0, item.reservedMs - (Date.now() - startedAt));
+        maxDurationTimer = setTimeout(hardCutoff, remainingMs);
+        maxDurationTimer.unref?.();
+        extensionTimer = setTimeout(() => {
+          if (closed) return;
+          extensionPending = extend({ userId: item.userId, leaseId: item.leaseId })
+            .then((nextReservedMs) => {
+              if (closed || nextReservedMs <= item.reservedMs) return;
+              item.reservedMs = nextReservedMs;
+              clearTimeout(maxDurationTimer);
+              scheduleCreditBoundary();
+            }).catch(() => {
+              // Retain the exact prepaid hard cutoff when no more minutes
+              // can be reserved or the database is temporarily unavailable.
+            }).finally(() => { extensionPending = null; });
+        }, Math.max(0, remainingMs - 1500));
+        extensionTimer.unref?.();
+      }
+      scheduleCreditBoundary();
     };
     upstream.on("data", readHandshake);
   }
 
-  return { reserve, settle, register, onUpgrade };
+  return { reserve, extend, settle, register, onUpgrade };
 }
