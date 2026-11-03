@@ -13,6 +13,9 @@ import { buildApplianceConversationGuidance, applianceIntakeRequirement, applian
 import { buildCompanionNameGuidance } from "../src/companion-personality.js";
 import { createAmiaStore, amiaScope, buildTurnObservation, storedDecisionGuidance } from "./amia-store.js";
 import http from "node:http";
+import { createClient } from "@supabase/supabase-js";
+import { verifyGooglePlayToken, hashPurchaseToken, consumeVerifiedGoogleTopUp, acknowledgeVerifiedGoogleSubscription } from "./google-play-billing.js";
+import { createVoiceRelay } from "./voice-relay.js";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -34,6 +37,18 @@ const DEEPSEEK_SEARCH_API_KEY = process.env.DEEPSEEK_SEARCH_API_KEY || "";
 const SUPABASE_URL = String(process.env.SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || "";
 const USAGE_SIGNING_SECRET = process.env.USAGE_SIGNING_SECRET || PHONIC_API_KEY;
+// Separate trusted client, never exposed through VITE_* environment variables.
+const BILLING_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || "";
+const billingDb = SUPABASE_URL && BILLING_SERVICE_KEY
+  ? createClient(SUPABASE_URL, BILLING_SERVICE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
+  : null;
+const VOICE_BILLING_ENABLED = process.env.MSS_VOICE_BILLING_ENABLED === "true";
+const VOICE_BILLING_TEST_EMAILS = new Set(
+  String(process.env.MSS_VOICE_BILLING_TEST_EMAILS || "")
+    .split(",").map(email => email.trim().toLowerCase()).filter(Boolean)
+);
+const voiceBillingFor = (auth) => VOICE_BILLING_ENABLED ||
+  VOICE_BILLING_TEST_EMAILS.has(String(auth?.user?.email || "").trim().toLowerCase());
 const PROVIDER = "deepseek";
 const amiaStore = createAmiaStore({ supabaseUrl:SUPABASE_URL,publishableKey:SUPABASE_PUBLISHABLE_KEY });
 const API_KEY = DEEPSEEK_API_KEY;
@@ -57,6 +72,11 @@ const ALLOWED_ORIGINS = new Set([
   ...DEFAULT_ALLOWED_ORIGINS,
   ...(process.env.FRONTEND_ORIGIN || "").split(",")
 ].map((value) => value.trim().replace(/\/+$/, "")).filter(Boolean));
+const voiceRelay = billingDb ? createVoiceRelay({
+  db: billingDb,
+  permittedOrigin: (origin) => ALLOWED_ORIGINS.has(origin),
+  websocketBaseUrl: process.env.MSS_VOICE_RELAY_URL || "wss://synqme-api.onrender.com/api/phonic/relay"
+}) : null;
 
 const requestHistory = new Map();
 const knowledgeRequestHistory = new Map();
@@ -517,10 +537,10 @@ const app = http.createServer(async (request, response) => {
 
   const authenticatedRoutes = new Set([
     "/api/chat", "/api/memory/extract", "/api/knowledge/extract", "/api/simulation", "/api/voice/break-offer",
-    "/api/phonic/session", "/api/phonic/usage"
+    "/api/phonic/session", "/api/phonic/usage", "/api/billing/verify", "/api/billing/status"
   ]);
   let authContext = null;
-  if (request.method === "POST" && authenticatedRoutes.has(url.pathname)) {
+  if ((request.method === "POST" || (request.method === "GET" && url.pathname === "/api/billing/status")) && authenticatedRoutes.has(url.pathname)) {
     const authResult = await authenticateSupabaseRequest(request, {
       supabaseUrl: SUPABASE_URL,
       publishableKey: SUPABASE_PUBLISHABLE_KEY
@@ -540,11 +560,85 @@ const app = http.createServer(async (request, response) => {
       phonicConfigured: Boolean(PHONIC_API_KEY),
       accountAuthConfigured: Boolean(SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY),
       usageTrackingConfigured: Boolean(SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY),
-      applianceManualSearchConfigured: Boolean(DEEPSEEK_SEARCH_API_KEY)
+      applianceManualSearchConfigured: Boolean(DEEPSEEK_SEARCH_API_KEY),
+      paidVoiceEnabled: Boolean((VOICE_BILLING_ENABLED || VOICE_BILLING_TEST_EMAILS.size) && voiceRelay && process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON)
     }, headers || {});
   }
 
+  // Billing endpoints remain unavailable until both the service account
+  // and RLS-protected entitlements migration are configured.
+  if (request.method === "GET" && url.pathname === "/api/billing/status") {
+    if (!billingDb) return json(response, 503, { error: "Google Play billing backend is not configured." }, headers || {});
+    const { data, error } = await billingDb.from("mss_voice_wallets")
+      .select("monthly_remaining_ms,topup_remaining_ms,monthly_valid_until")
+      .eq("user_id", authContext.user.id).maybeSingle();
+    if (error) return json(response, 503, { error: "Voice credit balances are unavailable." }, headers || {});
+    const currentMonthlyMs = data?.monthly_valid_until && Date.parse(data.monthly_valid_until) > Date.now()
+      ? Number(data.monthly_remaining_ms || 0) : 0;
+    return json(response, 200, {
+      premiumActive: Boolean(data?.monthly_valid_until && Date.parse(data.monthly_valid_until) > Date.now()),
+      monthlyRemainingMs: Math.max(0, currentMonthlyMs),
+      topupRemainingMs: Math.max(0, Number(data?.topup_remaining_ms || 0)),
+      monthlyMinutes: Math.max(0, Math.floor(currentMonthlyMs / 60000)),
+      topupMinutes: Math.max(0, Math.floor(Number(data?.topup_remaining_ms || 0) / 60000)),
+      monthlyValidUntil: data?.monthly_valid_until || null
+    }, headers || {});
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/billing/verify") {
+    if (!billingDb || !process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON) {
+      return json(response, 503, { error: "Google Play purchase verification is not configured." }, headers || {});
+    }
+    if (limitReached(request, requestHistory, MAX_REQUESTS_PER_MINUTE, authContext.user.id)) {
+      return json(response, 429, { error: "Too many purchase verification attempts." }, headers || {});
+    }
+    try {
+      const body = await readJson(request, 12000);
+      const productId = String(body?.productId || "");
+      const purchaseToken = String(body?.purchaseToken || "");
+      const verified = await verifyGooglePlayToken({ productId, purchaseToken, userId: authContext.user.id });
+      const { data, error } = await billingDb.rpc("mss_apply_verified_play_purchase", {
+        p_user_id: authContext.user.id,
+        p_product_id: verified.productId,
+        p_token_hash: hashPurchaseToken(purchaseToken),
+        p_period_end: verified.periodEnd,
+        p_order_id: verified.orderId
+      });
+      if (error) {
+        console.warn("Play purchase verified but credit grant failed", { code: error.code });
+        return json(response, 503, { error: "Your purchase was verified, but credits could not yet be saved. Please retry." }, headers || {});
+      }
+      // Acknowledge or consume after the database grant commits. If that
+      // notification fails, repeat verification on launch to finish it.
+      let finalizationPending = false;
+      try {
+        if (verified.kind === "topup" && verified.needsConsumption) {
+          await consumeVerifiedGoogleTopUp({ productId, purchaseToken });
+        } else if (verified.kind === "subscription" && verified.requiresAcknowledgement) {
+          await acknowledgeVerifiedGoogleSubscription(purchaseToken);
+        }
+      } catch {
+        finalizationPending = true;
+      }
+      return json(response, 200, {
+        verified: true,
+        productId,
+        minutes: verified.minutes,
+        newlyCredited: Boolean(data?.credited),
+        finalizationPending
+      }, headers || {});
+    } catch (error) {
+      const status = Number.isInteger(error?.statusCode) ? error.statusCode : 502;
+      return json(response, status, { error: status >= 500 ? "Google Play verification is temporarily unavailable." : error.message }, headers || {});
+    }
+  }
+
   if (request.method === "POST" && url.pathname === "/api/phonic/session") {
+    const meteredVoice = voiceBillingFor(authContext);
+    if (meteredVoice && !voiceRelay) {
+      return json(response, 503, { error: "Voice billing is not configured." }, headers || {});
+    }
+    let voiceReservation = null;
     if (origin && headers === null) return json(response, 403, { error: "Origin not allowed." });
     if (!PHONIC_API_KEY) {
       return json(response, 503, {
@@ -557,6 +651,9 @@ const app = http.createServer(async (request, response) => {
 
     try {
       await readJson(request, 1024);
+      if (meteredVoice) {
+        voiceReservation = await voiceRelay.reserve(authContext.user.id);
+      }
       const upstream = await fetch("https://api.phonic.ai/v1/auth/session_token", {
         method: "POST",
         headers: {
@@ -568,6 +665,10 @@ const app = http.createServer(async (request, response) => {
       });
 
       if (!upstream.ok) {
+        if (voiceReservation) {
+          await voiceRelay.settle({ ...voiceReservation, elapsedMs: 0 });
+          voiceReservation = null;
+        }
         const errorCode = "phonic-session-" + Date.now().toString(36);
         let providerDetail = "";
         try {
@@ -587,6 +688,10 @@ const app = http.createServer(async (request, response) => {
 
       const payload = await upstream.json();
       if (typeof payload?.session_token !== "string" || !payload.session_token) {
+        if (voiceReservation) {
+          await voiceRelay.settle({ ...voiceReservation, elapsedMs: 0 });
+          voiceReservation = null;
+        }
         return json(response, 502, { error: "Phonic did not return a session token." }, headers || {});
       }
 
@@ -594,14 +699,23 @@ const app = http.createServer(async (request, response) => {
         userId: authContext.user.id,
         secret: USAGE_SIGNING_SECRET
       });
+      if (voiceReservation) {
+        const connection = voiceRelay.register(voiceReservation, payload.session_token);
+        voiceReservation = null;
+        return json(response, 200, { ...connection, usageSession, billing: "metered" }, headers || {});
+      }
       return json(response, 200, {
         sessionToken: payload.session_token,
         websocketUrl: "wss://api.phonic.ai/v1/sts/ws",
         usageSession
       }, headers || {});
     } catch (error) {
+      if (voiceReservation) {
+        try { await voiceRelay.settle({ ...voiceReservation, elapsedMs: 0 }); }
+        catch { console.error("MSS could not release a failed voice reservation."); }
+      }
       const status = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
-      if (status === 400 || status === 413) {
+      if ([400, 402, 409, 413, 503].includes(status)) {
         return json(response, status, { error: error.message }, headers || {});
       }
       const errorCode = "phonic-session-" + Date.now().toString(36);
@@ -1414,6 +1528,15 @@ const app = http.createServer(async (request, response) => {
       provider: PROVIDER
     }, headers || {});
   }
+});
+
+app.on("upgrade", (request, socket, head) => {
+  const pathname = new URL(request.url || "/", "http://localhost").pathname;
+  if (pathname !== "/api/phonic/relay" || !(VOICE_BILLING_ENABLED || VOICE_BILLING_TEST_EMAILS.size) || !voiceRelay) {
+    socket.end("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
+    return;
+  }
+  voiceRelay.onUpgrade(request, socket, head);
 });
 
 app.listen(PORT, "0.0.0.0", () => {
