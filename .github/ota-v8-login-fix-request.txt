@@ -1,0 +1,4 @@
+deploy_login_fix=remember-me-native-persistence-v8
+native_code=8
+channel=internal
+reason=remove_browser_import_and_restore_remember_me
