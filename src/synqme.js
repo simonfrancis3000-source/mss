@@ -1,6 +1,9 @@
+import { Capacitor } from "@capacitor/core";
+import { Preferences } from "@capacitor/preferences";
+import { createMobileAuthTurnstile } from "./mobile-turnstile-bridge.js";
+import { createMssInterface, buildInterfaceModel, COMPANION_IMAGE } from "./mss-interface.js";
 import { coalesceTranscriptTurns, preferTranscriptTurn, bestUserTranscript, isServiceErrorText } from "./transcript-turns.js";
 import { createRememberedSessionStorage, nativePersistentSessionStorage } from "./session-storage.js";
-import { Preferences } from "@capacitor/preferences";
 import { conversationCheckpoint } from "./conversation-resume.js";
 import { syncRobotSpeaking } from "./robot-speaking.js";
 import { collectReviewableFragments, preferenceDisplayLabel, preferenceIdentity } from "./preference-review.js";
@@ -20,8 +23,6 @@ import { ruleSourceReferences, scenarioReviewRecord } from "./amia-persistence.j
 import { SCENARIOS, completedScenarioIds, availableScenarioCount, buildScenarioStartPatch, scenarioTasks, scenarioLearnings, scenarioProgressSummary } from "./scenario-journey.js";
 import { createClient } from "@supabase/supabase-js";
 import { createAuthTurnstile } from "./auth-turnstile.js";
-import { createMobileAuthTurnstile } from "./mobile-turnstile-bridge.js";
-import { Capacitor } from "@capacitor/core";
 import { createPhonicVoiceConversation, voiceFailureMessage } from "./phonic-voice.js";
 import { buildPexiCapabilityPlan, cleanPexiCapabilityManifest } from "./pexi-readiness.js";
 import { companionThinkingMessage, companionWelcomeMessage, isCompanionWelcomeMessage } from "./companion-copy.js";
@@ -71,6 +72,7 @@ const AUTH_REDIRECT_URL = (() => {
   }
   return "https://synqme.mysecondself.app/";
 })();
+var mssInterface = null;
 const REMEMBER_CHOICE_KEY = "synqme-remember-me-choice";
 const storedRememberChoice = (() => {
   try { return localStorage.getItem(REMEMBER_CHOICE_KEY); } catch { return null; }
@@ -742,6 +744,7 @@ function renderPersonaPassport(){
 document.querySelector('#personaPassport')?.addEventListener('toggle',event=>{if(event.currentTarget.open)renderPersonaPassport();});
 
 function renderScenarioJourney() {
+  if (typeof mssInterface !== "undefined") mssInterface?.render();
   renderLiveScenarioProgress();
   const target = document.querySelector("#scenarioJourneyContent");
   const counter = document.querySelector("#scenarioJourneyCount");
@@ -2652,7 +2655,6 @@ function setAuthGateVisible(visible) {
   if (visible) window.setTimeout(() => elements.authEmail?.focus(), 0);
 }
 
-// Native login requires the widget to execute on our allowed HTTPS hostname.
 const authTurnstile = Capacitor.isNativePlatform()
   ? createMobileAuthTurnstile({ container: document.querySelector("#authTurnstile") })
   : createAuthTurnstile({
@@ -2832,7 +2834,7 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   setAuthGateVisible(false);
   renderAccountStatus();
   renderAll();
-  selectAppView("chat");
+  selectAppView("home");
   prepareWelcomeAudioOffer();
   if (!profileComplete()) openSettings();
   else updateSettingsMode();
@@ -2948,7 +2950,7 @@ function closeSettings() {
   updateSettingsMode();
   if (lastFocusedElement && typeof lastFocusedElement.focus === "function") lastFocusedElement.focus();
 }
-elements.openSettings?.addEventListener("click", openSettings);
+elements.openSettings?.addEventListener("click", () => selectAppView("profile"));
 elements.openPersonaFromSummary?.addEventListener("click", openSettings);
 elements.personaMemoryList?.addEventListener("click", (event) => {
   void handlePersonaMemoryAction(event);
@@ -3202,7 +3204,9 @@ function appendMessage(role, content, timestamp = null, messageScenarioId = null
       image.alt = "";
       avatar.append(image);
     } else {
-      avatar.innerHTML = robotSvgMarkup(robotAppearance.robotId);
+      const image = document.createElement("img");
+      image.className = "message-robot-image"; image.src = COMPANION_IMAGE; image.alt = "";
+      avatar.append(image);
     }
   }
   const body = document.createElement("div");
@@ -3265,6 +3269,7 @@ function updateChatScrollbar() {
 }
 
 function renderMessages() {
+  if (typeof mssInterface !== "undefined") mssInterface?.renderTranscript();
   elements.chatMessages.replaceChildren();
   // Render in conversation order so newer turns naturally appear at the bottom.
   state.messages.slice(-50).forEach((message) => appendMessage(message.role, message.content, message.timestamp, message.scenario_id));
@@ -4343,7 +4348,45 @@ function updateDecisionSummary() {
   elements.pexiState.classList.remove("ready");
 }
 
+mssInterface = createMssInterface({
+  getSnapshot() {
+    const ready = Boolean(cloudUserId && roomJourney && roomJourney.user_id === cloudUserId);
+    const data = ready ? scenarioData() : {};
+    const taskCounts = {}, reviewedCounts = {};
+    for (const scenario of SCENARIOS) {
+      const tasks = scenarioTasks(scenario);
+      taskCounts[scenario.id] = tasks.length;
+      reviewedCounts[scenario.id] = tasks.filter(task => (data.reviewed?.[scenario.id] || []).includes(task.id)).length;
+    }
+    const model = buildInterfaceModel({ scenarios: SCENARIOS, data, ready, activeRoomId: roomJourney?.active_room_id, taskCounts, reviewedCounts });
+    const pending = conversationCheckpoint(state.messages, model.active?.id);
+    return { owner: state.profile.ownerName.trim(), companion: selectedCompanionDisplayName(),
+      voice: normaliseVoicePreference(state.profile.robotVoice), avatar: ownerAvatarData,
+      preferences: curatedPreferences(), messages: state.messages, pendingQuestion: pending?.question || "", model };
+  },
+  navigate: selectAppView,
+  editSettings(field) {
+    openSettings();
+    window.requestAnimationFrame(() => {
+      const control = document.getElementById(field);
+      for (let parent = control?.parentElement; parent; parent = parent.parentElement) if (parent.tagName === "DETAILS") parent.open = true;
+      control?.scrollIntoView({ block: "center" }); control?.focus({ preventScroll: true });
+    });
+  },
+  openScenario(id) {
+    selectAppView("journey"); selectedJourneyScenario = id; journeyDisplay = "scenarios";
+    renderScenarioJourney();
+  },
+  openWorkspace(id) {
+    selectAppView("journey");
+    const target = document.getElementById(id); if (target) target.open = true;
+    if (id === "personaPassport") renderPersonaPassport();
+    window.requestAnimationFrame(() => target?.scrollIntoView({ block: "start", behavior: "smooth" }));
+  }
+});
+
 function renderAll() {
+  if (typeof mssInterface !== "undefined") mssInterface?.render();
   renderMessages();
   renderOwnerAvatarPreview();
   renderPreferences();
@@ -4360,10 +4403,7 @@ function renderAll() {
   const companionName = robotName || "your companion";
   if (elements.companionName) elements.companionName.textContent = companionName;
   if (elements.messageInput) {
-    const activeRoom = ROOM_JOURNEY_ROOMS.find((room) => room.id === roomJourney?.active_room_id);
-    elements.messageInput.placeholder = activeRoom
-      ? "Tell " + selectedCompanionDisplayName() + " how you like your " + activeRoom.label.toLowerCase() + " handled..."
-      : "Tell " + selectedCompanionDisplayName() + " how you like things.";
+    elements.messageInput.placeholder = "Message " + selectedCompanionDisplayName();
   }
   if (elements.mobileOwnerTitle) elements.mobileOwnerTitle.textContent = name ? name + "’s SecondSelf" : "Your SecondSelf";
   const count = curatedPreferences().length;
@@ -4658,6 +4698,7 @@ function applyRobotAppearance() {
 function updateVoiceExperience(mode, message) {
   if (mode !== "speech-pause" && voiceAudioPauseTimer !== null) { window.clearTimeout(voiceAudioPauseTimer); voiceAudioPauseTimer = null; }
   if (elements.voiceOrb) elements.voiceOrb.dataset.state = mode || "idle";
+  if (typeof mssInterface !== "undefined") mssInterface?.renderVoiceState();
   syncRobotSpeaking(document, mode === "speaking");
   if (elements.voiceExperience) {
     elements.voiceExperience.dataset.state = mode || "idle";
@@ -5338,7 +5379,8 @@ initialiseRobotAndVoiceControls();
 initialisePexiManifestControls();
 
 function syncAppNavigation() {
-  const selected = elements.voiceExperience && !elements.voiceExperience.hidden ? "talk" : document.body.dataset.appView || "chat";
+  const view = document.body.dataset.appView || "home";
+  const selected = elements.voiceExperience && !elements.voiceExperience.hidden ? "talk" : view === "journey" ? "passport" : view;
   document.querySelectorAll("[data-app-tab]").forEach((button) => {
     if (button.dataset.appTab === selected) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
@@ -5347,11 +5389,12 @@ function syncAppNavigation() {
 
 function selectAppView(view) {
   if (elements.voiceExperience && !elements.voiceExperience.hidden) closeVoiceExperience("Returned to your conversation.");
-  document.body.dataset.appView = view === "journey" ? "journey" : "chat";
+  document.body.dataset.appView = ["home", "passport", "profile", "journey"].includes(view) ? view : "chat";
   const workspace = document.querySelector("#moreWorkspace");
   if (workspace) workspace.open = view === "journey";
   if (view === "journey") { journeyDisplay = "chart"; renderScenarioJourney(); }
-  else { prepareWelcomeAudioOffer(); renderMessages(); }
+  else if (view === "chat") { prepareWelcomeAudioOffer(); renderMessages(); }
+  if (typeof mssInterface !== "undefined") mssInterface?.render();
   syncAppNavigation();
   window.requestAnimationFrame(updateChatScrollbar);
   window.scrollTo({top:0,behavior:"smooth"});
@@ -6114,7 +6157,6 @@ async function submitAccountForm(event) {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password, ...(captchaToken ? { options: { captchaToken } } : {}) });
     if (error) throw error;
     if (!data.session || !data.user || data.user.is_anonymous) throw new Error("We couldn’t establish your account session. Please try again.");
-    // Reconcile a previously temporary token with the explicit Remember me choice.
     await rememberMeStorage.syncChoice();
     await loadSignedInAccount(data.session, { migrateDraft: true });
     if (elements.authPassword) elements.authPassword.value = "";
