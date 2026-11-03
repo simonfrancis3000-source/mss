@@ -43,6 +43,12 @@ const billingDb = SUPABASE_URL && BILLING_SERVICE_KEY
   ? createClient(SUPABASE_URL, BILLING_SERVICE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
   : null;
 const VOICE_BILLING_ENABLED = process.env.MSS_VOICE_BILLING_ENABLED === "true";
+const VOICE_BILLING_TEST_EMAILS = new Set(
+  String(process.env.MSS_VOICE_BILLING_TEST_EMAILS || "")
+    .split(",").map(email => email.trim().toLowerCase()).filter(Boolean)
+);
+const voiceBillingFor = (auth) => VOICE_BILLING_ENABLED ||
+  VOICE_BILLING_TEST_EMAILS.has(String(auth?.user?.email || "").trim().toLowerCase());
 const PROVIDER = "deepseek";
 const amiaStore = createAmiaStore({ supabaseUrl:SUPABASE_URL,publishableKey:SUPABASE_PUBLISHABLE_KEY });
 const API_KEY = DEEPSEEK_API_KEY;
@@ -552,7 +558,7 @@ const app = http.createServer(async (request, response) => {
       accountAuthConfigured: Boolean(SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY),
       usageTrackingConfigured: Boolean(SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY),
       applianceManualSearchConfigured: Boolean(DEEPSEEK_SEARCH_API_KEY),
-      paidVoiceEnabled: VOICE_BILLING_ENABLED && Boolean(voiceRelay && process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON)
+      paidVoiceEnabled: Boolean((VOICE_BILLING_ENABLED || VOICE_BILLING_TEST_EMAILS.size) && voiceRelay && process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON)
     }, headers || {});
   }
 
@@ -625,7 +631,8 @@ const app = http.createServer(async (request, response) => {
   }
 
   if (request.method === "POST" && url.pathname === "/api/phonic/session") {
-    if (VOICE_BILLING_ENABLED && !voiceRelay) {
+    const meteredVoice = voiceBillingFor(authContext);
+    if (meteredVoice && !voiceRelay) {
       return json(response, 503, { error: "Voice billing is not configured." }, headers || {});
     }
     let voiceReservation = null;
@@ -641,7 +648,7 @@ const app = http.createServer(async (request, response) => {
 
     try {
       await readJson(request, 1024);
-      if (VOICE_BILLING_ENABLED) {
+      if (meteredVoice) {
         voiceReservation = await voiceRelay.reserve(authContext.user.id);
       }
       const upstream = await fetch("https://api.phonic.ai/v1/auth/session_token", {
@@ -1522,7 +1529,7 @@ const app = http.createServer(async (request, response) => {
 
 app.on("upgrade", (request, socket, head) => {
   const pathname = new URL(request.url || "/", "http://localhost").pathname;
-  if (pathname !== "/api/phonic/relay" || !VOICE_BILLING_ENABLED || !voiceRelay) {
+  if (pathname !== "/api/phonic/relay" || !(VOICE_BILLING_ENABLED || VOICE_BILLING_TEST_EMAILS.size) || !voiceRelay) {
     socket.end("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
     return;
   }
