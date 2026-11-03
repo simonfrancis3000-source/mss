@@ -26,3 +26,10 @@ test('Home Robot Rewards track matches Training Progress width and chevron clear
   assert.match(css, /\.mss-home \.mss-rewards-teaser-row\{\s*padding-right:29px;/);
   assert.match(css, /\.mss-home \.mss-rewards-teaser-chevron\{\s*top:11px;\s*right:11px;\s*width:19px;\s*height:19px;\s*transform:none;/);
 });
+
+test('Home training percentage and Robot Rewards amount use the same font size', async () => {
+  const css = await readFile(new URL('../src/mss-interface.css', import.meta.url), 'utf8');
+  assert.match(css, /\.mss-home \.mss-progress-heading strong\{font-size:15px;font-weight:750;/);
+  // This selector also overrides the older 12px narrow-screen rule.
+  assert.match(css, /\.mss-home \.mss-rewards-teaser-value\{\s*font-size:15px;\s*font-weight:750;/);
+});
