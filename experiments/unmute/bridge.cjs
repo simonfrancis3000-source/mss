@@ -147,6 +147,7 @@ function loginPage(message='') {
   // The actual public Turnstile SITE key is safe to expose; the secret is never present here.
   return `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1" />
   <meta charset="utf-8" /><title>MySecondSelf / Unmute Test Login</title>
+  <script>window.mssTurnstileError=function(code){var e=document.getElementById('mssTurnstileStatus');if(e)e.textContent='Turnstile challenge error: '+String(code).replace(/[^0-9]/g,'').slice(0,10)+'. Reload the page to retry.';return false;};</script>
   <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
   <style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#101218;color:#eff1f4;font:16px system-ui,sans-serif}
   main{width:min(90vw,430px);padding:36px;border:1px solid #39424b;border-radius:20px;background:#191d25}
@@ -157,7 +158,7 @@ function loginPage(message='') {
   ${message?`<p class="error">${escapeHtml(message)}</p>`:''}
   <form method="post" action="/mss/login"><label>Email<input type="email" name="email" required autocomplete="email"></label>
   <label>Password<input type="password" name="password" required autocomplete="current-password"></label>
-  <div class="cf-turnstile" data-sitekey="${escapeHtml(TURNSTILE_SITE_KEY)}"></div>
+  <div class="cf-turnstile" data-sitekey="${escapeHtml(TURNSTILE_SITE_KEY)}" data-error-callback="mssTurnstileError"></div><p id="mssTurnstileStatus" class="error" role="status" aria-live="polite"></p>
   <button type="submit">Sign in and start voice test</button></form>
   <p><small>Experimental Runpod test. The live Phonic app is unchanged. New spoken answers are not saved to MSS during this first test.</small></p>
   </main></body></html>`;
@@ -194,7 +195,12 @@ const publicServer = http.createServer(async (req,res) => {
         body:JSON.stringify({email,password,gotrue_meta_security:{captcha_token:captcha}})
       });
       if(!auth.ok || !auth.data.access_token || !auth.data.user?.id || auth.data.user.is_anonymous) {
-        return respond(res,401,loginPage('Sign-in failed. Check your credentials and Turnstile authorization for this Runpod hostname.'),{'Content-Type':'text/html; charset=utf-8'});
+        const authCode=String(auth.data?.code||auth.data?.error_code||auth.data?.error||'unknown').replace(/[^a-zA-Z0-9_-]/g,'').slice(0,70);
+        console.error('MSS login rejected by Supabase Auth; HTTP status:',auth.status,'error code:',authCode);
+        const humanMessage = /captcha|turnstile/i.test(authCode)
+          ? 'Supabase rejected the Turnstile verification (code: '+authCode+'). Reload and try a fresh challenge.'
+          : 'Supabase rejected sign-in (HTTP '+auth.status+', code: '+authCode+'). Check your account credentials and verification.';
+        return respond(res,401,loginPage(humanMessage),{'Content-Type':'text/html; charset=utf-8'});
       }
       const sid=crypto.randomBytes(32).toString('hex');
       SESSIONS.clear();
