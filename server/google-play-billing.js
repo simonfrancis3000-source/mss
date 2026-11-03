@@ -36,7 +36,7 @@ export function parseVerifiedPlayPurchase(payload, { productId, now = new Date()
       Date.parse(item?.expiryTime || "") > timestamp);
     if (!active.length) throw fail("The Premium billing period is not active.", 403);
     const periodEnd = active.map(item => item.expiryTime).sort().at(-1);
-    return { productId, kind: "subscription", minutes: 60, periodEnd, orderId: active[0].latestSuccessfulOrderId || "" };
+    return { productId, kind: "subscription", minutes: 60, periodEnd, orderId: active[0].latestSuccessfulOrderId || "", requiresAcknowledgement: payload.acknowledgementState === "ACKNOWLEDGEMENT_STATE_PENDING" };
   }
 
   if (!Object.hasOwn(MSS_TOPUP_MINUTES, productId)) throw fail("Unknown voice credit product.");
@@ -53,7 +53,7 @@ export function parseVerifiedPlayPurchase(payload, { productId, now = new Date()
   if (!Number.isInteger(quantity) || quantity !== 1 || refundableQuantity !== 1) {
     throw fail("Invalid or refunded credit purchase quantity.", 403);
   }
-  return { productId, kind: "topup", minutes: MSS_TOPUP_MINUTES[productId], periodEnd: null, orderId: payload.orderId || "" };
+  return { productId, kind: "topup", minutes: MSS_TOPUP_MINUTES[productId], periodEnd: null, orderId: payload.orderId || "", needsConsumption: lines[0]?.productOfferDetails?.consumptionState !== "CONSUMPTION_STATE_CONSUMED" };
 }
 
 let cachedToken = null;
