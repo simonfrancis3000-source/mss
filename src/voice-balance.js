@@ -5,7 +5,7 @@ export function voiceBalanceModel(wallet, now = Date.now()) {
   const monthly = active ? safe(wallet.monthlyRemainingMs) : 0;
   const topup = safe(wallet?.topupRemainingMs);
   const label = ms => ms > 0 && ms < 60000 ? 'Less than 1 min' : Math.floor(ms / 60000) + ' min';
-  return { active, monthly, topup, total: label(monthly + topup), monthlyLabel: label(monthly), topupLabel: label(topup),
+  return { active, isTest:active && wallet?.allowanceType === "test", monthly, topup, total: label(monthly + topup), monthlyLabel: label(monthly), topupLabel: label(topup),
     remainingPercent: Math.min(100, monthly / 3600000 * 100), periodEnd: active ? new Date(end).toISOString() : null };
 }
 
