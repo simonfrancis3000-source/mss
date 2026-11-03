@@ -13,6 +13,8 @@ import { buildApplianceConversationGuidance, applianceIntakeRequirement, applian
 import { buildCompanionNameGuidance } from "../src/companion-personality.js";
 import { createAmiaStore, amiaScope, buildTurnObservation, storedDecisionGuidance } from "./amia-store.js";
 import http from "node:http";
+import { createClient } from "@supabase/supabase-js";
+import { verifyGooglePlayToken, hashPurchaseToken, consumeVerifiedGoogleTopUp, acknowledgeVerifiedGoogleSubscription } from "./google-play-billing.js";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -34,6 +36,11 @@ const DEEPSEEK_SEARCH_API_KEY = process.env.DEEPSEEK_SEARCH_API_KEY || "";
 const SUPABASE_URL = String(process.env.SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || "";
 const USAGE_SIGNING_SECRET = process.env.USAGE_SIGNING_SECRET || PHONIC_API_KEY;
+// Separate trusted client, never exposed through VITE_* environment variables.
+const BILLING_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || "";
+const billingDb = SUPABASE_URL && BILLING_SERVICE_KEY
+  ? createClient(SUPABASE_URL, BILLING_SERVICE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
+  : null;
 const PROVIDER = "deepseek";
 const amiaStore = createAmiaStore({ supabaseUrl:SUPABASE_URL,publishableKey:SUPABASE_PUBLISHABLE_KEY });
 const API_KEY = DEEPSEEK_API_KEY;
@@ -514,10 +521,10 @@ const app = http.createServer(async (request, response) => {
 
   const authenticatedRoutes = new Set([
     "/api/chat", "/api/memory/extract", "/api/knowledge/extract", "/api/simulation", "/api/voice/break-offer",
-    "/api/phonic/session", "/api/phonic/usage"
+    "/api/phonic/session", "/api/phonic/usage", "/api/billing/verify", "/api/billing/status"
   ]);
   let authContext = null;
-  if (request.method === "POST" && authenticatedRoutes.has(url.pathname)) {
+  if ((request.method === "POST" || (request.method === "GET" && url.pathname === "/api/billing/status")) && authenticatedRoutes.has(url.pathname)) {
     const authResult = await authenticateSupabaseRequest(request, {
       supabaseUrl: SUPABASE_URL,
       publishableKey: SUPABASE_PUBLISHABLE_KEY
@@ -539,6 +546,72 @@ const app = http.createServer(async (request, response) => {
       usageTrackingConfigured: Boolean(SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY),
       applianceManualSearchConfigured: Boolean(DEEPSEEK_SEARCH_API_KEY)
     }, headers || {});
+  }
+
+  // Billing endpoints remain unavailable until both the service account
+  // and RLS-protected entitlements migration are configured.
+  if (request.method === "GET" && url.pathname === "/api/billing/status") {
+    if (!billingDb) return json(response, 503, { error: "Google Play billing backend is not configured." }, headers || {});
+    const { data, error } = await billingDb.from("mss_voice_wallets")
+      .select("monthly_remaining_ms,topup_remaining_ms,monthly_valid_until")
+      .eq("user_id", authContext.user.id).maybeSingle();
+    if (error) return json(response, 503, { error: "Voice credit balances are unavailable." }, headers || {});
+    const currentMonthlyMs = data?.monthly_valid_until && Date.parse(data.monthly_valid_until) > Date.now()
+      ? Number(data.monthly_remaining_ms || 0) : 0;
+    return json(response, 200, {
+      premiumActive: currentMonthlyMs > 0 || Boolean(data?.monthly_valid_until && Date.parse(data.monthly_valid_until) > Date.now()),
+      monthlyMinutes: Math.max(0, Math.floor(currentMonthlyMs / 60000)),
+      topupMinutes: Math.max(0, Math.floor(Number(data?.topup_remaining_ms || 0) / 60000)),
+      monthlyValidUntil: data?.monthly_valid_until || null
+    }, headers || {});
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/billing/verify") {
+    if (!billingDb || !process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON) {
+      return json(response, 503, { error: "Google Play purchase verification is not configured." }, headers || {});
+    }
+    if (limitReached(request, requestHistory, MAX_REQUESTS_PER_MINUTE, authContext.user.id)) {
+      return json(response, 429, { error: "Too many purchase verification attempts." }, headers || {});
+    }
+    try {
+      const body = await readJson(request, 12000);
+      const productId = String(body?.productId || "");
+      const purchaseToken = String(body?.purchaseToken || "");
+      const verified = await verifyGooglePlayToken({ productId, purchaseToken });
+      const { data, error } = await billingDb.rpc("mss_apply_verified_play_purchase", {
+        p_user_id: authContext.user.id,
+        p_product_id: verified.productId,
+        p_token_hash: hashPurchaseToken(purchaseToken),
+        p_period_end: verified.periodEnd,
+        p_order_id: verified.orderId
+      });
+      if (error) {
+        console.warn("Play purchase verified but credit grant failed", { code: error.code });
+        return json(response, 503, { error: "Your purchase was verified, but credits could not yet be saved. Please retry." }, headers || {});
+      }
+      // Acknowledge or consume after the database grant commits. If that
+      // notification fails, repeat verification on launch to finish it.
+      let finalizationPending = false;
+      try {
+        if (verified.kind === "topup" && verified.needsConsumption) {
+          await consumeVerifiedGoogleTopUp({ productId, purchaseToken });
+        } else if (verified.kind === "subscription" && verified.requiresAcknowledgement) {
+          await acknowledgeVerifiedGoogleSubscription(purchaseToken);
+        }
+      } catch {
+        finalizationPending = true;
+      }
+      return json(response, 200, {
+        verified: true,
+        productId,
+        minutes: verified.minutes,
+        newlyCredited: Boolean(data?.credited),
+        finalizationPending
+      }, headers || {});
+    } catch (error) {
+      const status = Number.isInteger(error?.statusCode) ? error.statusCode : 502;
+      return json(response, status, { error: status >= 500 ? "Google Play verification is temporarily unavailable." : error.message }, headers || {});
+    }
   }
 
   if (request.method === "POST" && url.pathname === "/api/phonic/session") {
