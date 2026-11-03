@@ -168,7 +168,10 @@ export function createGooglePlayCheckout({ apiBase, getHeaders, getUserId }) {
       if (!healthResponse.ok || health.paidVoiceEnabled !== true) {
         throw new Error("Purchases are being prepared. No charges can be made yet.");
       }
-      await refreshBalance();
+      const wallet = await refreshBalance();
+      if (!wallet.billingEnabledForUser) {
+        throw new Error("Purchases are currently available only for designated test accounts.");
+      }
       const [subscriptionOffers, topUpOffers] = await Promise.all([
         MSSBilling.getSubscriptionOffers(), MSSBilling.getVoiceTopUpOffers()
       ]);
@@ -222,6 +225,8 @@ export function createGooglePlayCheckout({ apiBase, getHeaders, getUserId }) {
       const response = await fetch(apiBase + "/health", { signal: AbortSignal.timeout(10000) });
       const health = await response.json();
       if (!response.ok || health.paidVoiceEnabled !== true) return false;
+      const wallet = await request("/api/billing/status");
+      if (!wallet.billingEnabledForUser) return false;
       await restorePurchases();
       return true;
     } catch {
