@@ -15,6 +15,7 @@ import { createAmiaStore, amiaScope, buildTurnObservation, storedDecisionGuidanc
 import http from "node:http";
 import { createClient } from "@supabase/supabase-js";
 import { verifyGooglePlayToken, hashPurchaseToken, consumeVerifiedGoogleTopUp, acknowledgeVerifiedGoogleSubscription } from "./google-play-billing.js";
+import { createVoiceRelay } from "./voice-relay.js";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -41,6 +42,7 @@ const BILLING_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env
 const billingDb = SUPABASE_URL && BILLING_SERVICE_KEY
   ? createClient(SUPABASE_URL, BILLING_SERVICE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
   : null;
+const VOICE_BILLING_ENABLED = process.env.MSS_VOICE_BILLING_ENABLED === "true";
 const PROVIDER = "deepseek";
 const amiaStore = createAmiaStore({ supabaseUrl:SUPABASE_URL,publishableKey:SUPABASE_PUBLISHABLE_KEY });
 const API_KEY = DEEPSEEK_API_KEY;
@@ -64,6 +66,11 @@ const ALLOWED_ORIGINS = new Set([
   ...DEFAULT_ALLOWED_ORIGINS,
   ...(process.env.FRONTEND_ORIGIN || "").split(",")
 ].map((value) => value.trim().replace(/\/+$/, "")).filter(Boolean));
+const voiceRelay = billingDb ? createVoiceRelay({
+  db: billingDb,
+  permittedOrigin: (origin) => ALLOWED_ORIGINS.has(origin),
+  websocketBaseUrl: process.env.MSS_VOICE_RELAY_URL || "wss://synqme-api.onrender.com/api/phonic/relay"
+}) : null;
 
 const requestHistory = new Map();
 const knowledgeRequestHistory = new Map();
@@ -544,7 +551,8 @@ const app = http.createServer(async (request, response) => {
       phonicConfigured: Boolean(PHONIC_API_KEY),
       accountAuthConfigured: Boolean(SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY),
       usageTrackingConfigured: Boolean(SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY),
-      applianceManualSearchConfigured: Boolean(DEEPSEEK_SEARCH_API_KEY)
+      applianceManualSearchConfigured: Boolean(DEEPSEEK_SEARCH_API_KEY),
+      paidVoiceEnabled: VOICE_BILLING_ENABLED && Boolean(voiceRelay && process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON)
     }, headers || {});
   }
 
@@ -615,6 +623,10 @@ const app = http.createServer(async (request, response) => {
   }
 
   if (request.method === "POST" && url.pathname === "/api/phonic/session") {
+    if (VOICE_BILLING_ENABLED && !voiceRelay) {
+      return json(response, 503, { error: "Voice billing is not configured." }, headers || {});
+    }
+    let voiceReservation = null;
     if (origin && headers === null) return json(response, 403, { error: "Origin not allowed." });
     if (!PHONIC_API_KEY) {
       return json(response, 503, {
@@ -627,6 +639,9 @@ const app = http.createServer(async (request, response) => {
 
     try {
       await readJson(request, 1024);
+      if (VOICE_BILLING_ENABLED) {
+        voiceReservation = await voiceRelay.reserve(authContext.user.id);
+      }
       const upstream = await fetch("https://api.phonic.ai/v1/auth/session_token", {
         method: "POST",
         headers: {
@@ -638,6 +653,10 @@ const app = http.createServer(async (request, response) => {
       });
 
       if (!upstream.ok) {
+        if (voiceReservation) {
+          await voiceRelay.settle({ ...voiceReservation, elapsedMs: 0 });
+          voiceReservation = null;
+        }
         const errorCode = "phonic-session-" + Date.now().toString(36);
         let providerDetail = "";
         try {
@@ -657,6 +676,10 @@ const app = http.createServer(async (request, response) => {
 
       const payload = await upstream.json();
       if (typeof payload?.session_token !== "string" || !payload.session_token) {
+        if (voiceReservation) {
+          await voiceRelay.settle({ ...voiceReservation, elapsedMs: 0 });
+          voiceReservation = null;
+        }
         return json(response, 502, { error: "Phonic did not return a session token." }, headers || {});
       }
 
@@ -664,14 +687,23 @@ const app = http.createServer(async (request, response) => {
         userId: authContext.user.id,
         secret: USAGE_SIGNING_SECRET
       });
+      if (voiceReservation) {
+        const connection = voiceRelay.register(voiceReservation, payload.session_token);
+        voiceReservation = null;
+        return json(response, 200, { ...connection, usageSession, billing: "metered" }, headers || {});
+      }
       return json(response, 200, {
         sessionToken: payload.session_token,
         websocketUrl: "wss://api.phonic.ai/v1/sts/ws",
         usageSession
       }, headers || {});
     } catch (error) {
+      if (voiceReservation) {
+        try { await voiceRelay.settle({ ...voiceReservation, elapsedMs: 0 }); }
+        catch { console.error("MSS could not release a failed voice reservation."); }
+      }
       const status = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
-      if (status === 400 || status === 413) {
+      if ([400, 402, 409, 413, 503].includes(status)) {
         return json(response, status, { error: error.message }, headers || {});
       }
       const errorCode = "phonic-session-" + Date.now().toString(36);
@@ -1484,6 +1516,15 @@ const app = http.createServer(async (request, response) => {
       provider: PROVIDER
     }, headers || {});
   }
+});
+
+app.on("upgrade", (request, socket, head) => {
+  const pathname = new URL(request.url || "/", "http://localhost").pathname;
+  if (pathname !== "/api/phonic/relay" || !VOICE_BILLING_ENABLED || !voiceRelay) {
+    socket.end("HTTP/1.1 404 Not Found\\r\\nConnection: close\\r\\n\\r\\n");
+    return;
+  }
+  voiceRelay.onUpgrade(request, socket, head);
 });
 
 app.listen(PORT, "0.0.0.0", () => {
