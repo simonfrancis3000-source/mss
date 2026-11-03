@@ -5,7 +5,7 @@ import { scenarioProgressSummary } from './scenario-journey.js';
 export const COMPANION_IMAGE = '/robots/mss-companion.webp';
 export const COMPANION_HEAD_IMAGE = '/robots/mss-companion-head.webp';
 // Official Booster Robotics product photograph. Does not replace the user's companion illustration.
-const BOOSTER_T2_IMAGE = 'https://www.booster.tech/_astro/specification-t2-p3.ChyF-VA9_Z1rD17K.webp';
+const BOOSTER_T2_IMAGE = 'https://mysecondself.app/wp-content/uploads/2026/11/powerful-compute.B-k4gGU-copy.jpg';
 const ROBOT_REWARD_CAP_CENTS = 100000;
 const money = cents => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100);
 
@@ -241,7 +241,7 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
     card.setAttribute('aria-label', 'Open Robot Rewards');
     const row = el('span', 'mss-rewards-teaser-row');
     const label = el('span', 'mss-rewards-teaser-title');
-    label.append(symbol('coins'), el('strong', '', 'Robot Rewards'));
+    label.append(el('strong', '', 'Robot Rewards'));
     row.append(label, el('strong', 'mss-rewards-teaser-value', summary.verified ? money(summary.earned) + ' / $1,000' : 'Credit pending'));
     card.append(row, rewardTrack('mss-rewards-teaser-track', summary.percent, 'Robot credit earned'), symbol('chevron', 'mss-rewards-teaser-chevron'));
     return card;
@@ -275,8 +275,12 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
 
     const credit = el('section', 'mss-rewards-credit');
     credit.append(el('h2', '', 'Robot credit earned'));
-    credit.append(el('strong', 'mss-rewards-credit-total', summary.verified ? money(summary.earned) : 'Awaiting verification'));
-    credit.append(el('p', '', summary.verified ? 'of $1,000 maximum' : 'Verified paid purchases will appear here as reward accounting becomes available.'));
+    if (summary.verified) {
+      credit.append(el('strong', 'mss-rewards-credit-total', money(summary.earned)));
+      credit.append(el('p', '', 'of $1,000 maximum'));
+    } else {
+      credit.append(el('p', 'mss-rewards-credit-limit', 'Maximum possible credit: $1,000'));
+    }
     credit.append(rewardTrack('mss-rewards-credit-track', summary.percent, 'Credit progress towards $1,000'));
     const numbers = el('div', 'mss-rewards-credit-breakdown');
     numbers.append(el('span', '', summary.verified ? Math.round(summary.percent) + '% earned' : 'Balance pending'),
