@@ -1,4 +1,33 @@
 workflows:
+  android-ota-test:
+    name: MSS Android OTA Safety Test
+    max_build_duration: 30
+    instance_type: mac_mini_m2
+    environment:
+      groups:
+        - mss_mobile
+      node: 24
+    scripts:
+      - name: Install dependencies
+        script: npm ci
+
+      - name: Run MSS tests
+        script: npm test
+
+      - name: Build and validate OTA proof bundle
+        script: |
+          export VITE_API_BASE_URL=https://synqme-api.onrender.com
+          # The packaged bundle must contain the same public Supabase configuration
+          # as the working Play build. Never fall back to empty credentials.
+          test -n "$VITE_SUPABASE_URL" || { echo "MISSING VITE_SUPABASE_URL"; exit 1; }
+          test -n "$VITE_SUPABASE_ANON_KEY" || { echo "MISSING VITE_SUPABASE_ANON_KEY"; exit 1; }
+          npm run build -- --mode mobile
+          python3 scripts/package-mobile-ota.py --platform android --native-code 8 --test-banner
+
+    artifacts:
+      - ota-publish/*.zip
+      - ota-publish/internal-android.json
+
   android-test:
     name: MSS Android Test
     max_build_duration: 90
