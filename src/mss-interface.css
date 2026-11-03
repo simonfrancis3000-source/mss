@@ -414,3 +414,14 @@ body[data-app-view='rewards'] .mss-rewards{display:flex}
  .mss-profile .mss-profile-heading{gap:8px}
  .mss-profile-rewards-button{min-height:38px;padding:7px 12px;font-size:13px}
 }
+
+
+/* Expandable Robot Rewards terms: a readable hierarchy without changing the
+   mobile layout or placing the discount restriction behind tiny print. */
+.mss-rewards-terms[open]{padding-bottom:15px}
+.mss-rewards-terms summary{font-size:14px;min-height:26px}
+.mss-rewards-terms-lead{font-size:14px!important;font-weight:700;color:#202739!important;line-height:1.5}
+.mss-rewards-terms-example{margin:10px 0 15px!important;padding:10px 12px;border:1px solid #b7bbc5;border-radius:10px;background:#eceef2;color:#242c39!important;font-size:13px}
+.mss-rewards-terms-section{padding:10px 0;border-top:1px solid #b8bcc5}
+.mss-rewards-terms-section h3{margin:0;color:#20283a;font-size:13px;font-weight:760}
+.mss-rewards-terms-section p{margin:4px 0 0;color:#404958;font-size:12px;line-height:1.55}
