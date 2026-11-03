@@ -15,7 +15,8 @@ import { buildCompanionNameGuidance } from "../src/companion-personality.js";
 import { createAmiaStore, amiaScope, buildTurnObservation, storedDecisionGuidance } from "./amia-store.js";
 import http from "node:http";
 import { createClient } from "@supabase/supabase-js";
-import { verifyGooglePlayToken, hashPurchaseToken, consumeVerifiedGoogleTopUp, acknowledgeVerifiedGoogleSubscription } from "./google-play-billing.js";
+import { verifyGooglePlayToken, hashPurchaseToken, consumeVerifiedGoogleTopUp, acknowledgeVerifiedGoogleSubscription, getGooglePlayOrder } from "./google-play-billing.js";
+import { loadRobotRewards } from "./robot-rewards.js";
 import { createVoiceRelay } from "./voice-relay.js";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
@@ -538,10 +539,10 @@ const app = http.createServer(async (request, response) => {
 
   const authenticatedRoutes = new Set([
     "/api/chat", "/api/memory/extract", "/api/knowledge/extract", "/api/simulation", "/api/voice/break-offer",
-    "/api/phonic/session", "/api/phonic/usage", "/api/billing/verify", "/api/billing/status"
+    "/api/phonic/session", "/api/phonic/usage", "/api/billing/verify", "/api/billing/status", "/api/rewards/status"
   ]);
   let authContext = null;
-  if ((request.method === "POST" || (request.method === "GET" && url.pathname === "/api/billing/status")) && authenticatedRoutes.has(url.pathname)) {
+  if ((request.method === "POST" || (request.method === "GET" && ["/api/billing/status", "/api/rewards/status"].includes(url.pathname))) && authenticatedRoutes.has(url.pathname)) {
     const authResult = await authenticateSupabaseRequest(request, {
       supabaseUrl: SUPABASE_URL,
       publishableKey: SUPABASE_PUBLISHABLE_KEY
@@ -593,6 +594,17 @@ const app = http.createServer(async (request, response) => {
       topupMinutes: Math.max(0, Math.floor(Number(data?.topup_remaining_ms || 0) / 60000)),
       monthlyValidUntil: data?.monthly_valid_until || null
     }, headers || {});
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/rewards/status") {
+    if (!billingDb) return json(response, 503, { error: "Robot Rewards accounting is unavailable." }, headers || {});
+    try {
+      const result = await loadRobotRewards({ db: billingDb, userId: authContext.user.id, getOrder: getGooglePlayOrder });
+      return json(response, 200, result, headers || {});
+    } catch (error) {
+      console.warn("Robot Rewards status unavailable", { code: error?.code || 'unknown' });
+      return json(response, 503, { error: "Robot Rewards balance could not be loaded." }, headers || {});
+    }
   }
 
   if (request.method === "POST" && url.pathname === "/api/billing/verify") {
