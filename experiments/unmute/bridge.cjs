@@ -14,7 +14,7 @@ const SESSIONS = new Map();
 let activeSessionId = null;
 const LOGIN_ATTEMPTS = new Map();
 const LIVE_SESSION_TTL_MS = 6 * 60 * 60 * 1000;
-const VOICE_NAME = 'unmute-prod-website/default_voice.wav';
+const VOICE_NAME = 'unmute-prod-website/ex04_narration_longform_00001.wav';
 const FUNCTIONS = {
   'dishwashing': 'Dishwashing', 'vacuuming': 'Vacuuming & floors', 'laundry': 'Laundry',
   'folding': 'Folding & putting away', 'tidying': 'Tidying', 'surfaces': 'Surface cleaning',
@@ -22,9 +22,10 @@ const FUNCTIONS = {
   'pet-care': 'Pet care', 'plants': 'Plant care', 'recycling': 'Waste & recycling'
 };
 const VOICES = [{
-  name: 'MSS Test', good: true,
+  name: 'Explanation', good: true,
+  // AMIA generates the conversation. Keep Unmute's native explanatory system prompt disabled.
   instructions: { type: 'smalltalk', language: 'en' },
-  source: { source_type: 'file', path_on_server: VOICE_NAME, description: 'Single-voice AMIA test' }
+  source: { source_type: 'file', path_on_server: VOICE_NAME, description: 'Kyutai Explanation preset (Expresso; non-commercial evaluation only)' }
 }];
 
 function respond(res, status, payload, extra = {}) {
