@@ -648,7 +648,8 @@ function scenarioData() {
 }
 function renderLiveScenarioProgress() {
   const data = scenarioData();
-  const scenario = SCENARIOS.find(item => item.id === (data.started || (roomJourney?.active_room_id ? "room:" + roomJourney.active_room_id : "")));
+  const scenarioId = mssInterface?.getActiveScenarioId() || data.started || (roomJourney?.active_room_id ? "room:" + roomJourney.active_room_id : "");
+  const scenario = SCENARIOS.find(item => item.id === scenarioId);
   const done = completedScenarioIds(data.completed);
   document.querySelectorAll("[data-scenario-progress]").forEach(node => {
     node.replaceChildren();
