@@ -59,7 +59,7 @@ async function readBody(req, limit=16384) {
 }
 async function jsonRequest(url, options={}) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30000);
+  const timeout = setTimeout(() => controller.abort(), 45000);
   try {
     const response = await fetch(url, { ...options, signal: controller.signal });
     const result = await response.json().catch(() => ({}));
