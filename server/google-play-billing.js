@@ -19,6 +19,13 @@ function base64url(value) {
   return Buffer.from(value).toString("base64url");
 }
 
+export function obfuscatedPlayAccountId(userId) {
+  if (typeof userId !== "string" || !/^[a-f0-9-]{36}$/i.test(userId)) {
+    throw fail("Invalid signed-in account.", 401);
+  }
+  return createHash("sha256").update("mss:" + userId.toLowerCase()).digest("hex");
+}
+
 export function hashPurchaseToken(token) {
   if (typeof token !== "string" || token.length < 20 || token.length > 8192) {
     throw fail("Invalid Google Play purchase token.");
@@ -92,7 +99,8 @@ async function googleAccessToken() {
   return cachedToken;
 }
 
-export async function verifyGooglePlayToken({ productId, purchaseToken } = {}) {
+export async function verifyGooglePlayToken({ productId, purchaseToken, userId } = {}) {
+  const expectedAccountId = obfuscatedPlayAccountId(userId);
   hashPurchaseToken(purchaseToken);
   if (productId !== MSS_PREMIUM_PRODUCT && !Object.hasOwn(MSS_TOPUP_MINUTES, productId)) {
     throw fail("Unknown Google Play product.");
@@ -108,6 +116,12 @@ export async function verifyGooglePlayToken({ productId, purchaseToken } = {}) {
     throw fail(response.status === 404 ? "Purchase not found in Google Play." : "Google Play purchase verification failed.", response.status === 404 ? 403 : 502);
   }
   const details = await response.json();
+  const accountId = productId === MSS_PREMIUM_PRODUCT
+    ? details?.externalAccountIdentifiers?.obfuscatedExternalAccountId
+    : details?.obfuscatedExternalAccountId;
+  if (accountId !== expectedAccountId) {
+    throw fail("This Google Play purchase is not linked to the signed-in MySecondSelf account.", 403);
+  }
   return parseVerifiedPlayPurchase(details, { productId });
 }
 
