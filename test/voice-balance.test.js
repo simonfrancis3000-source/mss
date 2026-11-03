@@ -21,3 +21,9 @@ test('an old account response cannot replace a different account balance',async(
  let owner='a',release;const c=createVoiceBalance({apiBase:'',getUserId:()=>owner,getHeaders:async()=>({}),onChange(){},fetcher:()=>new Promise(resolve=>{release=resolve;})});
  const loading=c.refresh();await Promise.resolve();owner='b';release({ok:true,json:async()=>wallet});await loading;assert.equal(c.snapshot().wallet,null);
 });
+
+test('manual test allowance is distinct from purchased top-ups and a paid subscription',()=>{
+ const model=voiceBalanceModel({...wallet,allowanceType:'test',topupRemainingMs:0,monthlyRemainingMs:3600000},now);
+ assert.equal(model.isTest,true);assert.equal(model.monthlyLabel,'60 min');assert.equal(model.topupLabel,'0 min');assert.equal(model.total,'60 min');
+ assert.equal(voiceBalanceModel({...wallet,allowanceType:'subscription'},now).isTest,false);
+});
