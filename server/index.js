@@ -585,7 +585,7 @@ const app = http.createServer(async (request, response) => {
       const body = await readJson(request, 12000);
       const productId = String(body?.productId || "");
       const purchaseToken = String(body?.purchaseToken || "");
-      const verified = await verifyGooglePlayToken({ productId, purchaseToken });
+      const verified = await verifyGooglePlayToken({ productId, purchaseToken, userId: authContext.user.id });
       const { data, error } = await billingDb.rpc("mss_apply_verified_play_purchase", {
         p_user_id: authContext.user.id,
         p_product_id: verified.productId,
