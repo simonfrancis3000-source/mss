@@ -24,6 +24,7 @@ import { SCENARIOS, completedScenarioIds, availableScenarioCount, buildScenarioS
 import { createClient } from "@supabase/supabase-js";
 import { createAuthTurnstile } from "./auth-turnstile.js";
 import { createPhonicVoiceConversation, voiceFailureMessage } from "./phonic-voice.js";
+import { createGooglePlayCheckout } from "./google-play-checkout.js";
 import { buildPexiCapabilityPlan, cleanPexiCapabilityManifest } from "./pexi-readiness.js";
 import { companionThinkingMessage, companionWelcomeMessage, isCompanionWelcomeMessage } from "./companion-copy.js";
 import { assistantReplyRepeatsRecentAssistant, enforceFirstPersonTaskQuestions, normaliseVoicePreference, phonicVoiceIdForPreference } from "./voice-language.js";
@@ -2840,6 +2841,7 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   else updateSettingsMode();
   startCloudConversationSync();
   startMemoryQueue();
+  if (googlePlayCheckout.enabled) void googlePlayCheckout.syncOnSignIn();
   // Phonic provides spoken output; do not download the legacy Kokoro voice model.
   return true;
 }
@@ -4339,7 +4341,13 @@ function updateDecisionSummary() {
   elements.pexiState.classList.remove("ready");
 }
 
+const googlePlayCheckout = createGooglePlayCheckout({
+  apiBase: PHONIC_API_BASE_URL,
+  getHeaders: authenticatedApiHeaders,
+  getUserId: () => cloudUserId
+});
 mssInterface = createMssInterface({
+  openBilling: googlePlayCheckout.enabled ? () => googlePlayCheckout.open() : undefined,
   getSnapshot() {
     const ready = Boolean(cloudUserId && roomJourney && roomJourney.user_id === cloudUserId);
     const data = ready ? scenarioData() : {};

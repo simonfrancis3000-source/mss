@@ -1,0 +1,41 @@
+name: MSS Google Play billing integration checks
+on:
+  push:
+    branches:
+      - feature/mss-play-credits-20261103
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  node:
+    name: Node tests and mobile build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: node --check server/index.js && node --check server/voice-relay.js && node --check server/google-play-billing.js && node --check src/google-play-checkout.js
+      - run: npm test
+      - run: npm run build
+  android:
+    name: Android billing Java compile
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+      - run: npx cap sync android
+      - run: cd android && chmod +x gradlew && ./gradlew --no-daemon :app:compileDebugJavaWithJavac

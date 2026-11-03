@@ -1,0 +1,49 @@
+.mss-billing-dialog {
+  width: min(92vw, 480px);
+  max-height: min(84dvh, 850px);
+  overflow: auto;
+  border: 0;
+  padding: 0;
+  border-radius: 26px;
+  background: #f9fafc;
+  color: #20242b;
+  box-shadow: 0 24px 85px rgba(33, 42, 65, .23);
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+}
+.mss-billing-dialog::backdrop { background: rgba(26, 35, 52, .55); backdrop-filter: blur(4px); }
+.mss-billing-shell { padding: 23px; display: grid; gap: 17px; }
+.mss-billing-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.mss-billing-header h2 { font-size: 1.23rem; margin: 0; line-height: 1.3; }
+.mss-billing-close {
+  padding: 8px 12px; border-radius: 12px; border: 1px solid #dde4ed;
+  background: white; color: #253145; cursor: pointer; font: inherit;
+}
+.mss-billing-balance {
+  border-radius: 19px; padding: 17px; background: linear-gradient(130deg, #e9f1ff, #f5f3ff);
+  display: grid; gap: 4px;
+}
+.mss-billing-balance strong { font-size: 1.28rem; }
+.mss-billing-balance span { font-size: .86rem; color: #4e5b71; }
+.mss-billing-subscription, .mss-billing-topups { display: grid; gap: 9px; }
+.mss-billing-subscription h3, .mss-billing-topups h3 { margin: 0 0 2px; font-size: 1rem; }
+.mss-billing-buy {
+  width: 100%; display: flex; align-items: center; justify-content: space-between;
+  padding: 13px 15px; min-height: 52px; text-align: left; gap: 16px;
+  border: 1px solid #d8e4f2; border-radius: 15px; background: white;
+  font: inherit; color: #233044; cursor: pointer;
+}
+.mss-billing-buy strong { color: #1955a8; white-space: nowrap; }
+.mss-billing-buy:focus-visible, .mss-billing-restore:focus-visible, .mss-billing-close:focus-visible {
+  outline: 3px solid #559bf2; outline-offset: 2px;
+}
+.mss-billing-buy:disabled, .mss-billing-restore:disabled { cursor: not-allowed; opacity: .5; }
+.mss-billing-restore {
+  border: 1px solid #cbd9ea; background: #edf3fc; color: #28528a; cursor: pointer;
+  font: inherit; padding: 12px 14px; border-radius: 14px; width: 100%;
+}
+.mss-billing-footnote { color: #526174; font-size: .84rem; line-height: 1.5; margin: 0; }
+.mss-billing-status { color: #28528a; font-size: .86rem; line-height: 1.45; min-height: 1.4em; margin: 0; }
+@media (max-width: 430px) {
+  .mss-billing-dialog { width: calc(100vw - 22px); max-height: 91dvh; border-radius: 22px; }
+  .mss-billing-shell { padding: 18px; }
+}

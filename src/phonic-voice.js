@@ -510,7 +510,9 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
 
         activeSocket.addEventListener("close", (event) => {
           if (stopped || activeSocket !== socket) return;
-          const detail = "The voice service closed the connection (" + event.code + ")" + (event.reason ? ": " + event.reason : ".");
+          const detail = event.code === 4008
+            ? "Your voice minutes have run out. Open Profile to add voice minutes."
+            : "The voice service closed the connection (" + event.code + ")" + (event.reason ? ": " + event.reason : ".");
           if (!ready) finish(new Error(detail));
           else if (event.code !== 1000) emit({ type: "error", error: detail });
           else emit({ type: "close", code: event.code, reason: event.reason || "" });
