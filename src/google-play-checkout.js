@@ -216,10 +216,24 @@ export function createGooglePlayCheckout({ apiBase, getHeaders, getUserId }) {
     }
   }).then(value => { listener = value; }).catch(() => {});
 
+  async function syncOnSignIn() {
+    if (!getUserId()) return false;
+    try {
+      const response = await fetch(apiBase + "/health", { signal: AbortSignal.timeout(10000) });
+      const health = await response.json();
+      if (!response.ok || health.paidVoiceEnabled !== true) return false;
+      await restorePurchases();
+      return true;
+    } catch {
+      // Retry automatically on next sign-in or manually through Restore.
+      return false;
+    }
+  }
+
   dialog.addEventListener("click", (event) => {
     if (event.target === dialog) dialog.close();
   });
 
-  return { enabled: true, open, refreshBalance, restorePurchases,
+  return { enabled: true, open, refreshBalance, restorePurchases, syncOnSignIn,
     close() { dialog.close(); void listener?.remove?.(); } };
 }
