@@ -38,7 +38,7 @@ test('a pending storage read cannot undo an explicit checkbox selection during l
  const persistent=memory(), temporary=memory();temporary.setItem(key,'older-session');
  const baseGet=persistent.getItem;persistent.getItem=async k=>{await new Promise(resolve=>release=resolve);return baseGet(k);};
  const store=createRememberedSessionStorage({persistent,temporary,getRemember:()=>remember,onRestore:value=>{if(!explicit)remember=value;}});
- const reading=store.getItem(key);remember=true;explicit=true;release();await reading;
+ const reading=store.getItem(key);await new Promise(setImmediate);assert.equal(typeof release,'function');remember=true;explicit=true;release();await reading;
  await store.setItem(key,'new-session');assert.equal(persistent.data.get(key),'new-session');assert.equal(temporary.getItem(key),null);
 });
 
