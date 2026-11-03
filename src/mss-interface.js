@@ -103,6 +103,9 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
     document.querySelector('#voiceExperienceStatus')?.after(voiceControls);
     voiceControls.after(transcript);
   }
+  const liveVoiceProgress = document.querySelector('.voice-experience-content > [data-scenario-progress]');
+  const voiceOrb = document.querySelector('#voiceOrb');
+  if (liveVoiceProgress && voiceOrb) voiceOrb.before(liveVoiceProgress);
   const voiceCore = document.querySelector('#voiceOrbCore');
   if (voiceCore) {
     const portrait = el('span', 'mss-robot-portrait');
@@ -172,7 +175,7 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
       } catch (error) { shareStatus = error.message || 'Could not create the progress image. Please try again.'; }
       finally {
         sharingProgress = false;
-        if (document.body.dataset.appView === 'passport') render();
+        if (card.isConnected) card.replaceWith(progressChart(getSnapshot()));
       }
     });
     shareButton.replaceChildren(symbol('share'), el('span', 'mss-share-label', sharingProgress ? 'Preparing…' : 'Share'));
@@ -278,5 +281,5 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
     const states = { idle: 'is ready', connecting: 'is connecting', listening: 'is listening', 'user-speaking': 'is listening', muted: 'is muted', thinking: 'is thinking', speaking: 'is speaking', 'speech-pause': 'is speaking' };
     voiceTitle.textContent = name + ' ' + (states[mode] || 'is ready');
   }
-  return { render, renderTranscript, renderVoiceState };
+  return { render, renderTranscript, renderVoiceState, createProgressChart: () => progressChart(getSnapshot()) };
 }
