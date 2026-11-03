@@ -335,3 +335,27 @@ body[data-app-view='rewards'] .mss-rewards{display:flex}
  .mss-rewards-partner-copy{padding:14px 0 14px 15px}
  .mss-rewards-booster-image{right:-6%;width:53%}
 }
+
+
+/* Compact Home above the fixed navigation on smaller phones. Freya artwork stays unchanged. */
+@media(max-width:600px){
+  body[data-app-view='home'] .site-header{min-height:72px}
+  body[data-app-view='home'] .nav-wrap{min-height:72px;padding-top:calc(12px + env(safe-area-inset-top));padding-bottom:9px}
+  body[data-app-view='home'] main{padding-top:0}
+  .mss-home{gap:10px}
+  .mss-home .mss-page-heading{margin:0}
+  .mss-home .mss-page-heading h1{margin-bottom:5px}
+  .mss-home .mss-page-heading p{font-size:14px;line-height:1.34}
+  .mss-home .mss-robot-banner{min-height:218px;height:218px;padding-bottom:0;box-sizing:border-box}
+  .mss-home .mss-robot-copy{padding-top:17px;padding-bottom:0}
+  .mss-home .mss-robot-copy h2{margin-bottom:5px}
+  .mss-home .mss-robot-copy>p{line-height:1.32}
+  .mss-home .mss-primary{bottom:11px}
+  .mss-home .mss-section-heading{margin-top:0}
+}
+/* The Home rewards card is text-first; its chevron remains the tap target. */
+.mss-rewards-teaser-track{margin-left:0}
+.mss-rewards-teaser-title{gap:0}
+@media(max-width:420px){.mss-rewards-teaser-track{margin-left:0}}
+/* Keep unverified balances honest without taking up space for a large placeholder. */
+.mss-rewards-credit-limit{font-weight:600;font-size:13px}
