@@ -1,3 +1,4 @@
+import { createVoiceBalance } from './voice-balance.js';
 import { createMssInterface, buildInterfaceModel, COMPANION_HEAD_IMAGE } from "./mss-interface.js";
 import { coalesceTranscriptTurns, preferTranscriptTurn, bestUserTranscript, isServiceErrorText } from "./transcript-turns.js";
 import { createRememberedSessionStorage, nativePersistentSessionStorage } from "./session-storage.js";
@@ -3272,7 +3273,10 @@ document.querySelector("#scenarioHeaderProgress")?.addEventListener("click", (ev
   selectAppView("journey");
 });
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible" && cloudUserId && profileComplete()) void ensureRoomJourney();
+  if (document.visibilityState === "visible" && cloudUserId && profileComplete()) {
+    void ensureRoomJourney();
+    if(document.body.dataset.appView === "profile") void voiceBalance.refresh();
+  }
 });
 window.addEventListener("resize", updateChatScrollbar);
 
@@ -4333,7 +4337,10 @@ function updateDecisionSummary() {
   elements.pexiState.classList.remove("ready");
 }
 
+const voiceBalance = createVoiceBalance({apiBase:API_BASE,getUserId:()=>cloudUserId,getHeaders:authenticatedApiHeaders,onChange:()=>mssInterface?.render()});
+
 mssInterface = createMssInterface({
+  refreshBalance:()=>voiceBalance.refresh(),
   getSnapshot() {
     const ready = Boolean(cloudUserId && roomJourney && roomJourney.user_id === cloudUserId);
     const data = ready ? scenarioData() : {};
@@ -4347,7 +4354,7 @@ mssInterface = createMssInterface({
     const pending = conversationCheckpoint(state.messages, model.active?.id);
     return { owner: state.profile.ownerName.trim(), companion: selectedCompanionDisplayName(),
       voice: normaliseVoicePreference(state.profile.robotVoice), avatar: ownerAvatarData,
-      preferences: curatedPreferences(), messages: state.messages, pendingQuestion: pending?.question || "", model };
+      billing:voiceBalance.snapshot(), preferences: curatedPreferences(), messages: state.messages, pendingQuestion: pending?.question || "", model };
   },
   navigate: selectAppView,
   async shareProgress() {
@@ -5378,6 +5385,7 @@ function syncAppNavigation() {
 }
 
 function selectAppView(view) {
+  if(view === "profile") void voiceBalance.refresh();
   closeSettings();
   if (elements.taskResult) elements.taskResult.hidden = true;
   if (view === "chat" && document.body.dataset.appView !== "chat" && cloudUserId && roomJourney && state.messages.some(item=>item.role==='user')) {
