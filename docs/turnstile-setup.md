@@ -15,7 +15,13 @@ The production web deployment `synqme-demo` uses branch `SYNQ.ME`. Turnstile now
 
 ## Capacitor Android/iOS
 
-Cloudflare Turnstile runs in a WebView, not as a native SDK. Confirm `challenges.cloudflare.com` is reachable and JavaScript and DOM storage are enabled. Capacitor's default local origin is generally `localhost` and is not covered by the widget hostname `synqme.mysecondself.app`. The default fallback key is therefore **not enabled** on local-host native WebViews, to preserve existing mobile login while Supabase CAPTCHA remains off. **Do not enable project-wide Supabase CAPTCHA until the native login flow can also produce a valid token**; otherwise native users will be locked out. For native support, test a real Android/iOS build with a properly hosted authentication page or a separately verified mobile-compatible approach. Avoid authorizing local hostnames on production widgets.
+The Android/iOS Capacitor app still serves its interface from `localhost`. Its Turnstile challenge now runs inside an isolated iframe served from `https://synqme.mysecondself.app/turnstile-bridge.html`, a hostname already authorized by Cloudflare. The iframe exchanges **only the single-use challenge token** with the native login using nonce-verified, source-verified, exact-origin `postMessage`. No account credentials or sessions are shared with the iframe. The existing mobile Supabase calls pass that token on sign-in, sign-up and password-reset requests.
+
+The Android native WebView also needs third-party cookies and DOM storage for Cloudflare challenges. These native changes are in **Android 1.5, versionCode 8**, which requires a **new signed AAB and Google Play test/release**. A previous installed AAB, or a JavaScript-only OTA update, does not include the new native cookie settings. The bridge is published independently by the website branch `SYNQ.ME`.
+
+**Do not enable project-wide Supabase CAPTCHA until the updated Android app has been installed and verified on an actual device.** After installing version 8, switch CAPTCHA on for a controlled test, confirm registration, login and password recovery, then leave it enabled only if all pass. If it fails, disable enforcement immediately and collect Android WebView error details. Retain the current domain allowlist without `localhost`.
+
+References: https://developers.cloudflare.com/turnstile/get-started/mobile-implementation/
 
 ## Security/rollout notes
 
