@@ -1521,7 +1521,7 @@ const app = http.createServer(async (request, response) => {
 app.on("upgrade", (request, socket, head) => {
   const pathname = new URL(request.url || "/", "http://localhost").pathname;
   if (pathname !== "/api/phonic/relay" || !VOICE_BILLING_ENABLED || !voiceRelay) {
-    socket.end("HTTP/1.1 404 Not Found\\r\\nConnection: close\\r\\n\\r\\n");
+    socket.end("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
     return;
   }
   voiceRelay.onUpgrade(request, socket, head);
