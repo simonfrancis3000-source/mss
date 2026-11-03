@@ -576,7 +576,15 @@ const app = http.createServer(async (request, response) => {
     if (error) return json(response, 503, { error: "Voice credit balances are unavailable." }, headers || {});
     const currentMonthlyMs = data?.monthly_valid_until && Date.parse(data.monthly_valid_until) > Date.now()
       ? Number(data.monthly_remaining_ms || 0) : 0;
+    let allowanceType = 'subscription';
+    if (currentMonthlyMs > 0) {
+      const verified = await billingDb.from('mss_voice_credit_grants').select('id')
+        .eq('user_id',authContext.user.id).eq('product_id','mss_premium').eq('period_end',data.monthly_valid_until).limit(1);
+      if (verified.error) return json(response,503,{error:'Voice allowance details are unavailable.'},headers || {});
+      if (!verified.data?.length) allowanceType = 'test';
+    }
     return json(response, 200, {
+      allowanceType,
       billingEnabledForUser: voiceBillingFor(authContext),
       premiumActive: Boolean(data?.monthly_valid_until && Date.parse(data.monthly_valid_until) > Date.now()),
       monthlyRemainingMs: Math.max(0, currentMonthlyMs),
