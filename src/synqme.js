@@ -17,6 +17,8 @@ import { ruleSourceReferences, scenarioReviewRecord } from "./amia-persistence.j
 import { SCENARIOS, completedScenarioIds, availableScenarioCount, buildScenarioStartPatch, scenarioTasks, scenarioLearnings, scenarioProgressSummary } from "./scenario-journey.js";
 import { createClient } from "@supabase/supabase-js";
 import { createAuthTurnstile } from "./auth-turnstile.js";
+import { createMobileAuthTurnstile } from "./mobile-turnstile-bridge.js";
+import { Capacitor } from "@capacitor/core";
 import { createPhonicVoiceConversation, voiceFailureMessage } from "./phonic-voice.js";
 import { buildPexiCapabilityPlan, cleanPexiCapabilityManifest } from "./pexi-readiness.js";
 import { companionThinkingMessage, companionWelcomeMessage, isCompanionWelcomeMessage } from "./companion-copy.js";
@@ -2640,10 +2642,13 @@ function setAuthGateVisible(visible) {
   if (visible) window.setTimeout(() => elements.authEmail?.focus(), 0);
 }
 
-const authTurnstile = createAuthTurnstile({
-  siteKey: import.meta.env.VITE_TURNSTILE_SITE_KEY,
-  container: document.querySelector("#authTurnstile")
-});
+// Native login requires the widget to execute on our allowed HTTPS hostname.
+const authTurnstile = Capacitor.isNativePlatform()
+  ? createMobileAuthTurnstile({ container: document.querySelector("#authTurnstile") })
+  : createAuthTurnstile({
+      siteKey: import.meta.env.VITE_TURNSTILE_SITE_KEY,
+      container: document.querySelector("#authTurnstile")
+    });
 authTurnstile.setMode("signin");
 
 function setAuthMode(mode, message = "") {
