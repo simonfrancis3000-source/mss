@@ -14,33 +14,33 @@ export async function createProgressShareFile(progress, name) {
   canvas.width = 1080; canvas.height = 1350;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Image sharing is unavailable in this browser.');
-  const bg = '#e3f0f8', ink = '#254e5d', secondary = '#66849d';
+  const bg = '#faf9fb', ink = '#080e23', secondary = '#58667b';
   ctx.fillStyle = bg; ctx.fillRect(0,0,1080,1350);
   function text(value,x,y,size,color=ink,weight=500) {
-    ctx.fillStyle=color; ctx.font=weight+' '+size+'px Quicksand, sans-serif'; ctx.textAlign='center'; ctx.fillText(value,x,y,950);
+    ctx.fillStyle=color; ctx.font=weight+' '+size+'px Inter, sans-serif'; ctx.textAlign='center'; ctx.fillText(value,x,y,950);
   }
   const first = String(name || '').trim().split(/\s+/)[0] || 'Someone';
-  text('S Y N Q . M E',540,62,29,ink,600);
+  text('MySecondSelf',540,62,32,ink,750);
   text(first + ' is preparing for the arrival of their',540,120,30,ink,600);
   text('domestic humanoid robot. Are you?',540,161,30,ink,600);
-  text('Learn more at MySecondSelf',540,204,27,'#7756c6',600);
+  text('Learn more at MySecondSelf',540,204,27,'#195fa9',600);
   text('mysecondself.app',540,239,22,secondary);
   text(progressOwnerLabel(name,'progress'),540,295,42);
   const x=540,y=535,r=175;
-  ctx.save(); ctx.shadowColor='#b9d5e5'; ctx.shadowBlur=32; ctx.shadowOffsetY=14;
-  ctx.beginPath(); ctx.arc(x,y,r+42,0,Math.PI*2); ctx.fillStyle=bg; ctx.fill(); ctx.restore();
-  ctx.lineWidth=60; ctx.strokeStyle='#cde3ee'; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.stroke();
+  ctx.save(); ctx.shadowColor='#d6e4f4'; ctx.shadowBlur=32; ctx.shadowOffsetY=14;
+  ctx.beginPath(); ctx.arc(x,y,r+42,0,Math.PI*2); ctx.fillStyle='#ffffff'; ctx.fill(); ctx.restore();
+  ctx.lineWidth=60; ctx.strokeStyle='#e3eefb'; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.stroke();
   if(progress.percent>0) {
-    const gradient=ctx.createLinearGradient(300,300,760,650); gradient.addColorStop(0,'#6cbfd1'); gradient.addColorStop(1,'#8e70d6');
+    const gradient=ctx.createLinearGradient(300,300,760,650); gradient.addColorStop(0,'#5cb8f5'); gradient.addColorStop(1,'#318cda');
     ctx.strokeStyle=gradient; ctx.lineCap='round'; ctx.beginPath(); ctx.arc(x,y,r,-Math.PI/2,-Math.PI/2+2*Math.PI*progress.percent/100); ctx.stroke();
   }
-  text(progress.percent+'%',540,535,72,'#7756c6',700);
+  text(progress.percent+'%',540,535,72,'#195fa9',700);
   text('scenarios complete',540,590,27,secondary);
   text(progress.completed+' of '+progress.total+' scenarios confirmed complete',540,790,27,secondary);
-  const colors=['#65bfd0','#8870d8','#efb567','#df8bc4'];
+  const colors=['#3899e4','#dda16a','#438ba7','#245c9d'];
   progress.groups.forEach((group,i)=>{
     const cx=210+i*220, top=870, height=250, width=76;
-    ctx.fillStyle='#cfe4ef'; ctx.beginPath(); ctx.roundRect(cx-width/2,top,width,height,38); ctx.fill();
+    ctx.fillStyle='#e5eef9'; ctx.beginPath(); ctx.roundRect(cx-width/2,top,width,height,38); ctx.fill();
     if(group.percent>0) {
       const fill=Math.max(8,height*group.percent/100);
       ctx.fillStyle=colors[i];ctx.beginPath();ctx.roundRect(cx-width/2,top+height-fill,width,fill,Math.min(38,fill/2));ctx.fill();
@@ -55,7 +55,7 @@ export async function createProgressShareFile(progress, name) {
 export async function shareProgressImage(progress,name) {
   const file=await createProgressShareFile(progress,name);
   if(navigator.canShare?.({files:[file]})) {
-    try { await navigator.share({files:[file],title:progressOwnerLabel(name,'SYNQ.ME progress'),text:progressShareMessage(name),url:MYSECONDSELF_URL});return 'shared'; }
+    try { await navigator.share({files:[file],title:progressOwnerLabel(name,'MySecondSelf progress'),text:progressShareMessage(name),url:MYSECONDSELF_URL});return 'shared'; }
     catch(error) { if(error.name==='AbortError') return 'cancelled'; }
   }
   const url=URL.createObjectURL(file), link=document.createElement('a');
