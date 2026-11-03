@@ -144,3 +144,18 @@ export async function acknowledgeVerifiedGoogleSubscription(purchaseToken) {
   if (!response.ok && response.status !== 400) throw fail("Premium is active, but Google Play acknowledgement needs retry.", 502);
   return true;
 }
+
+
+/** Look up billed amounts and refund states from Google Play. Order IDs originate from verified grants. */
+export async function getGooglePlayOrder(orderId) {
+  if (typeof orderId !== 'string' || !/^[a-z\d.\-_:]{4,150}$/i.test(orderId)) {
+    throw fail('Invalid Google Play order ID.', 400);
+  }
+  const token=await googleAccessToken();
+  const endpoint='/androidpublisher/v3/applications/'+MSS_PLAY_PACKAGE+'/orders/'+encodeURIComponent(orderId);
+  const response=await fetch('https://androidpublisher.googleapis.com'+endpoint, {
+    headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(12000)
+  });
+  if (!response.ok) throw fail('Could not verify the Google Play order.', response.status===404?404:502);
+  return response.json();
+}
