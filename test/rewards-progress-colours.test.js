@@ -9,10 +9,10 @@ test('training progress remains purple and is visible when no progress is earned
   assert.match(css, /\.mss-rewards-training-track>span\{background:linear-gradient\(90deg,#7956d8,#af91ef\)\}/);
 });
 
-test('Home rewards track begins very light grey and fills dark grey', async () => {
+test('Home rewards track remains visible at zero and fills with dark grey', async () => {
   const css = await readFile(new URL('../src/mss-interface.css', import.meta.url), 'utf8');
-  assert.match(css, /\.mss-rewards-teaser-track\{[^}]*background:#eef0f3\}/);
-  assert.match(css, /\.mss-rewards-teaser-track>span\{[^}]*background:#636a75\}/);
+  assert.match(css, /\.mss-rewards-teaser-track\{[^}]*background:#9ea5af\}/);
+  assert.match(css, /\.mss-rewards-teaser-track>span\{[^}]*background:#444b55\}/);
   // The detailed account credit progress keeps its existing green styling.
   assert.match(css, /\.mss-rewards-credit-track>span,\.mss-rewards-training-track>span\{[^}]*background:#12a454\}/);
 });
