@@ -277,3 +277,65 @@ revoke all on function public.mss_reserve_voice_lease(uuid,uuid) from public, an
 revoke all on function public.mss_settle_voice_lease(uuid,uuid,bigint) from public, anon, authenticated;
 grant execute on function public.mss_reserve_voice_lease(uuid,uuid) to service_role;
 grant execute on function public.mss_settle_voice_lease(uuid,uuid,bigint) to service_role;
+
+-- Seamless 5-minute reservation extension keeps a long conversation connected
+-- while ensuring each additional interval is paid for before it is used.
+create or replace function public.mss_extend_voice_lease(
+  p_user_id uuid, p_lease_id uuid
+) returns jsonb language plpgsql security definer
+set search_path = ''
+as $$
+declare
+  v_wallet public.mss_voice_wallets%rowtype;
+  v_lease public.mss_voice_leases%rowtype;
+  v_monthly_left bigint;
+  v_topup_left bigint;
+  v_increase bigint;
+  v_monthly bigint;
+  v_topup bigint;
+  v_expiry_cap bigint;
+begin
+  select * into v_wallet from public.mss_voice_wallets
+    where user_id=p_user_id for update;
+  if not found then raise exception 'wallet_not_found'; end if;
+  select * into v_lease from public.mss_voice_leases
+    where id=p_lease_id and user_id=p_user_id for update;
+  if not found or v_lease.status <> 'active' then
+    raise exception 'lease_not_active';
+  end if;
+  v_monthly_left := case when v_wallet.monthly_valid_until > now()
+    then v_wallet.monthly_remaining_ms else 0 end;
+  v_topup_left := v_wallet.topup_remaining_ms;
+  v_increase := least(300000::bigint, v_monthly_left + v_topup_left);
+  if v_increase <= 0 then raise exception 'no_voice_credits'; end if;
+
+  v_expiry_cap := case when v_monthly_left > 0
+    then greatest(0::bigint,
+      floor(extract(epoch from (v_wallet.monthly_valid_until - now())) * 1000)::bigint)
+    else 300000 end;
+  if v_expiry_cap <= 0 then
+    v_monthly_left := 0;
+    v_increase := least(300000::bigint, v_topup_left);
+  else
+    v_increase := least(v_increase,v_expiry_cap);
+  end if;
+  if v_increase < 1000 then raise exception 'no_voice_credits'; end if;
+
+  v_monthly := least(v_increase,v_monthly_left);
+  v_topup := v_increase - v_monthly;
+  update public.mss_voice_wallets set
+    monthly_remaining_ms = case when monthly_valid_until > now()
+      then monthly_remaining_ms - v_monthly else 0 end,
+    topup_remaining_ms = topup_remaining_ms - v_topup,
+    updated_at = now()
+    where user_id = p_user_id;
+  update public.mss_voice_leases set
+    reserved_monthly_ms = reserved_monthly_ms + v_monthly,
+    reserved_topup_ms = reserved_topup_ms + v_topup,
+    connection_deadline = now() + interval '7 minutes'
+    where id=p_lease_id and user_id=p_user_id;
+  return jsonb_build_object('reservedMs',v_lease.reserved_total_ms + v_increase);
+end $$;
+
+revoke all on function public.mss_extend_voice_lease(uuid,uuid) from public, anon, authenticated;
+grant execute on function public.mss_extend_voice_lease(uuid,uuid) to service_role;
