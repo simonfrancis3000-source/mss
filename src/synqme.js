@@ -2841,6 +2841,7 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   else updateSettingsMode();
   startCloudConversationSync();
   startMemoryQueue();
+  if (googlePlayCheckout.enabled) void googlePlayCheckout.syncOnSignIn();
   // Phonic provides spoken output; do not download the legacy Kokoro voice model.
   return true;
 }
