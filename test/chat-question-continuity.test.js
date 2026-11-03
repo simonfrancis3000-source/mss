@@ -27,9 +27,10 @@ test('the chat route rejects an older paraphrased question and records only its 
         const body=JSON.parse(options.body); calls.push(body);
         let content;
         if(body.response_format){
+          assert.equal(body.max_tokens,32);
           const context=JSON.parse(body.messages[1].content);
           assert.equal(context.exchanges[0].answer,'On the side table.');
-          content=JSON.stringify({repeated_question:context.candidate.includes('handset'),matched_question:'Where should I leave the remote controls?',reason:'Same placement decision, already answered.'});
+          content=JSON.stringify({repeated_question:context.candidate.includes('handset')});
         }else if(body.messages[0].content.includes('QUESTION CONTINUITY CORRECTION')){
           content='I will leave it on the side table. If a visitor leaves a bag blocking the doorway, should I ask them or you to move it?';
         }else{

@@ -35,7 +35,7 @@ export async function guardScenarioQuestion({ draft, latestUser, continuity, dec
     blocked = true;
     if (attempt === 0) {
       try {
-        candidate = await rewrite({ candidate, reason: String(verdict.reason || '').slice(0, 800), matched_question: String(verdict.matched_question || '').slice(0, 500) });
+        candidate = await rewrite({ candidate, reason: String(verdict.reason || 'The proposed question repeats a decision in the supplied evidence. Use that evidence to ask about a genuinely different unresolved circumstance.').slice(0, 800), matched_question: String(verdict.matched_question || '').slice(0, 500) });
         if (typeof candidate !== 'string' || !candidate.trim()) throw Error('empty_continuity_repair');
         continue;
       } catch {}
