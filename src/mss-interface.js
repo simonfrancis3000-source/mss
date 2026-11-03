@@ -82,7 +82,7 @@ const el = (tag, className, text) => {
 const symbol = (name, className = '') => { const node = el('span', 'mss-symbol ' + className); node.innerHTML = icon(name); return node; };
 function action(label, className, onClick) { const node = el('button', className, label); node.type = 'button'; node.addEventListener('click', onClick); return node; }
 
-export function createMssInterface({ getSnapshot, navigate, editSettings, openScenario, openWorkspace, shareProgress }) {
+export function createMssInterface({ getSnapshot, navigate, editSettings, openScenario, openWorkspace, shareProgress, openBilling }) {
   const main = document.querySelector('main');
   let sharingProgress = false;
   let shareStatus = '';
@@ -241,6 +241,9 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
       linkCard('Privacy', 'Your data, training and sharing preferences', 'lock', () => editSettings('shareAnonymizedLearning')),
       linkCard('Voice settings', 'Voice and conversation language', 'mic', () => editSettings('robotVoice')),
       linkCard('Support', 'Get help, report an issue or contact us', 'support', () => window.open('https://mysecondself.app/contact/', '_blank', 'noopener')));
+    if (typeof openBilling === 'function') {
+      settings.prepend(linkCard('Premium and voice minutes', 'Monthly allowance, extra voice credits and purchase history', 'spark', openBilling));
+    }
     profile.append(settings);
 
     topic.replaceChildren(symbol(model.active ? moduleIcon(model.active) : 'chat', 'mss-icon-tile'));

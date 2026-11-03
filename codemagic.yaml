@@ -42,7 +42,7 @@ workflows:
         script: npm ci
 
       - name: Build MSS mobile
-        script: VITE_API_BASE_URL=https://synqme-api.onrender.com npm run build -- --mode mobile
+        script: VITE_PLAY_BILLING_ENABLED=true VITE_API_BASE_URL=https://synqme-api.onrender.com npm run build -- --mode mobile
 
       - name: Generate MySecondSelf native app icons
         script: |
@@ -83,7 +83,7 @@ workflows:
         script: npm ci
 
       - name: Build MSS mobile
-        script: VITE_API_BASE_URL=https://synqme-api.onrender.com npm run build -- --mode mobile
+        script: VITE_PLAY_BILLING_ENABLED=true VITE_API_BASE_URL=https://synqme-api.onrender.com npm run build -- --mode mobile
 
       - name: Generate MySecondSelf native app icons
         script: |

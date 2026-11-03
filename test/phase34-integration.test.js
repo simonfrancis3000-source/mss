@@ -37,7 +37,11 @@ test("frontend sends the signed-in access token with the protected provider requ
   assert.match(source, /async function authenticatedApiHeaders/);
   assert.match(source, /Authorization: "Bearer " \+ token/);
   const calls = source.match(/headers: await authenticatedApiHeaders\(\)/g) || [];
-  assert.ok(calls.length >= 5);
+  assert.ok(calls.length >= 4);
+  // The billing-capable Android voice request must still authenticate while
+  // explicitly opting into prepaid metering. Older app builds are unchanged.
+  assert.match(source, /headers: await authenticatedApiHeaders\(\{/);
+  assert.match(source, /"X-MSS-Billing-Client": "android-1\.7"/);
   assert.match(source, /fetch\(API_BASE \+ "\/api\/simulation", \{ method: "POST", headers: await authenticatedApiHeaders\(\)/);
   assert.match(source, /relevantPersonaMemories, requestHeaders\] = await Promise\.all\(/);
   assert.match(source, /headers: requestHeaders/);

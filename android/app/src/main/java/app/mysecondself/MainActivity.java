@@ -9,6 +9,7 @@ import com.getcapacitor.BridgeActivity;
 public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        registerPlugin(MSSBillingPlugin.class);
         super.onCreate(savedInstanceState);
         // Turnstile is hosted on synqme.mysecondself.app in an embedded frame.
         // Android WebView must allow cookies used by Cloudflare's challenge.
