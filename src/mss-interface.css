@@ -458,3 +458,20 @@ body[data-app-view='rewards'] .mss-rewards{display:flex}
   padding-top:10px;
   padding-bottom:11px;
 }
+
+/* Home cards: keep both progress tracks at the same left/right inset.
+   The chevron is aligned to the heading, safely above the status track. */
+.mss-home .mss-rewards-teaser{
+  padding-left:14px;
+  padding-right:14px;
+}
+.mss-home .mss-rewards-teaser-row{
+  padding-right:29px;
+}
+.mss-home .mss-rewards-teaser-chevron{
+  top:11px;
+  right:11px;
+  width:19px;
+  height:19px;
+  transform:none;
+}
