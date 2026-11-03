@@ -176,11 +176,11 @@
       </details>
 
       <details class="persona-insights-drawer passport-drawer" id="personaPassport">
-        <summary class="persona-insights-summary"><span class="insights-summary-mark" aria-hidden="true">P</span><span class="insights-summary-copy"><strong>Persona Passport</strong><small>Review your preferences. Export is temporarily unavailable</small></span><span class="insights-chevron" aria-hidden="true">+</span></summary>
+        <summary class="persona-insights-summary"><span class="insights-summary-mark" aria-hidden="true">P</span><span class="insights-summary-copy"><strong>Your saved preferences</strong><small>Review the details and boundaries you have shared</small></span><span class="insights-chevron" aria-hidden="true">+</span></summary>
         <div class="passport-content" id="personaPassportContent"></div>
       </details>
 
-      <details class="persona-insights-drawer" id="personaInsights">
+      <details class="persona-insights-drawer" id="personaInsights" hidden>
         <summary class="persona-insights-summary">
           <span class="insights-summary-mark" aria-hidden="true">S</span>
           <span class="insights-summary-copy">
@@ -339,8 +339,9 @@
               <p class="field-help">Shown beside your messages. Your photo stays in this browser.</p>
             </div>
           </div>
-          <label for="robotName">Robot name (optional)</label>
-          <input id="robotName" name="robotName" maxlength="60" placeholder="Optional — you can name it later" />
+          <label for="robotName">Your robot’s name</label>
+          <input id="robotName" name="robotName" maxlength="60" placeholder="Vikki" aria-describedby="robotNameHelp" />
+          <small id="robotNameHelp">Type a name to personalise your robot. Leave blank to use Vikki for a female voice or Andy for a male voice.</small>
           <p class="field-help">You can leave this blank. Your robot image does not need a name to use SYNQ.ME.</p>
 
           <label for="robotType">Robot you may want to personalise in the future</label>
@@ -502,7 +503,6 @@
           </div>
           <button type="button" id="signOutButton" class="settings-task-link account-signout">Sign out <span>↗</span></button>
         </div>
-        <button type="button" class="settings-task-link" id="exportPexiPackage">Export persona package for PEXI <span>↗</span></button>
         <button type="button" class="settings-task-link" id="openTaskFromSettings">Preview persona journey <span>↗</span></button>
         <p class="settings-note">The export contains your stated preferences, captured details and items still needing clarification. It is a portable data package for future PEXI compatibility mapping, not a robot-control connection or execution command.</p>
       </div>

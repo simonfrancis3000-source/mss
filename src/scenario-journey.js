@@ -16,7 +16,8 @@ const order = [
   ['room', 'garage_storage'], ['outside', 'public-safety', 'separated'],
   ['room', 'guest_room'], ['outside', 'public-safety', 'owner-falls'],
   ['room', 'balcony_patio'], ['outside', 'advanced-context', 'upset-person'],
-  ['outside', 'strangers', 'home-address']
+  ['outside', 'strangers', 'home-address'],
+  ['outside', 'known-people', 'shared-household']
 ];
 export const SCENARIOS = order.map(([kind, group, item]) => {
   if (kind === 'room') {

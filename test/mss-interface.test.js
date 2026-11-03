@@ -12,11 +12,11 @@ test('new accounts begin at Kitchen, without interpreting missing room IDs as an
   assert.equal(model.modules[1].available, false);
 });
 
-test('completion excludes unknown IDs and duplicates and uses all 25 existing scenarios', () => {
+test('completion excludes unknown IDs and duplicates and uses all 26 existing scenarios', () => {
   const model = buildInterfaceModel({ scenarios: SCENARIOS, ready: true, taskCounts,
     data: { completed: ['room:kitchen', 'room:kitchen', 'made-up'] } });
   assert.equal(model.completed, 1);
-  assert.equal(model.total, 25);
+  assert.equal(model.total, 26);
   assert.equal(model.percent, 4);
   assert.equal(model.modules[0].status, 'Complete');
   assert.equal(model.modules[0].percent, 100);

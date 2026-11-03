@@ -22,3 +22,14 @@ test('first appliance mention requires identity, the next brand answer asks mode
  assert.equal(applianceIntakeRequirement([...first,...exchange('What make is your dishwasher?','Not now, later.'),...exchange('Should I wash plates?','Yes, use the dishwasher.')]),null);
  assert.equal(applianceIntakeRequirement(exchange('What helps?','I do not have a dishwasher.')),null);
 });
+
+test('continuity rejection does not masquerade as service failure or resurrect a repeated question',async()=>{
+ const {guardScenarioQuestion}=await import('../server/continuity-guard.js');
+ const {finalizeGuidedReply}=await import('../server/guided-turn.js');
+ const guarded=await guardScenarioQuestion({draft:'Understood. When do you run it?',latestUser:'At night',continuity:{exchanges:[{question:'When do you run it?',answer:'At night'}]},review:async()=>({repeated_question:true}),rewrite:async()=> 'Understood. When do you run it?'});
+ const result=finalizeGuidedReply(guarded,{continueRoutine:true});
+ assert.equal(result.responseNeedsReview,false);assert.equal(result.reply,'Understood.');
+ const empty=finalizeGuidedReply({reply:'',blocked:true},{continueRoutine:true});
+ assert.ok(empty.reply);assert.equal(empty.responseNeedsReview,false);assert.equal(empty.reply.includes('?'),false);
+ assert.equal(finalizeGuidedReply({reply:''},{continueRoutine:true}).responseNeedsReview,true);
+});

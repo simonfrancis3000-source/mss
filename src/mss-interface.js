@@ -112,8 +112,6 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
   }
   const voiceTitle = el('h2', 'mss-voice-title'); voiceTitle.id = 'mssVoiceState';
   document.querySelector('#voiceExperienceStatus')?.before(voiceTitle);
-  const voiceSession = el('div', 'mss-voice-session');
-  document.querySelector('.voice-experience-content')?.prepend(voiceSession);
 
   for (const brand of document.querySelectorAll('.brand')) {
     const image = brand.querySelector('img'); if (image) image.src = '/mss-logo.png';
@@ -261,7 +259,6 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
       const row = el('div', 'mss-voice-line ' + message.role);
       row.append(el('strong', '', (message.role === 'user' ? snapshot.owner?.split(/\s+/)[0] || 'You' : snapshot.companion) + ':'), el('p', '', message.content)); transcript.append(row);
     }
-    const sessionLabel = el('span', '', 'Voice session with ' + snapshot.companion); voiceSession.replaceChildren(symbol('mic'), sessionLabel);
   }
   function renderVoiceState() {
     const name = getSnapshot().companion;
