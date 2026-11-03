@@ -210,6 +210,15 @@ public class MSSBillingPlugin extends Plugin implements PurchasesUpdatedListener
         return false;
     }
 
+    private List<ProductDetails.OneTimePurchaseOfferDetails> oneTimeOffers(ProductDetails product) {
+        List<ProductDetails.OneTimePurchaseOfferDetails> offers =
+                product.getOneTimePurchaseOfferDetailsList();
+        if (offers != null && !offers.isEmpty()) return offers;
+        ProductDetails.OneTimePurchaseOfferDetails single =
+                product.getOneTimePurchaseOfferDetails();
+        return single == null ? Collections.emptyList() : Collections.singletonList(single);
+    }
+
     private QueryProductDetailsParams topUpQuery(String id) {
         QueryProductDetailsParams.Product product =
                 QueryProductDetailsParams.Product.newBuilder()
@@ -244,10 +253,7 @@ public class MSSBillingPlugin extends Plugin implements PurchasesUpdatedListener
                 }
                 JSArray offers = new JSArray();
                 for (ProductDetails product : details.getProductDetailsList()) {
-                    List<ProductDetails.OneTimePurchaseOfferDetails> list =
-                            product.getOneTimePurchaseOfferDetailsList();
-                    if (list == null) continue;
-                    for (ProductDetails.OneTimePurchaseOfferDetails offer : list) {
+                    for (ProductDetails.OneTimePurchaseOfferDetails offer : oneTimeOffers(product)) {
                         if (!"buy".equals(offer.getPurchaseOptionId())) continue;
                         JSObject item = new JSObject();
                         item.put("productId", product.getProductId());
@@ -286,10 +292,7 @@ public class MSSBillingPlugin extends Plugin implements PurchasesUpdatedListener
                 return;
             }
             for (ProductDetails product : details.getProductDetailsList()) {
-                List<ProductDetails.OneTimePurchaseOfferDetails> offers =
-                        product.getOneTimePurchaseOfferDetailsList();
-                if (offers == null) continue;
-                for (ProductDetails.OneTimePurchaseOfferDetails offer : offers) {
+                for (ProductDetails.OneTimePurchaseOfferDetails offer : oneTimeOffers(product)) {
                     if (!"buy".equals(offer.getPurchaseOptionId())) continue;
                     BillingFlowParams.ProductDetailsParams item =
                             BillingFlowParams.ProductDetailsParams.newBuilder()
