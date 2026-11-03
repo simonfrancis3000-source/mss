@@ -10,7 +10,7 @@ test('progress and journey use the owner first name with safe unnamed fallback',
 test('share image source counts include all four categories and use confirmed completion',()=>{
  const summary=scenarioProgressSummary(SCENARIOS.map(item=>item.id));
  assert.equal(summary.percent,100);assert.equal(summary.groups.length,4);
- assert.equal(summary.groups.reduce((total,item)=>total+item.completed,0),25);
+ assert.equal(summary.groups.reduce((total,item)=>total+item.completed,0),26);
  assert.equal(scenarioProgressSummary([]).percent,0);
 });
 test('sharing includes the promotional message and a website link alongside the progress image',async(t)=>{

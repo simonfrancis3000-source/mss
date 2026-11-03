@@ -229,3 +229,5 @@ body[data-app-view='chat'] .chat-workspace>.chat-composer{flex:0 0 auto}
 .mss-category-column>strong{color:var(--mss-ink);font-size:15px;font-weight:750}
 .mss-share-status{margin:15px 0 0;color:#48617a;font-size:12px;line-height:1.4}
 @media(min-width:700px){.mss-passport-chart{padding:22px 30px}.mss-completion-ring{width:210px}.mss-category-track{height:120px;width:44px}.mss-category-label{font-size:14px}}
+
+#robotName{display:block;width:100%;min-height:48px;padding:12px 14px;border:2px solid #8bb7df!important;border-radius:12px;background:#fff!important;color:#10172c;box-shadow:0 1px 3px #163c6310}#robotName:focus{outline:3px solid #c9e4ff;outline-offset:2px;border-color:#126bc0!important}#robotNameHelp{display:block;margin-top:6px;color:#566075;line-height:1.5}#personaInsights[hidden]{display:none!important}body[data-app-view='chat'] #taskResult{display:none!important}

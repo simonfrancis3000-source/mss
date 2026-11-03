@@ -41,11 +41,23 @@ test("companion names are trimmed and control characters are removed", () => {
 
 test("first-run and restored chat state use a defined personalised welcome", async () => {
   const source = await readFile(new URL("../src/synqme.js", import.meta.url), "utf8");
-  assert.match(source, /const WELCOME = companionWelcomeMessage\("en", "Freya"\)/);
+  assert.match(source, /const WELCOME = companionWelcomeMessage\("en", "Vikki"\)/);
   assert.match(source, /content: companionWelcomeMessage\(profile\.preferredLanguage, companionNameForProfile\(profile\)\)/);
   assert.match(source, /state\.messages = personaliseWelcomeMessages\(state\.messages, state\.profile\)/);
   assert.match(source, /base\.messages = personaliseWelcomeMessages\(base\.messages, base\.profile\)/);
   assert.match(source, /isCompanionWelcomeMessage\(item\.content\)/);
   assert.match(source, /item\?\.role === "assistant" && isCompanionWelcomeMessage\(item\.content\)/);
   assert.doesNotMatch(source, /KNOWN_WELCOME_MESSAGES/);
+});
+
+test('voice-based default names never replace a custom name',async()=>{
+ const vm=await import('node:vm');
+ const source=await readFile(new URL('../src/synqme.js',import.meta.url),'utf8');
+ const fn=source.match(/function companionNameForProfile\([^]*?\n\}/)[0];
+ const c=vm.createContext({normaliseVoicePreference:value=>value==='male'?'male':'female'});
+ vm.runInContext(fn,c);
+ assert.equal(c.companionNameForProfile({robotVoice:'female'}),'Vikki');
+ assert.equal(c.companionNameForProfile({robotVoice:'male'}),'Andy');
+ for(const robotVoice of ['female','male'])assert.equal(c.companionNameForProfile({robotVoice,robotName:'Freya'}),'Freya');
+ assert.equal(c.companionNameForProfile({robotVoice:'male',robotName:'  '}),'Andy');
 });
