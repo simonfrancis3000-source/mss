@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {shouldWelcomeBack,welcomeBackReply,spokenSentenceBreaks,addressByNameReply,RETURN_GREETING_GAP_MS} from '../src/conversation-return.js';
 import {PHONIC_LANGUAGES,SUPPORTED_CONVERSATION_LANGUAGES} from '../src/conversation-languages.js';
-test('return greeting starts at twelve hours and ignores assistant messages',()=>{
+test('return greeting starts at five minutes and ignores assistant messages',()=>{
  const timestamp='2026-11-01T00:00:00Z';const messages=[{role:'user',timestamp},{role:'assistant',timestamp:'2026-11-01T05:00:00Z'}];const base=Date.parse(timestamp);
  assert.equal(shouldWelcomeBack(messages,base+RETURN_GREETING_GAP_MS-1),false);
  assert.equal(shouldWelcomeBack(messages,base+RETURN_GREETING_GAP_MS),true);

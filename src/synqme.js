@@ -1,7 +1,8 @@
 import { createMssInterface, buildInterfaceModel, COMPANION_HEAD_IMAGE } from "./mss-interface.js";
 import { coalesceTranscriptTurns, preferTranscriptTurn, bestUserTranscript, isServiceErrorText } from "./transcript-turns.js";
 import { createRememberedSessionStorage, nativePersistentSessionStorage } from "./session-storage.js";
-import { conversationCheckpoint } from "./conversation-resume.js";
+import { applianceReminderTurn } from "./appliance-reminders.js";
+import { conversationCheckpoint, englishResumeReply } from "./conversation-resume.js";
 import { syncRobotSpeaking } from "./robot-speaking.js";
 import { collectReviewableFragments, preferenceDisplayLabel, preferenceIdentity } from "./preference-review.js";
 import { scenarioSummary, passportEligibleMemories, buildPersonaPassport, passportText } from "./persona-passport.js";
@@ -144,7 +145,7 @@ const supabase = SUPABASE_URL && SUPABASE_KEY
       }
     })
   : null;
-const WELCOME = companionWelcomeMessage("en", "Freya");
+const WELCOME = companionWelcomeMessage("en", "Vikki");
 
 async function authenticatedApiHeaders(extra = {}) {
   if (!supabase) throw new Error("Your SYNQ.ME account session is unavailable. Sign in again.");
@@ -356,10 +357,7 @@ function defaultProfile() {
 }
 
 function companionNameForProfile(profile = {}) {
-  const configuredName = String(profile.robotName || "").trim();
-  if (configuredName) return configuredName;
-  if (robotAppearance.customImageData || robotAppearance.robotId === "none") return "Your robot";
-  return (ROBOT_OPTIONS.find((item) => item.id === robotAppearance.robotId) || ROBOT_OPTIONS[0]).name;
+  return String(profile.robotName || "").trim() || (normaliseVoicePreference(profile.robotVoice) === "male" ? "Andy" : "Vikki");
 }
 
 function personaliseWelcomeMessages(messages, profile = {}) {
@@ -531,6 +529,7 @@ let roomJourneyTableUnavailable = false;
 let roomJourneyWarningShown = false;
 let roomJourneySaveInFlight = false;
 let welcomeBackPending = false;
+let chatReturnSummary = "";
 let selectedJourneyScenario = null;
 let journeyDisplay = "chart";
 let selectedReviewArea = null;
@@ -545,6 +544,9 @@ function todoCommandForMessage(message) {
   if (voiceModeActive && breakResponse(message) === "pause") return null;
   const explicit = parseReminderCommand(message);
   if (explicit) return explicit;
+  const turns = state.messages.at(-1)?.role === "user" && state.messages.at(-1)?.content === message ? state.messages : [...state.messages,{role:"user",content:message}];
+  const offered = applianceReminderTurn(turns);
+  if (offered?.command) return offered.command;
   if (!todoAwaitingTitle) return null;
   return /^(?:cancel|never mind|nevermind|forget it)[.! ]*$/i.test(message) ? {action:'cancel'} : {action:'add',title:message};
 }
@@ -620,6 +622,7 @@ async function handleTodoCommand(command) {
     const title=validReminderTitle(command.title);
     if(!title) { todoAwaitingTitle=true; return 'What would you like me to add to your to-do list? Please describe the reminder.'; }
     todoAwaitingTitle=false;
+    if (todoItems.some(item=>!item.completed && item.title.trim().toLowerCase()===title.toLowerCase())) return 'That is already in your to-do list: '+title+'.';
     try { await writeTodoReminder('add',null,title); return 'Added to your to-do list: '+title+'.'; } catch { return 'I could not save that reminder. Please try again.'; }
   }
   const relevant=command.action==='complete'?todoItems.filter(item=>!item.completed):todoItems;
@@ -723,24 +726,14 @@ function renderScenarioSummary(scenario) {
 }
 const PASSPORT_EXPORT_ENABLED = false;
 function downloadPassportFile(filename,content,type){if (!PASSPORT_EXPORT_ENABLED) return;const blob=new Blob([content],{type});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=filename;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);}
-function renderPersonaPassport(){
+function renderPersonaPassport() {
  const content=document.querySelector('#personaPassportContent');if(!content)return;content.replaceChildren();
- if(!cloudUserId){const p=document.createElement('p');p.textContent='Sign in to choose preferences for your Passport.';content.append(p);return;}
- const available=passportEligibleMemories(personaMemoryRecords);const eligible=new Set(available.map(item=>item.id));passportSelection=new Set([...passportSelection].filter(id=>eligible.has(id)));
- const intro=document.createElement('p');intro.textContent=PASSPORT_EXPORT_ENABLED ? 'Choose the preferences to include. Review the preview before downloading. Nothing is sent to a robot or another company.' : 'Passport export is temporarily unavailable. You can still review your preferences here.';content.append(intro);
- if(!available.length){const p=document.createElement('p');p.textContent='Your stated or confirmed structured preferences will appear here.';content.append(p);return;}
- const list=document.createElement('div');list.className='passport-choices';
- for(const item of available){const label=document.createElement('label');const input=document.createElement('input');input.type='checkbox';input.checked=passportSelection.has(item.id);input.addEventListener('change',()=>{if(input.checked)passportSelection.add(item.id);else passportSelection.delete(item.id);refresh();});const copy=document.createElement('span');copy.textContent=preferenceDisplayLabel(item,SCENARIOS,scenarioTasks)+' · '+item.statement;label.append(input,copy);list.append(label);}content.append(list);
- const preview=document.createElement('pre');preview.className='passport-preview';preview.setAttribute('aria-label','Passport preview');
- const status=document.createElement('p');status.setAttribute('role','status');
- const json=document.createElement('button');json.type='button';json.textContent='Download structured JSON';
- const text=document.createElement('button');text.type='button';text.textContent='Download readable report';
- function selected(){return buildPersonaPassport(personaMemoryRecords,passportSelection,SCENARIOS);}
- function refresh(){const result=selected();preview.textContent=passportText(result);status.textContent=result.preferences.length+' selected';json.disabled=text.disabled=!PASSPORT_EXPORT_ENABLED || result.preferences.length===0;}
- json.addEventListener('click',()=>{if(!PASSPORT_EXPORT_ENABLED)return;const data=selected();if(data.preferences.length)downloadPassportFile('mysecondself-persona-passport.json',JSON.stringify(data,null,2)+'\n','application/json;charset=utf-8');});
- text.addEventListener('click',()=>{if(!PASSPORT_EXPORT_ENABLED)return;const data=selected();if(data.preferences.length)downloadPassportFile('mysecondself-persona-passport.txt',passportText(data)+'\n','text/plain;charset=utf-8');});
- content.append(status,preview,json,text);refresh();
+ const intro=document.createElement('p');intro.textContent='Details you have shared with your robot, including conditions and boundaries. These guide future conversations; they do not connect or control a physical robot.';content.append(intro);
+ const items=personaMemoryRecords.filter(item=>['user_stated','user_confirmed'].includes(item.status) && item.statement);
+ if(!items.length){const empty=document.createElement('p');empty.textContent='Your saved preferences will appear here as you talk to your robot.';content.append(empty);return;}
+ const list=document.createElement('ul');for(const item of items){const row=document.createElement('li');row.textContent=item.statement;list.append(row);}content.append(list);
 }
+
 document.querySelector('#personaPassport')?.addEventListener('toggle',event=>{if(event.currentTarget.open)renderPersonaPassport();});
 
 function renderScenarioJourney() {
@@ -2722,6 +2715,7 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   profileCreatedAt = null;
   roomJourney = null;
   welcomeBackPending = false;
+  chatReturnSummary = "";
   selectedJourneyScenario = null;
   simulationSession = null;
   todoItems = []; todoLoadedUserId = null; todoEditingId = null; todoAwaitingTitle = false; renderTodoReminders();
@@ -2967,6 +2961,7 @@ document.addEventListener("keydown", (event) => {
 function populateSettingsForm() {
   elements.ownerName.value = state.profile.ownerName || "";
   elements.robotName.value = state.profile.robotName || "";
+  elements.robotName.placeholder = normaliseVoicePreference(state.profile.robotVoice) === "male" ? "Andy" : "Vikki";
   elements.robotType.value = state.profile.robotType || "Humanoid robot";
   const voiceField = document.querySelector("#robotVoice");
   if (voiceField) voiceField.value = normaliseVoicePreference(state.profile.robotVoice);
@@ -3262,6 +3257,7 @@ function renderMessages() {
   elements.chatMessages.replaceChildren();
   // Render in conversation order so newer turns naturally appear at the bottom.
   state.messages.slice(-50).forEach((message) => appendMessage(message.role, message.content, message.timestamp, message.scenario_id));
+  if (chatReturnSummary) appendMessage("assistant", chatReturnSummary);
   syncRobotSpeaking(document, elements.voiceOrb?.dataset.state === "speaking");
   window.requestAnimationFrame(() => {
     elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
@@ -4720,6 +4716,7 @@ function buildPhonicConfig() {
     "Do not introduce yourself again at the start of each voice session. If explicitly asked who you are, say: I am your future robot, " + companion + ". Occasional named asides are allowed only when they are part of AMÏA's authoritative response.",
     "Speak about your own future capabilities, limitations and behaviour in first person: I/me/my. Never describe yourself as 'the robot' or 'your robot'. AMÏA may occasionally include your selected name in a short personal aside; speak it exactly as supplied. Never add your own name, extra asides or introductions to the authoritative response. The voice system handles speech; the conversation engine supplies your decisions, answers and questions.",
     "MANDATORY TURN FLOW: After each completed user utterance, call amia_next_turn exactly once before speaking. Do not independently answer, acknowledge, or ask a follow-up while waiting. The tool calls SYNQ.ME's AMÏA conversation engine with the current transcript, saved preferences, relevant home memories, profile and selected household interests.",
+    "PRONUNCIATION: SYNQ.ME is pronounced sink me. Always say sink me when speaking this brand name.",
     "AUTHORITATIVE RESPONSE: Speak only the tool's assistant_text, verbatim, in " + languageName + ". Do not paraphrase, add greetings, ask an extra question, or continue after that response. Never mention tools or internal decision logic.",
     "FIRST-PERSON COMPANION RULE — NON-NEGOTIABLE: When discussing tasks you may eventually do, always speak as the user's SecondSelf using I/me. Ask, for example, “What would you like me to do?” or “How would you like me to handle that?” Never ask what the user wants their robot to do, what the robot should do, or any equivalent third-person task question. Apply this perspective naturally in the selected language.",
     "NATURAL PACING: Pause briefly at each sentence ending. Make a clear, relaxed pause before moving from an acknowledgement into a new question, and a slightly longer pause at blank lines. Do not rush the question into the preceding statement. Keep all words verbatim. Use a warm, unhurried conversational delivery.",
@@ -5111,7 +5108,7 @@ async function handlePhonicAmiaToolCall({ name, parameters = {}, items = [] } = 
     persist();
     renderAll();
     void flushCloudSave();
-    return { status: "ok", decision_owner: "AMÏA", assistant_text: spokenReply };
+    return { status: "ok", decision_owner: "AMÏA", assistant_text: spokenReply.replace(/\bSYNQ\.ME\b/gi, "sink me") };
   } catch (error) {
     console.info("SYNQ.ME AMÏA voice decision failed.", error);
     return { status: "error", assistant_text: state.apiErrorDetail || unavailable };
@@ -5381,6 +5378,14 @@ function syncAppNavigation() {
 }
 
 function selectAppView(view) {
+  closeSettings();
+  if (elements.taskResult) elements.taskResult.hidden = true;
+  if (view === "chat" && document.body.dataset.appView !== "chat" && cloudUserId && roomJourney && state.messages.some(item=>item.role==='user')) {
+    welcomeBackPending = true;
+    const scope = activeOutOfHomeScenarioContext ? "outside:" + activeOutOfHomeScenarioContext.categoryId + ":" + activeOutOfHomeScenarioContext.scenarioId : "room:" + roomJourney.active_room_id;
+    const checkpoint = conversationCheckpoint(state.messages,scope);
+    chatReturnSummary = (state.profile.preferredLanguage || "en") === "en" ? (checkpoint ? englishResumeReply(checkpoint,state.profile.ownerName) : "Welcome back, " + state.profile.ownerName.trim().split(/\s+/)[0] + ". We were working on " + (scenarioForId(scope)?.title || roomJourney.active_room_id.replaceAll('_',' ')) + ". Your saved conversation is above.") : "";
+  }
   if (elements.voiceExperience && !elements.voiceExperience.hidden) closeVoiceExperience("Returned to your conversation.");
   document.body.dataset.appView = ["home", "passport", "profile", "journey"].includes(view) ? view : "chat";
   const workspace = document.querySelector("#moreWorkspace");
@@ -5543,6 +5548,8 @@ async function requestAIReply(repairMode = false) {
     const reply = welcomeBackPending ? welcomeBackReply(reminderReply, state.profile.ownerName, state.profile.preferredLanguage || "en") : reminderReply;
     welcomeBackPending = false; lastAIReplyUsedFallback = true; return reply;
   }
+  const deferredInfo = applianceReminderTurn(state.messages);
+  if (deferredInfo?.reply && (state.profile.preferredLanguage || "en") === "en") { lastAIReplyUsedFallback = true; return deferredInfo.reply; }
   const requestUserId = cloudUserId;
   if (roomJourney) {
     const currentUser = [...state.messages].reverse().find(item => item.role === "user");
@@ -5673,6 +5680,7 @@ async function requestAIReply(repairMode = false) {
     const returningReply = welcomeBackPending ? welcomeBackReply(reply.trim(), state.profile.ownerName, state.profile.preferredLanguage || "en") : reply.trim();
     const personalised = addressByNameReply(returningReply, state.profile.ownerName, state.messages);
     welcomeBackPending = false;
+  chatReturnSummary = "";
     return personalised;
   } catch (error) {
     console.info("SYNQ.ME AI request failed; no scripted question will be substituted.", error);
@@ -5746,6 +5754,7 @@ async function sendMessage(rawText) {
     return;
   }
   const message = rawText.trim();
+  chatReturnSummary = "";
   if (!message || isSending) return;
   const todoTurn = Boolean(todoCommandForMessage(message));
   welcomeBackPending ||= shouldWelcomeBack(state.messages);
@@ -6070,7 +6079,7 @@ elements.runTask.addEventListener("click", () => {
     elements.pexiState.textContent = "Not connected";
     elements.taskDescription.textContent = "This is a persona-building preview: a look at how selected interests and stated preferences could be organised into a future household routine. It is not a simulation of verified robot capability.";
     elements.runTask.querySelector("span").textContent = "Preview ready";
-    elements.taskResult.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    if (document.body.dataset.appView !== "chat") elements.taskResult.scrollIntoView({ behavior: "smooth", block: "nearest" });
     taskRunning = false;
     elements.runTask.disabled = false;
     window.setTimeout(() => { elements.runTask.querySelector("span").textContent = "Preview future household routine"; }, 1800);
@@ -6367,4 +6376,8 @@ document.querySelector("#shareJourneyProgress")?.addEventListener("click", async
     status.textContent = result === "downloaded" ? "Progress image downloaded. It is ready to share." : "";
   } catch (error) { status.textContent = error.message || "Could not share your progress. Try again."; }
   finally { button.disabled = false; }
+});
+
+document.querySelector('#robotVoice')?.addEventListener('change',event=>{
+ if(elements.robotName) elements.robotName.placeholder=normaliseVoicePreference(event.target.value)==='male'?'Andy':'Vikki';
 });

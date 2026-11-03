@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SCENARIOS, completedScenarioIds, availableScenarioCount, buildScenarioStartPatch, scenarioTasks, scenarioLearnings, scenarioProgressSummary } from '../src/scenario-journey.js';
 
-test('the journey has 25 unique, resolvable scenarios across home and public life', () => {
-  assert.equal(SCENARIOS.length, 25);
-  assert.equal(new Set(SCENARIOS.map((item) => item.id)).size, 25);
+test('the journey has 26 unique, resolvable scenarios across home and public life', () => {
+  assert.equal(SCENARIOS.length, 26);
+  assert.equal(new Set(SCENARIOS.map((item) => item.id)).size, 26);
   assert.ok(SCENARIOS.some((item) => item.kind === 'room'));
   assert.ok(SCENARIOS.some((item) => item.kind === 'outside'));
 });
@@ -12,7 +12,7 @@ test('the journey has 25 unique, resolvable scenarios across home and public lif
 test('completion opens the next scenario and ignores invalid or duplicate records', () => {
   assert.equal(availableScenarioCount([]), 1);
   assert.equal(availableScenarioCount([SCENARIOS[0].id]), 2);
-  assert.equal(availableScenarioCount(SCENARIOS.map((item) => item.id)), 25);
+  assert.equal(availableScenarioCount(SCENARIOS.map((item) => item.id)), 26);
   assert.deepEqual(completedScenarioIds([SCENARIOS[0].id, SCENARIOS[0].id, 'unknown']), [SCENARIOS[0].id]);
   assert.equal(availableScenarioCount([SCENARIOS[1].id]), 1);
 });
@@ -51,7 +51,7 @@ test('selected scenario tasks and saved learnings stay scoped to that scenario',
 test('chart totals represent completed scenarios without invented progress', () => {
   const empty = scenarioProgressSummary([]);
   assert.equal(empty.percent, 0);
-  assert.equal(empty.groups.reduce((sum, group) => sum + group.total, 0), 25);
+  assert.equal(empty.groups.reduce((sum, group) => sum + group.total, 0), 26);
   const first = scenarioProgressSummary([SCENARIOS[0].id, SCENARIOS[0].id, 'unknown']);
   assert.equal(first.completed, 1);
   assert.equal(first.percent, 4);
@@ -63,8 +63,8 @@ test('chart totals represent completed scenarios without invented progress', () 
 });
 
 
-test('all 25 scenarios contain distinct, actionable ownership learning areas', () => {
-  assert.equal(SCENARIOS.length, 25);
+test('all 26 scenarios contain distinct, actionable ownership learning areas', () => {
+  assert.equal(SCENARIOS.length, 26);
   for (const scenario of SCENARIOS) {
     const tasks = scenarioTasks(scenario);
     assert.ok(tasks.length >= 7, scenario.id);
@@ -72,4 +72,15 @@ test('all 25 scenarios contain distinct, actionable ownership learning areas', (
     assert.ok(tasks.filter(task => task.id.startsWith('depth-')).length >= 4, scenario.id);
     assert.ok(tasks.every(task => task.title && task.description && task.prompt), scenario.id);
   }
+});
+
+test('module 26 extends existing progress without changing the first 25 IDs',()=>{
+ const prior=SCENARIOS.slice(0,25).map(item=>item.id);
+ const added=SCENARIOS.at(-1);
+ assert.equal(added.id,'outside:known-people:shared-household');
+ const summary=scenarioProgressSummary(prior);
+ assert.equal(summary.completed,25);assert.equal(summary.total,26);
+ assert.equal(summary.next.id,added.id);assert.equal(availableScenarioCount(prior),26);
+ assert.equal(summary.groups.find(g=>g.id==='people').total,7);
+ assert.ok(scenarioTasks(added).some(t=>t.description.includes('privacy') || t.title.includes('privacy')));
 });
