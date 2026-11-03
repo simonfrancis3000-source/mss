@@ -1,0 +1,32 @@
+name: MSS Web Login Persistence Regression
+on:
+  push:
+    branches:
+      - SYNQ.ME
+    paths:
+      - "index.html"
+      - "src/synqme.js"
+      - "src/session-storage.js"
+      - "test/session-storage.test.js"
+      - ".github/workflows/web-login-persistence.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Run login and application regression tests
+        run: npm test
+      - name: Build hosted web app
+        run: npm run build
