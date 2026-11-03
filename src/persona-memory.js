@@ -57,6 +57,9 @@ export function isUsefulStandalonePreference(value) {
   if (!text || SENSITIVE_MEMORY_PATTERN.test(text) || text.length > 1600) return false;
   const simple = text.toLocaleLowerCase().replace(/[’]/g, "'").replace(/[.!?,;:…]+$/gu, "").trim();
   if (/^[\p{Script=Latin}0-9\x27’\-]+$/u.test(simple)) return false;
+  // Availability checks and service failures are conversation, never persona rules.
+  if (/^(?:are you|can you|could you|why (?:can['’]?t|cannot|couldn['’]?t) you|why are you|is (?:this|it|the app)|what (?:is|went) wrong)\b/i.test(simple)) return false;
+  if (/\b(?:generate (?:a )?reply|try again shortly|temporarily unavailable|voice connection failed|can't hear you|cannot hear you|are you back up|can you talk now)\b/i.test(simple)) return false;
   if (/^(?:i|we|you|it|yes|yeah|yep|no|nope|okay|ok|sure|correct|right|quietly|gently|slowly|separately|separate|that'?s correct|that is correct|that'?s right|that is right|exactly|thank you|thanks|we already (?:covered|discussed|did) (?:that|this|it)|already (?:covered|discussed) (?:that|this|it)|just do it|do it|leave it|put it back|tell me more)$/i.test(simple)) return false;
   if (/^(?:all|any|either|both|the first|the second|the third|number)\s+(?:of\s+)?(?:them|those|these|one|two|three|four|five|\d+)$/i.test(simple)) return false;
   if (/^tell me what (?:you(?:'re| are)|you(?:'re| are) still) (?:unsure|uncertain) (?:about|of)$/i.test(simple)) return false;

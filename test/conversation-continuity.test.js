@@ -1,3 +1,4 @@
+import {coalesceTranscriptTurns, preferTranscriptTurn, isServiceErrorText} from '../src/transcript-turns.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -34,7 +35,7 @@ test('all 25 scenario scopes retain their own exchanges and reject another scope
 test('scenario labels survive transcript restore and overlapping device snapshots', async () => {
   const source = await readFile(new URL('../src/synqme.js', import.meta.url), 'utf8');
   const functions = ['sanitiseConversationMessage', 'mergeConversationMessages'].map(name => source.match(new RegExp('function ' + name + '\\([^]*?\\n\\}'))?.[0]).join('\n');
-  const context = vm.createContext({ SCENARIOS, WELCOME: 'Welcome', normaliseMessageTimestamp: item => item.timestamp || null });
+  const context = vm.createContext({coalesceTranscriptTurns, preferTranscriptTurn, isServiceErrorText, SCENARIOS, WELCOME: 'Welcome', normaliseMessageTimestamp: item => item.timestamp || null });
   vm.runInContext(functions, context);
   context.local = [{ role: 'assistant', content: 'Where should the remote go?', timestamp: '2026-11-01T12:00:00Z' }];
   context.remote = [{ ...context.local[0], scenario_id: scenarioId }, { role: 'user', content: 'On the table.', scenario_id: scenarioId }];

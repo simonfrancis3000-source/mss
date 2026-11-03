@@ -1,7 +1,7 @@
 import { conversationQuestions } from '../src/conversation-continuity.js';
 
 export function shouldContinueGuidedTurn({scenario,completionConfirmed,intent,latestUser='',voiceBreakDue=false}) {
- return Boolean(scenario) && !completionConfirmed && !voiceBreakDue && !['pause','explain','progress'].includes(intent) &&
+ return Boolean(scenario) && !completionConfirmed && !voiceBreakDue && !['pause','explain','progress','service_help'].includes(intent) &&
   !/\b(?:no more questions|stop asking|let me (?:think|pause)|give me a (?:moment|minute)|good ?bye|that's all|that is all)\b/i.test(latestUser);
 }
 export function guidedReplyNeedsRepair(reply,{continueRoutine,intake,language='en'}) {

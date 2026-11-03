@@ -1,3 +1,4 @@
+import { coalesceTranscriptTurns, preferTranscriptTurn, bestUserTranscript, isServiceErrorText } from "./transcript-turns.js";
 import { syncRobotSpeaking } from "./robot-speaking.js";
 import { collectReviewableFragments, preferenceDisplayLabel, preferenceIdentity } from "./preference-review.js";
 import { scenarioSummary, passportEligibleMemories, buildPersonaPassport, passportText } from "./persona-passport.js";
@@ -405,6 +406,7 @@ function sanitiseConversationMessage(item) {
   // A single "I" (or an unfinished "I'm"/"I am") is a captured audio token,
   // not a complete assistant message. Remove this legacy artefact on restore.
   if (item.role === "assistant" && /^i(?:['’]m| am)?$/i.test(item.content.trim())) return null;
+  if (item.role === "assistant" && isServiceErrorText(item.content)) return null;
   const timestamp = normaliseMessageTimestamp(item);
   const scenarioMetadata = SCENARIOS.some(scenario => scenario.id === item.scenario_id) ? { scenario_id: item.scenario_id } : {};
   if (item.role === "assistant" && /what matters most to you when getting that right\?|what detail would matter most to get right\?|let'?s make that preference more precise/i.test(item.content)) {
@@ -413,7 +415,7 @@ function sanitiseConversationMessage(item) {
   if (item.role === "assistant" && /I've captured this preference for your browser-based SecondSelf|I've added it to your local digital persona|That's useful context for your SecondSelf/i.test(item.content)) {
     return { role: "assistant", content: "Let’s focus on one practical detail at a time.", timestamp, ...scenarioMetadata };
   }
-  return { role: item.role, content: item.content, timestamp, ...scenarioMetadata };
+  return { role: item.role, content: item.content, timestamp, ...scenarioMetadata, ...(item.voice_turn_id ? {voice_turn_id:String(item.voice_turn_id).slice(0,140)} : {}), ...(typeof item.transcript_final === "boolean" ? {transcript_final:item.transcript_final} : {}) };
 }
 
 function loadState() {
@@ -636,14 +638,14 @@ function renderLiveScenarioProgress() {
     node.hidden = false;
     const tasks = scenarioTasks(scenario);
     const reviewed = new Set(data.reviewed?.[scenario.id] || []);
-    const discussed = tasks.filter(task => areaLearningState(scenario.id, task.id, personaMemoryRecords, [...reviewed]).evidence.length).length;
+    const discussed = tasks.filter(task => { const area=areaLearningState(scenario.id, task.id, personaMemoryRecords, [...reviewed]);return area.evidence.length || area.status==="reviewed"; }).length;
     const count = done.includes(scenario.id) ? tasks.length : tasks.filter(task => areaLearningState(scenario.id, task.id, personaMemoryRecords, [...reviewed]).status === "reviewed").length;
     const header = document.createElement("div"); header.className = "scenario-live-label";
     const title = document.createElement("strong"); title.textContent = scenario.title;
-    const value = document.createElement("span"); value.textContent = done.includes(scenario.id) && !data.reviewed?.[scenario.id] ? "Previously completed" : count + " / " + tasks.length + " reviewed" + (discussed ? " · " + discussed + " discussed" : "");
+    const value = document.createElement("span"); value.textContent = done.includes(scenario.id) && !data.reviewed?.[scenario.id] ? "Previously completed" : Math.max(count,discussed) + " / " + tasks.length + " areas explored";
     header.append(title, value);
-    const track = document.createElement("div"); track.className = "scenario-live-track"; track.setAttribute("role", "progressbar"); track.setAttribute("aria-label", scenario.title + " areas reviewed"); track.setAttribute("aria-valuemin", "0"); track.setAttribute("aria-valuemax", String(tasks.length)); track.setAttribute("aria-valuenow", String(count));
-    const fill = document.createElement("span"); fill.style.width = (tasks.length ? count / tasks.length * 100 : 0) + "%"; track.append(fill);
+    const track = document.createElement("div"); track.className = "scenario-live-track"; track.setAttribute("role", "progressbar"); track.setAttribute("aria-label", scenario.title + " areas explored"); track.setAttribute("aria-valuemin", "0"); track.setAttribute("aria-valuemax", String(tasks.length)); track.setAttribute("aria-valuenow", String(Math.max(count,discussed)));
+    const fill = document.createElement("span"); fill.style.width = (tasks.length ? Math.max(count,discussed) / tasks.length * 100 : 0) + "%"; track.append(fill);
     node.append(header, track);
   });
 }
@@ -2053,7 +2055,7 @@ function persist(syncCloud = true) {
   let localSaved = false;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      messages: state.messages.slice(-5000),
+      messages: state.messages.filter(item=>item.transcript_final!==false).slice(-5000),
       preferences: state.preferences,
       profile: state.profile,
       functions: state.functions,
@@ -2233,7 +2235,7 @@ async function saveCloudState() {
   const mergedMessages = mergeConversationMessages(state.messages, cloudMessages);
   const localMessagesBeforeMerge = JSON.stringify(state.messages);
   if (JSON.stringify(mergedMessages) !== localMessagesBeforeMerge && !isSending) {
-    state.messages = mergedMessages;
+    state.messages = [...mergedMessages,...state.messages.filter(item=>item.transcript_final===false)];
     persist(false);
     renderMessages();
   }
@@ -2271,6 +2273,7 @@ async function refreshCloudConversation() {
     cloudConversationRefreshInFlight ||
     cloudSaveInFlight ||
     isSending ||
+    voiceModeActive ||
     cloudSaveTimer ||
     document.visibilityState !== "visible"
   ) return;
@@ -2436,7 +2439,7 @@ document.addEventListener("visibilitychange", () => {
 
 function snapshotAppState() {
   return {
-    messages: state.messages.slice(-5000),
+    messages: state.messages.filter(item=>item.transcript_final!==false).slice(-5000),
     preferences: state.preferences.map((item) => ({ ...item })),
     profile: { ...state.profile },
     functions: [...state.functions],
@@ -2497,7 +2500,7 @@ function mergeConversationMessages(...groups) {
   // already present in a newer one. Repeated messages inside one transcript
   // are preserved; overlap is considered only between separate snapshots.
   let messages = [];
-  const key = (item) => item.role + "\\n" + item.content;
+  const key = (item) => item.role + "\n" + (item.voice_turn_id || item.timestamp || item.content);
   const sequenceIndex = (haystack, needle) => {
     if (!needle.length || needle.length > haystack.length) return -1;
     outer: for (let start = 0; start <= haystack.length - needle.length; start++) {
@@ -2512,6 +2515,7 @@ function mergeConversationMessages(...groups) {
     for (let offset = 0; offset < count; offset++) {
       const targetIndex = targetStart + offset;
       const sourceIndex = sourceStart + offset;
+      if (target[targetIndex] && source[sourceIndex] && key(target[targetIndex]) === key(source[sourceIndex])) target[targetIndex] = preferTranscriptTurn(target[targetIndex],source[sourceIndex]);
       if (target[targetIndex] && source[sourceIndex] && key(target[targetIndex]) === key(source[sourceIndex]) &&
           !target[targetIndex].scenario_id && SCENARIOS.some(scenario => scenario.id === source[sourceIndex].scenario_id)) {
         target[targetIndex] = { ...target[targetIndex], scenario_id: source[sourceIndex].scenario_id };
@@ -2529,10 +2533,10 @@ function mergeConversationMessages(...groups) {
   };
 
   for (const group of groups) {
-    const incoming = (Array.isArray(group) ? group : [])
+    const incoming = coalesceTranscriptTurns(Array.isArray(group) ? group : [])
       .map(sanitiseConversationMessage)
       .filter((item) => item && item.content.trim())
-      .map((item) => ({ role: item.role, content: item.content.trim(), timestamp: normaliseMessageTimestamp(item), ...(SCENARIOS.some(scenario => scenario.id === item.scenario_id) ? { scenario_id: item.scenario_id } : {}) }));
+      .map((item) => ({ ...item, role: item.role, content: item.content.trim(), timestamp: normaliseMessageTimestamp(item), ...(SCENARIOS.some(scenario => scenario.id === item.scenario_id) ? { scenario_id: item.scenario_id } : {}) }));
     if (!incoming.length) continue;
     if (!messages.length) {
       messages = incoming;
@@ -2606,7 +2610,7 @@ function mergeConversationMessages(...groups) {
 
     messages.push(...incoming);
   }
-  return (messages.length ? messages : [{ role: "assistant", content: WELCOME, timestamp: new Date().toISOString() }]).slice(-5000);
+  return coalesceTranscriptTurns(messages.length ? messages : [{ role: "assistant", content: WELCOME, timestamp: new Date().toISOString() }]).slice(-5000);
 }
 
 function mergePreferences(remoteItems, draftItems) {
@@ -2821,6 +2825,7 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   setAuthGateVisible(false);
   renderAccountStatus();
   renderAll();
+  selectAppView("chat");
   prepareWelcomeAudioOffer();
   if (!profileComplete()) openSettings();
   else updateSettingsMode();
@@ -4733,58 +4738,36 @@ function normalisePhonicText(value) {
     .trim();
 }
 
-function syncPhonicTranscriptItems(items) {
-  let changed = false;
-  let userAdded = false;
-
-  for (const item of items || []) {
-    const textValue = typeof item?.text === "string" ? item.text.trim() : "";
-
-    // Phonic's audio_chunk transcript is a live, partial speech fragment. It
-    // can arrive as a single token ("I") before the canonical AMÏA tool reply.
-    // Freya's complete assistant_text is committed by handlePhonicAmiaToolCall
-    // before audio playback, so never create chat messages from assistant
-    // transcript fragments. Only the user's completed/transcribed speech is
-    // synchronised from the provider item list.
-    if (!textValue || item.role !== "user") continue;
-
-    const key = String(item.itemIdx);
-    if (phonicItemMap.has(key)) {
-      const index = phonicItemMap.get(key);
-      const previous = state.messages[index];
-      if (previous && previous.role === "user" && previous.content !== textValue) {
-        previous.content = textValue;
-        changed = true;
-      }
-      continue;
+let phonicTranscriptRenderPending = false;
+function syncPhonicTranscriptItems(items, {finalize=false} = {}) {
+  let changed=false,userAdded=false,finalized=false;
+  for(const item of items||[]){
+    const textValue=typeof item?.text==='string'?item.text.trim():'';
+    if(!textValue || item.role !== "user")continue;
+    const key=String(item.itemIdx);
+    let id=phonicItemMap.get(key);
+    let previous=id ? state.messages.find(message=>message.role==='user' && message.voice_turn_id===id) : null;
+    if(previous?.transcript_final)continue;
+    if(!previous){
+      const timestamp=new Date().toISOString();id=globalThis.crypto?.randomUUID?.() || timestamp+'-'+key;
+      previous={role:'user',content:textValue,timestamp,voice_turn_id:id,transcript_final:false};
+      state.messages.push(previous);phonicItemMap.set(key,id);userAdded=true;
     }
-
-    const timestamp = new Date().toISOString();
-    state.messages.push({ role: "user", content: textValue, timestamp });
-    phonicItemMap.set(key, state.messages.length - 1);
-    changed = true;
-    userAdded = true;
-
-    const clarificationRequest = isClarificationRequest(textValue);
-    const preferenceIdsBeforeTurn = new Set(state.preferences.map((preference) => String(preference.id)));
-    const answeredPendingClarification = todoCommandForMessage(textValue) || (voiceBreakTracker.awaiting() && breakResponse(textValue) !== 'other') ? false : resolvePendingClarification(textValue);
-    if (!answeredPendingClarification && !clarificationRequest) savePreference(textValue);
-    const preferenceWasAdded = state.preferences.some((preference) => !preferenceIdsBeforeTurn.has(String(preference.id)));
-    const shouldExtractStructuredMemory = shouldExtractPersonaMemory(textValue, preferenceWasAdded) ||
-      Boolean(answeredPendingClarification && textValue.length >= 4);
-    phonicTurnMetadata.set(key, {
-      timestamp,
-      shouldExtractStructuredMemory,
-      text: textValue
-    });
+    if(previous.content!==textValue){previous.content=textValue;changed=true;}
+    if(finalize){
+      previous.transcript_final=true;finalized=true;
+      const before=new Set(state.preferences.map(preference=>String(preference.id)));
+      const clarified=todoCommandForMessage(textValue)||(voiceBreakTracker.awaiting()&&breakResponse(textValue)!=='other')?false:resolvePendingClarification(textValue);
+      if(!clarified&&!isClarificationRequest(textValue))savePreference(textValue);
+      const added=state.preferences.some(preference=>!before.has(String(preference.id)));
+      phonicTurnMetadata.set(key,{timestamp:previous.timestamp,text:textValue,shouldExtractStructuredMemory:shouldExtractPersonaMemory(textValue,added)||Boolean(clarified&&textValue.length>=4)});
+    }
   }
-
-  if (changed) {
-    state.messages = state.messages.slice(-5000);
-    persist();
-    renderAll();
+  if(finalized){persist();renderAll();}
+  else if((changed||userAdded)&&!phonicTranscriptRenderPending){
+    phonicTranscriptRenderPending=true;window.requestAnimationFrame(()=>{phonicTranscriptRenderPending=false;renderMessages();});
   }
-  return { changed, userAdded };
+  return {changed:changed||userAdded,userAdded:finalized,finalized};
 }
 
 async function submitPhonicUsage() {
@@ -4996,13 +4979,11 @@ async function handlePhonicAmiaToolCall({ name, parameters = {}, items = [] } = 
   const unavailable = localizedAIUnavailable(language);
   if (name !== "amia_next_turn") return { status: "error", assistant_text: unavailable };
 
-  const synced = syncPhonicTranscriptItems(items);
+  const latestItem = [...(items || [])].reverse().find(item=>item?.role==='user' && typeof item.text==='string' && item.text.trim());
+  const latestUserText = bestUserTranscript(latestItem?.text, parameters.latest_user_message);
+  const finalItems = items.map(item=>item===latestItem?{...item,text:latestUserText}:item);
+  const synced = syncPhonicTranscriptItems(finalItems,{finalize:true});
   if (synced.userAdded) void flushCloudSave();
-
-  const latestItem = [...(items || [])].reverse().find((item) =>
-    item?.role === "user" && typeof item.text === "string" && item.text.trim()
-  );
-  const latestUserText = String(latestItem?.text || parameters.latest_user_message || "").trim();
   if (!latestUserText) return { status: "error", assistant_text: unavailable };
   const answeringBreak = voiceBreakTracker.awaiting();
   const breakChoice = answeringBreak ? breakResponse(latestUserText) : null;
@@ -5011,12 +4992,12 @@ async function handlePhonicAmiaToolCall({ name, parameters = {}, items = [] } = 
   if (isOutOfHomeTopicChange(latestUserText)) activeOutOfHomeScenarioContext = null;
 
   const latestKey = latestItem ? String(latestItem.itemIdx) : "";
-  const mappedIndex = latestKey ? phonicItemMap.get(latestKey) : undefined;
-  const mappedMessage = Number.isInteger(mappedIndex) ? state.messages[mappedIndex] : null;
+  const mappedId = latestKey ? phonicItemMap.get(latestKey) : undefined;
+  const mappedMessage = mappedId ? state.messages.find(item=>item.role==='user' && item.voice_turn_id===mappedId) : null;
   if (!mappedMessage || mappedMessage.role !== "user" || mappedMessage.content !== latestUserText) {
     const timestamp = new Date().toISOString();
     state.messages.push({ role: "user", content: latestUserText, timestamp });
-    if (latestKey) phonicItemMap.set(latestKey, state.messages.length - 1);
+    if (latestKey) { state.messages.at(-1).voice_turn_id = globalThis.crypto?.randomUUID?.() || timestamp; state.messages.at(-1).transcript_final = true; phonicItemMap.set(latestKey, state.messages.at(-1).voice_turn_id); }
     const preferenceIdsBeforeTurn = new Set(state.preferences.map((preference) => String(preference.id)));
     const clarificationRequest = isClarificationRequest(latestUserText);
     const answeredPendingClarification = lastVoiceWasTodo || answeringBreak ? false : resolvePendingClarification(latestUserText);
@@ -5082,7 +5063,7 @@ async function handlePhonicAmiaToolCall({ name, parameters = {}, items = [] } = 
     // Save the exact text that Phonic is about to speak. Assistant audio
     // transcript fragments are intentionally ignored by the chat synchroniser.
     const latestMessage = state.messages[state.messages.length - 1];
-    if (!(latestMessage?.role === "assistant" &&
+    if (!isServiceErrorText(spokenReply) && !(latestMessage?.role === "assistant" &&
           normalisePhonicText(latestMessage.content) === normalisePhonicText(spokenReply))) {
       state.messages.push({ role: "assistant", content: spokenReply, timestamp: new Date().toISOString() });
     }
@@ -5788,7 +5769,8 @@ async function sendMessage(rawText) {
       : localizedAIUnavailable(state.profile.preferredLanguage);
   }
   reply = enforceFirstPersonTaskQuestions(reply, selectedCompanionDisplayName());
-  state.messages.push({ role: "assistant", content: reply, timestamp: new Date().toISOString() });
+  if (!isServiceErrorText(reply)) state.messages.push({ role: "assistant", content: reply, timestamp: new Date().toISOString() });
+  else if (elements.voiceStatus) { elements.voiceStatus.dataset.error="true"; elements.voiceStatus.textContent="I could not prepare that reply. Please try again."; }
   if (!todoTurn) state.pendingClarification = detectPendingClarification(message, reply);
   if (state.profile.shareAnonymizedLearning === true) {
     void contributeSharedKnowledgeFromTurn();
