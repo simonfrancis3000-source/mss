@@ -2,9 +2,9 @@
   "enabled": true,
   "channel": "internal",
   "platform": "android",
-  "bundleId": "mss-b28b8169f41e7a22d655530581511565",
-  "url": "https://synqme-api.onrender.com/ota/mss-b28b8169f41e7a22d655530581511565.zip",
-  "checksum": "b28b8169f41e7a22d655530581511565c8338c5286931d591f1f23f51bbb080b",
+  "bundleId": "mss-472ed174e5c171bf4c337a08fe3c9717",
+  "url": "https://synqme-api.onrender.com/ota/mss-472ed174e5c171bf4c337a08fe3c9717.zip",
+  "checksum": "472ed174e5c171bf4c337a08fe3c971730b8c2ca02144ab64f76956e2e858ce5",
   "minNativeVersionCode": 8,
   "maxNativeVersionCode": 8
 }

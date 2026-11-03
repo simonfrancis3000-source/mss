@@ -1,5 +1,8 @@
+import { scenarioProgressSummary } from './scenario-journey.js';
+
 // The presentation layer reads the existing account state. It never writes training data.
 export const COMPANION_IMAGE = '/robots/mss-companion.webp';
+export const COMPANION_HEAD_IMAGE = '/robots/mss-companion-head.webp';
 
 const paths = {
   home: '<path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z"/>',
@@ -21,6 +24,7 @@ const paths = {
   edit: '<path d="m4 16-1 5 5-1L21 7l-4-4ZM14 6l4 4"/>',
   spark: '<path d="m13 2-9 12h7l-1 8 10-13h-8Z"/>',
   bars: '<path d="M5 20v-5m7 5V9m7 11V3"/>',
+  share: '<path d="M12 16V2m-4 4 4-4 4 4M4 12v9h16v-9"/>',
 };
 export function icon(name, className = '') {
   return '<svg class="' + className + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (paths[name] || paths.home) + '</svg>';
@@ -66,7 +70,8 @@ export function buildInterfaceModel({ scenarios, data = {}, ready = false, activ
       percent: total ? Math.round(reviewed / total * 100) : 0,
       status: !ready ? 'Unavailable' : complete ? 'Complete' : !available ? 'Locked' : scenario.id === active?.id ? 'In progress' : 'Up next' };
   });
-  return { modules, active: modules.find(s => s.id === active?.id), completed: ready ? done.size : 0,
+  const groups = scenarioProgressSummary(ready ? [...done] : []).groups;
+  return { modules, groups, active: modules.find(s => s.id === active?.id), completed: ready ? done.size : 0,
     total: scenarios.length, percent: ready && scenarios.length ? Math.round(done.size / scenarios.length * 100) : 0, ready };
 }
 
@@ -77,8 +82,10 @@ const el = (tag, className, text) => {
 const symbol = (name, className = '') => { const node = el('span', 'mss-symbol ' + className); node.innerHTML = icon(name); return node; };
 function action(label, className, onClick) { const node = el('button', className, label); node.type = 'button'; node.addEventListener('click', onClick); return node; }
 
-export function createMssInterface({ getSnapshot, navigate, editSettings, openScenario, openWorkspace }) {
+export function createMssInterface({ getSnapshot, navigate, editSettings, openScenario, openWorkspace, shareProgress }) {
   const main = document.querySelector('main');
+  let sharingProgress = false;
+  let shareStatus = '';
   const screens = {};
   for (const [key, title] of [['home', 'Home'], ['passport', 'Passport'], ['profile', 'Profile']]) {
     const section = el('section', 'mss-screen mss-' + key);
@@ -90,14 +97,26 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
   document.querySelector('.conversation-panel')?.prepend(topic);
   const transcript = el('section', 'mss-voice-transcript mss-card');
   transcript.setAttribute('aria-label', 'Recent conversation');
-  document.querySelector('.voice-controls')?.before(transcript);
+  const voiceControls = document.querySelector('.voice-controls');
+  if (voiceControls) {
+    document.querySelector('#voiceExperienceStatus')?.after(voiceControls);
+    voiceControls.after(transcript);
+  }
+  const voiceCore = document.querySelector('#voiceOrbCore');
+  if (voiceCore) {
+    const portrait = el('span', 'mss-robot-portrait');
+    const image = el('img', 'mss-robot-portrait-image');
+    image.src = COMPANION_HEAD_IMAGE; image.alt = ''; image.width = 600; image.height = 600;
+    portrait.append(image, el('span', 'mss-robot-speech-light'));
+    voiceCore.replaceChildren(portrait);
+  }
   const voiceTitle = el('h2', 'mss-voice-title'); voiceTitle.id = 'mssVoiceState';
   document.querySelector('#voiceExperienceStatus')?.before(voiceTitle);
   const voiceSession = el('div', 'mss-voice-session');
   document.querySelector('.voice-experience-content')?.prepend(voiceSession);
 
   for (const brand of document.querySelectorAll('.brand')) {
-    const image = brand.querySelector('img'); if (image) image.src = '/mss-mark.svg';
+    const image = brand.querySelector('img'); if (image) image.src = '/mss-logo.png';
     const wordmark = brand.querySelector('.brand-wordmark'); if (wordmark) wordmark.textContent = 'MySecondSelf';
   }
   const headerAvatar = document.querySelector('#openSettings');
@@ -137,6 +156,45 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
     const caption = el('p', '', model.ready ? model.completed + ' of ' + model.total + ' scenarios confirmed complete.' : 'Your saved progress will appear when your account is connected.'); caption.prepend(symbol('bars'));
     card.append(row, track, caption); return card;
   }
+  function progressChart(snapshot) {
+    const { model } = snapshot;
+    const card = el('section', 'mss-card mss-passport-chart');
+    card.setAttribute('aria-label', 'Training progress overview');
+    const row = el('div', 'mss-chart-heading');
+    const firstName = snapshot.owner?.trim().split(/\s+/)[0];
+    row.append(el('h2', '', firstName ? firstName + '’s progress' : 'Your progress'));
+    const shareButton = action(sharingProgress ? 'Preparing…' : 'Share', 'mss-share-button', async () => {
+      if (sharingProgress || !getSnapshot().model.ready || !shareProgress) return;
+      sharingProgress = true; shareStatus = ''; shareButton.disabled = true;
+      const label = shareButton.querySelector('.mss-share-label'); if (label) label.textContent = 'Preparing…';
+      try {
+        const result = await shareProgress();
+        shareStatus = result === 'downloaded' ? 'Progress image downloaded. It is ready to share.' : result === 'shared' ? 'Progress image shared.' : '';
+      } catch (error) { shareStatus = error.message || 'Could not create the progress image. Please try again.'; }
+      finally {
+        sharingProgress = false;
+        if (document.body.dataset.appView === 'passport') render();
+      }
+    });
+    shareButton.replaceChildren(symbol('share'), el('span', 'mss-share-label', sharingProgress ? 'Preparing…' : 'Share'));
+    shareButton.disabled = !model.ready || sharingProgress || !shareProgress;
+    shareButton.setAttribute('aria-label', 'Share your training progress graphic');
+    row.append(shareButton); card.append(row);
+    const ring = el('div', 'mss-completion-ring'); ring.style.setProperty('--mss-progress', model.percent + '%');
+    ring.setAttribute('role', 'img'); ring.setAttribute('aria-label', model.ready ? model.percent + '% of scenarios complete' : 'Progress unavailable');
+    const inner = el('div', 'mss-ring-inner'); inner.append(el('strong', '', model.ready ? model.percent + '%' : '—'), el('span', '', 'scenarios complete')); ring.append(inner); card.append(ring);
+    card.append(el('p', 'mss-chart-caption', model.ready ? model.completed + ' of ' + model.total + ' scenarios confirmed complete' : 'Your saved progress will appear when your account is connected.'));
+    const columns = el('div', 'mss-category-columns');
+    for (const group of model.groups) {
+      const column = el('div', 'mss-category-column is-' + group.id);
+      column.setAttribute('role', 'img'); column.setAttribute('aria-label', group.label + ': ' + (model.ready ? group.completed + ' of ' + group.total + ' complete' : 'progress unavailable'));
+      const track = el('div', 'mss-category-track'), fill = el('span'); fill.style.height = group.percent + '%'; track.append(fill);
+      column.append(track, el('span', 'mss-category-label', group.label), el('strong', '', model.ready ? group.completed + '/' + group.total : '—/' + group.total)); columns.append(column);
+    }
+    card.append(columns);
+    const status = el('p', 'mss-share-status', shareStatus); status.setAttribute('role', 'status'); status.hidden = !shareStatus; card.append(status);
+    return card;
+  }
   function moduleCard(item, compact = false) {
     const card = action('', 'mss-module ' + (item.kind === 'outside' ? 'is-peach' : 'is-blue') + (!item.available ? ' is-locked' : ''), () => openScenario(item.id));
     card.disabled = !item.available; card.setAttribute('aria-label', item.title + ': ' + item.status);
@@ -158,7 +216,7 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
     const snapshot = getSnapshot(), { model } = snapshot;
     avatar(headerAvatar, snapshot); avatar(voiceAvatar, snapshot);
     headerAvatar?.setAttribute('aria-label', 'Open profile');
-    const home = screens.home; home.replaceChildren(heading('Hi ' + (snapshot.owner?.split(/\s+/)[0] || 'there'), 'Keep training your future robot with your knowledge, habits and preferences.'), banner(snapshot), progress(snapshot));
+    const home = screens.home; home.replaceChildren(heading('Hi ' + (snapshot.owner?.split(/\s+/)[0] || 'there'), 'Keep training your future robot with your knowledge, habits, boundaries and preferences.'), banner(snapshot), progress(snapshot));
     const focus = el('div', 'mss-section-heading'); focus.append(el('h2', '', 'Today’s focus'));
     const seeAll = action('See all', 'mss-text-button', () => navigate('passport')); seeAll.append(symbol('arrow')); focus.append(seeAll); home.append(focus);
     const topics = el('div', 'mss-focus-grid');
@@ -166,7 +224,7 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
     model.modules.slice(currentIndex, currentIndex + 3).forEach(item => topics.append(moduleCard(item, true))); home.append(topics);
     home.append(linkCard('Current conversation', snapshot.pendingQuestion || 'Continue where you left off with ' + snapshot.companion + '.', 'chat', () => navigate('chat')));
 
-    const passport = screens.passport; passport.replaceChildren(heading('Passport', 'Build your robot through conversation.'), progress(snapshot, true), el('h2', 'mss-section-title', 'Training modules'));
+    const passport = screens.passport; passport.replaceChildren(heading('Passport', 'Build your robot through conversation.'), progressChart(snapshot), el('h2', 'mss-section-title', 'Training modules'));
     const grid = el('div', 'mss-module-grid'); model.modules.forEach(item => grid.append(moduleCard(item))); passport.append(grid);
     passport.append(linkCard('What’s next', model.active ? 'Continue with ' + model.active.title + '.' : 'Review and refine your saved preferences.', 'chat', () => navigate('chat')));
     passport.append(linkCard('Your saved preferences', 'Review the details, conditions and permissions you have shared.', 'brain', () => openWorkspace('personaPassport')));
