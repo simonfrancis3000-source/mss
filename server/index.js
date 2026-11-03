@@ -576,6 +576,7 @@ const app = http.createServer(async (request, response) => {
     const currentMonthlyMs = data?.monthly_valid_until && Date.parse(data.monthly_valid_until) > Date.now()
       ? Number(data.monthly_remaining_ms || 0) : 0;
     return json(response, 200, {
+      billingEnabledForUser: voiceBillingFor(authContext),
       premiumActive: Boolean(data?.monthly_valid_until && Date.parse(data.monthly_valid_until) > Date.now()),
       monthlyRemainingMs: Math.max(0, currentMonthlyMs),
       topupRemainingMs: Math.max(0, Number(data?.topup_remaining_ms || 0)),
