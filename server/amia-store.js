@@ -31,7 +31,7 @@ export function buildTurnObservation({ userId, sourceTimestamp, scopeKey, topic,
   // resolved. Explicit short deferrals are kept separately, without raw text.
   const intent = conversationIntent(latestUser);
   const deferred = intent === 'deferred' || intent === 'not_applicable';
-  const responseKey = ['explain', 'progress', 'pause'].includes(intent) ? null : priorKey;
+  const responseKey = ['explain', 'progress', 'pause', 'resume', 'service_help'].includes(intent) ? null : priorKey;
   return {
     p_turn_key: 'turn:' + digest(userId + '\n' + source + '\n' + latestUser),
     p_scope_key: scopeKey, p_topic: topic,

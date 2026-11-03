@@ -2,6 +2,7 @@
 // It guides the next turn; it never treats a response as a completed area.
 export function conversationIntent(text = '') {
   const value = String(text).trim().toLocaleLowerCase().replace(/[.!?]+$/g, '').trim();
+  if (/^(?:what(?:'s| is)? next|continue(?: please)?|please continue|carry on(?: please)?|let['’]?s (?:continue|carry on|resume)|resume(?: (?:the |our )?conversation)?|(?:i['’]?m |i am )?back(?: again)?|hello|hi|hey)$/i.test(value)) return 'resume';
   if (/^(?:(?:let'?s )?skip(?: (?:it|this|that))?(?:\s*[-,].*|$)|(?:this|that|it) (?:does not|doesn't|doesnt) apply|not applicable|no aplica)/i.test(value)) return 'not_applicable';
   if (/^(?:not now|later|another time|(?:let'?s |we can )?(?:come back|return) to (?:this|that|it)(?: later)?|(?:let'?s )?(?:leave|skip) (?:this|that|it) for now|más tarde|plus tard)$/i.test(value)) return 'deferred';
   if (/^why$/i.test(value)) return 'explain';
