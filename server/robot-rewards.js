@@ -86,6 +86,7 @@ export async function loadRobotRewards({ db, userId, getOrder, now = new Date(),
   for (const [orderId, productId] of ids) {
     const cached = byId.get(orderId);
     const age = Date.parse(cached?.checked_at || '');
+    if (cached?.status === 'test') continue;
     if (!cached || cached.product_id !== productId || !Number.isFinite(age) || now.getTime() - age >= RECHECK_AFTER_MS) {
       pending.push({ orderId, productId });
     }
@@ -106,7 +107,8 @@ export async function loadRobotRewards({ db, userId, getOrder, now = new Date(),
       console.warn('MSS robot reward order synchronization pending', { orderId, reason: error?.message || 'unknown' });
     }
   }
-  const complete = !failed && pending.length <= maxLookups;
+  const waitingCurrency = [...byId.values()].some(row => ids.has(row.order_id) && row.status === 'pending_currency');
+  const complete = !failed && pending.length <= maxLookups && !waitingCurrency;
   const summary = summarizeRobotRewardOrders([...byId.values()].filter(row => ids.has(row.order_id)));
   return { ...summary, status: complete ? 'ready' : 'pending', pendingOrders: Math.max(0, pending.length - maxLookups) + (failed ? 1 : 0) };
 }
