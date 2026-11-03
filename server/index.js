@@ -15,7 +15,8 @@ import { buildCompanionNameGuidance } from "../src/companion-personality.js";
 import { createAmiaStore, amiaScope, buildTurnObservation, storedDecisionGuidance } from "./amia-store.js";
 import http from "node:http";
 import { createClient } from "@supabase/supabase-js";
-import { verifyGooglePlayToken, hashPurchaseToken, consumeVerifiedGoogleTopUp, acknowledgeVerifiedGoogleSubscription } from "./google-play-billing.js";
+import { verifyGooglePlayToken, hashPurchaseToken, consumeVerifiedGoogleTopUp, acknowledgeVerifiedGoogleSubscription, getGooglePlayOrder } from "./google-play-billing.js";
+import { loadRobotRewards } from "./robot-rewards.js";
 import { createVoiceRelay } from "./voice-relay.js";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
@@ -538,10 +539,10 @@ const app = http.createServer(async (request, response) => {
 
   const authenticatedRoutes = new Set([
     "/api/chat", "/api/memory/extract", "/api/knowledge/extract", "/api/simulation", "/api/voice/break-offer",
-    "/api/phonic/session", "/api/phonic/usage", "/api/billing/verify", "/api/billing/status"
+    "/api/phonic/session", "/api/phonic/usage", "/api/billing/verify", "/api/billing/status", "/api/rewards/status"
   ]);
   let authContext = null;
-  if ((request.method === "POST" || (request.method === "GET" && url.pathname === "/api/billing/status")) && authenticatedRoutes.has(url.pathname)) {
+  if ((request.method === "POST" || (request.method === "GET" && ["/api/billing/status", "/api/rewards/status"].includes(url.pathname))) && authenticatedRoutes.has(url.pathname)) {
     const authResult = await authenticateSupabaseRequest(request, {
       supabaseUrl: SUPABASE_URL,
       publishableKey: SUPABASE_PUBLISHABLE_KEY
@@ -595,6 +596,17 @@ const app = http.createServer(async (request, response) => {
     }, headers || {});
   }
 
+  if (request.method === "GET" && url.pathname === "/api/rewards/status") {
+    if (!billingDb) return json(response, 503, { error: "Robot Rewards accounting is unavailable." }, headers || {});
+    try {
+      const result = await loadRobotRewards({ db: billingDb, userId: authContext.user.id, getOrder: getGooglePlayOrder });
+      return json(response, 200, result, headers || {});
+    } catch (error) {
+      console.warn("Robot Rewards status unavailable", { code: error?.code || 'unknown' });
+      return json(response, 503, { error: "Robot Rewards balance could not be loaded." }, headers || {});
+    }
+  }
+
   if (request.method === "POST" && url.pathname === "/api/billing/verify") {
     if (!billingDb || !process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON) {
       return json(response, 503, { error: "Google Play purchase verification is not configured." }, headers || {});
@@ -617,6 +629,22 @@ const app = http.createServer(async (request, response) => {
       if (error) {
         console.warn("Play purchase verified but credit grant failed", { code: error.code });
         return json(response, 503, { error: "Your purchase was verified, but credits could not yet be saved. Please retry." }, headers || {});
+      }
+      // Licensed-tester transactions are not cash spending and must never earn
+      // promotional robot credit, even if a sandbox order has a price field.
+      if (verified.isTest && verified.orderId) {
+        const now = new Date().toISOString();
+        const { error: sandboxError } = await billingDb.from("mss_robot_reward_orders").upsert({
+          order_id: verified.orderId,
+          user_id: authContext.user.id,
+          product_id: verified.productId,
+          paid_usd_cents: 0,
+          currency_code: 'test',
+          status: 'test',
+          purchased_at: now,
+          checked_at: now
+        }, { onConflict: 'order_id' });
+        if (sandboxError) console.warn('Could not mark sandbox purchase in Robot Rewards ledger', { code: sandboxError.code });
       }
       // Acknowledge or consume after the database grant commits. If that
       // notification fails, repeat verification on launch to finish it.

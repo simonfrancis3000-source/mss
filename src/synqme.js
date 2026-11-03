@@ -1,5 +1,6 @@
 import { createVoiceBalance } from './voice-balance.js';
 import { createMssInterface, buildInterfaceModel, COMPANION_HEAD_IMAGE } from "./mss-interface.js";
+import { createRobotRewardBalance } from "./robot-rewards-balance.js";
 import { coalesceTranscriptTurns, preferTranscriptTurn, bestUserTranscript, isServiceErrorText } from "./transcript-turns.js";
 import { createRememberedSessionStorage, nativePersistentSessionStorage } from "./session-storage.js";
 import { applianceReminderTurn } from "./appliance-reminders.js";
@@ -4316,6 +4317,7 @@ function updateDecisionSummary() {
 }
 
 const voiceBalance = createVoiceBalance({apiBase:API_BASE,getUserId:()=>cloudUserId,getHeaders:authenticatedApiHeaders,onChange:()=>mssInterface?.render()});
+const robotRewards = createRobotRewardBalance({apiBase:API_BASE,getUserId:()=>cloudUserId,getHeaders:authenticatedApiHeaders,onChange:()=>mssInterface?.render()});
 
 mssInterface = createMssInterface({
   refreshBalance:()=>voiceBalance.refresh(),
@@ -4332,7 +4334,7 @@ mssInterface = createMssInterface({
     const pending = conversationCheckpoint(state.messages, model.active?.id);
     return { owner: state.profile.ownerName.trim(), companion: selectedCompanionDisplayName(),
       voice: normaliseVoicePreference(state.profile.robotVoice), avatar: ownerAvatarData,
-      billing:voiceBalance.snapshot(), preferences: curatedPreferences(), messages: state.messages, pendingQuestion: pending?.question || "", model };
+      billing:voiceBalance.snapshot(), rewards:robotRewards.snapshot(), preferences: curatedPreferences(), messages: state.messages, pendingQuestion: pending?.question || "", model };
   },
   navigate: selectAppView,
   async shareProgress() {
@@ -5364,6 +5366,7 @@ function syncAppNavigation() {
 
 function selectAppView(view) {
   if(view === "profile") void voiceBalance.refresh();
+  if(view === "home" || view === "rewards") void robotRewards.refresh();
   closeSettings();
   if (elements.taskResult) elements.taskResult.hidden = true;
   if (view === "chat" && document.body.dataset.appView !== "chat" && cloudUserId && roomJourney && state.messages.some(item=>item.role==='user')) {
