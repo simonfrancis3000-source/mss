@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildInterfaceModel } from '../src/mss-interface.js';
-import { SCENARIOS, scenarioTasks } from '../src/scenario-journey.js';
+import { SCENARIOS, scenarioTasks, scenarioProgressSummary } from '../src/scenario-journey.js';
 const taskCounts = Object.fromEntries(SCENARIOS.map(s => [s.id, scenarioTasks(s).length]));
 
 test('new accounts begin at Kitchen, without interpreting missing room IDs as an outside scenario', () => {
@@ -40,4 +40,15 @@ test('unavailable account progress never presents stale completions as current',
   assert.equal(model.percent, 0);
   assert.equal(model.completed, 0);
   assert.ok(model.modules.every(m => !m.available && m.status === 'Unavailable'));
+});
+
+test('Passport, Chart and shared image agree on confirmed progress and category totals', () => {
+  const completed = [SCENARIOS[0].id, SCENARIOS[0].id, SCENARIOS[12].id, SCENARIOS[25].id, 'unknown'];
+  const model = buildInterfaceModel({ scenarios: SCENARIOS, ready: true, taskCounts, data: { completed } });
+  const shared = scenarioProgressSummary(completed);
+  assert.equal(model.percent, shared.percent);
+  assert.equal(model.completed, shared.completed);
+  assert.equal(model.total, shared.total);
+  assert.deepEqual(model.groups.map(({ id, completed, total, percent }) => ({ id, completed, total, percent })),
+    shared.groups.map(({ id, completed, total, percent }) => ({ id, completed, total, percent })));
 });

@@ -241,3 +241,28 @@ body[data-app-view='chat'] .chat-workspace>.chat-composer{flex:0 0 auto}
 .voice-experience .voice-controls>button::before{content:"";position:absolute;inset:-4px 0}
 .voice-experience .voice-control-icon{width:17.5px;height:17.5px;min-width:17.5px}
 .voice-experience .voice-controls>button svg{width:17.5px;height:17.5px}
+
+/* Keep module progress visible and bring the complete Talk stack upward. */
+.conversation-panel>.scenario-live-progress:not([hidden]),.voice-experience .voice-experience-content>.scenario-live-progress:not([hidden]){display:block!important;flex:0 0 auto;width:100%;max-width:none;transform:none;margin:0 0 8px;padding:9px 12px;border:1px solid var(--mss-line);border-radius:12px;background:#fff;box-shadow:none}
+.conversation-panel>.scenario-live-progress:empty,.voice-experience .voice-experience-content>.scenario-live-progress:empty{display:none!important}
+.scenario-live-label{gap:8px;font-size:12px;line-height:1.25;text-align:left;color:var(--mss-ink)}
+.scenario-live-label strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.scenario-live-label span{flex-shrink:0;color:var(--mss-copy);font-size:11px}
+.scenario-live-track{height:6px;margin-top:6px;background:#dce9f8;box-shadow:none}
+.scenario-live-track span{background:linear-gradient(90deg,#55b7f4,#206cc1)}
+.voice-experience .voice-experience-topbar{min-height:68px;padding:calc(12px + env(safe-area-inset-top)) 24px 8px}
+.voice-experience .voice-experience-content{padding-top:0}
+.voice-experience .voice-experience-content .voice-orb{aspect-ratio:1;margin:0}
+.voice-orb .voice-orb-core{top:0}
+.voice-experience .voice-experience-content .mss-voice-title{margin-bottom:8px}
+.voice-experience .voice-experience-status{margin-bottom:8px}
+.voice-experience .voice-experience-content .voice-controls{margin-bottom:12px}
+
+/* Chart and Passport use the same progress graphic and sharing control. */
+.more-workspace .scenario-journey[data-journey-display='chart']{padding:0;border:0;background:transparent}
+.scenario-journey[data-journey-display='chart']>.panel-heading,.scenario-journey[data-journey-display='chart']>#journeyShareStatus{display:none}
+#scenarioJourneyContent>.journey-view-tabs{margin:0 0 12px;border:1px solid var(--mss-line);background:#fff;box-shadow:none}
+#scenarioJourneyContent>.journey-view-tabs button{color:var(--mss-copy)}
+#scenarioJourneyContent>.journey-view-tabs button[aria-pressed='true']{background:#e2efff;color:#1268c7;box-shadow:none}
+#scenarioJourneyContent .mss-chart-caption{margin:0;color:#566277;font-size:13px;line-height:1.4}
+#scenarioJourneyContent .mss-share-status{color:#48617a;font-size:12px;line-height:1.4}
