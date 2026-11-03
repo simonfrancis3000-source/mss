@@ -24,7 +24,7 @@ test("robot naming remains optional and voice copy describes the transcript flow
 
 test("settings keep advanced persona review sections collapsible", async () => {
   const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
-  assert.match(html, /<details class="settings-disclosure">[\s\S]*?Companion appearance/);
+  assert.doesNotMatch(html, /Companion appearance|id="robotPicker"|id="robotImageInput"/);
   assert.match(html, /Learned preferences/);
   assert.match(html, /AMÏA memory library/);
   assert.match(html, /Home interests/);

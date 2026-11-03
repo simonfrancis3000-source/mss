@@ -1,7 +1,7 @@
 import { Capacitor } from "@capacitor/core";
 import { Preferences } from "@capacitor/preferences";
 import { createMobileAuthTurnstile } from "./mobile-turnstile-bridge.js";
-import { createMssInterface, buildInterfaceModel, COMPANION_IMAGE } from "./mss-interface.js";
+import { createMssInterface, buildInterfaceModel, COMPANION_HEAD_IMAGE } from "./mss-interface.js";
 import { coalesceTranscriptTurns, preferTranscriptTurn, bestUserTranscript, isServiceErrorText } from "./transcript-turns.js";
 import { createRememberedSessionStorage, nativePersistentSessionStorage } from "./session-storage.js";
 import { conversationCheckpoint } from "./conversation-resume.js";
@@ -3196,18 +3196,9 @@ function appendMessage(role, content, timestamp = null, messageScenarioId = null
   } else {
     avatar.classList.add("robot-message-avatar");
     avatar.setAttribute("aria-hidden", "true");
-    avatar.hidden = robotAppearance.robotId === "none" && !robotAppearance.customImageData;
-    if (robotAppearance.customImageData) {
-      const image = document.createElement("img");
-      image.className = "message-robot-image";
-      image.src = robotAppearance.customImageData;
-      image.alt = "";
-      avatar.append(image);
-    } else {
-      const image = document.createElement("img");
-      image.className = "message-robot-image"; image.src = COMPANION_IMAGE; image.alt = "";
-      avatar.append(image);
-    }
+    const image = document.createElement("img");
+    image.className = "message-robot-image"; image.src = COMPANION_HEAD_IMAGE; image.alt = "";
+    avatar.append(image);
   }
   const body = document.createElement("div");
   body.className = "message-body";
@@ -4365,6 +4356,10 @@ mssInterface = createMssInterface({
       preferences: curatedPreferences(), messages: state.messages, pendingQuestion: pending?.question || "", model };
   },
   navigate: selectAppView,
+  async shareProgress() {
+    if (!cloudUserId || !roomJourney || roomJourney.user_id !== cloudUserId) throw new Error("Your saved progress is not available yet.");
+    return shareProgressImage(scenarioProgressSummary(scenarioData().completed), state.profile.ownerName);
+  },
   editSettings(field) {
     openSettings();
     window.requestAnimationFrame(() => {
