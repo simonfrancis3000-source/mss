@@ -1,0 +1,115 @@
+name: MSS reviewed Android V8 OTA deployment
+on:
+  push:
+    branches:
+      - mobile/current-mss
+    paths:
+      - .github/ota-internal-v8-request.txt
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mss-reviewed-internal-android-v8
+  cancel-in-progress: false
+
+jobs:
+  publish-only-approved:
+    if: github.repository == 'simonfrancis3000-source/mss'
+    runs-on: ubuntu-latest
+    env:
+      VITE_API_BASE_URL: https://synqme-api.onrender.com
+      VITE_SUPABASE_URL: https://ltqbjqtzsdzglswuqkip.supabase.co
+      VITE_SUPABASE_ANON_KEY: sb_publishable_R3Sl3WZEGDmpzhdeG3Jj7A_ERmuozw3
+    steps:
+      - name: Check out approved mobile source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify this one-time request
+        run: |
+          set -euo pipefail
+          grep -Fx 'approved_bundle_sha256=f42308e9eb861f5a25f7ad167c461da86257eaf47538299ae2fd9e8a7bc43edf' .github/ota-internal-v8-request.txt
+
+      - name: Use Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Run tests and build app
+        run: |
+          set -euo pipefail
+          npm ci
+          npm test
+          npm run build -- --mode mobile
+
+      - name: Compare compiled files with the Codemagic reviewed ZIP
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          from pathlib import Path
+          expected = {
+            "assets/index-BV-x-irb.css": "1844d83881d75f95765dc67444f941c6e982451ea759cb8652eaf6f7edde7cf1",
+            "assets/index-vDv_JbH7.js": "f558d3dfb090097063caa71245de45d809a801d9fce2edc2a5b53f4f55679c1e",
+            "assets/web-BT3y_Ofj.js": "649bf6567886208540475c91bff6068bd08c39acbb382f3a05742725f73cfece",
+            "assets/web-CEWcSE70.js": "cfb447ea007cbc870cdd8ef4aa67166e915bdbfb3053f805dc02e98b68921d27",
+            "fonts/Quicksand-OFL.txt": "b4578833b5c1ce3a9a811df806760ba4e98566c3b52689808fa1290f946450fc",
+            "fonts/Quicksand-Variable.ttf": "39c9b64223561f56aaff6062a6f04063c4fc86809ad6768722c06614d977e1cc",
+            "index.html": "69683fbc551534e7b46354a546d8f9536ba7d6ce1368858ec2ee90191e89f00f",
+            "manifest.webmanifest": "713b797a706d5b26bedaff42e57d2452cf093012a98ff323d27374b4efbb401e",
+            "phonic-pcm-processor.worklet.js": "127e599241c63d604f6a189d3a782041a5a73ba8fe6f2bb05770ebffc157a051",
+            "sw.js": "c2836383c6cd7f34d8f61af819c2d54d14deb2ea3a68dfb2d55d1ab00371f7a1",
+            "synqme-icon.svg": "88ba408631297eec0a6ae4dbeeb625bd1691bba6c191b4dd835187d42be7fcd0",
+            "turnstile-bridge.html": "be3ad0a9bfa2b270122c57b86c07e116295c7628d9a46738d548da1e2a23def5",
+          }
+          actual = {p.relative_to("dist").as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+                    for p in Path("dist").rglob("*") if p.is_file()}
+          missing = set(expected) - set(actual)
+          unexpected = set(actual) - set(expected)
+          changed = sorted(n for n in expected.keys() & actual.keys() if expected[n] != actual[n])
+          if missing or unexpected or changed:
+              print("FAIL CLOSED: rebuilt web bundle differs from uploaded Codemagic artifact")
+              print("Missing", sorted(missing), "Extra", sorted(unexpected), "Changed", changed)
+              raise SystemExit(1)
+          print("PASS: All",len(expected),"compiled files byte-for-byte match reviewed Codemagic ZIP")
+          PY
+
+      - name: Create OTA proof bundle and verify its integrity
+        run: |
+          set -euo pipefail
+          python3 scripts/package-mobile-ota.py --platform android --native-code 8 --test-banner
+          python3 - <<'PY'
+          import json,hashlib,zipfile
+          from pathlib import Path
+          manifest=json.loads(Path("ota-publish/internal-android.json").read_text())
+          assert manifest["enabled"] is True and manifest["channel"] == "internal"
+          assert manifest["minNativeVersionCode"] == manifest["maxNativeVersionCode"] == 8
+          name=manifest["url"].rsplit("/",1)[-1]
+          p=Path("ota-publish")/name
+          assert p.is_file()
+          assert hashlib.sha256(p.read_bytes()).hexdigest()==manifest["checksum"]
+          assert manifest["bundleId"]+".zip"==name
+          with zipfile.ZipFile(p) as z:
+              assert z.testzip() is None
+              assert b"MSS LIVE UPDATE TEST SUCCESSFUL" in z.read("index.html")
+          print("PASS: OTA archive, checksum, manifest and test banner verified")
+          PY
+
+      - name: Publish only OTA files to the Render deployment branch
+        run: |
+          set -euo pipefail
+          git fetch origin SYNQ.ME
+          git worktree add -b reviewed-ota-publish .ota-deploy origin/SYNQ.ME
+          mkdir -p .ota-deploy/ota-bundles
+          cp ota-publish/mss-*.zip .ota-deploy/ota-bundles/
+          cp ota-publish/internal-android.json .ota-deploy/ota-bundles/internal-android.json
+          cd .ota-deploy
+          git config user.name 'MSS OTA Publisher'
+          git config user.email 'mss-ota-bot@users.noreply.github.com'
+          git add ota-bundles/
+          git diff --cached --name-only
+          git commit -m 'Publish reviewed Android 8 internal OTA proof bundle'
+          git push origin HEAD:SYNQ.ME
