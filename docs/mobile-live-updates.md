@@ -21,10 +21,11 @@ git commit -m "Sync Capawesome native plugins and lockfile"
 git push
 ```
 
-Publish the Android **1.4 (versionCode 7)** AAB via the existing Codemagic
+Publish the Android **1.5 (versionCode 8)** AAB via the existing Codemagic
 `android-play` workflow with `mss_upload`. A native app-store update is
 required to install the plugin. Do not use the OTA channel for native SDK,
-permission, Info.plist, Capacitor plugin, or app entitlement changes.
+permission, Info.plist, Capacitor plugin, WebView cookie settings, or app entitlement changes.
+Android 1.5 adds WebView settings for the Cloudflare Turnstile login bridge. It must be installed before enabling Supabase CAPTCHA enforcement for mobile users.
 
 ## Package an OTA web-only update
 
