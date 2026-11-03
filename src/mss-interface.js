@@ -92,10 +92,6 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
     const section = el('section', 'mss-screen mss-' + key);
     section.id = 'mss-' + key; section.setAttribute('aria-label', title); screens[key] = section; main.prepend(section);
   }
-  const topic = action('', 'mss-current-topic mss-card', () => {
-    const current = getSnapshot().model.active; if (current) openScenario(current.id); else navigate('passport');
-  });
-  document.querySelector('.conversation-panel')?.prepend(topic);
   const transcript = el('section', 'mss-voice-transcript mss-card');
   transcript.setAttribute('aria-label', 'Recent conversation');
   const voiceControls = document.querySelector('.voice-controls');
@@ -261,9 +257,6 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
       linkCard('Support', 'Get help, report an issue or contact us', 'support', () => window.open('https://mysecondself.app/contact/', '_blank', 'noopener')));
     profile.append(settings);
 
-    topic.replaceChildren(symbol(model.active ? moduleIcon(model.active) : 'chat', 'mss-icon-tile'));
-    const topicCopy = el('span', 'mss-link-copy'); topicCopy.append(el('strong', '', 'Current training topic'), el('b', '', model.active?.title || 'Your conversation'), el('span', '', model.active?.description || 'Build your preferences, one conversation at a time.'));
-    topic.append(topicCopy); if (model.active && model.ready) topic.append(el('span', 'mss-topic-count', model.active.reviewed + '/' + model.active.total)); topic.append(symbol('arrow'));
     renderTranscript(snapshot); renderVoiceState();
   }
   function renderTranscript(snapshot = getSnapshot()) {
