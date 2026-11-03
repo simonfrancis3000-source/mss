@@ -1,5 +1,6 @@
+import { createMssInterface, buildInterfaceModel, COMPANION_IMAGE } from "./mss-interface.js";
 import { coalesceTranscriptTurns, preferTranscriptTurn, bestUserTranscript, isServiceErrorText } from "./transcript-turns.js";
-import { createRememberedSessionStorage } from "./session-storage.js";
+import { createRememberedSessionStorage, nativePersistentSessionStorage } from "./session-storage.js";
 import { conversationCheckpoint } from "./conversation-resume.js";
 import { syncRobotSpeaking } from "./robot-speaking.js";
 import { collectReviewableFragments, preferenceDisplayLabel, preferenceIdentity } from "./preference-review.js";
@@ -68,6 +69,10 @@ const AUTH_REDIRECT_URL = (() => {
   }
   return "https://synqme.mysecondself.app/";
 })();
+// The hosted web app has no native bridge. Use it only when available.
+const Capacitor = globalThis.Capacitor || { isNativePlatform: () => false };
+const Preferences = Capacitor.Plugins?.Preferences;
+var mssInterface = null;
 const REMEMBER_CHOICE_KEY = "synqme-remember-me-choice";
 const storedRememberChoice = (() => {
   try { return localStorage.getItem(REMEMBER_CHOICE_KEY); } catch { return null; }
@@ -80,7 +85,7 @@ if (document.querySelector("#rememberMe")) {
 }
 // Read the durable native selection before Supabase restores its session.
 // A late device read must not reverse a selection the user made this launch.
-const rememberChoiceReady = Capacitor.isNativePlatform()
+const rememberChoiceReady = (Capacitor.isNativePlatform() && Boolean(Preferences))
   ? Preferences.get({ key: REMEMBER_CHOICE_KEY }).then(({ value }) => {
       if (rememberChoiceChangedThisLaunch || (value !== "true" && value !== "false")) return;
       rememberMeEnabled = value === "true";
@@ -99,7 +104,7 @@ async function setRememberChoice(remember) {
   const checkbox = document.querySelector("#rememberMe");
   if (checkbox) checkbox.checked = rememberMeEnabled;
   try { localStorage.setItem(REMEMBER_CHOICE_KEY, String(rememberMeEnabled)); } catch {}
-  if (Capacitor.isNativePlatform()) {
+  if ((Capacitor.isNativePlatform() && Boolean(Preferences))) {
     try {
       await rememberChoiceReady;
       await Preferences.set({ key: REMEMBER_CHOICE_KEY, value: String(rememberMeEnabled) });
@@ -110,7 +115,7 @@ async function setRememberChoice(remember) {
 }
 
 const rememberMeStorage = createRememberedSessionStorage({
-  persistent: Capacitor.isNativePlatform() ? nativePersistentSessionStorage(Preferences, localStorage) : localStorage,
+  persistent: (Capacitor.isNativePlatform() && Boolean(Preferences)) ? nativePersistentSessionStorage(Preferences, localStorage) : localStorage,
   temporary: sessionStorage,
   getRemember: () => rememberMeEnabled,
   hasExplicitChoice: () => rememberChoiceExplicit,
@@ -739,6 +744,7 @@ function renderPersonaPassport(){
 document.querySelector('#personaPassport')?.addEventListener('toggle',event=>{if(event.currentTarget.open)renderPersonaPassport();});
 
 function renderScenarioJourney() {
+  if (typeof mssInterface !== "undefined") mssInterface?.render();
   renderLiveScenarioProgress();
   const target = document.querySelector("#scenarioJourneyContent");
   const counter = document.querySelector("#scenarioJourneyCount");
@@ -2826,7 +2832,7 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   setAuthGateVisible(false);
   renderAccountStatus();
   renderAll();
-  selectAppView("chat");
+  selectAppView("home");
   prepareWelcomeAudioOffer();
   if (!profileComplete()) openSettings();
   else updateSettingsMode();
@@ -2942,7 +2948,7 @@ function closeSettings() {
   updateSettingsMode();
   if (lastFocusedElement && typeof lastFocusedElement.focus === "function") lastFocusedElement.focus();
 }
-elements.openSettings?.addEventListener("click", openSettings);
+elements.openSettings?.addEventListener("click", () => selectAppView("profile"));
 elements.openPersonaFromSummary?.addEventListener("click", openSettings);
 elements.personaMemoryList?.addEventListener("click", (event) => {
   void handlePersonaMemoryAction(event);
@@ -3196,7 +3202,9 @@ function appendMessage(role, content, timestamp = null, messageScenarioId = null
       image.alt = "";
       avatar.append(image);
     } else {
-      avatar.innerHTML = robotSvgMarkup(robotAppearance.robotId);
+      const image = document.createElement("img");
+      image.className = "message-robot-image"; image.src = COMPANION_IMAGE; image.alt = "";
+      avatar.append(image);
     }
   }
   const body = document.createElement("div");
@@ -3259,6 +3267,7 @@ function updateChatScrollbar() {
 }
 
 function renderMessages() {
+  if (typeof mssInterface !== "undefined") mssInterface?.renderTranscript();
   elements.chatMessages.replaceChildren();
   // Render in conversation order so newer turns naturally appear at the bottom.
   state.messages.slice(-50).forEach((message) => appendMessage(message.role, message.content, message.timestamp, message.scenario_id));
@@ -4337,7 +4346,45 @@ function updateDecisionSummary() {
   elements.pexiState.classList.remove("ready");
 }
 
+mssInterface = createMssInterface({
+  getSnapshot() {
+    const ready = Boolean(cloudUserId && roomJourney && roomJourney.user_id === cloudUserId);
+    const data = ready ? scenarioData() : {};
+    const taskCounts = {}, reviewedCounts = {};
+    for (const scenario of SCENARIOS) {
+      const tasks = scenarioTasks(scenario);
+      taskCounts[scenario.id] = tasks.length;
+      reviewedCounts[scenario.id] = tasks.filter(task => (data.reviewed?.[scenario.id] || []).includes(task.id)).length;
+    }
+    const model = buildInterfaceModel({ scenarios: SCENARIOS, data, ready, activeRoomId: roomJourney?.active_room_id, taskCounts, reviewedCounts });
+    const pending = conversationCheckpoint(state.messages, model.active?.id);
+    return { owner: state.profile.ownerName.trim(), companion: selectedCompanionDisplayName(),
+      voice: normaliseVoicePreference(state.profile.robotVoice), avatar: ownerAvatarData,
+      preferences: curatedPreferences(), messages: state.messages, pendingQuestion: pending?.question || "", model };
+  },
+  navigate: selectAppView,
+  editSettings(field) {
+    openSettings();
+    window.requestAnimationFrame(() => {
+      const control = document.getElementById(field);
+      for (let parent = control?.parentElement; parent; parent = parent.parentElement) if (parent.tagName === "DETAILS") parent.open = true;
+      control?.scrollIntoView({ block: "center" }); control?.focus({ preventScroll: true });
+    });
+  },
+  openScenario(id) {
+    selectAppView("journey"); selectedJourneyScenario = id; journeyDisplay = "scenarios";
+    renderScenarioJourney();
+  },
+  openWorkspace(id) {
+    selectAppView("journey");
+    const target = document.getElementById(id); if (target) target.open = true;
+    if (id === "personaPassport") renderPersonaPassport();
+    window.requestAnimationFrame(() => target?.scrollIntoView({ block: "start", behavior: "smooth" }));
+  }
+});
+
 function renderAll() {
+  if (typeof mssInterface !== "undefined") mssInterface?.render();
   renderMessages();
   renderOwnerAvatarPreview();
   renderPreferences();
@@ -4354,10 +4401,7 @@ function renderAll() {
   const companionName = robotName || "your companion";
   if (elements.companionName) elements.companionName.textContent = companionName;
   if (elements.messageInput) {
-    const activeRoom = ROOM_JOURNEY_ROOMS.find((room) => room.id === roomJourney?.active_room_id);
-    elements.messageInput.placeholder = activeRoom
-      ? "Tell " + selectedCompanionDisplayName() + " how you like your " + activeRoom.label.toLowerCase() + " handled..."
-      : "Tell " + selectedCompanionDisplayName() + " how you like things.";
+    elements.messageInput.placeholder = "Message " + selectedCompanionDisplayName();
   }
   if (elements.mobileOwnerTitle) elements.mobileOwnerTitle.textContent = name ? name + "’s SecondSelf" : "Your SecondSelf";
   const count = curatedPreferences().length;
@@ -4652,6 +4696,7 @@ function applyRobotAppearance() {
 function updateVoiceExperience(mode, message) {
   if (mode !== "speech-pause" && voiceAudioPauseTimer !== null) { window.clearTimeout(voiceAudioPauseTimer); voiceAudioPauseTimer = null; }
   if (elements.voiceOrb) elements.voiceOrb.dataset.state = mode || "idle";
+  if (typeof mssInterface !== "undefined") mssInterface?.renderVoiceState();
   syncRobotSpeaking(document, mode === "speaking");
   if (elements.voiceExperience) {
     elements.voiceExperience.dataset.state = mode || "idle";
@@ -5332,7 +5377,8 @@ initialiseRobotAndVoiceControls();
 initialisePexiManifestControls();
 
 function syncAppNavigation() {
-  const selected = elements.voiceExperience && !elements.voiceExperience.hidden ? "talk" : document.body.dataset.appView || "chat";
+  const view = document.body.dataset.appView || "home";
+  const selected = elements.voiceExperience && !elements.voiceExperience.hidden ? "talk" : view === "journey" ? "passport" : view;
   document.querySelectorAll("[data-app-tab]").forEach((button) => {
     if (button.dataset.appTab === selected) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
@@ -5341,11 +5387,12 @@ function syncAppNavigation() {
 
 function selectAppView(view) {
   if (elements.voiceExperience && !elements.voiceExperience.hidden) closeVoiceExperience("Returned to your conversation.");
-  document.body.dataset.appView = view === "journey" ? "journey" : "chat";
+  document.body.dataset.appView = ["home", "passport", "profile", "journey"].includes(view) ? view : "chat";
   const workspace = document.querySelector("#moreWorkspace");
   if (workspace) workspace.open = view === "journey";
   if (view === "journey") { journeyDisplay = "chart"; renderScenarioJourney(); }
-  else { prepareWelcomeAudioOffer(); renderMessages(); }
+  else if (view === "chat") { prepareWelcomeAudioOffer(); renderMessages(); }
+  if (typeof mssInterface !== "undefined") mssInterface?.render();
   syncAppNavigation();
   window.requestAnimationFrame(updateChatScrollbar);
   window.scrollTo({top:0,behavior:"smooth"});

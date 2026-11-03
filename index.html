@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#e3f0f8" />
+    <meta name="theme-color" content="#faf9fb" />
     <meta name="description" content="Build a personal digital persona with SYNQ.ME, powered by MySecondSelf decision intelligence." />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -12,12 +12,13 @@
     <link rel="icon" href="/synqme-icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="https://mysecondself.app/wp-content/uploads/2026/10/MySecondSelf-Dual-Head-Logo.png" />
     <title>SYNQ.ME | Build Your SecondSelf</title>
-    <link rel="preload" href="/fonts/Quicksand-Variable.ttf" as="font" type="font/ttf" crossorigin />
+    <link rel="preload" href="/fonts/InterVariable.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="stylesheet" href="/src/synqme.css" />
     <link rel="stylesheet" href="/src/synqme-soft.css" />
+    <link rel="stylesheet" href="/src/mss-interface.css" />
     <script type="module" src="/src/synqme.js"></script>
   </head>
-  <body class="auth-required" data-app-view="chat">
+  <body class="auth-required" data-app-view="home">
     <div class="app-splash" id="appSplash" role="status" aria-label="Opening SYNQ.ME">
       <img class="splash-logo" src="https://mysecondself.app/wp-content/uploads/2026/10/MySecondSelf-Dual-Head-Logo.png" alt="MySecondSelf" />
       <div class="splash-caption">SYNQ.ME <span>PERSONAL INTELLIGENCE</span></div>
@@ -578,9 +579,11 @@
       <div class="training-reset-actions"><button type="button" id="trainingResetCancel">Cancel</button><button type="button" id="trainingResetExecute" disabled>Permanently reset</button></div>
     </dialog>
     <nav class="app-bottom-nav" id="appBottomNav" aria-label="App navigation">
-      <button type="button" data-app-tab="chat" aria-current="page"><span class="bottom-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-9l-6 3v-3H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/><path d="M7 9h10M7 13h6"/></svg></span><span>Chat</span></button>
-      <button type="button" data-app-tab="talk"><span class="bottom-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3m-4 0h8"/></svg></span><span>Talk</span></button>
-      <button type="button" data-app-tab="journey"><span class="bottom-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V12M12 20V4M19 20V8"/><path d="M3 20h4M10 4h4M17 8h4"/></svg></span><span>Journey</span></button>
+      <button type="button" data-app-tab="home" aria-current="page"><span class="bottom-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z"/></svg></span><span>Home</span></button>
+      <button type="button" data-app-tab="chat"><span class="bottom-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11a8 8 0 0 1-8 8H8l-5 3 1.5-6A8 8 0 1 1 21 11Z"/></svg></span><span>Chat</span></button>
+      <button type="button" data-app-tab="talk"><span class="bottom-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2" width="6" height="13" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v4m-4 0h8"/></svg></span><span>Voice</span></button>
+      <button type="button" data-app-tab="passport"><span class="bottom-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="2" width="16" height="20" rx="2"/><circle cx="12" cy="11" r="5"/><ellipse cx="12" cy="11" rx="2" ry="5"/><path d="M7 11h10M9 19h6"/></svg></span><span>Passport</span></button>
+      <button type="button" data-app-tab="profile"><span class="bottom-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="6" r="4"/><path d="M3 22v-2a9 9 0 0 1 18 0v2Z"/></svg></span><span>Profile</span></button>
     </nav>
   </body>
 </html>
