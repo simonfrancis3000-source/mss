@@ -4,6 +4,7 @@ import { buildScenarioConversationPlan, scenarioConversationGuidance } from "../
 import { scenarioLearningObjectives, scenarioForId } from "../src/scenario-learning.js";
 import { guardScenarioQuestion, questionFreeReply } from "./continuity-guard.js";
 import { continuityReviewRequest, readContinuityVerdict } from "./continuity-review.js";
+import { conversationCheckpoint, validatedConversationCheckpoint, resumeConversationGuidance, englishResumeReply } from "../src/conversation-resume.js";
 import { cleanConversationContinuity, conversationContinuityGuidance } from "../src/conversation-continuity.js";
 import { SCENARIOS, scenarioTasks } from "../src/scenario-journey.js";
 import { SUPPORTED_CONVERSATION_LANGUAGES, CONVERSATION_LANGUAGE_NAMES } from "../src/conversation-languages.js";
@@ -952,9 +953,10 @@ const app = http.createServer(async (request, response) => {
   try {
     const body = await readJson(request, 96 * 1024);
     const repairMode = body?.repairMode === true;
-    const normalizedMessages = cleanMessages(body?.messages).slice(-10);
-    const messages = normalizedMessages.map((item, index) => {
-      const charLimit = index === normalizedMessages.length - 1 ? 1200 : 650;
+    const normalizedMessages = cleanMessages(body?.messages).slice(-20);
+    const recentMessages = normalizedMessages.slice(-10);
+    const messages = recentMessages.map((item, index) => {
+      const charLimit = index === recentMessages.length - 1 ? 1200 : 650;
       if (item.content.length <= charLimit) return item;
       const headChars = Math.floor(charLimit * 0.62);
       const tailChars = Math.floor(charLimit * 0.30);
@@ -1028,6 +1030,10 @@ const app = http.createServer(async (request, response) => {
     const areaStatuses = (Array.isArray(body.areaLearningStatus) ? body.areaLearningStatus : []).filter(item => allowedAreaIds.has(item?.id) && allowedAreaStatuses.has(item?.status)).map(item => ({ id: item.id, status: item.status }));
     const reviewedAreaNames = objectives.filter(area => areaStatuses.some(item => item.id === area.id && item.status === "reviewed")).map(area => area.title);
     const plan = buildScenarioConversationPlan({ objectives, areaStatuses, continuity, messages, latestUser: latestUserMessage, welcomeBack: body?.welcomeBack === true });
+    const resumeMessages = (Array.isArray(body.messages) ? body.messages : []).slice(-20).filter(item => item &&
+      ['user','assistant'].includes(item.role) && typeof item.content === 'string').map(item => ({role:item.role,content:item.content.slice(0,8000),scenario_id:item.scenario_id}));
+    const resumeCheckpoint = plan.intent === 'resume' && (outOfHomeScenario || !roomCompletionConfirmed)
+      ? validatedConversationCheckpoint(body.conversationCheckpoint, scenarioScope, continuity) || conversationCheckpoint(resumeMessages.slice(0, -1), scenarioScope) : null;
     const learningGuidance = scenarioConversationGuidance(plan);
     const chatTimingStart = Date.now();
     const [savedContext, approvedLearning] = await Promise.all([
@@ -1188,7 +1194,7 @@ const app = http.createServer(async (request, response) => {
       (memoryContext ? "\n\n" + memoryContext : "") +
       (sharedKnowledgeContext ? "\n\n" + sharedKnowledgeContext : "") +
       (roomJourneyContext ? "\n\n" + roomJourneyContext : "") +
-      (applianceEvidence ? "\n\n" + applianceEvidence : "");
+      (applianceEvidence ? "\n\n" + applianceEvidence : "") + '\n\n' + resumeConversationGuidance(resumeCheckpoint);
 
     const chatModelStart = Date.now();
     const upstream = await fetch("https://api.deepseek.com/chat/completions", {
@@ -1273,6 +1279,12 @@ const app = http.createServer(async (request, response) => {
     if (typeof reply !== "string" || !reply.trim()) {
       return json(response, 502, { error: "The AI service returned an empty reply." }, headers || {});
     }
+    // Retain the exact question instead of allowing another planning pass to
+    // select a fresh topic. English has a grounded fallback if the model drifts.
+    if (resumeCheckpoint && profile.preferredLanguage === 'en') {
+      const questions = reply.match(/[^.!?。！？؟\n]+[?？؟]/gu) || [];
+      if (questions.length !== 1 || questions[0].trim() !== resumeCheckpoint.question) reply = englishResumeReply(resumeCheckpoint, profile.ownerName);
+    }
     if (roomJourney && prematureRoomTransition(reply,roomJourney.activeRoomId,roomCompletionConfirmed)) {
       const area = roomJourney.tasks.find(task => !task.completed && !task.current) || roomJourney.tasks[0];
       reply = "Let's stay with your " + roomJourney.activeRoomName.toLowerCase() + ". For " + area.title.toLowerCase() + ", what would you like me to do when the usual routine needs to change?";
@@ -1302,7 +1314,7 @@ const app = http.createServer(async (request, response) => {
     const lowValueReply = /I've captured this preference for your browser-based SecondSelf|I've added it to your local digital persona|That's useful context for your SecondSelf|Let's make that preference more precise|What detail would matter most to get right|Can you walk me through how that usually happens at home|What is the next important detail I should understand/i.test(safeReply);
     const requiresRepair = lowValueReply ||
       responseRepeatsUser(safeReply, latestUserMessage) ||
-      assistantReplyRepeatsRecentAssistant(safeReply, messages.slice(0, -1)) ||
+      (!resumeCheckpoint && assistantReplyRepeatsRecentAssistant(safeReply, messages.slice(0, -1))) ||
       isIncompleteAssistantReply(safeReply);
     if (requiresRepair && repairMode) {
       return json(response, 200, {
@@ -1316,13 +1328,14 @@ const app = http.createServer(async (request, response) => {
     let finalReply = enforceFirstPersonTaskQuestions(requiresRepair
       ? betterFallbackFollowup(latestUserMessage, profile, messages)
       : safeReply, profile.companionName || profile.robotName || "Freya");
-    if (assistantReplyRepeatsRecentAssistant(finalReply, messages.slice(0, -1))) {
+    if (!resumeCheckpoint && assistantReplyRepeatsRecentAssistant(finalReply, messages.slice(0, -1))) {
       finalReply = "I’ve got that detail. I’ll move to a different part of the current room rather than ask you the same thing again.";
     }
     const reviewStart = Date.now();
     const reviewMetrics = { checks: 0, rewrites: 0, completionTokens: 0 };
     const guardOptions = {
       draft: finalReply, latestUser: latestUserMessage, continuity,
+      resumeQuestion: resumeCheckpoint?.question || null,
       decisions: savedContext.decisions, rules: personaMemories,
       reviewedAreas: [...new Set([...reviewedAreaNames, ...(!outOfHomeScenario ? roomJourney?.tasks.filter(task => task.reviewed).map(task => task.title) || [] : [])])],
       review: async (context) => {
@@ -1374,12 +1387,15 @@ const app = http.createServer(async (request, response) => {
     console.info("SYNQ.ME chat timing", { totalMs, contextMs, modelMs:chatModelMs, generationMs:reviewStart-chatModelStart, reviewMs, saveMs:Date.now()-saveStart, reviewChecks:reviewMetrics.checks, reviewRewrites:reviewMetrics.rewrites, reviewCompletionTokens:reviewMetrics.completionTokens });
     return json(response, 200, {
       reply: finalReply,
+      ...(resumeCheckpoint ? { resumed: true } : {}),
       ...(responseNeedsReview ? { responseNeedsReview: true } : {}),
       model: MODEL,
       provider: PROVIDER,
       appliance: applianceResult,
       amiaPersistence: persistence,
-      usedFallback: requiresRepair || guarded.blocked
+      // Older mobile clients use this flag to avoid retrying an intentional
+      // reminder merely because it resembles the earlier unanswered question.
+      usedFallback: requiresRepair || guarded.blocked || Boolean(resumeCheckpoint)
     }, headers || {});
   } catch (error) {
     const status = Number.isInteger(error?.statusCode) ? error.statusCode : 500;

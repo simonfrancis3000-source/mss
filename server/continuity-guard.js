@@ -7,7 +7,7 @@ export function questionFreeReply(value) {
 
 // Review the meaning of a proposed question, not just word overlap. The review
 // is separate from generation so paraphrases cannot silently bypass the ledger.
-export async function guardScenarioQuestion({ draft, latestUser, continuity, decisions = [], rules = [], reviewedAreas = [], review, rewrite }) {
+export async function guardScenarioQuestion({ draft, latestUser, continuity, decisions = [], rules = [], reviewedAreas = [], review, rewrite, resumeQuestion = null }) {
   const exchanges = continuity?.exchanges || [];
   const questions = decisions.filter(item => item.question).map(({ question, status }) => ({ question, status }));
   if (!exchanges.length && !questions.length && !reviewedAreas.length) return { reply: draft, blocked: false };
@@ -18,6 +18,9 @@ export async function guardScenarioQuestion({ draft, latestUser, continuity, dec
   for (let attempt = 0; attempt < 2; attempt++) {
     const proposed = conversationQuestions(candidate);
     if (!proposed.length) return { reply: candidate, blocked };
+    // Only the independently selected unanswered checkpoint may be repeated
+    // on a resume turn. A different/additional question still needs checking.
+    if (resumeQuestion && proposed.length === 1 && normalized(proposed[0]) === normalized(resumeQuestion)) return { reply: candidate, blocked };
     let verdict;
     const exact = proposed.find(question => history.some(old => normalized(old.question) === normalized(question)));
     if (exact && !explicitlyReopened) verdict = { repeated_question: true, reason: 'This question already appears in the saved question history.', matched_question: exact };

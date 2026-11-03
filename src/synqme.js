@@ -1,4 +1,7 @@
 import { coalesceTranscriptTurns, preferTranscriptTurn, bestUserTranscript, isServiceErrorText } from "./transcript-turns.js";
+import { createRememberedSessionStorage, nativePersistentSessionStorage } from "./session-storage.js";
+import { Preferences } from "@capacitor/preferences";
+import { conversationCheckpoint } from "./conversation-resume.js";
 import { syncRobotSpeaking } from "./robot-speaking.js";
 import { collectReviewableFragments, preferenceDisplayLabel, preferenceIdentity } from "./preference-review.js";
 import { scenarioSummary, passportEligibleMemories, buildPersonaPassport, passportText } from "./persona-passport.js";
@@ -80,39 +83,18 @@ if (document.querySelector("#rememberMe")) {
   document.querySelector("#rememberMe").checked = rememberMeEnabled;
 }
 
-// Select localStorage ("Remember me") or sessionStorage (this tab only) for
-// the Supabase session. The persona itself is synchronised to the signed-in
-// account and is not dependent on this device keeping an auth token.
-const rememberMeStorage = {
-  async getItem(key) {
-    let persistent = null;
-    let tabSession = null;
-    try { persistent = localStorage.getItem(key); } catch {}
-    try { tabSession = sessionStorage.getItem(key); } catch {}
-    const rememberCheckbox = document.querySelector("#rememberMe");
-    if (persistent !== null) {
-      rememberMeEnabled = true;
-      if (rememberCheckbox) rememberCheckbox.checked = true;
-      return persistent;
-    }
-    if (tabSession !== null) {
-      rememberMeEnabled = false;
-      if (rememberCheckbox) rememberCheckbox.checked = false;
-      return tabSession;
-    }
-    return null;
-  },
-  async setItem(key, value) {
-    const preferred = rememberMeEnabled ? localStorage : sessionStorage;
-    const other = rememberMeEnabled ? sessionStorage : localStorage;
-    try { other.removeItem(key); } catch {}
-    preferred.setItem(key, value);
-  },
-  async removeItem(key) {
-    try { localStorage.removeItem(key); } catch {}
-    try { sessionStorage.removeItem(key); } catch {}
+let rememberChoiceExplicit = false;
+const rememberMeStorage = createRememberedSessionStorage({
+  persistent: Capacitor.isNativePlatform() ? nativePersistentSessionStorage(Preferences, localStorage) : localStorage,
+  temporary: sessionStorage,
+  getRemember: () => rememberMeEnabled,
+  onRestore: remember => {
+    if (rememberChoiceExplicit) return;
+    rememberMeEnabled = remember;
+    const checkbox = document.querySelector('#rememberMe');
+    if (checkbox) checkbox.checked = remember;
   }
-};
+});
 let trainingRevision = 0;
 const trainingSessionStartedAt = Date.now();
 const supabase = SUPABASE_URL && SUPABASE_KEY
@@ -5546,7 +5528,8 @@ async function requestAIReply(repairMode = false) {
       .filter(Boolean);
     const conversationMessages = state.messages.slice(-20).map((message) => ({
       role: message.role,
-      content: message.content
+      content: message.content,
+      scenario_id: message.scenario_id
     }));
     const currentUserText = state.messages[state.messages.length - 1]?.content || "";
     const activeRoomName = ROOM_JOURNEY_ROOMS.find(room => room.id === roomJourney?.active_room_id)?.name || "";
@@ -5565,6 +5548,7 @@ async function requestAIReply(repairMode = false) {
       body: JSON.stringify({
         messages: conversationMessages,
         sourceMessageTimestamp: state.messages[state.messages.length - 1]?.timestamp || null,
+        conversationCheckpoint: conversationCheckpoint(state.messages.slice(0,-1), activeOutOfHomeScenarioContext ? "outside:" + activeOutOfHomeScenarioContext.categoryId + ":" + activeOutOfHomeScenarioContext.scenarioId : "room:" + (roomJourney?.active_room_id || "kitchen")),
         areaLearningStatus: (() => {
           const id = activeOutOfHomeScenarioContext ? "outside:" + activeOutOfHomeScenarioContext.categoryId + ":" + activeOutOfHomeScenarioContext.scenarioId : "room:" + (roomJourney?.active_room_id || "kitchen");
           const scenario = scenarioForId(id);
@@ -5628,7 +5612,7 @@ async function requestAIReply(repairMode = false) {
 
     // The backend can mark an output for review; don't initiate a second request
     // for a turn that already used its own fallback or repair strategy.
-    lastAIReplyUsedFallback = Boolean(data.usedFallback || data.responseNeedsReview);
+    lastAIReplyUsedFallback = Boolean(data.usedFallback || data.responseNeedsReview || data.resumed);
     if (data.responseNeedsReview) return "__SYNQME_UNHELPFUL_AI_RESPONSE__";
     const returningReply = welcomeBackPending ? welcomeBackReply(reply.trim(), state.profile.ownerName, state.profile.preferredLanguage || "en") : reply.trim();
     const personalised = addressByNameReply(returningReply, state.profile.ownerName, state.messages);
@@ -6048,6 +6032,7 @@ async function submitAccountForm(event) {
   const email = String(elements.authEmail?.value || "").trim().toLowerCase();
   const password = String(elements.authPassword?.value || "");
   rememberMeEnabled = Boolean(elements.rememberMe?.checked);
+  rememberChoiceExplicit = true;
   try { localStorage.setItem("synqme-remember-me-choice", String(rememberMeEnabled)); } catch {}
   if (authMode !== "recovery" && !email) {
     setAuthMode(authMode, "Enter your email address to continue.");
@@ -6152,6 +6137,8 @@ async function submitAccountForm(event) {
 elements.authForm?.addEventListener("submit", submitAccountForm);
 elements.rememberMe?.addEventListener("change", () => {
   rememberMeEnabled = Boolean(elements.rememberMe.checked);
+  rememberChoiceExplicit = true;
+  try { localStorage.setItem("synqme-remember-me-choice", String(rememberMeEnabled)); } catch {}
 });
 elements.authModeToggle?.addEventListener("click", () => {
   if (authBusy) return;

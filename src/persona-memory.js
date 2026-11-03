@@ -56,6 +56,7 @@ export function isUsefulStandalonePreference(value) {
   const text = String(value || "").normalize("NFKC").trim().replace(/\s+/g, " ");
   if (!text || SENSITIVE_MEMORY_PATTERN.test(text) || text.length > 1600) return false;
   const simple = text.toLocaleLowerCase().replace(/[’]/g, "'").replace(/[.!?,;:…]+$/gu, "").trim();
+  if (/^(?:what(?:'s| is)? next|(?:please )?continue(?: please)?|carry on(?: please)?|let'?s (?:continue|carry on|resume)|resume(?: (?:the |our )?conversation)?|(?:i'?m |i am )?back(?: again)?|hello|hi|hey)$/i.test(simple)) return false;
   if (/^[\p{Script=Latin}0-9\x27’\-]+$/u.test(simple)) return false;
   // Availability checks and service failures are conversation, never persona rules.
   if (/^(?:are you|can you|could you|why (?:can['’]?t|cannot|couldn['’]?t) you|why are you|is (?:this|it|the app)|what (?:is|went) wrong)\b/i.test(simple)) return false;
