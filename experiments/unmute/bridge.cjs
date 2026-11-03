@@ -178,7 +178,7 @@ const publicServer = http.createServer(async (req,res) => {
     if(path==='/mss/login' && req.method==='GET') return respond(res,200,loginPage(),{'Content-Type':'text/html; charset=utf-8'});
     if(path==='/mss/login' && req.method==='POST') {
       const origin=req.headers.origin;
-      if(origin && new URL(origin).host !== req.headers.host) return error(res,403,'Invalid request origin');
+      if(origin && origin !== 'https://mm3pcre11b8rw9-3000.proxy.runpod.net') return error(res,403,'Invalid request origin');
       const ip=String(req.headers['x-forwarded-for']||req.socket.remoteAddress||'unknown').split(',')[0];
       const attempts=LOGIN_ATTEMPTS.get(ip)||{start:Date.now(),count:0};
       if(Date.now()-attempts.start>60000){attempts.start=Date.now();attempts.count=0;}
