@@ -36,7 +36,7 @@ export function hashPurchaseToken(token) {
 export function parseVerifiedPlayPurchase(payload, { productId, now = new Date() } = {}) {
   const timestamp = now.getTime();
   if (productId === MSS_PREMIUM_PRODUCT) {
-    if (!["SUBSCRIPTION_STATE_ACTIVE", "SUBSCRIPTION_STATE_IN_GRACE_PERIOD"].includes(payload?.subscriptionState)) {
+    if (!["SUBSCRIPTION_STATE_ACTIVE", "SUBSCRIPTION_STATE_IN_GRACE_PERIOD", "SUBSCRIPTION_STATE_CANCELED"].includes(payload?.subscriptionState)) {
       throw fail("Google Play reports that Premium is not active.", 403);
     }
     const active = (payload?.lineItems || []).filter(item => item?.productId === MSS_PREMIUM_PRODUCT &&
