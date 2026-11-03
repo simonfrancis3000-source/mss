@@ -1,3 +1,4 @@
+import { voiceBalanceModel } from './voice-balance.js';
 import { scenarioProgressSummary } from './scenario-journey.js';
 
 // The presentation layer reads the existing account state. It never writes training data.
@@ -82,7 +83,7 @@ const el = (tag, className, text) => {
 const symbol = (name, className = '') => { const node = el('span', 'mss-symbol ' + className); node.innerHTML = icon(name); return node; };
 function action(label, className, onClick) { const node = el('button', className, label); node.type = 'button'; node.addEventListener('click', onClick); return node; }
 
-export function createMssInterface({ getSnapshot, navigate, editSettings, openScenario, openWorkspace, shareProgress, openBilling }) {
+export function createMssInterface({ getSnapshot, navigate, editSettings, openScenario, openWorkspace, shareProgress, openBilling, refreshBalance }) {
   const main = document.querySelector('main');
   let sharingProgress = false;
   let shareStatus = '';
@@ -231,6 +232,20 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
     const identity = el('div', 'mss-identity'); const photo = el('div', 'mss-owner-photo'); avatar(photo, snapshot);
     const identityCopy = el('div'); identityCopy.append(el('h2', '', snapshot.owner || 'Your profile'), el('p', '', 'MySecondSelf account'));
     const edit = action('Edit profile', 'mss-edit-profile', () => editSettings('ownerName')); edit.prepend(symbol('edit')); identity.append(photo, identityCopy, edit); profile.append(identity, banner(snapshot, true));
+    const balance = el('section', 'mss-card mss-voice-balance');
+    balance.setAttribute('aria-label', 'Subscription and voice minutes');
+    const balanceHead = el('div','mss-balance-heading'); balanceHead.append(el('h2','','Voice minutes'));
+    const refresh = action('Refresh','mss-balance-refresh',()=>refreshBalance?.());
+    refresh.disabled = snapshot.billing?.status === 'loading'; balanceHead.append(refresh); balance.append(balanceHead);
+    if(snapshot.billing?.status === 'ready') {
+      const credit = voiceBalanceModel(snapshot.billing.wallet);
+      balance.append(el('strong','mss-balance-total',credit.total + ' available'),el('p','mss-balance-status',credit.active ? 'Premium active' : 'No active subscription'));
+      const monthly = el('div','mss-balance-row'); monthly.append(el('strong','','Subscription'),el('span','',credit.monthlyLabel + ' left of 60 min')); balance.append(monthly);
+      const progress = el('progress','mss-balance-bar'); progress.max=3600000;progress.value=Math.min(3600000,credit.monthly);progress.setAttribute('aria-label','Subscription minutes remaining');balance.append(progress);
+      balance.append(el('p','mss-balance-note',credit.periodEnd ? 'Current period ends ' + new Intl.DateTimeFormat(undefined,{day:'numeric',month:'short',year:'numeric'}).format(new Date(credit.periodEnd)) + '. Allowance resets with the next subscription period.' : 'No subscription reset date yet.'));
+      const topup = el('div','mss-balance-row');topup.append(el('strong','','Top-up minutes'),el('span','',credit.topupLabel + ' left'));balance.append(topup,el('p','mss-balance-note','Top-up minutes carry forward until used. Subscription minutes are used first.'));
+    } else balance.append(el('p','mss-balance-note',snapshot.billing?.status === 'error' ? 'Your balance could not be loaded. Tap Refresh to try again.' : 'Checking your voice minutes…'));
+    profile.append(balance);
     const remembered = el('section', 'mss-card mss-remembered'); remembered.append(el('h2', '', 'Preferences remembered'));
     const memoryContent = el('div', 'mss-memory-content'); const list = el('ul');
     snapshot.preferences.slice(0, 4).forEach(p => list.append(el('li', '', p.text)));
