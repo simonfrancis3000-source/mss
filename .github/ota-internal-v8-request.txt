@@ -1,0 +1,3 @@
+approved_bundle_sha256=f42308e9eb861f5a25f7ad167c461da86257eaf47538299ae2fd9e8a7bc43edf
+intent=internal-test-only
+native_version_code=8
