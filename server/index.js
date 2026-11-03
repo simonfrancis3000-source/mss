@@ -1,3 +1,4 @@
+import { shouldMeterVoice } from './voice-billing-policy.js';
 import { shouldContinueGuidedTurn, guidedReplyNeedsRepair, finalizeGuidedReply, GUIDED_TURN_CORRECTION } from "./guided-turn.js";
 import { cleanSimulationResult } from "../src/simulation.js";
 import { buildScenarioConversationPlan, scenarioConversationGuidance } from "../src/conversation-plan.js";
@@ -635,8 +636,7 @@ const app = http.createServer(async (request, response) => {
   }
 
   if (request.method === "POST" && url.pathname === "/api/phonic/session") {
-    const meteredVoice = VOICE_BILLING_ENABLED ||
-      (voiceBillingFor(authContext) && request.headers["x-mss-billing-client"] === "android-1.7");
+    const meteredVoice = shouldMeterVoice({globallyEnabled:VOICE_BILLING_ENABLED,accountEligible:voiceBillingFor(authContext),client:request.headers["x-mss-billing-client"]});
     if (meteredVoice && !voiceRelay) {
       return json(response, 503, { error: "Voice billing is not configured." }, headers || {});
     }
