@@ -757,9 +757,9 @@ function renderScenarioJourney() {
   if (headerLabel) headerLabel.textContent = progressOwnerLabel(state.profile.ownerName,"progress");
   const done = completedScenarioIds(data.completed);
   const headerValue = document.querySelector("#scenarioHeaderValue");
-  if (counter) counter.textContent = ready ? done.length + " / 25 COMPLETE" : "PROGRESS UNAVAILABLE";
-  if (headerValue) headerValue.textContent = ready ? done.length + "/25" : "—/25";
-  if (header) header.setAttribute("aria-label", ready ? done.length + " of 25 scenarios completed" : "Scenario progress unavailable");
+  if (counter) counter.textContent = ready ? done.length + " / " + SCENARIOS.length + " COMPLETE" : "PROGRESS UNAVAILABLE";
+  if (headerValue) headerValue.textContent = ready ? done.length + "/" + SCENARIOS.length : "—/" + SCENARIOS.length;
+  if (header) header.setAttribute("aria-label", ready ? done.length + " of " + SCENARIOS.length + " scenarios completed" : "Scenario progress unavailable");
   target.replaceChildren();
   target.closest(".scenario-journey").dataset.journeyDisplay = journeyDisplay;
   const tabs = document.createElement("div"); tabs.className = "journey-view-tabs"; tabs.setAttribute("role", "group"); tabs.setAttribute("aria-label", "Journey view");
@@ -775,31 +775,8 @@ function renderScenarioJourney() {
     return;
   }
   if (journeyDisplay === "chart") {
-    const progress = scenarioProgressSummary(done);
-    const chart = document.createElement("section"); chart.className = "journey-chart";
-    const heading = document.createElement("h3"); heading.textContent = progressOwnerLabel(state.profile.ownerName,"progress");
-    const ring = document.createElement("div"); ring.className = "journey-progress-ring"; ring.style.setProperty("--progress", progress.percent + "%");
-    ring.setAttribute("role", "img"); ring.setAttribute("aria-label", progress.completed + " of " + progress.total + " scenarios completed, " + progress.percent + " percent");
-    const ringValue = document.createElement("strong"); ringValue.textContent = progress.percent + "%";
-    const ringLabel = document.createElement("span"); ringLabel.textContent = "scenarios complete"; ring.append(ringValue, ringLabel);
-    const caption = document.createElement("p"); caption.className = "journey-chart-caption"; caption.textContent = progress.completed + " of " + progress.total + " scenarios confirmed complete";
-    const bars = document.createElement("div"); bars.className = "journey-chart-bars";
-    progress.groups.forEach(group => {
-      const column = document.createElement("div"); column.className = "journey-chart-column " + group.id;
-      const track = document.createElement("div"); track.className = "journey-chart-track";
-      const fill = document.createElement("span"); fill.style.height = group.percent + "%"; track.append(fill);
-      const label = document.createElement("span"); label.textContent = group.label;
-      const count = document.createElement("strong"); count.textContent = group.completed + "/" + group.total;
-      column.setAttribute("aria-label", group.label + ": " + group.completed + " of " + group.total + " complete"); column.append(track, label, count); bars.append(column);
-    });
-    const currentScenario = SCENARIOS.find(item => item.id === data.started && !done.includes(item.id)) || SCENARIOS.find(item => item.kind === "room" && item.roomId === roomJourney.active_room_id && !done.includes(item.id));
-    const nextScenario = currentScenario || progress.next;
-    const next = document.createElement("div"); next.className = "journey-chart-next";
-    const nextLabel = document.createElement("span"); nextLabel.textContent = currentScenario ? "Your current scenario" : progress.next ? "Your next scenario" : "All scenarios complete";
-    const nextTitle = document.createElement("strong"); nextTitle.textContent = nextScenario?.title || "Keep refining your SecondSelf";
-    const open = document.createElement("button"); open.type = "button"; open.className = "journey-task-button"; open.textContent = progress.next ? "Explore scenario" : "Review scenarios";
-    open.addEventListener("click", () => { selectedJourneyScenario = nextScenario?.id || SCENARIOS[0].id; journeyDisplay = "scenarios"; renderScenarioJourney(); });
-    next.append(nextLabel, nextTitle, open); chart.append(heading, ring, caption, bars, next); target.append(chart); return;
+    if (mssInterface) target.append(mssInterface.createProgressChart());
+    return;
   }
   const available = availableScenarioCount(done);
   const selected = SCENARIOS.findIndex((item) => item.id === selectedJourneyScenario);
