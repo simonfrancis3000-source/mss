@@ -557,3 +557,41 @@ body.auth-required { background: #fff; }
   border-color: #fff;
   box-shadow: none;
 }
+
+/* Shared branding geometry across Chat, Journey and Talk. */
+.nav-wrap, .voice-experience .voice-experience-topbar {
+  box-sizing: border-box;
+  min-height: 94px;
+  padding: 23px 32px;
+  align-items: center;
+}
+.nav-wrap .brand, .voice-experience .voice-brand { display: flex; align-items: center; gap: 13px; flex-shrink: 0; }
+.nav-wrap .brand img, .voice-experience .voice-brand img { width: 42px; height: 40px; flex-shrink: 0; object-fit: contain; }
+.nav-wrap .brand-wordmark, .voice-experience .voice-brand .brand-wordmark { font-size: 17px; letter-spacing: .25em; }
+@media (min-width: 601px) { .voice-experience { inset: 22px max(20px,calc((100vw - 860px)/2)); } }
+@media (max-width: 600px) {
+  .nav-wrap, .voice-experience .voice-experience-topbar { min-height: 90px; padding: max(20px,env(safe-area-inset-top)) 22px 18px; }
+  .nav-wrap .brand, .voice-experience .voice-brand { gap: 13px; }
+  .nav-wrap .brand img, .voice-experience .voice-brand img { width: 34px; height: 34px; }
+  .nav-wrap .brand-wordmark, .voice-experience .voice-brand .brand-wordmark { font-size: 15px; letter-spacing: .14em; }
+}
+@media (max-width: 360px) {
+  .nav-wrap, .voice-experience .voice-experience-topbar { padding-inline: 15px; }
+  .nav-wrap .brand, .voice-experience .voice-brand { gap: 9px; }
+  .nav-wrap .brand-wordmark, .voice-experience .voice-brand .brand-wordmark { font-size: 13px; }
+}
+/* Center the complete white login form without content-box overflow. */
+#authGate, #authGate * { box-sizing: border-box; }
+#authGate { display: grid; justify-items: center; align-items: safe center; padding: 20px 16px; overflow-x: hidden; }
+#authGate .auth-card { width: min(440px,100%); max-width: 100%; margin: auto; padding: 24px; text-align: center; }
+#authGate .auth-form { width: 100%; min-width: 0; max-width: 100%; margin-inline: auto; }
+#authGate .auth-form input:not([type=checkbox]), #authGate .auth-submit { width: 100%; max-width: 100%; min-width: 0; }
+#authGate .auth-form input:not([type=checkbox]) { text-align: left; }
+#authGate .auth-remember { justify-content: center; text-align: left; }
+#authGate .auth-turnstile { width: 100%; max-width: 100%; align-items: center; margin-inline: auto; }
+#authGate .auth-mode-toggle, #authGate .auth-forgot { justify-self: center; }
+@media (max-width: 360px) { #authGate { padding: 16px 8px; } #authGate .auth-card { padding: 16px 0; } }
+@media (max-width: 600px) {
+  /* Keep iPhone Safari from zooming and shifting the form on focus. */
+  #authGate .auth-form input:not([type=checkbox]), .chat-composer textarea { font-size: 16px; }
+}

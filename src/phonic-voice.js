@@ -111,6 +111,7 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
   let playbackContext = null;
   let playbackGain = null;
   let playbackLimiter = null;
+  let playbackHeadroom = null;
   let playbackSources = new Set();
   const playbackTimings = new Map();
   let nextPlaybackTime = 0;
@@ -444,13 +445,16 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
       playbackGain = playbackContext.createGain();
       playbackGain.gain.value = 2;
       playbackLimiter = playbackContext.createDynamicsCompressor();
-      playbackLimiter.threshold.value = -3;
-      playbackLimiter.knee.value = 0;
+      playbackLimiter.threshold.value = -4.5;
+      playbackLimiter.knee.value = 6;
       playbackLimiter.ratio.value = 20;
-      playbackLimiter.attack.value = 0.003;
+      playbackLimiter.attack.value = 0.001;
       playbackLimiter.release.value = 0.12;
       playbackGain.connect(playbackLimiter);
-      playbackLimiter.connect(playbackContext.destination);
+      playbackHeadroom = playbackContext.createGain();
+      playbackHeadroom.gain.value = 0.9;
+      playbackLimiter.connect(playbackHeadroom);
+      playbackHeadroom.connect(playbackContext.destination);
       await playbackContext.resume();
       const wsBase = String(session.websocketUrl || session.wsUrl || DEFAULT_WS_URL);
       const separator = wsBase.includes("?") ? "&" : "?";
@@ -546,6 +550,8 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
       try { await microphoneContext.close(); } catch {}
       microphoneContext = null;
     }
+    try { playbackHeadroom?.disconnect(); } catch {}
+    playbackHeadroom = null;
     try { playbackGain?.disconnect(); } catch {}
     try { playbackLimiter?.disconnect(); } catch {}
     playbackGain = null;

@@ -1359,8 +1359,9 @@ const app = http.createServer(async (request, response) => {
         guarded = await guardScenarioQuestion({...guardOptions,draft:enforceFirstPersonTaskQuestions(guardRobotExecutionClaims(recovered,preferences,profile.preferredLanguage),companionName)});
       }
     }
-    finalReply = guarded.reply;
-    const responseNeedsReview = !finalReply || guidedReplyNeedsRepair(finalReply,flowRequirements);
+    finalReply = guarded.reply.replace(/(^|\n\n)One thing (?:to settle|that follows from that|to check|to decide|to clarify)\s*:\s*/gi,'$1');
+    const responseNeedsReview = !finalReply || (!guarded.reviewUnavailable && guidedReplyNeedsRepair(finalReply,flowRequirements));
+    if (responseNeedsReview) console.info("SYNQ.ME reply withheld", {continuityBlocked:guarded.blocked,reviewUnavailable:Boolean(guarded.reviewUnavailable),missingFollowup:!/[?？؟]/u.test(finalReply),applianceIntake:Boolean(flowRequirements.intake)});
     const reviewMs = Date.now() - reviewStart;
     const saveStart = Date.now();
     const [persistence] = await Promise.all([
