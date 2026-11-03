@@ -30,12 +30,16 @@ Android 1.5 adds WebView settings for the Cloudflare Turnstile login bridge. It 
 ## Package an OTA web-only update
 
 1. Incorporate the latest reviewed MSS UI changes into the mobile branch.
-2. Run tests, then `npm run build -- --mode mobile`.
-3. Run `python3 scripts/package-mobile-ota.py --platform android --native-code 8`.
-4. Inspect `ota-publish/`: a zip with `index.html` at root and
-   `internal-android.json`. Keep source maps, tokens, and private files out of
-   public bundles. The script validates the relative Vite asset base and prints
-   the bundle SHA-256 checksum.
+2. In Codemagic, select `mobile/current-mss` and the **MSS Android OTA Safety Test**
+   workflow. It uses the same `mss_mobile` environment group as the signed
+   Android app, checks that Supabase and API configuration were compiled into
+   the bundle, runs `npm test`, and embeds a temporary proof banner.
+3. Download **both artifacts** from the completed Codemagic build:
+   `mss-<hash>.zip` and `internal-android.json`. Do not use a Codespaces
+   bundle unless it passes the same preflight with the correct public Vite vars.
+4. Inspect the ZIP: `index.html` must be at its root. Keep source maps, tokens,
+   and private files out of public bundles. The packager validates the relative
+   Vite asset base and prints the ZIP's SHA-256 checksum.
 5. To **publish only after internal approval**, place the generated ZIP and JSON
    in `ota-bundles/` on the **SYNQ.ME branch** and push. The Render API must be
    deployed from the branch containing `server/index.js` and the OTA files;
@@ -70,37 +74,32 @@ Blocked rolled-back IDs are skipped by the mobile update checker.
 
 ## Internal end-to-end proof test
 
-Use an Android installation with native **versionCode 8** (MSS 1.5); change
-`--native-code` only if the installed native bundle uses a different
-compatible version code. Before publishing, confirm the live API endpoint
-`https://synqme-api.onrender.com/ota/internal-android.json` serves the
-disabled JSON manifest. If it does not, deploy the OTA server route first.
+**Do not publish the earlier Codespaces archive** produced with a plain
+`VITE_API_BASE_URL=... npm run build`. That command does not necessarily
+provide the `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` variables used
+in Codemagic's working build. A ZIP without them breaks account sign-in.
 
-From `mobile/current-mss`, with a clean working tree:
+Instead, run the **MSS Android OTA Safety Test** Codemagic workflow
+from `mobile/current-mss`. It does not publish anything. It must finish
+successfully and produce both artifacts. Check the app installed on your
+phone is native `versionCode 8` (MSS 1.5), otherwise do not publish a
+manifest targeting code 8.
 
-```bash
-git pull --ff-only
-npm ci
-npm test
-VITE_API_BASE_URL=https://synqme-api.onrender.com npm run build -- --mode mobile
-python3 scripts/package-mobile-ota.py --platform android --native-code 8 --test-banner
-```
+The generated ZIP contains a floating green **MSS LIVE UPDATE TEST SUCCESSFUL**
+banner only in its packaged HTML. Source files and the hosted website are
+unchanged. Before activating for testers, check that
+`https://synqme-api.onrender.com/ota/internal-android.json` is still disabled,
+review the artifacts, and confirm the ZIP matches the manifest's SHA-256.
+The manifest is visible to **every internal tester** running the matching
+native version. Publish only to an agreed test audience.
 
-The `--test-banner` option injects a floating green **MSS LIVE UPDATE TEST
-SUCCESSFUL** label **only into the generated ZIP**. It does not change the
-normal website or the project's mobile source. Inspect both generated files
-under `ota-publish/`. Publishing them means copying the single named ZIP
-and `internal-android.json` into `ota-bundles/` on the actual Render API
-deployment branch. Confirm the bundle URL and manifest return 200 over HTTPS,
-and that the manifest lists the installed native version code. This activates
-the update for **all internal testers with that matching native version**.
-Do not enable the production channel.
+To activate, commit the reviewed ZIP and matching `internal-android.json`
+from that single Codemagic run into `ota-bundles/` on the **actual Render
+API deployment branch** (`SYNQ.ME`, if that is still configured) and verify
+both HTTPS endpoints return 200. Launch the app to stage the bundle. Fully
+close it and relaunch to see the banner.
 
-Launch the app on Android while online. After the ZIP has had time to stage,
-**fully close** and reopen the app. A visible green banner verifies that the
-new web code was applied without a store update.
+After testing, create and publish **a new clean OTA bundle without the
+banner**. Setting `enabled: false` prevents further downloads but does not
+remove the bundle already applied on a device.
 
-To finish the test, build and publish a **new ordinary bundle without**
-`--test-banner`; launch, close, and reopen again, verifying the banner
-disappears. Merely setting `enabled:false` stops new downloads but
-**does not remove** an already applied bundle.
