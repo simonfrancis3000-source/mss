@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { SCENARIOS, scenarioTasks } from '../src/scenario-journey.js';
 import { scenarioLearningObjectives, scenarioForId, areaLearningState } from '../src/scenario-learning.js';
 
-test('all 25 scenarios supply area-specific subjects and useful decision dimensions', () => {
-  assert.equal(SCENARIOS.length, 25);
+test('all 26 scenarios supply area-specific subjects and useful decision dimensions', () => {
+  assert.equal(SCENARIOS.length, 26);
   for (const scenario of SCENARIOS) {
     const objectives = scenarioLearningObjectives(scenario);
     assert.equal(objectives.length, scenarioTasks(scenario).length, scenario.id);
