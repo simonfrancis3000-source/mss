@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { MSS_TOPUP_MINUTES, MSS_PLAY_PACKAGE, parseVerifiedPlayPurchase, hashPurchaseToken } from "../server/google-play-billing.js";
+import { MSS_TOPUP_MINUTES, MSS_PLAY_PACKAGE, parseVerifiedPlayPurchase, hashPurchaseToken, obfuscatedPlayAccountId } from "../server/google-play-billing.js";
 
 test("Google Play package and product catalogue match the activated Play listing", () => {
   assert.equal(MSS_PLAY_PACKAGE, "app.mysecondself");
@@ -58,4 +58,13 @@ test("purchase tokens are hashed and not stored as plaintext", () => {
   assert.match(hashPurchaseToken(token), /^[a-f0-9]{64}$/);
   assert.notEqual(hashPurchaseToken(token), token);
   assert.throws(() => hashPurchaseToken("short"), /Invalid/);
+});
+
+test("Google Play account ID is a stable one-way hash of the signed-in Supabase user", () => {
+  const user = "11111111-2222-3333-4444-555555555555";
+  const accountId = obfuscatedPlayAccountId(user);
+  assert.match(accountId, /^[a-f0-9]{64}$/);
+  assert.equal(accountId, obfuscatedPlayAccountId(user.toUpperCase()));
+  assert.notEqual(accountId, obfuscatedPlayAccountId("11111111-2222-3333-4444-555555555556"));
+  assert.throws(() => obfuscatedPlayAccountId("not-a-user-id"), /Invalid signed-in account/);
 });
