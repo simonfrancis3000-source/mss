@@ -34,6 +34,34 @@ def main():
     files = sorted(path for path in DIST.rglob("*") if path.is_file())
     if not files:
         parser.error("dist is empty")
+
+    # Fail closed if this build does not have the same public Supabase
+    # connection configuration as Codemagic's signed Android releases.
+    # These VITE_ variables are public client configuration, NOT service-role keys.
+    required = ("VITE_SUPABASE_URL", "VITE_SUPABASE_ANON_KEY", "VITE_API_BASE_URL")
+    missing = [name for name in required if not os.environ.get(name, "").strip()]
+    if missing:
+        parser.error("Missing mobile build configuration: " + ", ".join(missing) +
+                     ". Use the Codemagic MSS OTA Test workflow; DO NOT publish this ZIP.")
+    supabase_url = os.environ["VITE_SUPABASE_URL"].strip()
+    supabase_key = os.environ["VITE_SUPABASE_ANON_KEY"].strip()
+    api_url = os.environ["VITE_API_BASE_URL"].strip().rstrip("/")
+    if not supabase_url.startswith("https://") or len(supabase_key) < 20 or api_url != API.removesuffix("/ota/"):
+        parser.error("Invalid public Supabase or API configuration; OTA bundle not created.")
+    script_paths = [p for p in files if p.suffix == ".js" and "assets" in p.parts]
+    script_text = "\n".join(p.read_text(encoding="utf-8", errors="replace") for p in script_paths)
+    missing_from_bundle = [
+        name for name, value in (
+            ("VITE_SUPABASE_URL", supabase_url),
+            ("VITE_SUPABASE_ANON_KEY", supabase_key),
+            ("VITE_API_BASE_URL", api_url)
+        ) if value not in script_text
+    ]
+    if missing_from_bundle:
+        parser.error("Built JS is missing configured values: " + ", ".join(missing_from_bundle) +
+                     ". Rebuild with Codemagic's mss_mobile environment; DO NOT publish.")
+    if not (DIST / "phonic-pcm-processor.worklet.js").is_file():
+        parser.error("Voice audio worklet missing from dist; OTA bundle not created.")
     if any(path.is_symlink() for path in files):
         parser.error("dist must not contain symlinks")
     OUT.mkdir(exist_ok=True)
