@@ -5355,7 +5355,7 @@ initialisePexiManifestControls();
 
 function syncAppNavigation() {
   const view = document.body.dataset.appView || "home";
-  const selected = elements.voiceExperience && !elements.voiceExperience.hidden ? "talk" : view === "journey" ? "passport" : view;
+  const selected = elements.voiceExperience && !elements.voiceExperience.hidden ? "talk" : view === "journey" ? "passport" : view === "rewards" ? "home" : view;
   document.querySelectorAll("[data-app-tab]").forEach((button) => {
     if (button.dataset.appTab === selected) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
@@ -5373,7 +5373,7 @@ function selectAppView(view) {
     chatReturnSummary = (state.profile.preferredLanguage || "en") === "en" ? (checkpoint ? englishResumeReply(checkpoint,state.profile.ownerName) : "Welcome back, " + state.profile.ownerName.trim().split(/\s+/)[0] + ". We were working on " + (scenarioForId(scope)?.title || roomJourney.active_room_id.replaceAll('_',' ')) + ". Your saved conversation is above.") : "";
   }
   if (elements.voiceExperience && !elements.voiceExperience.hidden) closeVoiceExperience("Returned to your conversation.");
-  document.body.dataset.appView = ["home", "passport", "profile", "journey"].includes(view) ? view : "chat";
+  document.body.dataset.appView = ["home", "passport", "profile", "journey", "rewards"].includes(view) ? view : "chat";
   const workspace = document.querySelector("#moreWorkspace");
   if (workspace) workspace.open = view === "journey";
   if (view === "journey") { journeyDisplay = "chart"; renderScenarioJourney(); }

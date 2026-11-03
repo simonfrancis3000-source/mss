@@ -4,6 +4,10 @@ import { scenarioProgressSummary } from './scenario-journey.js';
 // The presentation layer reads the existing account state. It never writes training data.
 export const COMPANION_IMAGE = '/robots/mss-companion.webp';
 export const COMPANION_HEAD_IMAGE = '/robots/mss-companion-head.webp';
+// Official Booster Robotics product photograph. Does not replace the user's companion illustration.
+const BOOSTER_T2_IMAGE = 'https://www.booster.tech/_astro/specification-t2-p3.ChyF-VA9_Z1rD17K.webp';
+const ROBOT_REWARD_CAP_CENTS = 100000;
+const money = cents => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100);
 
 const paths = {
   home: '<path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z"/>',
@@ -26,6 +30,8 @@ const paths = {
   spark: '<path d="m13 2-9 12h7l-1 8 10-13h-8Z"/>',
   bars: '<path d="M5 20v-5m7 5V9m7 11V3"/>',
   share: '<path d="M12 16V2m-4 4 4-4 4 4M4 12v9h16v-9"/>',
+  coins: '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v5c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 10v5c0 1.7 3.6 3 8 3s8-1.3 8-3v-5M4 15v4c0 1.7 3.6 3 8 3s8-1.3 8-3v-4"/>',
+  chevron: '<path d="m9 18 6-6-6-6"/>',
 };
 export function icon(name, className = '') {
   return '<svg class="' + className + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (paths[name] || paths.home) + '</svg>';
@@ -88,7 +94,7 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
   let sharingProgress = false;
   let shareStatus = '';
   const screens = {};
-  for (const [key, title] of [['home', 'Home'], ['passport', 'Passport'], ['profile', 'Profile']]) {
+  for (const [key, title] of [['home', 'Home'], ['passport', 'Passport'], ['profile', 'Profile'], ['rewards', 'Robot Rewards']]) {
     const section = el('section', 'mss-screen mss-' + key);
     section.id = 'mss-' + key; section.setAttribute('aria-label', title); screens[key] = section; main.prepend(section);
   }
@@ -210,17 +216,108 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
   function linkCard(title, subtitle, name, onClick) {
     const card = action('', 'mss-card mss-link-card', onClick); const copy = el('span', 'mss-link-copy'); copy.append(el('strong', '', title), el('span', '', subtitle)); card.append(symbol(name, 'mss-icon-tile'), copy, symbol('arrow')); return card;
   }
+
+  function rewardState(snapshot) {
+    const raw = snapshot.rewards;
+    const verified = raw?.status === 'ready' && Number.isSafeInteger(raw.earnedCents) && raw.earnedCents >= 0;
+    const earned = verified ? Math.min(ROBOT_REWARD_CAP_CENTS, raw.earnedCents) : null;
+    return { earned, percent: earned === null ? 0 : earned / ROBOT_REWARD_CAP_CENTS * 100, verified };
+  }
+  function rewardTrack(className, percent, label) {
+    const track = el('span', className);
+    track.setAttribute('role', 'progressbar');
+    track.setAttribute('aria-label', label);
+    track.setAttribute('aria-valuemin', '0');
+    track.setAttribute('aria-valuemax', '100');
+    track.setAttribute('aria-valuenow', String(Math.round(percent)));
+    const fill = el('span');
+    fill.style.width = Math.max(0, Math.min(100, percent)) + '%';
+    track.append(fill);
+    return track;
+  }
+  function rewardTeaser(snapshot) {
+    const summary = rewardState(snapshot);
+    const card = action('', 'mss-rewards-teaser', () => navigate('rewards'));
+    card.setAttribute('aria-label', 'Open Robot Rewards');
+    const row = el('span', 'mss-rewards-teaser-row');
+    const label = el('span', 'mss-rewards-teaser-title');
+    label.append(symbol('coins'), el('strong', '', 'Robot Rewards'));
+    row.append(label, el('strong', 'mss-rewards-teaser-value', summary.verified ? money(summary.earned) + ' / $1,000' : 'Credit pending'));
+    card.append(row, rewardTrack('mss-rewards-teaser-track', summary.percent, 'Robot credit earned'), symbol('chevron', 'mss-rewards-teaser-chevron'));
+    return card;
+  }
+  function rewardsPage(snapshot) {
+    const summary = rewardState(snapshot);
+    const percent = snapshot.model.ready ? snapshot.model.percent : 0;
+    const container = el('div', 'mss-rewards-page');
+    const toolbar = el('header', 'mss-rewards-toolbar');
+    const back = action('', 'mss-rewards-back', () => navigate('home'));
+    back.setAttribute('aria-label', 'Back to home');
+    back.append(symbol('chevron'));
+    toolbar.append(back, el('h1', '', 'Robot Rewards'), el('span', 'mss-rewards-toolbar-spacer'));
+    container.append(toolbar);
+
+    const hero = el('section', 'mss-rewards-partner');
+    const partner = el('div', 'mss-rewards-partner-copy');
+    partner.append(el('span', 'mss-rewards-partner-eyebrow', 'Manufacturer partner'));
+    partner.append(el('strong', 'mss-rewards-partner-name', 'Booster Robotics'));
+    partner.append(el('span', 'mss-rewards-featured', 'Featured partner robot'));
+    partner.append(el('h2', '', 'Booster T2'));
+    const photo = el('img', 'mss-rewards-booster-image');
+    photo.src = BOOSTER_T2_IMAGE;
+    photo.alt = 'Booster T2 full-body humanoid robot';
+    photo.loading = 'lazy';
+    photo.decoding = 'async';
+    photo.width = 512;
+    photo.height = 512;
+    hero.append(partner, photo);
+    container.append(hero);
+
+    const credit = el('section', 'mss-rewards-credit');
+    credit.append(el('h2', '', 'Robot credit earned'));
+    credit.append(el('strong', 'mss-rewards-credit-total', summary.verified ? money(summary.earned) : 'Awaiting verification'));
+    credit.append(el('p', '', summary.verified ? 'of $1,000 maximum' : 'Verified paid purchases will appear here as reward accounting becomes available.'));
+    credit.append(rewardTrack('mss-rewards-credit-track', summary.percent, 'Credit progress towards $1,000'));
+    const numbers = el('div', 'mss-rewards-credit-breakdown');
+    numbers.append(el('span', '', summary.verified ? Math.round(summary.percent) + '% earned' : 'Balance pending'),
+      el('span', '', summary.verified ? money(ROBOT_REWARD_CAP_CENTS - summary.earned) + ' credit available' : '$1,000 maximum'));
+    credit.append(numbers);
+    container.append(credit);
+
+    const training = el('section', 'mss-rewards-training');
+    const trainingTitle = el('div', 'mss-rewards-training-heading');
+    trainingTitle.append(symbol('passport'), el('h2', '', 'Robot Ready training'),
+      el('strong', '', snapshot.model.ready ? percent + '%' : '—'));
+    training.append(trainingTitle, rewardTrack('mss-rewards-training-track', percent, 'Training scenarios completed'));
+    training.append(el('p', '', 'Reach 80% of core training and pass the readiness assessment to unlock redemption.'));
+    container.append(training);
+
+    const offer = el('div', 'mss-rewards-offer');
+    offer.append(symbol('coins'), el('p', '', 'Earn $2 of robot credit for every $1 in eligible MySecondSelf purchases, up to program limits.'));
+    container.append(offer);
+    const footer = el('div', 'mss-rewards-partner-footer');
+    footer.append(el('strong', '', 'Partner: Booster Robotics'));
+    container.append(footer);
+    const details = el('details', 'mss-rewards-terms');
+    const opener = el('summary', '', 'How Robot Rewards work');
+    details.append(opener, el('p', '', 'Earn up to $100 credit per month and $1,000 in total. Rewards are non-transferable, subject to verified qualifying payments, participating models and partner terms. Training and a readiness assessment are required before redemption. No robot purchase price is shown until the partner confirms the offer.'));
+    container.append(details);
+    return container;
+  }
+
   function render() {
     const snapshot = getSnapshot(), { model } = snapshot;
     avatar(headerAvatar, snapshot); avatar(voiceAvatar, snapshot);
     headerAvatar?.setAttribute('aria-label', 'Open profile');
-    const home = screens.home; home.replaceChildren(heading('Hi ' + (snapshot.owner?.split(/\s+/)[0] || 'there'), 'Keep training your future robot with your knowledge, habits, boundaries and preferences.'), banner(snapshot), progress(snapshot));
+    const home = screens.home; home.replaceChildren(heading('Hi ' + (snapshot.owner?.split(/\s+/)[0] || 'there'), 'Keep training your future robot with your knowledge, habits, boundaries and preferences.'), banner(snapshot), progress(snapshot), rewardTeaser(snapshot));
     const focus = el('div', 'mss-section-heading'); focus.append(el('h2', '', 'Today’s focus'));
     const seeAll = action('See all', 'mss-text-button', () => navigate('passport')); seeAll.append(symbol('arrow')); focus.append(seeAll); home.append(focus);
     const topics = el('div', 'mss-focus-grid');
     const currentIndex = Math.max(0, model.modules.findIndex(m => m.id === model.active?.id));
     model.modules.slice(currentIndex, currentIndex + 3).forEach(item => topics.append(moduleCard(item, true))); home.append(topics);
     home.append(linkCard('Current conversation', snapshot.pendingQuestion || 'Continue where you left off with ' + snapshot.companion + '.', 'chat', () => navigate('chat')));
+
+    screens.rewards.replaceChildren(rewardsPage(snapshot));
 
     const passport = screens.passport; passport.replaceChildren(heading('Passport', 'Build your robot through conversation.'), progressChart(snapshot), el('h2', 'mss-section-title', 'Training modules'));
     const grid = el('div', 'mss-module-grid'); model.modules.forEach(item => grid.append(moduleCard(item))); passport.append(grid);
