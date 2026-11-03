@@ -165,6 +165,7 @@ declare
   v_monthly bigint;
   v_topup bigint;
   v_expiry_cap bigint;
+  v_stale public.mss_voice_leases%rowtype;
 begin
   if p_user_id is null or p_lease_id is null then
     raise exception 'invalid_lease_identity';
@@ -174,6 +175,24 @@ begin
     where user_id = p_user_id for update;
   if not found then raise exception 'no_voice_credits'; end if;
 
+  -- A Render restart can interrupt settlement. Reclaim only leases that
+  -- passed the server's absolute connection deadline, conservatively
+  -- refunding all reserved minutes rather than charging for a crashed call.
+  for v_stale in select * from public.mss_voice_leases
+    where user_id = p_user_id and status = 'active'
+      and connection_deadline < now() for update loop
+    update public.mss_voice_leases set status='settled',
+      consumed_ms=0, settled_at=now() where id=v_stale.id;
+    update public.mss_voice_wallets set
+      monthly_remaining_ms=monthly_remaining_ms +
+        case when monthly_valid_until > now() then v_stale.reserved_monthly_ms else 0 end,
+      topup_remaining_ms=topup_remaining_ms + v_stale.reserved_topup_ms,
+      updated_at=now()
+      where user_id=p_user_id;
+  end loop;
+  -- Refresh wallet after stale lease refunds.
+  select * into v_wallet from public.mss_voice_wallets
+    where user_id=p_user_id for update;
   if exists(select 1 from public.mss_voice_leases
     where user_id = p_user_id and status = 'active') then
     raise exception 'voice_session_already_active';
