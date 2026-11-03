@@ -630,6 +630,22 @@ const app = http.createServer(async (request, response) => {
         console.warn("Play purchase verified but credit grant failed", { code: error.code });
         return json(response, 503, { error: "Your purchase was verified, but credits could not yet be saved. Please retry." }, headers || {});
       }
+      // Licensed-tester transactions are not cash spending and must never earn
+      // promotional robot credit, even if a sandbox order has a price field.
+      if (verified.isTest && verified.orderId) {
+        const now = new Date().toISOString();
+        const { error: sandboxError } = await billingDb.from("mss_robot_reward_orders").upsert({
+          order_id: verified.orderId,
+          user_id: authContext.user.id,
+          product_id: verified.productId,
+          paid_usd_cents: 0,
+          currency_code: 'test',
+          status: 'test',
+          purchased_at: now,
+          checked_at: now
+        }, { onConflict: 'order_id' });
+        if (sandboxError) console.warn('Could not mark sandbox purchase in Robot Rewards ledger', { code: sandboxError.code });
+      }
       // Acknowledge or consume after the database grant commits. If that
       // notification fails, repeat verification on launch to finish it.
       let finalizationPending = false;
