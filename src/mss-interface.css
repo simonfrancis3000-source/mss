@@ -233,3 +233,11 @@ body[data-app-view='chat'] .chat-workspace>.chat-composer{flex:0 0 auto}
 #robotName{display:block;width:100%;min-height:48px;padding:12px 14px;border:2px solid #8bb7df!important;border-radius:12px;background:#fff!important;color:#10172c;box-shadow:0 1px 3px #163c6310}#robotName:focus{outline:3px solid #c9e4ff;outline-offset:2px;border-color:#126bc0!important}#robotNameHelp{display:block;margin-top:6px;color:#566075;line-height:1.5}#personaInsights[hidden]{display:none!important}body[data-app-view='chat'] #taskResult{display:none!important}
 
 .mss-voice-balance{padding:20px;display:flex;flex-direction:column;gap:12px}.mss-balance-heading,.mss-balance-row{display:flex;justify-content:space-between;align-items:center;gap:12px}.mss-balance-heading h2{font-size:21px;margin:0}.mss-balance-refresh{border:0;background:#e5f0ff;color:#1262ad;border-radius:20px;padding:8px 12px;font:inherit;font-size:13px;cursor:pointer}.mss-balance-refresh:disabled{opacity:.6;cursor:wait}.mss-balance-total{font-size:22.5px;color:#185da5;letter-spacing:-1px}.mss-balance-status,.mss-balance-note{margin:0;color:#586175;line-height:1.5;font-size:13px}.mss-balance-row{font-size:14px;flex-wrap:wrap}.mss-balance-row span{color:#40546c}.mss-balance-bar{appearance:none;width:100%;height:11px;border:none;border-radius:12px;overflow:hidden;background:#dce9f8}.mss-balance-bar::-webkit-progress-bar{background:#dce9f8}.mss-balance-bar::-webkit-progress-value{background:linear-gradient(90deg,#55b7f4,#206cc1);border-radius:12px}.mss-balance-bar::-moz-progress-bar{background:#338bda;border-radius:12px}
+
+/* Compact voice controls, with a full touch target around each button. */
+.voice-orb .voice-orb-core{top:-12px}
+.voice-experience .voice-experience-content .voice-controls{width:70%;max-width:378px;gap:10.5px}
+.voice-experience .voice-controls>button{position:relative;min-height:36.4px;padding:7px 14px;gap:7px;border-radius:21px;font-size:12.6px;line-height:1.2}
+.voice-experience .voice-controls>button::before{content:"";position:absolute;inset:-4px 0}
+.voice-experience .voice-control-icon{width:17.5px;height:17.5px;min-width:17.5px}
+.voice-experience .voice-controls>button svg{width:17.5px;height:17.5px}
