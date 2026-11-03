@@ -445,3 +445,16 @@ body[data-app-view='rewards'] .mss-rewards{display:flex}
 .mss-rewards-page .mss-rewards-credit-track>span{
   background:#08783f;
 }
+
+
+/* Match Home Robot Rewards to the Rewards detail / Today's Focus soft grey.
+   Remove the earlier 62px content minimum that left excess space BELOW the
+   rewards progress line. Both Home bars now have the same 11px bottom inset. */
+.mss-home .mss-rewards-teaser{
+  background:linear-gradient(125deg,#f0f0f5,#eceef4);
+  border-color:#d8dce5;
+  min-height:0;
+  box-sizing:border-box;
+  padding-top:10px;
+  padding-bottom:11px;
+}
