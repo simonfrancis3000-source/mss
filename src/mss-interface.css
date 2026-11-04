@@ -266,3 +266,227 @@ body[data-app-view='chat'] .chat-workspace>.chat-composer{flex:0 0 auto}
 #scenarioJourneyContent>.journey-view-tabs button[aria-pressed='true']{background:#e2efff;color:#1268c7;box-shadow:none}
 #scenarioJourneyContent .mss-chart-caption{margin:0;color:#566277;font-size:13px;line-height:1.4}
 #scenarioJourneyContent .mss-share-status{color:#48617a;font-size:12px;line-height:1.4}
+
+
+/* Booster partner rewards: a compact Home companion to training progress. */
+body[data-app-view='rewards'] .mss-rewards{display:flex}
+.mss-home .mss-progress{padding:10px 14px 11px;border-color:#e9dffa;background:#f0eaff}
+.mss-home .mss-progress-heading{gap:12px;margin-bottom:6px}
+.mss-home .mss-progress-heading h2{font-size:14px;font-weight:720;letter-spacing:-.2px}
+.mss-home .mss-progress-heading strong{font-size:15px;font-weight:750;color:#6742c0}
+.mss-home .mss-progress-track{height:7px;background:#bfa7ef}
+.mss-home .mss-progress-track>span{background:linear-gradient(90deg,#7953d4,#aa91eb)}
+.mss-home .mss-progress>p{display:none}
+.mss-home .mss-progress+.mss-rewards-teaser{margin-top:-5px}
+.mss-rewards-teaser{display:flex;position:relative;flex-direction:column;gap:6px;width:100%;min-height:62px;padding:9px 42px 10px 14px;border:1px solid #d7eedf;border-radius:15px;background:linear-gradient(135deg,#eaf9ef,#e5f5eb);color:#182639;text-align:left;box-shadow:0 4px 15px #08843d08}
+.mss-rewards-teaser:hover{filter:brightness(.985)}
+.mss-rewards-teaser-row{display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:0}
+.mss-rewards-teaser-title{display:flex;align-items:center;gap:9px;min-width:0}
+.mss-rewards-teaser-title>.mss-symbol{width:20px;height:20px;color:#12944f}
+.mss-rewards-teaser-title strong{font-size:14px;font-weight:750;white-space:nowrap}
+.mss-rewards-teaser-value{font-size:13px;font-weight:750;color:#078c43;white-space:nowrap}
+.mss-rewards-teaser-track{display:block;height:7px;max-width:100%;margin-left:29px;overflow:hidden;border-radius:10px;background:#c1c6cf}
+.mss-rewards-teaser-track>span{display:block;height:100%;border-radius:10px;background:#444b55}
+.mss-rewards-teaser-chevron{position:absolute;right:10px;top:50%;width:23px;height:23px;color:#182639;transform:translateY(-50%)}
+
+.mss-rewards-page{display:flex;flex-direction:column;gap:13px;max-width:650px;margin:0 auto}
+.mss-rewards-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.mss-rewards-toolbar h1{margin:0;font-size:clamp(22px,5vw,30px);font-weight:760;letter-spacing:-.6px}
+.mss-rewards-toolbar-spacer,.mss-rewards-back{width:38px;flex:0 0 38px}
+.mss-rewards-back{display:grid;place-items:center;height:38px;padding:0;border:0;border-radius:50%;background:#f0ebfa;color:#241c4c;transform:none}
+.mss-rewards-back .mss-symbol{width:20px;transform:rotate(180deg)}
+.mss-rewards-partner{position:relative;display:flex;align-items:stretch;isolation:isolate;min-height:218px;overflow:hidden;border-radius:19px;background:radial-gradient(circle at 76% 41%,#e9e1ff 0,#e9e1ff 28%,#faf7ff 55%,#fff 100%)}
+.mss-rewards-partner-copy{position:relative;z-index:2;display:flex;flex-direction:column;align-items:flex-start;gap:5px;justify-content:flex-start;width:60%;padding:18px 0 18px 20px}
+.mss-rewards-partner-eyebrow{color:#655a82;font-size:11px}
+.mss-rewards-partner-name{font-size:16px;font-weight:800;letter-spacing:-.3px}
+.mss-rewards-featured{margin-top:25px;color:#4c4267;font-size:11px;font-weight:700}
+.mss-rewards-partner-copy h2{margin:0;font-size:clamp(24px,6.2vw,38px);font-weight:790;letter-spacing:-1px;white-space:nowrap}
+.mss-rewards-booster-image{position:absolute;z-index:1;right:-4%;bottom:0;width:51%;height:99%;object-fit:contain;object-position:bottom center;mix-blend-mode:multiply}
+.mss-rewards-credit,.mss-rewards-training{border-radius:17px;padding:16px 18px}
+.mss-rewards-credit{background:linear-gradient(120deg,#edf9ef,#e9f7ee)}
+.mss-rewards-credit h2,.mss-rewards-training h2{margin:0;font-size:16px;font-weight:750;letter-spacing:-.25px}
+.mss-rewards-credit-total{display:block;margin-top:5px;color:#078943;font-size:clamp(24px,6vw,34px);font-weight:800;letter-spacing:-.9px;overflow-wrap:anywhere}
+.mss-rewards-credit>p{margin:2px 0 12px;color:#4c5960;font-size:13px}
+.mss-rewards-credit-track,.mss-rewards-training-track{display:block;height:9px;overflow:hidden;border-radius:12px;background:#cfe9d7}
+.mss-rewards-credit-track>span,.mss-rewards-training-track>span{display:block;height:100%;border-radius:12px;background:#12a454}
+.mss-rewards-credit-breakdown{display:flex;justify-content:space-between;gap:10px;margin-top:9px;font-size:12px;color:#3b4952}
+.mss-rewards-training{background:#f0eaff}
+.mss-rewards-training-heading{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.mss-rewards-training-heading>.mss-symbol{color:#8153dc}
+.mss-rewards-training-heading strong{margin-left:auto;font-size:17px}
+.mss-rewards-training-track{background:#bca3ed}
+.mss-rewards-training-track>span{background:linear-gradient(90deg,#7956d8,#af91ef)}
+.mss-rewards-training>p{margin:9px 0 0;font-size:12px;color:#645779;line-height:1.4}
+.mss-rewards-offer{display:flex;align-items:center;gap:10px;padding:12px 15px;border-radius:15px;background:#edf9f0}
+.mss-rewards-offer .mss-symbol{color:#159a50}
+.mss-rewards-offer p{margin:0;font-size:13px;font-weight:600;line-height:1.4}
+.mss-rewards-partner-footer{padding:11px 15px;border-radius:13px;background:#f5f2f7;color:#433755;font-size:13px}
+.mss-rewards-terms{padding:11px 15px;border:1px solid #e6dcf4;border-radius:14px;background:#fff;color:#342b48;font-size:13px}
+.mss-rewards-terms summary{cursor:pointer;font-weight:650}
+.mss-rewards-terms p{margin:10px 0 0;color:#5d566a;line-height:1.5}
+@media(max-width:420px){
+ .mss-home .mss-progress+.mss-rewards-teaser{margin-top:-6px}
+ .mss-rewards-teaser{padding-left:12px;padding-right:35px}
+ .mss-rewards-teaser-title{gap:6px}
+ .mss-rewards-teaser-title strong{font-size:13px}
+ .mss-rewards-teaser-value{font-size:12px}
+ .mss-rewards-teaser-track{margin-left:26px}
+ .mss-rewards-partner{min-height:200px}
+ .mss-rewards-partner-copy{padding:14px 0 14px 15px}
+ .mss-rewards-booster-image{right:-6%;width:53%}
+}
+
+
+/* Compact Home above the fixed navigation on smaller phones. Freya artwork stays unchanged. */
+@media(max-width:600px){
+  body[data-app-view='home'] .site-header{min-height:72px}
+  body[data-app-view='home'] .nav-wrap{min-height:72px;padding-top:calc(12px + env(safe-area-inset-top));padding-bottom:9px}
+  body[data-app-view='home'] main{padding-top:0}
+  .mss-home{gap:10px}
+  .mss-home .mss-page-heading{margin:0}
+  .mss-home .mss-page-heading h1{margin-bottom:5px}
+  .mss-home .mss-page-heading p{font-size:14px;line-height:1.34}
+  .mss-home .mss-robot-banner{min-height:218px;height:218px;padding-bottom:0;box-sizing:border-box}
+  .mss-home .mss-robot-copy{padding-top:17px;padding-bottom:0}
+  .mss-home .mss-robot-copy h2{margin-bottom:5px}
+  .mss-home .mss-robot-copy>p{line-height:1.32}
+  .mss-home .mss-primary{bottom:11px}
+  .mss-home .mss-section-heading{margin-top:0}
+}
+/* The Home rewards card is text-first; its chevron remains the tap target. */
+.mss-rewards-teaser-track{margin-left:0}
+.mss-rewards-teaser-title{gap:0}
+@media(max-width:420px){.mss-rewards-teaser-track{margin-left:0}}
+/* Keep unverified balances honest without taking up space for a large placeholder. */
+.mss-rewards-credit-limit{font-weight:600;font-size:13px}
+
+
+/* The rewards programme uses a consistent medium-grey surface on both screens.
+   Keep the green financial and purple training indicators distinct. */
+.mss-home .mss-rewards-teaser,
+.mss-rewards-partner,
+.mss-rewards-credit,
+.mss-rewards-training,
+.mss-rewards-offer,
+.mss-rewards-partner-footer,
+.mss-rewards-terms{
+  background:#d5d7dd;
+  border-color:#bec2ca;
+}
+.mss-home .mss-rewards-teaser{
+  box-shadow:0 4px 14px #222a370a;
+}
+.mss-rewards-terms{border:1px solid #bec2ca}
+.mss-rewards-partner-footer{color:#263044}
+.mss-rewards-offer{color:#20283a}
+
+/* One-tap access from Profile, aligned with its title rather than
+   using another bottom navigation item. */
+.mss-profile .mss-profile-heading{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  flex-wrap:nowrap;
+  gap:12px;
+}
+.mss-profile .mss-profile-heading h1{
+  min-width:0;
+  margin:0;
+}
+.mss-profile-rewards-button{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  flex:0 0 auto;
+  min-height:40px;
+  padding:8px 14px;
+  border:1px solid #bec2ca;
+  border-radius:24px;
+  background:#d5d7dd;
+  color:#172132;
+  font-size:14px;
+  font-weight:700;
+  white-space:nowrap;
+  box-shadow:none;
+}
+.mss-profile-rewards-button:hover{background:#c9ccd3}
+@media(max-width:420px){
+ .mss-profile .mss-profile-heading{gap:8px}
+ .mss-profile-rewards-button{min-height:38px;padding:7px 12px;font-size:13px}
+}
+
+
+/* Expandable Robot Rewards terms: a readable hierarchy without changing the
+   mobile layout or placing the discount restriction behind tiny print. */
+.mss-rewards-terms[open]{padding-bottom:15px}
+.mss-rewards-terms summary{font-size:14px;min-height:26px}
+.mss-rewards-terms-lead{font-size:14px!important;font-weight:700;color:#202739!important;line-height:1.5}
+.mss-rewards-terms-example{margin:10px 0 15px!important;padding:10px 12px;border:1px solid #b7bbc5;border-radius:10px;background:#eceef2;color:#242c39!important;font-size:13px}
+.mss-rewards-terms-section{padding:10px 0;border-top:1px solid #b8bcc5}
+.mss-rewards-terms-section h3{margin:0;color:#20283a;font-size:13px;font-weight:760}
+.mss-rewards-terms-section p{margin:4px 0 0;color:#404958;font-size:12px;line-height:1.55}
+
+
+/* Rewards detail only: match the soft-grey Today's Focus cards without altering
+   the Home reward status, its grey progress fill, or companion artwork. */
+.mss-rewards-page .mss-rewards-partner,
+.mss-rewards-page .mss-rewards-credit,
+.mss-rewards-page .mss-rewards-training,
+.mss-rewards-page .mss-rewards-offer,
+.mss-rewards-page .mss-rewards-partner-footer,
+.mss-rewards-page .mss-rewards-terms{
+  background:linear-gradient(125deg,#f0f0f5,#eceef4);
+  border-color:#d8dce5;
+}
+/* Make the credit track clearly visible even at 0%, and darken earned fill. */
+.mss-rewards-page .mss-rewards-credit-track{
+  background:#a7cfb6;
+}
+.mss-rewards-page .mss-rewards-credit-track>span{
+  background:#08783f;
+}
+
+
+/* Match Home Robot Rewards to the Rewards detail / Today's Focus soft grey.
+   Remove the earlier 62px content minimum that left excess space BELOW the
+   rewards progress line. Both Home bars now have the same 11px bottom inset. */
+.mss-home .mss-rewards-teaser{
+  background:linear-gradient(125deg,#f0f0f5,#eceef4);
+  border-color:#d8dce5;
+  min-height:0;
+  box-sizing:border-box;
+  padding-top:10px;
+  padding-bottom:11px;
+}
+
+/* Home cards: keep both progress tracks at the same left/right inset.
+   The chevron is aligned to the heading, safely above the status track. */
+.mss-home .mss-rewards-teaser{
+  padding-left:14px;
+  padding-right:14px;
+}
+.mss-home .mss-rewards-teaser-row{
+  padding-right:29px;
+}
+.mss-home .mss-rewards-teaser-chevron{
+  top:11px;
+  right:11px;
+  width:19px;
+  height:19px;
+  transform:none;
+}
+
+/* Match the percentage and reward amount typography at every phone width. */
+.mss-home .mss-rewards-teaser-value{
+  font-size:15px;
+  font-weight:750;
+}
+
+/* Home progress cards are full-width, keyboard-accessible navigation controls. */
+.mss-home button.mss-progress { display:block; width:100%; color:inherit; font:inherit; text-align:left; cursor:pointer; }
+.mss-home button.mss-progress:hover { filter:brightness(.99); }
+.mss-home button.mss-progress:focus-visible,.mss-home button.mss-rewards-teaser:focus-visible{outline:3px solid #2474be;outline-offset:3px;}
+/* The entire Robot Rewards card opens rewards. No separate chevron is needed. */
+.mss-home .mss-rewards-teaser{padding-right:14px;cursor:pointer;}
+.mss-home .mss-rewards-teaser-row{padding-right:0;}
+.mss-home .mss-rewards-teaser-chevron{display:none;}

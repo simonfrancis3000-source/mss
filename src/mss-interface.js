@@ -4,6 +4,10 @@ import { scenarioProgressSummary } from './scenario-journey.js';
 // The presentation layer reads the existing account state. It never writes training data.
 export const COMPANION_IMAGE = '/robots/mss-companion.webp';
 export const COMPANION_HEAD_IMAGE = '/robots/mss-companion-head.webp';
+// Official Booster Robotics product photograph. Does not replace the user's companion illustration.
+const BOOSTER_T2_IMAGE = 'https://mysecondself.app/wp-content/uploads/2026/11/powerful-compute.B-k4gGU-copy.jpg';
+const ROBOT_REWARD_CAP_CENTS = 100000;
+const money = cents => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100);
 
 const paths = {
   home: '<path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z"/>',
@@ -26,6 +30,8 @@ const paths = {
   spark: '<path d="m13 2-9 12h7l-1 8 10-13h-8Z"/>',
   bars: '<path d="M5 20v-5m7 5V9m7 11V3"/>',
   share: '<path d="M12 16V2m-4 4 4-4 4 4M4 12v9h16v-9"/>',
+  coins: '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v5c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 10v5c0 1.7 3.6 3 8 3s8-1.3 8-3v-5M4 15v4c0 1.7 3.6 3 8 3s8-1.3 8-3v-4"/>',
+  chevron: '<path d="m9 18 6-6-6-6"/>',
 };
 export function icon(name, className = '') {
   return '<svg class="' + className + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (paths[name] || paths.home) + '</svg>';
@@ -88,7 +94,7 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
   let sharingProgress = false;
   let shareStatus = '';
   const screens = {};
-  for (const [key, title] of [['home', 'Home'], ['passport', 'Passport'], ['profile', 'Profile']]) {
+  for (const [key, title] of [['home', 'Home'], ['passport', 'Passport'], ['profile', 'Profile'], ['rewards', 'Robot Rewards']]) {
     const section = el('section', 'mss-screen mss-' + key);
     section.id = 'mss-' + key; section.setAttribute('aria-label', title); screens[key] = section; main.prepend(section);
   }
@@ -146,7 +152,10 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
   }
   function progress(snapshot, passport = false) {
     const model = snapshot.model;
-    const card = el('section', 'mss-card mss-progress');
+    const card = passport
+      ? el('section', 'mss-card mss-progress')
+      : action('', 'mss-card mss-progress', () => navigate('passport'));
+    if (!passport) card.setAttribute('aria-label', 'Open Passport training progress and modules');
     const row = el('div', 'mss-progress-heading'); row.append(el('h2', '', passport ? snapshot.companion + ' profile completion' : 'Training progress'), el('strong', '', model.ready ? model.percent + '%' : '—'));
     const track = el('div', 'mss-progress-track'); track.setAttribute('role', 'progressbar'); track.setAttribute('aria-label', 'Training scenarios completed'); track.setAttribute('aria-valuemin', '0'); track.setAttribute('aria-valuemax', '100');
     if (model.ready) track.setAttribute('aria-valuenow', String(model.percent)); else track.setAttribute('aria-valuetext', 'Progress unavailable');
@@ -210,11 +219,125 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
   function linkCard(title, subtitle, name, onClick) {
     const card = action('', 'mss-card mss-link-card', onClick); const copy = el('span', 'mss-link-copy'); copy.append(el('strong', '', title), el('span', '', subtitle)); card.append(symbol(name, 'mss-icon-tile'), copy, symbol('arrow')); return card;
   }
+
+  function rewardState(snapshot) {
+    const raw = snapshot.rewards;
+    const verified = raw?.status === 'ready' && Number.isSafeInteger(raw.earnedCents) && raw.earnedCents >= 0;
+    const earned = verified ? Math.min(ROBOT_REWARD_CAP_CENTS, raw.earnedCents) : null;
+    return { earned, percent: earned === null ? 0 : earned / ROBOT_REWARD_CAP_CENTS * 100, verified };
+  }
+  function rewardTrack(className, percent, label) {
+    const track = el('span', className);
+    track.setAttribute('role', 'progressbar');
+    track.setAttribute('aria-label', label);
+    track.setAttribute('aria-valuemin', '0');
+    track.setAttribute('aria-valuemax', '100');
+    track.setAttribute('aria-valuenow', String(Math.round(percent)));
+    const fill = el('span');
+    fill.style.width = Math.max(0, Math.min(100, percent)) + '%';
+    track.append(fill);
+    return track;
+  }
+  function rewardTeaser(snapshot) {
+    const summary = rewardState(snapshot);
+    const card = action('', 'mss-rewards-teaser', () => navigate('rewards'));
+    card.setAttribute('aria-label', 'Open Robot Rewards');
+    const row = el('span', 'mss-rewards-teaser-row');
+    const label = el('span', 'mss-rewards-teaser-title');
+    label.append(el('strong', '', 'Robot Rewards'));
+    row.append(label, el('strong', 'mss-rewards-teaser-value', summary.verified ? money(summary.earned) + ' / $1,000' : 'Credit pending'));
+    card.append(row, rewardTrack('mss-rewards-teaser-track', summary.percent, 'Robot credit earned'));
+    return card;
+  }
+  function rewardsPage(snapshot) {
+    const summary = rewardState(snapshot);
+    const percent = snapshot.model.ready ? snapshot.model.percent : 0;
+    const container = el('div', 'mss-rewards-page');
+    const toolbar = el('header', 'mss-rewards-toolbar');
+    const back = action('', 'mss-rewards-back', () => navigate('home'));
+    back.setAttribute('aria-label', 'Back to home');
+    back.append(symbol('chevron'));
+    toolbar.append(back, el('h1', '', 'Robot Rewards'), el('span', 'mss-rewards-toolbar-spacer'));
+    container.append(toolbar);
+
+    const hero = el('section', 'mss-rewards-partner');
+    const partner = el('div', 'mss-rewards-partner-copy');
+    partner.append(el('span', 'mss-rewards-partner-eyebrow', 'Manufacturer partner'));
+    partner.append(el('strong', 'mss-rewards-partner-name', 'Booster Robotics'));
+    partner.append(el('span', 'mss-rewards-featured', 'Featured partner robot'));
+    partner.append(el('h2', '', 'Booster T2'));
+    const photo = el('img', 'mss-rewards-booster-image');
+    photo.src = BOOSTER_T2_IMAGE;
+    photo.alt = 'Booster T2 full-body humanoid robot';
+    photo.loading = 'lazy';
+    photo.decoding = 'async';
+    photo.width = 512;
+    photo.height = 512;
+    hero.append(partner, photo);
+    container.append(hero);
+
+    const credit = el('section', 'mss-rewards-credit');
+    credit.append(el('h2', '', 'Robot credit earned'));
+    if (summary.verified) {
+      credit.append(el('strong', 'mss-rewards-credit-total', money(summary.earned)));
+      credit.append(el('p', '', 'of $1,000 maximum'));
+    } else {
+      credit.append(el('p', 'mss-rewards-credit-limit', 'Maximum possible credit: $1,000'));
+    }
+    credit.append(rewardTrack('mss-rewards-credit-track', summary.percent, 'Credit progress towards $1,000'));
+    const numbers = el('div', 'mss-rewards-credit-breakdown');
+    numbers.append(el('span', '', summary.verified ? Math.round(summary.percent) + '% earned' : 'Balance pending'),
+      el('span', '', summary.verified ? money(ROBOT_REWARD_CAP_CENTS - summary.earned) + ' credit available' : '$1,000 maximum'));
+    credit.append(numbers);
+    container.append(credit);
+
+    const training = el('section', 'mss-rewards-training');
+    const trainingTitle = el('div', 'mss-rewards-training-heading');
+    trainingTitle.append(symbol('passport'), el('h2', '', 'Robot Ready training'),
+      el('strong', '', snapshot.model.ready ? percent + '%' : '—'));
+    training.append(trainingTitle, rewardTrack('mss-rewards-training-track', percent, 'Training scenarios completed'));
+    training.append(el('p', '', 'Reach 80% of core training and pass the readiness assessment to unlock redemption.'));
+    container.append(training);
+
+    const offer = el('div', 'mss-rewards-offer');
+    offer.append(symbol('coins'), el('p', '', 'Earn $2 credit for every $1 in eligible spending. Redeem up to 5% off a participating robot, limited by your earned credit.'));
+    container.append(offer);
+    const footer = el('div', 'mss-rewards-partner-footer');
+    footer.append(el('strong', '', 'Partner: Booster Robotics'));
+    container.append(footer);
+    const details = el('details', 'mss-rewards-terms');
+    const opener = el('summary', '', 'How Robot Rewards work');
+    const lead = el('p', 'mss-rewards-terms-lead',
+      'Your discount is the lowest of your unused earned credit, 5% of the eligible robot hardware price and any lower published manufacturer offer limit.');
+    const example = el('p', 'mss-rewards-terms-example',
+      'Example: $900 earned credit on a $5,000 robot = $250 off (5%). The remaining $650 is not lost and stays available for a future qualifying purchase while valid.');
+    details.append(opener, lead, example);
+    const sections = [
+      ['Earning limits', 'Each $1 actually paid for eligible MySecondSelf subscriptions or voice top-ups earns $2 promotional credit, up to $100 per UTC calendar month and $1,000 earned per account over its lifetime. Free trials, licensed tester allowances, complimentary minutes and refunded, reversed or charged-back payments do not qualify. Only payment records verified by the payment provider count.'],
+      ['Currency', 'Robot Rewards balances are currently calculated for verified USD payments. Payments in other currencies remain pending until a published conversion method is supported. Any local-currency redemption, exchange rate and rounding will be disclosed before checkout.'],
+      ['Who can redeem', 'The purchaser must be an adult using the same verified MySecondSelf account that earned the credit. Redemption requires the published Robot Ready criteria: currently at least 80% of core training, a passed readiness assessment and six qualifying paid subscription months. Completing training does not guarantee robot availability.'],
+      ['How the 5% limit is calculated', 'The 5% cap applies to the eligible robot hardware selling price at checkout, after any other price reductions the manufacturer permits. Shipping, taxes, accessories, setup, finance charges, rentals and subscriptions do not count toward the eligible hardware price. The partner must show the complete final purchase price and actual discount before payment.'],
+      ['Eligible robots and restrictions', 'Only participating manufacturer models, locations and authorised purchase channels qualify. One Robot Rewards discount may be applied per robot order, and only one redemption is permitted per verified buyer in any rolling 12-month period. Rewards from multiple accounts cannot be combined. Rewards cannot be transferred, sold, gifted, withdrawn or converted into cash, and cannot be combined with another promotion unless the manufacturer expressly permits it.'],
+      ['Unused credit', 'Only the amount actually deducted from the robot purchase uses the rewards balance. Any unused earned credit remains in your account for a later qualifying purchase while valid, subject to the same program caps and eligibility requirements. No cash change or reimbursement is provided for unused credit.'],
+      ['Verification and refunds', 'Earned credit can be held for up to 45 days before becoming redeemable while payments clear. Refunds, cancellations, chargebacks, purchase reversals, payment errors or confirmed misuse can reduce or reverse credit, including after it was displayed. We may request reasonable identity and transaction checks and may suspend suspicious redemption requests while reviewing them, subject to applicable law.'],
+      ['Cancelled or returned robot purchases', 'If the manufacturer confirms a qualifying robot order cancellation or return, the applied promotional credit is restored to the rewards account, not refunded as cash. The manufacturer handles the hardware purchase, delivery, returns and warranties. Nothing in these rules limits mandatory consumer rights.'],
+      ['Availability, expiry and changes', 'Manufacturer prices, participating models, regions and stock may change. An earned credit balance does not reserve a robot or fix its future price. Any expiry date will be disclosed in your account before credit is earned and displayed while it remains valid. Material program changes will be announced in advance and will apply prospectively, except where corrections are required for refunds, errors, fraud or law.'],
+      ['Before checkout', 'Your exact eligible discount, participating model, any partner-specific limit, applicable taxes, delivery charges and final total will be disclosed before you confirm a purchase. Partner-specific offers cannot remove rights guaranteed by applicable consumer law.']
+    ];
+    for (const [title, description] of sections) {
+      const section = el('section', 'mss-rewards-terms-section');
+      section.append(el('h3', '', title), el('p', '', description));
+      details.append(section);
+    }
+    container.append(details);
+    return container;
+  }
+
   function render() {
     const snapshot = getSnapshot(), { model } = snapshot;
     avatar(headerAvatar, snapshot); avatar(voiceAvatar, snapshot);
     headerAvatar?.setAttribute('aria-label', 'Open profile');
-    const home = screens.home; home.replaceChildren(heading('Hi ' + (snapshot.owner?.split(/\s+/)[0] || 'there'), 'Keep training your future robot with your knowledge, habits, boundaries and preferences.'), banner(snapshot), progress(snapshot));
+    const home = screens.home; home.replaceChildren(heading('Hi ' + (snapshot.owner?.split(/\s+/)[0] || 'there'), 'Keep training your future robot with your knowledge, habits, boundaries and preferences.'), banner(snapshot), progress(snapshot), rewardTeaser(snapshot));
     const focus = el('div', 'mss-section-heading'); focus.append(el('h2', '', 'Today’s focus'));
     const seeAll = action('See all', 'mss-text-button', () => navigate('passport')); seeAll.append(symbol('arrow')); focus.append(seeAll); home.append(focus);
     const topics = el('div', 'mss-focus-grid');
@@ -222,12 +345,20 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
     model.modules.slice(currentIndex, currentIndex + 3).forEach(item => topics.append(moduleCard(item, true))); home.append(topics);
     home.append(linkCard('Current conversation', snapshot.pendingQuestion || 'Continue where you left off with ' + snapshot.companion + '.', 'chat', () => navigate('chat')));
 
+    screens.rewards.replaceChildren(rewardsPage(snapshot));
+
     const passport = screens.passport; passport.replaceChildren(heading('Passport', 'Build your robot through conversation.'), progressChart(snapshot), el('h2', 'mss-section-title', 'Training modules'));
     const grid = el('div', 'mss-module-grid'); model.modules.forEach(item => grid.append(moduleCard(item))); passport.append(grid);
     passport.append(linkCard('What’s next', model.active ? 'Continue with ' + model.active.title + '.' : 'Review and refine your saved preferences.', 'chat', () => navigate('chat')));
     passport.append(linkCard('Your saved preferences', 'Review the details, conditions and permissions you have shared.', 'brain', () => openWorkspace('personaPassport')));
 
-    const profile = screens.profile; profile.replaceChildren(heading('Profile'));
+    const profile = screens.profile;
+    const profileHeading = heading('Profile');
+    profileHeading.classList.add('mss-profile-heading');
+    const profileRewards = action('Robot Rewards', 'mss-profile-rewards-button', () => navigate('rewards'));
+    profileRewards.setAttribute('aria-label', 'Open Robot Rewards');
+    profileHeading.append(profileRewards);
+    profile.replaceChildren(profileHeading);
     const identity = el('div', 'mss-identity'); const photo = el('div', 'mss-owner-photo'); avatar(photo, snapshot);
     const identityCopy = el('div'); identityCopy.append(el('h2', '', snapshot.owner || 'Your profile'), el('p', '', 'MySecondSelf account'));
     const edit = action('Edit profile', 'mss-edit-profile', () => editSettings('ownerName')); edit.prepend(symbol('edit')); identity.append(photo, identityCopy, edit); profile.append(identity, banner(snapshot, true));
