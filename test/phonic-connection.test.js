@@ -19,6 +19,8 @@ function browser(t, { getUserMedia, inputSampleRate = 44100 } = {}) {
   const nodes = [];
   const audioSources = [];
   const contexts = [];
+  const compressors = [];
+  const gains = [];
   class AudioContext {
     constructor() { contexts.push(this); }
     state = "running";
@@ -32,8 +34,8 @@ function browser(t, { getUserMedia, inputSampleRate = 44100 } = {}) {
       const source = { buffer:null, connect(){}, disconnect(){}, start(time){this.startAt=time;}, stop(){this.stopped=true;} };
       audioSources.push(source);return source;
     }
-    createDynamicsCompressor() { return { threshold:{}, knee:{}, ratio:{}, attack:{}, release:{}, connect(){}, disconnect(){} }; }
-    createGain() { return { gain: {}, connect() {}, disconnect() {} }; }
+    createDynamicsCompressor() { const compressor={ threshold:{}, knee:{}, ratio:{}, attack:{}, release:{}, connect(){}, disconnect(){} }; compressors.push(compressor); return compressor; }
+    createGain() { const gain={ gain: {}, connect() {}, disconnect() {} }; gains.push(gain); return gain; }
     async resume() {}
     async close() {}
   }
@@ -71,7 +73,7 @@ function browser(t, { getUserMedia, inputSampleRate = 44100 } = {}) {
     onEvent: (event) => events.push(event)
   });
   t.after(() => conversation.stop());
-  return { conversation, events, tracks, stream, nodes, Socket, audioSources, contexts };
+  return { conversation, events, tracks, stream, nodes, Socket, audioSources, contexts, compressors, gains };
 }
 
 async function waitForSocket(Socket) {
@@ -229,12 +231,12 @@ test("sentence gaps are scheduled into playback and speaking finishes only after
  assert.equal(events.filter(e=>e.type==='assistant_finished_speaking').length,1);
 });
 
-test('a short jitter buffer keeps late-arriving continuous packets joined without dropping samples',async(t)=>{
+test('a modest jitter buffer keeps late-arriving continuous packets joined without dropping samples',async(t)=>{
  const {conversation,Socket,audioSources,contexts}=browser(t);
  const starting=conversation.start();const socket=await waitForSocket(Socket);socket.open();socket.message({type:'ready_to_start_conversation'});await starting;
  socket.message({type:'assistant_started_speaking'});
  socket.message({type:'audio_chunk',text:'Keep this',audio:pcmAudio()});
- assert.equal(audioSources[0].startAt,.08);
+ assert.equal(audioSources[0].startAt,.18);
  const end=audioSources[0].startAt+audioSources[0].buffer.duration;
  contexts[1].currentTime=end-.005;
  socket.message({type:'audio_chunk',text:' sentence continuous.',audio:pcmAudio()});
@@ -243,7 +245,7 @@ test('a short jitter buffer keeps late-arriving continuous packets joined withou
  assert.ok(audioSources[1].buffer.getChannelData(0).every(value=>value===1200/32768));
  contexts[1].currentTime=1;
  socket.message({type:'audio_chunk',text:'A new packet',audio:pcmAudio()});
- assert.equal(audioSources[2].startAt,1.08);
+ assert.equal(audioSources[2].startAt,1.18);
  await conversation.stop();
 });
 
@@ -359,3 +361,13 @@ test("silent and very quiet lead-in packets have no audible onset", () => {
   assert.equal(events.some(event=>event.type==='assistant_awaiting_user'),false);
   await conversation.stop();
  });
+
+test('Phonic output bypasses the old harsh 20-to-1 compressor and retains headroom',async(t)=>{
+  const {conversation,Socket,compressors,gains}=browser(t);
+  const starting=conversation.start();const socket=await waitForSocket(Socket);
+  socket.open();socket.message({type:'ready_to_start_conversation'});await starting;
+  // There is a silent input monitor gain and a separate 0.85 playback gain.
+  assert.equal(compressors.length,0);
+  assert.equal(gains.filter(item=>item.gain.value===0.85).length,1);
+  await conversation.stop();
+});
