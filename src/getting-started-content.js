@@ -22,9 +22,9 @@ export function onboardingPages(companion = 'your future robot') {
       'Only participating robots qualify. Rewards are not cash and do not guarantee a robot. See Robot Rewards for full terms.'
     ] },
     { title: 'What happens next?', lead: 'Your Persona Passport is what you are building.', paragraphs: [
-      'Your saved preferences, conditions and boundaries form your personalisation profile. Passport shows your progress and modules, with links to review and refine your learning.',
-      'Transfer to compatible robots, hardware simulations and physical robot integrations are future development stages. No physical robot is connected through this app today. Any future transfer will depend on verified compatibility and your permission.',
-      'Share only what you are comfortable sharing. Review, correct or remove learning, and check Privacy settings for optional shared learning.'
+      'Your preferences and boundaries build your Persona Passport. Review your training progress, modules and saved learning whenever you like.',
+      'Robot simulations and physical integrations are future stages. No robot is connected today; any transfer will require verified compatibility and your permission.',
+      'Share only what you choose. You can edit or remove saved learning and manage optional shared learning in Privacy settings.'
     ] }
   ];
 }
