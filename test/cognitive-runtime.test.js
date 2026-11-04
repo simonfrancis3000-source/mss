@@ -202,3 +202,11 @@ for (const [i, detail] of details.entries()) for (const [j, acceptance] of accep
     assert.equal(again.runtime.replayed, true); assert.equal(f.effects.length, 1);
   });
 }
+
+
+test('provider diagnostics distinguish setup failures without exposing upstream response content', async () => {
+  for (const [status,code] of [[401,'runtime_model_auth_rejected'],[402,'runtime_model_balance_insufficient'],[404,'runtime_model_not_found'],[422,'runtime_model_request_invalid'],[429,'runtime_model_rate_limited'],[503,'runtime_model_unavailable']]) {
+    const provider=createCognitiveProvider({key:'fixture-secret',model:'fixture-model',fetchImpl:async()=>Response.json({error:{message:'fixture-secret account-private-details'}},{status})});
+    await assert.rejects(provider({context:{},objectives}),error=>error.code===code && error.providerStatus===status && !String(error).includes('fixture-secret') && !String(error).includes('account-private-details'));
+  }
+});
