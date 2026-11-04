@@ -33,3 +33,35 @@ test('continuity rejection does not masquerade as service failure or resurrect a
  assert.ok(empty.reply);assert.equal(empty.responseNeedsReview,false);assert.equal(empty.reply.includes('?'),false);
  assert.equal(finalizeGuidedReply({reply:''},{continueRoutine:true}).responseNeedsReview,true);
 });
+
+test('an unfinished guided session leads with the next task after a rejected question',async()=>{
+ const {guidedNextStep,finalizeGuidedReply}=await import('../server/guided-turn.js');
+ const scenario={id:'room:kitchen',title:'Kitchen'};
+ const objectives=[
+  {id:'surfaces',title:'Cleaning surfaces',subject:'Learn which worktops should be cleaned'},
+  {id:'supplies',title:'Cleaning supplies',subject:'Learn approved cleaning products'},
+  {id:'waste',title:'Waste and recycling',subject:'Learn when to separate waste'}
+ ];
+ const plan={areas:[{id:'surfaces',status:'discussed'},{id:'supplies',status:'not_started'},{id:'waste',status:'not_started'}]};
+ const recentMessages=[{role:'assistant',content:'What cleaning surfaces do you use?'}];
+ const next=guidedNextStep({scenario,objectives,plan,recentMessages});
+ assert.match(next,/cleaning supplies/i);
+ assert.match(next,/Start by telling me/i);
+ assert.doesNotMatch(next,/cleaning surfaces/i);
+ assert.equal(next.includes('?'),false);
+ const response=finalizeGuidedReply({reply:next,guidedInstruction:true},{continueRoutine:true,intake:{type:'dishwasher',field:'model'},language:'en'});
+ assert.equal(response.responseNeedsReview,false);
+ assert.equal(response.reply,next);
+});
+test('next-step recovery preserves appliance intake, review gates and explicit pause',async()=>{
+ const {guidedNextStep,shouldContinueGuidedTurn}=await import('../server/guided-turn.js');
+ const scenario={id:'room:kitchen',title:'Kitchen'};
+ const objectives=[{id:'supplies',title:'Cleaning supplies',subject:'Which products are safe'}];
+ const params={scenario,objectives,plan:{areas:[{id:'supplies',status:'not_started'}]},language:'en'};
+ assert.match(guidedNextStep({...params,intake:{type:'dishwasher',field:'model'}}),/exact model number/);
+ assert.match(guidedNextStep({...params,plan:{areas:[{id:'supplies',status:'reviewed'}]}}),/open Passport to review/i);
+ assert.equal(guidedNextStep({...params,completionConfirmed:true}),'');
+ assert.equal(shouldContinueGuidedTurn({scenario,intent:'pause'}),false);
+ assert.equal(shouldContinueGuidedTurn({scenario,intent:'answer',latestUser:'Give me a minute'}),false);
+ assert.equal(guidedNextStep({...params,language:'es'}),'');
+});
