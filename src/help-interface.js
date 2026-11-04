@@ -5,7 +5,10 @@ const button = (text, className, run) => { const node = el('button', className, 
 export function createHelpInterface({ getContext, navigate, dismiss, pauseTalk, editPrivacy, openSupport, snapshot }) {
   const page = el('section', 'mss-screen mss-help'); page.id = 'mss-help'; page.setAttribute('aria-label', 'Help & Getting Started'); document.querySelector('main')?.append(page);
   const guide = el('dialog', 'mss-onboarding'); guide.setAttribute('aria-labelledby', 'mssGuideTitle'); document.body.append(guide);
-  const guideContent = el('div', 'mss-guide-content'), player = el('div', 'mss-guide-player'); player.hidden = true; guide.append(guideContent, player);
+  // Keep the audio element mounted throughout the four steps to avoid stopping
+  // the full introduction when the step content is re-rendered. Place the
+  // player between the introduction button and Next, not below Next.
+  const guideContent = el('div', 'mss-guide-content'), player = el('div', 'mss-guide-player'), guideActions = el('div', 'mss-guide-actions'); player.hidden = true; guide.append(guideContent, player, guideActions);
   const audio = el('audio'); audio.controls = true; audio.preload = 'none'; audio.src = AMIA_INTRO_AUDIO;
   const audioStatus = el('p', 'mss-help-notice'); audioStatus.setAttribute('role', 'status'); audioStatus.hidden = true;
   player.append(audio, audioStatus);
@@ -46,11 +49,11 @@ export function createHelpInterface({ getContext, navigate, dismiss, pauseTalk, 
     guideContent.append(image, title, el('p', 'mss-guide-lead', item.lead));
     for (const paragraph of item.paragraphs) guideContent.append(el('p', '', paragraph));
     if (index === 0) {
-      const listen = button('Listen to ' + companion, 'mss-guide-audio-toggle', () => playIntroduction());
+      const listen = button('Hear ' + companion + ' Introduce MySecondSelf', 'mss-guide-audio-toggle', () => playIntroduction());
       listen.disabled = saving; guideContent.append(listen);
     }
     audio.setAttribute('aria-label', companion + ' introduction audio');
-    const actions = el('div', 'mss-guide-actions');
+    const actions = guideActions; actions.replaceChildren();
     if (index) { const back = button('Back', 'mss-secondary', () => { index--; renderGuide(); }); back.disabled = saving; actions.append(back); }
     const next = button(saving ? 'Saving…' : index === pages.length - 1 ? (automatic ? 'Start My Journey' : 'Return to my journey') : 'Next', 'mss-primary', () => {
       if (index < pages.length - 1) { index++; renderGuide(); guide.scrollTop = 0; }
@@ -58,7 +61,7 @@ export function createHelpInterface({ getContext, navigate, dismiss, pauseTalk, 
     });
     next.disabled = saving; actions.append(next);
     if (index === pages.length - 1 && automatic) { const chat = button('Use Chat instead', 'mss-text-button', () => void finishGuide('completed', 'chat')); chat.disabled = saving; actions.append(chat); }
-    guideContent.append(actions);
+    // Buttons remain below the player, which stays mounted while audio plays.
     requestAnimationFrame(() => { if (guide.open) title.focus({ preventScroll: true }); }); title.tabIndex = -1;
   }
   guide.addEventListener('cancel', event => { event.preventDefault(); void finishGuide('skipped'); });
