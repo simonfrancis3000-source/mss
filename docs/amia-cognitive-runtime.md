@@ -80,7 +80,7 @@ The inspected Render workspace contains `synqme-api` on `SYNQ.ME` and `synqme-de
 
 ## Verification and limits
 
-Local web verification: 655 tests pass and production frontend build passes. Local Android verification: 639 tests pass, mobile build passes and Capacitor Android sync passes. The branch-specific count differs because the source branches contain different existing tests.
+Local web verification: 657 tests pass and production frontend build passes. Local Android verification: 641 tests pass, mobile build passes and Capacitor Android sync passes. The branch-specific count differs because the source branches contain different existing tests.
 
 The tests execute the actual SQL migrations in pinned PGlite/PostgreSQL, including transaction rollback, replay, leases, RLS, owner isolation, reset races, memory grounding, correction/supersession, graph cycles, delivery ordering and expired-response tombstones. This validates database behavior locally; it does not establish that target PostgREST grants are configured correctly before migration.
 

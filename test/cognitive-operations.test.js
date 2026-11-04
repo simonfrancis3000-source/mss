@@ -8,6 +8,7 @@ import { measurePcmQuality } from '../src/audio-quality.js';
 
 test('rollout checks verified account IDs/emails and defaults to disabled',()=>{
  assert.equal(cognitiveRollout()({id:'a'}),false);
+ assert.equal(cognitiveRollout({enabled:true})({id:'a'}),false);
  const enabled=cognitiveRollout({enabled:true,userIds:'a',emails:'owner@example.test'});
  assert.equal(enabled({id:'a'}),true);assert.equal(enabled({id:'b',email:'OWNER@example.test'}),true);assert.equal(enabled({id:'b'}),false);
 });
