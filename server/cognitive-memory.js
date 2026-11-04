@@ -17,7 +17,13 @@ export function validateMemoryProposals(raw, { latestUser, knownRules = [], obje
     if (['updates','withdraws','confirms','refines','conflicts'].includes(candidate.relation) && !target) return [];
     if (candidate.relation === 'withdraws' && !explicitWithdrawal) return [];
     if (candidate.relation === 'updates' && !explicitCorrection) candidate.relation = 'conflicts';
-    if (candidate.permission_policy === 'allowed' && !/\b(?:you (?:may|can)|I (?:allow|authorize|permit)|without asking|puedes|te permito|te autorizo)\b/i.test(latestUser)) candidate.permission_policy = 'unspecified';
+    if (candidate.permission_policy === 'allowed') {
+      // A positive permission must be part of the cited owner evidence. Any
+      // negation makes the statement ambiguous and requires clarification.
+      const affirmative = /\b(?:you (?:may|can)(?!['’]t)|I (?:allow|authorize|permit)|without asking|puedes|te permito|te autorizo)\b/i.test(quote);
+      const negated = /\b(?:not|never|cannot|can['’]t|don['’]t|doesn['’]t|won['’]t|no|nunca|jam[aá]s)\b/i.test(latestUser);
+      if (!affirmative || negated) candidate.permission_policy = 'unspecified';
+    }
     const area = objectives.find(o => o.id === candidate.attributes?.area_id)?.id || null;
     const relations = (Array.isArray(input.relations) ? input.relations : []).filter(r => ['depends_on','exception_to','conflicts_with'].includes(r?.kind) && known.has(r.target_memory_key)).slice(0, 6);
     return [{ ...candidate, confidence: candidate.status === 'inferred_pending_confirmation' ? 0 : 1,

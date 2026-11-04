@@ -93,3 +93,23 @@ test('background worker bounds concurrency and retries failed leased jobs',async
  let claims=0,retries=0;const worker=createCognitiveMemoryWorker({batchSize:2,logger:{warn(){}},store:{async claimMemoryJob(){return ++claims===1?{id:'one',attempts:1}:null;},async completeMemoryJob(){throw Error('offline');},async retryMemoryJob(){retries++;}}});
  await Promise.all([worker.drain(),worker.drain()]);assert.equal(retries,1);assert.equal(claims,2);worker.stop();
 });
+
+test('a negated permission cannot be saved as authorization',()=>{
+ const context={latestUser:"You can't spend money without asking me.",knownRules:[],objectives,turnKey:'permission',scope:'room:kitchen'};
+ const [row]=validateMemoryProposals([candidate({statement:'You can spend money without asking me.',kind:'boundary',permission_policy:'allowed',source_quote:"You can't spend money"})],context);
+ assert.notEqual(row?.permission_policy,'allowed');
+});
+
+test('permission evidence stays conservative for denials and requires quoted explicit consent',()=>{
+ const cases=[
+  ["You cannot spend money without asking.","You cannot spend money",'unspecified'],
+  ["Never spend money without asking.","Never spend money",'unspecified'],
+  ["No puedes gastar dinero sin preguntar.","No puedes gastar dinero",'unspecified'],
+  ["You can buy tea without asking.","buy tea",'unspecified'],
+  ["You may buy tea without asking.","You may buy tea without asking",'allowed']
+ ];
+ for(const [latestUser,source_quote,expected] of cases){
+  const [row]=validateMemoryProposals([candidate({statement:'You may buy tea without asking.',kind:'boundary',permission_policy:'allowed',source_quote})],{latestUser,knownRules:[],objectives,turnKey:'permission',scope:'room:kitchen'});
+  assert.equal(row?.permission_policy,expected,latestUser);
+ }
+});
