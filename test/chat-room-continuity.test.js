@@ -24,12 +24,13 @@ test('chat route repairs premature room changes and carries room depth, names an
     };
     await import('./server/index.js');if(!server.listening)await once(server,'listening');
     try{
-      const response=await nativeFetch('http://127.0.0.1:'+server.address().port+'/api/chat',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer synthetic-test'},body:JSON.stringify({messages:[{role:'assistant',content:'Where should I put the remote?'},{role:'user',content:'Put it somewhere sensible.'}],profile:{ownerName:'Simon',robotName:'Freya',preferredLanguage:'de'},roomJourney:{activeRoomId:'living_room',completedTaskIds:['boundaries'],completionConfirmed:false,unlockedRoomCount:12},welcomeBack:true})});
+      const response=await nativeFetch('http://127.0.0.1:'+server.address().port+'/api/chat',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer synthetic-test'},body:JSON.stringify({messages:[{role:'assistant',content:'Where should I put the remote?'},{role:'user',content:'Put it somewhere sensible.'}],profile:{ownerName:'Simon',robotName:'Freya',preferredLanguage:'de'},roomJourney:{activeRoomId:'living_room',completedTaskIds:['boundaries'],completionConfirmed:false,unlockedRoomCount:12},welcomeBack:true,firstConversationIntro:true})});
       const body=await response.json();assert.equal(response.status,200,JSON.stringify(body));
       assert.equal(calls,2);assert.match(body.reply,/living room lighting/);
       assert.match(prompts[0],/SHORT VISITS/);assert.match(prompts[0],/selected task and outstanding question/);assert.doesNotMatch(prompts[0],/Around 30 minutes/);assert.match(prompts[0],/NOT confirmed/);
       assert.match(prompts[0],/Spills, candles and hazards/);assert.match(prompts[0],/Simon/);
       assert.match(prompts[0],/German/);assert.match(prompts[0],/12 hours/);
+      for (const prompt of prompts) { assert.match(prompt,/FIRST CONVERSATION INTRODUCTION/);assert.match(prompt,/no physical robot is connected today/);assert.match(prompt,/Persona Passport/); }
     }finally{await new Promise(resolve=>server.close(resolve));}
   `;
   const result = await new Promise((resolve,reject)=>{
