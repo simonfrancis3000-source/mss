@@ -6,7 +6,7 @@ test('authenticated cognitive API commits server-owned reminder, replays retries
   const script = `
     import http from 'node:http'; import assert from 'node:assert/strict'; import {once} from 'node:events';
     process.env.PORT='0'; process.env.DEEPSEEK_PERSON_API_KEY='fixture'; process.env.SUPABASE_URL='https://fixture.test';
-    process.env.SUPABASE_PUBLISHABLE_KEY='public-fixture'; process.env.SUPABASE_SERVICE_ROLE_KEY='server-fixture'; process.env.AMIA_COGNITIVE_RUNTIME_ENABLED='true';
+    process.env.SUPABASE_PUBLISHABLE_KEY='public-fixture'; process.env.SUPABASE_SERVICE_ROLE_KEY='server-fixture'; process.env.AMIA_COGNITIVE_RUNTIME_ENABLED='true';process.env.AMIA_RUNTIME_USER_IDS='verified-owner';
     let server, saved=null, effects=0, fail=false; const native=fetch;
     const listen=http.Server.prototype.listen; http.Server.prototype.listen=function(...args){server=this;return listen.apply(this,args)};
     globalThis.fetch=async(url, options={})=>{

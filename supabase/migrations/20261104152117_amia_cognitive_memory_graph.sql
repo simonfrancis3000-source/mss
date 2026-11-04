@@ -113,7 +113,7 @@ end $$;
 
 create function public.complete_synqme_cognitive_memory_job(p_job_id uuid,p_lease uuid) returns jsonb
 language plpgsql security invoker set search_path='' as $$
-declare job public.synqme_memory_jobs; revision bigint; c jsonb; target public.synqme_persona_memories; saved uuid; refs jsonb; relation text; status text; conditions jsonb; edge jsonb; other_id uuid; count_saved integer:=0;
+declare job public.synqme_memory_jobs; revision bigint; c jsonb; target public.synqme_persona_memories; saved uuid; refs jsonb; relation text; status text; conditions jsonb; edge jsonb; other_id uuid; count_saved integer:=0; evidence_text text;
 begin
  -- Lock order matches reset: revision before queue/rule rows.
  select r.revision into revision from public.synqme_training_revisions r join public.synqme_memory_jobs j on j.user_id=r.user_id where j.id=p_job_id for share of r;
@@ -123,10 +123,12 @@ begin
   delete from public.synqme_memory_jobs where id=p_job_id; return jsonb_build_object('invalidated',true);
  end if;
  perform pg_advisory_xact_lock(hashtextextended(job.user_id::text||':rule_graph',0));
+ select m->>'content' into evidence_text from jsonb_array_elements(job.messages) with ordinality a(m,n) where m->>'role'='user' order by n desc limit 1;
+ evidence_text:=coalesce(evidence_text,job.user_message);
  refs:=jsonb_build_array(jsonb_build_object('conversation_key','main','role','user','message_timestamp',job.source_timestamp));
  for c in select value from jsonb_array_elements(job.proposals) loop
   target:=null; saved:=null; relation:=c->>'relation';
-  if length(coalesce(c->>'source_quote',''))<2 or position(lower(c->>'source_quote') in lower(job.user_message))=0 then raise exception 'memory_source_not_grounded'; end if;
+  if length(coalesce(c->>'source_quote',''))<2 or position(lower(c->>'source_quote') in lower(evidence_text))=0 then raise exception 'memory_source_not_grounded'; end if;
   if coalesce(c->>'target_memory_key','')<>'' then
    select * into target from public.synqme_persona_memories m where m.user_id=job.user_id and m.memory_key=c->>'target_memory_key' and m.status not in ('archived','superseded') for update;
    if not found then raise exception 'memory_target_changed'; end if;
@@ -136,7 +138,12 @@ begin
    select * into target from public.synqme_persona_memories m where m.user_id=job.user_id and m.scope_key=c->>'scope_key' and m.status not in ('archived','superseded') order by m.source_timestamp desc nulls last limit 1 for update;
    if target.id is not null then
     if target.source_timestamp>job.source_timestamp then continue; end if;
-    if lower(target.statement)=lower(c->>'statement') then continue; end if;
+    if lower(target.statement)=lower(c->>'statement') then
+     if c->'attributes' ? 'appliance_v1' then
+      update public.synqme_persona_memories set attributes=attributes||jsonb_build_object('appliance_v1',c#>'{attributes,appliance_v1}'),updated_at=now() where id=target.id;
+     end if;
+     continue;
+    end if;
     relation:='conflicts';
    end if;
   end if;

@@ -151,7 +151,7 @@ export function createCognitiveRuntime({ store, generate, contextStore, resolveA
             }
             reply = proposal.reply;
             offer = proposal.reminderOffer;
-            memoryProposals = validateMemoryProposals(proposal.memoryProposals || [],{latestUser,knownRules:saved.rules || [],objectives,turnKey:identity.key,scope});
+            memoryProposals = validateMemoryProposals(proposal.memoryProposals || [],{latestUser,knownRules:[...(saved.rules || []),...(saved.generalRules || [])],objectives,turnKey:identity.key,scope});
             if (appliance) {const memory=applianceMemoryProposal(appliance,latestUser);if(memory)memoryProposals=[...memoryProposals.slice(0,7),memory];}
           }
         }

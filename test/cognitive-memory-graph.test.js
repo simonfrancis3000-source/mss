@@ -48,6 +48,27 @@ test('PostgreSQL durable memory jobs apply corrections, graph links, ownership a
    assert.equal(rules[0].status,'superseded');assert.deepEqual(rules[1].conditions,['except while it is hot']);assert.equal(rules[1].supersedes_id,old.id);
    assert.equal((await db.query('select relation from public.synqme_rule_relations')).rows[0].relation,'supersedes');
   });
+  await t.test('a source quote beyond the legacy text limit remains grounded in the queued source turn',async()=>{
+   const latest='Background context. '.repeat(100)+'I prefer a soft cloth for the dining table.';
+   await queue([candidate({statement:'I prefer a soft cloth for the dining table.',scope_key:'dining.table.cloth'})],latest);
+   assert.equal((await finish()).saved,1);
+   assert.equal((await db.query("select count(*)::int n from public.synqme_persona_memories where scope_key='dining.table.cloth'")).rows[0].n,1);
+  });
+  await t.test('reverified appliance metadata replaces the earlier unavailable status without duplicating the rule',async()=>{
+   const raw=candidate({statement:'My hob is Bosch model TEST123.',scope_key:'appliance.bosch.test123',source_quote:'TEST123'});
+   const key=hash('appliance-fixed');
+   const initial={...raw,memory_key:key,attributes:{appliance_v1:{type:'hob',brand:'Bosch',model:'TEST123',manual_status:'unavailable'}}};
+   await db.query("insert into public.synqme_persona_memories(user_id,memory_key,topic,kind,scope_key,statement,status,relation,confidence,conditions,permission_policy,attributes,source_timestamp) values($1::uuid,$2,'kitchen','fact',$3,$4,'user_stated','new',1,'[]','unspecified',$5::jsonb,now()-interval '1 minute')",[OWNER,key,raw.scope_key,raw.statement,JSON.stringify(initial.attributes)]);
+   // The server-generated appliance proposal carries nested verified metadata.
+   const turnKey=hash('appliance-recheck');
+   const claim=(await db.query('select public.claim_synqme_cognitive_turn($1::uuid,0,$2,$3,$4) v',[OWNER,'room:kitchen',turnKey,hash('TEST123')])).rows[0].v;
+   const proposal={...initial,attributes:{appliance_v1:{...initial.attributes.appliance_v1,manual_status:'matched',manual_url:'https://www.bosch-home.com/manual'}}};
+   const state={messages:[{role:'user',content:'TEST123'},{role:'assistant',content:'What should I learn next?'}]};
+   await db.query('select public.commit_synqme_cognitive_turn_v2($1::uuid,0,$2,$3,$4::uuid,$5::jsonb,$6::jsonb,null,$7::jsonb)',[OWNER,'room:kitchen',turnKey,claim.lease,JSON.stringify(state),JSON.stringify({reply:'What should I learn next?'}),JSON.stringify({memories:[proposal]})]);
+   await finish();
+   const rows=(await db.query('select attributes from public.synqme_persona_memories where memory_key=$1',[key])).rows;
+   assert.equal(rows.length,1);assert.equal(rows[0].attributes.appliance_v1.manual_status,'matched');
+  });
   await t.test('dependency edges reject cycles and cross-owner rule links',async()=>{
    const a=(await db.query('select id from public.synqme_persona_memories order by created_at')).rows;
    await db.query("insert into public.synqme_rule_relations(user_id,from_rule_id,to_rule_id,relation) values($1::uuid,$2::uuid,$3::uuid,'depends_on')",[OWNER,a[0].id,a[1].id]);
