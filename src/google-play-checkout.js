@@ -122,15 +122,28 @@ export function createGooglePlayCheckout({ apiBase, getHeaders, getUserId }) {
       const purchases = queries.flatMap(result => result.status === "fulfilled" ? result.value.purchases || [] : []);
       if (queries.every(result => result.status === "rejected")) throw new Error("Google Play purchase history is unavailable.");
       let restored = 0;
+      const errors = queries
+        .filter(result => result.status === "rejected")
+        .map(result => result.reason?.message || "A Google Play purchase query failed.");
       const seen = new Set();
       for (const purchase of purchases) {
         const token = purchase.purchaseToken;
         if (!token || seen.has(token)) continue;
         seen.add(token);
-        if (await verifyPurchase(purchase)) restored++;
+        try {
+          if (await verifyPurchase(purchase)) restored++;
+        } catch (error) {
+          // Continue checking other purchases and surface the actual error.
+          // Never treat a failed server verification as a successful restore.
+          errors.push(error?.message || "Purchase verification failed.");
+        }
       }
       await refreshBalance();
-      message(restored ? "Purchases checked and your balance updated." : "No new completed purchases to restore.");
+      message(errors.length
+        ? "Some purchases could not be verified: " + errors[0]
+        : restored
+          ? "Purchases verified. Your current balance is shown above."
+          : "No active purchases to restore. Refunded test orders cannot be restored.");
       return restored;
     } catch (error) {
       message(error?.message || "Purchases could not be restored.");
