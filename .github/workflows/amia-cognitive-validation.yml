@@ -8,11 +8,11 @@ permissions:
   contents: read
 jobs:
   provider-evaluation:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: 24
           cache: npm
@@ -27,12 +27,19 @@ jobs:
           set +e
           node scripts/evaluate-cognitive-runtime.mjs > amia-live-evaluation.json
           result=$?
+          node <<'NODE'
+          const fs = require('node:fs');
+          const report = JSON.parse(fs.readFileSync('amia-live-evaluation.json', 'utf8'));
+          console.log(JSON.stringify({status:report.status,mode:report.mode,sampleCount:report.sampleCount,plannedSampleCount:report.plannedSampleCount,stoppedEarly:report.stoppedEarly,p50Ms:report.p50Ms,p95Ms:report.p95Ms,inputTokens:report.inputTokens,outputTokens:report.outputTokens},null,2));
+          const failures = [...new Set((report.results || []).filter(r=>r.status==='failed').map(r=>(r.errorCode || r.qualityViolation || 'evaluation_failed')+(r.providerStatus?' (HTTP '+r.providerStatus+')':'')))];
+          for (const failure of failures) console.error('::error::DeepSeek evaluation: '+failure);
+          NODE
           if [ "$result" -eq 2 ]; then
             echo "::notice::Live model evaluation is blocked by missing credentials; the report records blocked, not passed."
             exit 0
           fi
           exit "$result"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.2
         if: always()
         with:
           name: amia-live-evaluation
