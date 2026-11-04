@@ -31,7 +31,7 @@ export function decryptSmartThingsToken(value, clientSecret) {
 const sha256 = value => createHash("sha256").update(value).digest("hex");
 const cleanText = (value, max = 150) => typeof value === "string" ? value.slice(0, max) : "";
 const isReadOnlyScope = value => {
-  const scopes = String(value || "").split(/\s+/).filter(Boolean);
+  const scopes = String(value || "").split(/[\s,]+/).filter(Boolean);
   return scopes.includes("r:devices:*") && scopes.every(scope => scope === "r:devices:*" || scope === "r:locations:*");
 };
 function sanitizedDevice(item) {
