@@ -26,8 +26,15 @@ export function finalizeGuidedReply(guarded, requirements) {
 // continuity review cannot produce a new safe question. This avoids leaving
 // someone in guided training with only "Got it." and no idea what to do next.
 // It never marks an area complete or crosses into a different scenario.
-export function guidedNextStep({ scenario, objectives = [], plan, recentMessages = [], language = 'en', completionConfirmed = false } = {}) {
-  if (!scenario || completionConfirmed || language !== 'en' || !Array.isArray(objectives) || !objectives.length) return '';
+export function guidedNextStep({ scenario, objectives = [], plan, recentMessages = [], intake = null, language = 'en', completionConfirmed = false } = {}) {
+  if (!scenario || completionConfirmed || language !== 'en') return '';
+  if (intake?.type) {
+    const device = String(intake.type).replace(/[^a-z -]/gi, '').trim() || 'appliance';
+    return intake.field === 'model'
+      ? 'Got it. Before I plan around your ' + device + ', please tell me its exact model number if you have it. Otherwise, say "later" and we will continue with another task.'
+      : 'Got it. Before I plan around your ' + device + ', please tell me its make and exact model if you know them. Otherwise, say "later" and we will continue with another task.';
+  }
+  if (!Array.isArray(objectives) || !objectives.length) return '';
   const statuses = new Map((plan?.areas || []).map(area => [area.id, area.status]));
   const remaining = objectives.filter(area => statuses.get(area.id) !== 'reviewed');
   if (!remaining.length) {
