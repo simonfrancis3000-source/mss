@@ -531,10 +531,10 @@ input[type='checkbox'] { accent-color: #8b73cf; }
   animation: robot-speech-motion .95s ease-in-out infinite;
 }
 @keyframes robot-mouth-talk {
-  0%, 100% { transform: scale(.85,.35); }
-  22% { transform: scale(1,1); }
-  48% { transform: scale(.9,.5); }
-  72% { transform: scale(.95,.85); }
+  0%, 100% { transform: translateY(0) scaleY(.84); }
+  25% { transform: translateY(-.25px) scaleY(1.12); }
+  50% { transform: translateY(.2px) scaleY(.92); }
+  75% { transform: translateY(.25px) scaleY(1.06); }
 }
 @keyframes robot-speech-blink {
   0%, 42%, 48%, 100% { transform: scaleY(1); }
