@@ -118,8 +118,14 @@ export function createGooglePlayCheckout({ apiBase, getHeaders, getUserId }) {
     const result = await request("/api/billing/verify", "POST", {
       productId, purchaseToken: purchase.purchaseToken
     });
-    if (result.finalizationPending) message("Credits saved. Google Play confirmation is still pending and will be retried.");
-    else if (result.newlyCredited) message(productId === "mss_premium"
+    if (result.finalizationPending) {
+      await refreshBalance();
+      // The wallet is credited, but Google Play still requires consumption
+      // or acknowledgement. Keep the purchase in the retry loop so a test
+      // purchase is not automatically refunded after three minutes.
+      throw new Error("Minutes credited, but Google Play confirmation is pending. Retrying.");
+    }
+    if (result.newlyCredited) message(productId === "mss_premium"
       ? "Premium is active. Your monthly voice minutes have been added."
       : result.minutes + " voice minutes added successfully.");
     await refreshBalance();
