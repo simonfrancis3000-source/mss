@@ -11,7 +11,7 @@ test('advanced harness commits migration SQL, drains memory and preserves retry/
  let seq=0;const c=cases.find(c=>c.split==='difficult');
  const h=await createHarness(async({context})=>{
   const user=context.latestUser,correct=user.startsWith('Actually');const target=context.memory.find(r=>r.statement.includes(c.oldValue));
-  return validateTurnProposal({schema_version:1,reply:'I will follow the current arrangement. What should change in situation '+ ++seq+'?',actions:[],objective_id:c.objective.id,memory_proposals:seq===1||correct?[{statement:user,source_quote:user,topic:'general_household',kind:'preference',scope_key:'book.arrangement',status:'user_stated',relation:correct?'updates':'new',target_memory_key:correct?target?.id:'',attributes:{area_id:c.objective.id},conditions:[],permission_policy:'unspecified'}]:[]},[c.objective]);
+  return validateTurnProposal({schema_version:1,reply:context.intent==='explain'?'I will follow the current arrangement.':'I will follow the current arrangement. What should change in situation '+ ++seq+'?',actions:[],objective_id:c.objective.id,memory_proposals:seq===1||correct?[{statement:user,source_quote:user,topic:'general_household',kind:'preference',scope_key:'book.arrangement',status:'user_stated',relation:correct?'updates':'new',target_memory_key:correct?target?.id:'',attributes:{area_id:c.objective.id},conditions:[],permission_policy:'unspecified'}]:[]},[c.objective]);
  });
  try{
   for(let i=0;i<12;i++){

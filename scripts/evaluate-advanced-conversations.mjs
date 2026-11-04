@@ -11,7 +11,7 @@ const repeats=3,results=[];let inputTokens=0,outputTokens=0;
 const provider=createCognitiveProvider({key,model:process.env.DEEPSEEK_CHAT_MODEL||'deepseek-flash',onUsage:async d=>{inputTokens+=d?.usage?.prompt_tokens||0;outputTokens+=d?.usage?.completion_tokens||0;}});
 let setupFailure=false;
 outer:for(const c of selected)for(let repeat=0;repeat<repeats;repeat++){
- const h=await createHarness(provider),trace=[],failures=[];const started=Date.now();
+ const h=await createHarness(provider),trace=[],failures=[];let failureAttempts=[];const started=Date.now();
  const check=(ok,code)=>{if(!ok)failures.push(code);};
  try{
   let lastQuestion;
@@ -28,8 +28,8 @@ outer:for(const c of selected)for(let repeat=0;repeat<repeats;repeat++){
    if(i===11)check(response.reply.toLowerCase().includes(c.newValue),'final_recall_missing_current_value');
    check(await h.isolated(),'cross_owner_memory_leak');
   }
- }catch(error){failures.push(error.code||error.message);setupFailure=[400,401,402,403,404,422,429].includes(error.providerStatus);}
- results.push({id:c.id,repeat,status:failures.length?'failed':'passed',failures,turnsCompleted:trace.length,modelCalls:h.modelCalls,durationMs:Date.now()-started,trace});
+ }catch(error){failures.push(error.code||error.message);failureAttempts=error.attempts||[];setupFailure=[400,401,402,403,404,422,429].includes(error.providerStatus);}
+ results.push({id:c.id,repeat,status:failures.length?'failed':'passed',failures,turnsCompleted:trace.length,modelCalls:h.modelCalls,durationMs:Date.now()-started,trace,...(failures.length?{failureAttempts,diagnostics:await h.diagnostics()}: {})});
  await h.close();
  console.error(JSON.stringify({id:c.id,repeat,failed:failures.length,turns:trace.length}));
  if(setupFailure)break outer;
