@@ -1,3 +1,5 @@
+import { createHelpInterface } from './help-interface.js';
+import { createOnboardingState, supabaseOnboardingRepository } from './onboarding-state.js';
 import { createTrainingVisitStore, nextTrainingStep, visitLearnings, visitAnswerCount, saveVisitCheckpoint } from './training-visit.js';
 import { createVoiceBalance } from './voice-balance.js';
 import { Capacitor } from "@capacitor/core";
@@ -78,6 +80,7 @@ const AUTH_REDIRECT_URL = (() => {
   return "https://synqme.mysecondself.app/";
 })();
 var mssInterface = null;
+var gettingStarted = null;
 const REMEMBER_CHOICE_KEY = "synqme-remember-me-choice";
 const storedRememberChoice = (() => {
   try { return localStorage.getItem(REMEMBER_CHOICE_KEY); } catch { return null; }
@@ -667,6 +670,7 @@ function renderLiveScenarioProgress() {
     const title = document.createElement("strong"); title.textContent = scenario.title;
     const value = document.createElement("span"); value.textContent = done.includes(scenario.id) && !data.reviewed?.[scenario.id] ? "Previously completed" : Math.max(count,discussed) + " / " + tasks.length + " areas explored";
     header.append(title, value);
+    if (gettingStarted) header.append(gettingStarted.contextButton("progress"));
     const track = document.createElement("div"); track.className = "scenario-live-track"; track.setAttribute("role", "progressbar"); track.setAttribute("aria-label", scenario.title + " areas explored"); track.setAttribute("aria-valuemin", "0"); track.setAttribute("aria-valuemax", String(tasks.length)); track.setAttribute("aria-valuenow", String(Math.max(count,discussed)));
     const fill = document.createElement("span"); fill.style.width = (tasks.length ? Math.max(count,discussed) / tasks.length * 100 : 0) + "%"; track.append(fill);
     node.append(header, track);
@@ -2677,6 +2681,7 @@ function setAuthMode(mode, message = "") {
 }
 
 function renderAccountStatus() {
+  gettingStarted?.syncScope();
   if (elements.accountStatusLabel) elements.accountStatusLabel.textContent = cloudUserId ? "SIGNED IN" : "SIGN IN REQUIRED";
   if (elements.accountEmail) elements.accountEmail.textContent = cloudUserEmail || "Sign in to synchronise your SecondSelf.";
 }
@@ -2701,6 +2706,7 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   const fallbackProfile = draftState?.profile || defaultProfile();
   const fallbackFunctions = draftState?.functions || [];
   cloudUserId = user.id;
+  void onboardingState.load(null);
   cloudUserEmail = user.email;
   profileCreatedAt = null;
   roomJourney = null;
@@ -2813,13 +2819,14 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   if (draft) {
     try { localStorage.removeItem(ACCOUNT_DRAFT_KEY); } catch {}
   }
+  await onboardingState.load(cloudUserId, { returning: state.messages.some(item => item.role === "user" && item.content?.trim()) });
   setAuthGateVisible(false);
   renderAccountStatus();
   renderAll();
   selectAppView("home");
   prepareWelcomeAudioOffer();
   if (!profileComplete()) openSettings();
-  else updateSettingsMode();
+  else { updateSettingsMode(); maybeOfferOnboarding(); }
   startCloudConversationSync();
   startMemoryQueue();
   if (googlePlayCheckout.enabled) void googlePlayCheckout.syncOnSignIn();
@@ -3002,6 +3009,7 @@ elements.settingsForm?.addEventListener("submit", async (event) => {
   }
   updateSettingsMode();
   closeSettings();
+  if (savedToAccount) maybeOfferOnboarding();
   elements.conversationStatus.textContent = savedToAccount
     ? "Your profile is ready · saved to account"
     : "Your profile is updated locally; account sync needs attention";
@@ -4332,6 +4340,16 @@ const googlePlayCheckout = createGooglePlayCheckout({
   getHeaders: authenticatedApiHeaders,
   getUserId: () => cloudUserId
 });
+const onboardingState = createOnboardingState({
+  repository: supabaseOnboardingRepository(supabase),
+  storage: { getItem: key => localStorage.getItem(key), setItem: (key, value) => localStorage.setItem(key, value) },
+  onChange: () => gettingStarted?.renderStatus()
+});
+function maybeOfferOnboarding() {
+  if (!gettingStarted || !onboardingState.shouldShow(profileComplete())) return false;
+  gettingStarted.openGuide({ auto: true }); return true;
+}
+
 const trainingVisitStore = createTrainingVisitStore({ storage: {
   getItem: key => localStorage.getItem(key), setItem: (key, value) => localStorage.setItem(key, value)
 } });
@@ -4365,7 +4383,7 @@ async function finishTrainingVisit() {
   void flushMemoryQueue(userId, revision);
 }
 async function beginTrainingStep(step) {
-  if (!step || isSending) return;
+  if (!step || isSending || maybeOfferOnboarding()) return;
   const scenario = scenarioForId(step.scenarioId);
   if (!scenario) return;
   if (step.kind === "review") { mssInterface && selectAppView("journey"); selectedJourneyScenario = scenario.id; journeyDisplay = "scenarios"; renderScenarioJourney(); return; }
@@ -4381,6 +4399,8 @@ const robotRewards = createRobotRewardBalance({apiBase:API_BASE,getUserId:()=>cl
 mssInterface = createMssInterface({
   refreshBalance:()=>voiceBalance.refresh(),
   openBilling: googlePlayCheckout.enabled ? () => googlePlayCheckout.open() : undefined,
+  openHelp: () => gettingStarted?.openHelp(),
+  openGuide: () => gettingStarted?.openGuide(),
   startStep: beginTrainingStep,
   finishVisit: finishTrainingVisit,
   resumeVisit() { beginTrainingVisit(); if (elements.voiceExperience?.hidden) elements.messageInput.focus({ preventScroll: true }); },
@@ -4430,7 +4450,26 @@ mssInterface = createMssInterface({
   }
 });
 
+gettingStarted = createHelpInterface({
+  getContext: () => ({ userId: cloudUserId, profileReady: profileComplete(), companion: selectedCompanionDisplayName(), view: document.body.dataset.appView || 'home', talkVisible: Boolean(elements.voiceExperience && !elements.voiceExperience.hidden), talkActive: voiceModeActive }),
+  navigate: selectAppView,
+  dismiss: outcome => onboardingState.dismiss(outcome),
+  snapshot: () => onboardingState.snapshot(),
+  pauseTalk: () => { if (voiceModeActive) stopVoiceConversation('Talk paused while you view the introduction.'); },
+  editPrivacy: () => {
+    openSettings();
+    window.requestAnimationFrame(() => {
+      const control = document.getElementById('shareAnonymizedLearning');
+      for (let parent = control?.parentElement; parent; parent = parent.parentElement) if (parent.tagName === 'DETAILS') parent.open = true;
+      control?.scrollIntoView({ block: 'center' }); control?.focus({ preventScroll: true });
+    });
+  },
+  openSupport: () => window.open('https://mysecondself.app/contact/', '_blank', 'noopener')
+});
+window.addEventListener('online', () => { if (cloudUserId && onboardingState.snapshot().syncPending) void onboardingState.load(cloudUserId, { returning: state.messages.some(item => item.role === 'user') }); });
+
 function renderAll() {
+  gettingStarted?.syncScope();
   if (typeof mssInterface !== "undefined") mssInterface?.render();
   renderMessages();
   renderOwnerAvatarPreview();
@@ -5184,7 +5223,7 @@ async function openVoiceExperience({ activate = false } = {}) {
     if (elements.conversationStatus) elements.conversationStatus.textContent = "Complete your profile to begin";
     return;
   }
-  if (voiceModeActive) return;
+  if (voiceModeActive || maybeOfferOnboarding()) return;
 
   elements.voiceExperience.hidden = false;
   const appNav = document.querySelector("#appBottomNav");
@@ -5438,6 +5477,7 @@ function syncAppNavigation() {
 
 function selectAppView(view) {
   if (view === "talk") {
+    if (maybeOfferOnboarding()) return;
     if (elements.voiceExperience && !elements.voiceExperience.hidden) return;
     selectAppView("chat");
     void openVoiceExperience();
@@ -5454,7 +5494,7 @@ function selectAppView(view) {
     chatReturnSummary = (state.profile.preferredLanguage || "en") === "en" ? (checkpoint ? englishResumeReply(checkpoint,state.profile.ownerName) : "Welcome back, " + state.profile.ownerName.trim().split(/\s+/)[0] + ". We were working on " + (scenarioForId(scope)?.title || roomJourney.active_room_id.replaceAll('_',' ')) + ". Your saved conversation is above.") : "";
   }
   if (elements.voiceExperience && !elements.voiceExperience.hidden) closeVoiceExperience("Returned to your conversation.");
-  document.body.dataset.appView = ["home", "passport", "profile", "journey", "rewards"].includes(view) ? view : "chat";
+  document.body.dataset.appView = ["home", "passport", "profile", "journey", "rewards", "help"].includes(view) ? view : "chat";
   const workspace = document.querySelector("#moreWorkspace");
   if (workspace) workspace.open = view === "journey";
   if (view === "journey") { journeyDisplay = "scenarios"; renderScenarioJourney(); }
@@ -5480,18 +5520,11 @@ function introAudioStorageKey() {
 }
 
 function prepareWelcomeAudioOffer() {
-  if (!cloudUserId || !elements.welcomeAudioOffer || !elements.chatStage) return;
-  let dismissed = false;
-  try { dismissed = localStorage.getItem(introAudioStorageKey()) === "true"; } catch {}
-  // An existing conversation always opens directly, including on a new device.
-  dismissed ||= state.messages.some(message => message.role === "user" && message.content?.trim());
-  elements.welcomeAudioOffer.hidden = dismissed;
-  elements.chatStage.hidden = !dismissed;
-  if (elements.introAudioReplay) elements.introAudioReplay.hidden = !dismissed;
-  if (elements.welcomeAudioPlayer && !dismissed) {
-    elements.welcomeAudioPlayer.pause();
-    try { elements.welcomeAudioPlayer.currentTime = 0; } catch {}
-  }
+  // The recording now lives in optional onboarding and Help, never a chat gate.
+  if (elements.welcomeAudioOffer) elements.welcomeAudioOffer.hidden = true;
+  if (elements.chatStage) elements.chatStage.hidden = false;
+  if (elements.introAudioReplay) elements.introAudioReplay.hidden = true;
+  elements.welcomeAudioPlayer?.pause();
 }
 
 function finishWelcomeAudioOffer() {
@@ -5667,6 +5700,7 @@ async function requestAIReply(repairMode = false) {
       authenticatedApiHeaders()
     ]);
     if (!requestUserId || requestUserId !== cloudUserId) return null;
+    const firstConversationIntro = await onboardingState.claimIntroduction(state.messages.at(-1)?.timestamp || "first-turn");
     if (requestUserId !== cloudUserId) return null;
     const response = await fetch(API_BASE + "/api/chat", {
       method: "POST",
@@ -5701,7 +5735,7 @@ async function requestAIReply(repairMode = false) {
           memory_key, topic, kind, scope_key, statement, status, confidence, conditions, source_message, source_timestamp, conflict_group
         })),
         sharedKnowledgeReferences,
-        repairMode, voiceBreakDue: voiceModeActive && voiceBreakOfferDue, welcomeBack: welcomeBackPending
+        firstConversationIntro, repairMode, voiceBreakDue: voiceModeActive && voiceBreakOfferDue, welcomeBack: welcomeBackPending
       })
     });
     let data = {};
@@ -5816,6 +5850,7 @@ async function sendMessage(rawText) {
     elements.conversationStatus.textContent = "Set up your profile to begin";
     return;
   }
+  if (maybeOfferOnboarding()) return;
   const message = rawText.trim();
   chatReturnSummary = "";
   if (!message || isSending) return;
@@ -5922,6 +5957,7 @@ async function sendMessage(rawText) {
 elements.chatForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const text = elements.messageInput.value;
+  if (maybeOfferOnboarding()) return;
   if (!text.trim() || isSending) return;
 
   // Preserve the draft when the account/profile gate prevents sending.
