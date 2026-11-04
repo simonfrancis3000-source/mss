@@ -1,5 +1,6 @@
 import { firstConversationGuidance } from '../src/getting-started-content.js';
 import { shouldMeterVoice } from './voice-billing-policy.js';
+import { betaTesterEmailSet, ensureBetaVoiceAllowance } from './voice-beta-allowance.js';
 import { shouldContinueGuidedTurn, guidedReplyNeedsRepair, finalizeGuidedReply, GUIDED_TURN_CORRECTION } from "./guided-turn.js";
 import { cleanSimulationResult } from "../src/simulation.js";
 import { buildScenarioConversationPlan, scenarioConversationGuidance } from "../src/conversation-plan.js";
@@ -46,6 +47,7 @@ const billingDb = SUPABASE_URL && BILLING_SERVICE_KEY
   ? createClient(SUPABASE_URL, BILLING_SERVICE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
   : null;
 const VOICE_BILLING_ENABLED = process.env.MSS_VOICE_BILLING_ENABLED === "true";
+const VOICE_BETA_ALLOWANCE_EMAILS = betaTesterEmailSet(process.env.MSS_VOICE_BETA_ALLOWANCE_EMAILS);
 const VOICE_BILLING_TEST_EMAILS = new Set(
   String(process.env.MSS_VOICE_BILLING_TEST_EMAILS || "")
     .split(",").map(email => email.trim().toLowerCase()).filter(Boolean)
@@ -572,6 +574,11 @@ const app = http.createServer(async (request, response) => {
   // and RLS-protected entitlements migration are configured.
   if (request.method === "GET" && url.pathname === "/api/billing/status") {
     if (!billingDb) return json(response, 503, { error: "Google Play billing backend is not configured." }, headers || {});
+    try {
+      await ensureBetaVoiceAllowance({ db: billingDb, user: authContext.user, allowlist: VOICE_BETA_ALLOWANCE_EMAILS });
+    } catch {
+      return json(response, 503, { error: "Your introductory voice minutes could not be loaded. Please retry." }, headers || {});
+    }
     const { data, error } = await billingDb.from("mss_voice_wallets")
       .select("monthly_remaining_ms,topup_remaining_ms,monthly_valid_until")
       .eq("user_id", authContext.user.id).maybeSingle();
@@ -691,6 +698,7 @@ const app = http.createServer(async (request, response) => {
     try {
       await readJson(request, 1024);
       if (meteredVoice) {
+        await ensureBetaVoiceAllowance({ db: billingDb, user: authContext.user, allowlist: VOICE_BETA_ALLOWANCE_EMAILS });
         voiceReservation = await voiceRelay.reserve(authContext.user.id);
       }
       const upstream = await fetch("https://api.phonic.ai/v1/auth/session_token", {
