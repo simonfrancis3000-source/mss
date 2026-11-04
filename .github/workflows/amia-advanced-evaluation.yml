@@ -1,0 +1,92 @@
+name: AMIA advanced conversation programme
+on:
+  pull_request:
+    branches: [SYNQ.ME]
+    paths: ['evals/advanced/**', 'scripts/evaluate-advanced-conversations.mjs', 'scripts/summarize-advanced-evaluation.mjs', '.github/workflows/amia-advanced-evaluation.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: amia-advanced-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  development:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 15
+      matrix:
+        shard: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14]
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Run everyday and difficult conversations three times
+        continue-on-error: true
+        env:
+          DEEPSEEK_PERSON_API_KEY: ${{ secrets.DEEPSEEK_PERSON_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          AMIA_ADVANCED_PHASE: development
+          AMIA_ADVANCED_SHARD: ${{ matrix.shard }}
+          AMIA_ADVANCED_SHARDS: '15'
+        run: node scripts/evaluate-advanced-conversations.mjs > advanced-development-${{ matrix.shard }}.json
+      - uses: actions/upload-artifact@v7.0.2
+        if: always()
+        with:
+          name: advanced-development-${{ matrix.shard }}
+          path: advanced-development-${{ matrix.shard }}.json
+  reserved:
+    needs: development
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4]
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Evaluate reserved topics against the same frozen commit
+        continue-on-error: true
+        env:
+          DEEPSEEK_PERSON_API_KEY: ${{ secrets.DEEPSEEK_PERSON_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          AMIA_ADVANCED_PHASE: reserved
+          AMIA_ADVANCED_SHARD: ${{ matrix.shard }}
+          AMIA_ADVANCED_SHARDS: '5'
+        run: node scripts/evaluate-advanced-conversations.mjs > advanced-reserved-${{ matrix.shard }}.json
+      - uses: actions/upload-artifact@v7.0.2
+        if: always()
+        with:
+          name: advanced-reserved-${{ matrix.shard }}
+          path: advanced-reserved-${{ matrix.shard }}.json
+  summary:
+    needs: [development,reserved]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          pattern: advanced-*
+          path: reports
+          merge-multiple: true
+      - run: node scripts/summarize-advanced-evaluation.mjs reports
+      - uses: actions/upload-artifact@v7.0.2
+        if: always()
+        with:
+          name: advanced-summary
+          path: advanced-summary.json
+      - name: Enforce complete coverage and report failures honestly
+        run: node -e "const r=require('./advanced-summary.json');if(r.status!=='complete'||r.conversations!==600||r.userTurns!==7200||r.failed)process.exit(1)"
