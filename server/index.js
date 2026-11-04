@@ -622,11 +622,16 @@ const app = http.createServer(async (request, response) => {
     if (limitReached(request, requestHistory, MAX_REQUESTS_PER_MINUTE, authContext.user.id)) {
       return json(response, 429, { error: "Too many purchase verification attempts." }, headers || {});
     }
+    let verificationStage = "read_purchase";
+    let requestedProductId = "";
     try {
       const body = await readJson(request, 12000);
       const productId = String(body?.productId || "");
+      requestedProductId = productId;
       const purchaseToken = String(body?.purchaseToken || "");
+      verificationStage = "google_play_lookup";
       const verified = await verifyGooglePlayToken({ productId, purchaseToken, userId: authContext.user.id });
+      verificationStage = "database_credit_grant";
       const { data, error } = await billingDb.rpc("mss_apply_verified_play_purchase", {
         p_user_id: authContext.user.id,
         p_product_id: verified.productId,
@@ -663,9 +668,16 @@ const app = http.createServer(async (request, response) => {
         } else if (verified.kind === "subscription" && verified.requiresAcknowledgement) {
           await acknowledgeVerifiedGoogleSubscription(purchaseToken);
         }
-      } catch {
+      } catch (error) {
         finalizationPending = true;
+        console.warn("Google Play purchase credited but not finalized", {
+          productId, kind: verified.kind, errorCode: error?.code || "google_finalization_failed"
+        });
       }
+      console.info("Google Play purchase verified and recorded", {
+        productId, kind: verified.kind, isTest: verified.isTest,
+        newlyCredited: Boolean(data?.credited), finalizationPending
+      });
       return json(response, 200, {
         verified: true,
         productId,
@@ -675,6 +687,14 @@ const app = http.createServer(async (request, response) => {
       }, headers || {});
     } catch (error) {
       const status = Number.isInteger(error?.statusCode) ? error.statusCode : 502;
+      // Log a safe diagnostic stage only. Never log a Play purchase token,
+      // authorization header, signed-in identity, or service-account key.
+      console.warn("Google Play purchase verification unsuccessful", {
+        stage: verificationStage,
+        productId: requestedProductId.slice(0, 48),
+        status,
+        code: typeof error?.code === "string" ? error.code.slice(0, 48) : "unknown"
+      });
       return json(response, status, { error: status >= 500 ? "Google Play verification is temporarily unavailable." : error.message }, headers || {});
     }
   }
