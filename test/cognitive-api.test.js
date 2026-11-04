@@ -12,10 +12,11 @@ test('authenticated cognitive API commits server-owned reminder, replays retries
     globalThis.fetch=async(url, options={})=>{
       if(String(url).endsWith('/auth/v1/user'))return Response.json({id:'verified-owner'});
       if(String(url).includes('/rpc/')){
+        if(String(url).endsWith('/claim_synqme_cognitive_memory_job'))return Response.json(null);
         const b=JSON.parse(options.body);assert.equal(b.p_user_id,'verified-owner');assert.equal(options.headers.Authorization,'Bearer server-fixture');
         if(String(url).endsWith('/claim_synqme_cognitive_turn'))return Response.json(saved&&!fail?{status:'completed',result:saved}:{status:'claimed',lease:'fixture-lease',state:{pendingOffer:{id:'offer-one',title:'Find the hob model'},lastQuestion:'Would you like a reminder?',messages:[]}});
         if(String(url).endsWith('/release_synqme_cognitive_turn'))return Response.json({released:true});
-        if(String(url).endsWith('/commit_synqme_cognitive_turn')){
+        if(String(url).endsWith('/commit_synqme_cognitive_turn_v2')){
           if(fail)return Response.json({message:'database failed'},{status:500});
           assert.equal(b.p_action.type,'add');assert.equal(b.p_action.title,'Find the hob model');effects++;saved=b.p_result;return Response.json({status:'completed',result:saved});
         }

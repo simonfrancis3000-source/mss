@@ -1,91 +1,104 @@
-# AMIA Cognitive Runtime: first implementation tranche
+# AMIA Cognitive Runtime
 
-## Current status
+## Release status
 
-This branch starts the architectural release described in the MSS build brief. It implements a server-owned turn controller, durable scoped continuation state, transactional reminder actions, a structured provider adapter and deterministic quality checks. It is a reviewable foundation, not a claim that the entire six-component intelligence system is finished or deployed.
+The six runtime components are implemented and integrated with the existing web and Android source branches. The release keeps Render, Node.js, Supabase, DeepSeek and Phonic. No GPU host or foundation-model training is required. This document distinguishes completed implementation and offline validation from live release checks that require credentials, an isolated database and a physical device.
 
-The default production path is unchanged. Set `AMIA_COGNITIVE_RUNTIME_ENABLED=true` only on an isolated test deployment after applying and verifying the migration. Version negotiation also requires a client sending `runtimeVersion: 1`. This initial runtime supports English and Spanish; other languages retain the existing route. Both Chat and Phonic Talk reach the same controller through `requestAIReply`.
+The runtime is disabled by default. It supports English and Spanish. Other existing voice languages continue through the existing route. The static voice ring, companion identity, account flow and Google Play billing are retained. PEXI remains a future integration boundary; this release cannot operate a physical robot.
 
-## Audit findings
+## Implemented components
 
-- `server/index.js` currently builds a text-only DeepSeek response and can make multiple additional correction/continuity calls. Existing storage records question observations after generation, but does not own the whole turn.
-- `src/synqme.js` currently intercepts reminders in the browser. Natural-language offers are recognized using `src/appliance-reminders.js`; persistence depends on that browser path succeeding.
-- Existing resume helpers derive checkpoints from supplied transcripts. The new runtime prefers the canonical scoped state committed on the server.
-- Supabase already contains persona memory, decision states, appliance references, evaluation records, training revisions, reminders and memory jobs. These are reused. The live schema was inspected read-only; no live DDL or user data mutation was performed for this branch.
-- The repository's `SYNQ.ME` branch contains the application backend/frontend. Work started at `cf244d610bedd9bbbc68db5b95376d5e4c7d8b22`; the subsequent Google Play diagnostics through `8032008837adb046b85eaaaf3a97842b5f3c58e1` were retained.
-- Deployment-to-commit identity has not been independently verified in Render. No workspace was selected in the connected Render session; no workspace switch or production deployment was attempted.
+| Component | Implementation |
+| --- | --- |
+| Memory | Main-turn structured proposals, exact source-quote grounding, conditions, provenance, explicit corrections and withdrawals, retained conflicts, server-owned durable jobs, retry leases, dependency/exception/conflict relations and cycle rejection |
+| Context | Canonical account/scenario state, outstanding questions and reminder offers, contextual yes/no handling, cross-session resume, deferred/skipped questions and pause state |
+| Planner | Objective ranking using saved rules, unresolved conflicts, dependencies, deferred questions and authoritative room review/completion state |
+| Decisions | Server-owned permissions and action allowlist; explicit prohibitions take precedence; missing capability or conditional permission requires waiting or clarification |
+| Actions | Atomic reminder create/edit/complete/delete, list/read, exact-model official manual verification and bounded grounded feature quotations |
+| Quality | Structured validation, one bounded repair, action-claim checks, repetition and dead-end checks, stale-result rejection, delivery observations and repeatable evaluations |
 
-## Runtime ownership
-
-| Component | Implemented in this tranche | Further work |
-| --- | --- | --- |
-| Memory Engine | Retrieves ranked existing rules, exceptions, permissions and source references; refuses to treat failed retrieval as empty memory | Move memory extraction/consolidation and graph relations into durable server-owned processing |
-| Context Engine | Resolves explicit reminder commands and contextual acceptance/cancellation against persisted offers | Broader multilingual and ambiguous-reference evaluations |
-| Conversation Planner | Supplies current objective, unresolved question, dispositions and conflict context to one normal model call | Evidence-driven objective ranking and authoritative coverage beyond the existing client review flow |
-| Decision Intelligence | Server-owned action allowlist and consent checks; existing permission rules supplied as evidence | Full conditional dependency graph, calibrated priorities and stronger counterfactual evaluation |
-| Action Engine | Transactional reminder add/edit/complete/delete; read/list; idempotent result replay; stale-worker fencing | Integrate additional tools and verified appliance lookup parity before general rollout |
-| Quality Engine | Structured response validation, bounded repair, action-claim checks, repetition/dead-end checks | Live-model semantic and multilingual evaluation; hardware listening and delivery acknowledgement |
-
-These are modules within the existing Node service, not six network services. The normal path uses one DeepSeek call. Routine reminder acceptance, pause and grounded resume can avoid a model call. Invalid proposals get at most one repair. DeepSeek and Phonic are retained.
+The planner ranks objectives and supplies evidence to the language model. Conditional permission evaluation is a conservative decision helper, not a certified robot safety controller. No model-generated action is executed directly.
 
 ## Turn lifecycle
 
-`authenticate -> claim -> resolve/context -> propose/validate -> atomic commit -> return`
+`authenticate -> claim -> resolve/context -> propose/validate -> atomic commit -> deliver`
 
-1. The existing API authentication obtains the verified user. Request body user IDs never select an account.
-2. `turnIdentity` combines the scenario and a stable client turn ID/timestamp. The ledger checks a fingerprint to reject reusing an ID with changed content.
-3. `claim_synqme_cognitive_turn` serializes a user's scope with a 90-second lease. A duplicate completed turn returns its recorded result. An active competing turn gets HTTP 409. An expired worker cannot commit after another worker claims.
-4. Initial continuation state is seeded from matching scenario-tagged saved messages, never from a client's claimed checkpoint. Untagged legacy messages are not guessed into a scenario.
-5. The model returns a validated proposal. It cannot execute tools. Its `actions` array must be empty in this tranche. Accepted offers and explicit reminder commands are resolved and authorized by server code.
-6. `commit_synqme_cognitive_turn` performs the reminder mutation, writes the canonical reply, and replaces continuation state in one transaction. Any constraint/write failure rolls back the reminder too. The server returns success only after this transaction completes.
-7. A lost HTTP response is recoverable: retrying the same turn returns the completed ledger entry. Release after an uncertain timeout never removes a completed result.
+1. Existing authentication obtains the verified account and current training revision. Request body user IDs cannot select another account. The account must pass the rollout allowlist.
+2. A stable scenario/turn identity and content fingerprint protect retries. A duplicate completed turn replays its recorded result. Reusing an ID for different text or competing with an active lease returns HTTP 409.
+3. Canonical state is loaded from the server, including bounded history and pending offers. Initial state may be seeded from matching scenario-tagged saved messages. Client checkpoints cannot overwrite canonical state.
+4. Routine reminder acceptance, pause and grounded resume can bypass the model. Normal conversation uses one DeepSeek JSON-object call with independent validation. At most one repair is allowed. Exact-model appliance identification can require another composition after official evidence is available.
+5. Memory proposals must quote the latest user message. Sensitive content is excluded; another person's taste is not silently assigned to the owner. Permission to act requires explicit wording. Corrections must target an existing rule and carry explicit correction evidence. An unresolved contradiction remains a conflict.
+6. One database transaction mutates an authorized reminder, persists the canonical reply/state, records question dispositions and queues validated memory proposals. A failed transaction cannot report success. Lost HTTP responses recover through idempotent replay.
+7. The Node worker persists queued memory without requiring an open browser and without another model request. It uses leases, a batch limit, bounded retry delay and a five-attempt limit. Source text is cleared when a job completes. Existing browser-owned jobs continue to drain during migration; new runtime turns do not enqueue duplicate browser jobs.
+8. Text dispatch, audio playback start, completion and interruption are recorded as client observations with sequence checks. These observations do not prove that someone heard or understood the response. Audio arriving from an interrupted tool decision is discarded.
 
-The legacy conversation JSON remains the existing UI/history projection. Cognitive sessions and turns are authoritative for negotiated runtime turns. They do not assert that audio was heard: committed text means generated and persisted, not playback completed.
+Memory persistence is asynchronous after the durable transaction queues it. `memory_queued` means queued, not already consolidated into persona memory. The memory view refreshes from committed records. Appliance identities and verified metadata are queued in the same mechanism; manual text is not retained there.
 
-## Persistence and permissions
+## Source map
 
-Migration: `supabase/migrations/20261104145805_amia_cognitive_runtime.sql`.
+| Files | Responsibility |
+| --- | --- |
+| `server/cognitive-core.js`, `cognitive-runtime.js` | State, intent, validation and authoritative turn orchestration |
+| `server/cognitive-provider.js` | Existing DeepSeek chat API adapter, bounded JSON output and usage accounting |
+| `server/cognitive-store.js` | Server-only PostgREST RPCs, reminders, authoritative review context |
+| `server/cognitive-memory.js` | Grounding, correction policy and durable job worker |
+| `server/cognitive-planner.js` | Evidence-based objective ranking and permission decisions |
+| `server/cognitive-appliance.js` | Existing exact-model official-manual verification and bounded quotations |
+| `server/cognitive-rollout.js` | Explicit global enable plus verified account allowlist |
+| `src/cognitive-client.js` | Account capability negotiation, turn mapping and delivery observation retries |
+| `src/phonic-voice.js`, `src/voice-tool-dedup.js` | Existing Phonic transport, idempotent tool delivery, barge-in fencing |
+| `src/audio-quality.js`, `scripts/analyze-phonic-pcm.mjs` | Peak/RMS/clipped-sample diagnostics; no raw-audio upload |
+| `evals/cognitive-cases.mjs`, `scripts/evaluate-cognitive-runtime.mjs` | Repeatable fixtures and optional live-model report |
 
-- `synqme_cognitive_sessions` stores bounded recent context, last question, pending offer, question dispositions and lease/version fields per account and scenario.
-- `synqme_cognitive_turns` stores canonical turn results scoped by account, training revision and stable turn key.
-- New table writes and transaction RPCs are restricted to `service_role`. The backend reuses its existing server-only `SUPABASE_SERVICE_ROLE_KEY` or `SUPABASE_SECRET_KEY`; never place these in `VITE_*` variables.
-- Functions use `SECURITY INVOKER` and an empty search path. Explicit grants revoke execution from public, anonymous and authenticated callers.
-- Authenticated users can read only their own records. Delete permission applies only to invalidated revisions so the existing training-reset caller can clear obsolete data without mutating active state.
-- Every claim/commit/release checks and locks the training revision. Reset invalidates stale in-flight turns. The reset revision trigger physically removes old canonical context and turn records. A scenario reset conservatively invalidates all runtime continuation state for the account while the existing scenario reset decides which persona rules/history survive.
-- Reminders are user-managed list data and retain the existing reset semantics. Runtime history deletion does not silently delete a user's reminder list.
+## Database changes
 
-No existing transcript or persona backfill is required. Seeding happens lazily for matching tagged history. This branch does not save complete manuals, provider secrets or raw audio in the runtime tables. Both new tables contain private conversation data and must follow the same user deletion and retention policy as the existing conversation store. A durable retention/archival policy for the turn ledger is still required before broad use; do not prune recent idempotency keys during active sessions.
+Apply these additive migrations in order:
 
-## Verification performed
+1. `20261104145805_amia_cognitive_runtime.sql`: scoped sessions, turn ledger, transactional reminder action RPCs and reset invalidation.
+2. `20261104152117_amia_cognitive_memory_graph.sql`: durable server-owned memory jobs, transactional enqueue, provenance/supersession/conflicts, rule relations, cycle protection and worker RPCs.
+3. `20261104153147_amia_cognitive_delivery_retention.sql`: sequence-checked delivery observations and retention maintenance.
 
-- Existing baseline: 363 tests passed before edits.
-- Full current suite: 489 tests, including the independent diagnostics update; final results are recorded in the PR validation report.
-- Production frontend build passed with original public assets restored for local verification.
-- PostgreSQL tests execute the actual migration and transaction functions using pinned PGlite, not SQL text matching. They cover atomic rollback, replay, busy/stale leases, cross-user reminder mutation, authenticated read/write restrictions, anonymous denial and reset invalidation.
-- 100 synthetic multi-turn reminder trajectories cover five appliance details, five acceptance forms and four lifecycle paths (retry, pause/resume, transaction failure, cancellation). Twenty cases are labelled held-out, but share the same synthetic template families. This is a narrow deterministic integration set, not an independently sampled evaluation of general conversation intelligence.
-- Additional controller/provider/API tests check truncation repair, failed retrieval, unverified action claims, fingerprint conflicts, concurrent requests and verified account selection.
-- Voice adapter tests cover deduplication and retry behavior. No claim is made about improved clipping or subjective voice quality without listening tests.
+The live production schema was inspected read-only. No production migration or user-data write was performed. Existing persona memories, decision states, appliance records, room journeys, reminders and training revisions are reused.
 
-No live DeepSeek requests, authenticated web/device sessions, production migrations or Phonic listening tests were run. Runtime latency measured with deterministic fixtures is not representative of provider/network latency and is not presented as a production speed improvement.
+Transaction functions use SECURITY INVOKER with an empty search path and explicit service-role grants. Anonymous and authenticated callers cannot execute runtime write RPCs. Users can read only their own rows through RLS. Active canonical state cannot be mutated by a browser. Reset locks the training revision before invalidation so a stale worker cannot commit old training. Graph endpoints have owner-scoped composite foreign keys. Server-owned jobs cannot be claimed or edited by the legacy browser worker.
 
-## Isolated rollout and rollback
+The daily maintenance timer expires response bodies after 90 days while retaining tombstone keys to prevent an old retry repeating an action. Inactive sessions expire after 90 days, finished jobs after 30 days and delivery observations after 90 days. Full account deletion remains governed by the existing account-deletion cascade. Behavioral rollback does not delete a user's reminders.
 
-1. Review this PR and the migration against the target project's grants, reset functions and service-role configuration.
-2. Apply the migration to an isolated Supabase environment with representative schema and test accounts; run the local PostgreSQL tests and an actual PostgREST RPC test there.
-3. Deploy this branch to a test backend/client. Ensure the backend has its server-only key and current DeepSeek configuration. Enable `AMIA_COGNITIVE_RUNTIME_ENABLED=true` only there.
-4. Exercise the real hob flow, retry/lost-response case, pause/resume, cross-device use and reset in Chat and Phonic Talk. Check Profile reflects committed reminders.
-5. Complete the missing integrations and evaluation listed below before deciding on production rollout.
-6. Roll back behavior by disabling the flag. Leave the additive migration in place: it is compatible with old clients and preserves audit/replay results. Disabling the flag does not reverse reminders already created. Do not drop tables as a behavioral rollback.
+## Configuration and rollout
 
-## Next implementation work
+Use the backend's existing server-only Supabase key and DeepSeek configuration. Never place service credentials in `VITE_*` variables.
 
-1. Bring verified appliance/manual lookup into the negotiated runtime, including usage accounting and revalidation. Current legacy lookup remains available on the default path; do not enable broad runtime rollout while this parity gap remains.
-2. Move durable preference extraction/corrections into server-controlled jobs using the existing memory-job infrastructure. Preserve conditions, provenance, supersession and explicit permissions.
-3. Add relational decision dependencies/exception/conflict links using existing rule IDs; validate with scenario trajectories rather than completion-by-message-count.
-4. Strengthen objective selection with authoritative review state and a diverse evaluation set of 100–200 real-world-style conversations across all required behaviors. The current 100 reminder variants are only its first narrow family.
-5. Diagnose actual Phonic clipping with recordings/measurements and add truthful playback/interruption delivery states. Preserve the static ring and current robot identity/UI.
-6. Measure warm/cold p50/p95 latency and costs using the real providers, then optimize the measured bottlenecks.
-7. Verify Android source/build integration separately: this PR targets `SYNQ.ME`, not the independent `mobile/current-mss` branch.
-8. Add an account allowlist/staged rollout mechanism, retention controls and operational metrics before enabling for multiple real users.
+- `AMIA_COGNITIVE_RUNTIME_ENABLED=true` enables runtime capability.
+- `AMIA_RUNTIME_USER_IDS` and/or `AMIA_RUNTIME_EMAILS` selects verified test accounts using comma-separated values. An empty allowlist enables nobody.
+- The authenticated `/api/runtime/status` endpoint negotiates capability per account; the client caches it briefly and fails closed if unavailable.
+- The backend must have all migrations before enabling a test account.
+- The existing Phonic API key and transport remain in use.
 
-The next implementation phase does not require replacing DeepSeek, Phonic, Render or Supabase, and does not require GPU hosting.
+A code rollout should first use an isolated backend/database with representative schema and dedicated test accounts. Run the real reminder offer/yes/retry/failure sequence, correction across sessions, pause/resume, reset, concurrent devices and voice barge-in. Verify both committed data and the user-visible result. Enable additional accounts only after those checks pass. Disable the flag or remove an account from the allowlist to roll back behavior. Leave additive tables in place to preserve audit and replay records.
+
+The inspected Render workspace contains `synqme-api` on `SYNQ.ME` and `synqme-demo` on `SYNQ.ME`. Their live service identity was checked. The frontend PR preview does not provide an isolated runtime backend, so loading that preview is not an authenticated end-to-end runtime test.
+
+## Verification and limits
+
+Local web verification: 655 tests pass and production frontend build passes. Local Android verification: 639 tests pass, mobile build passes and Capacitor Android sync passes. The branch-specific count differs because the source branches contain different existing tests.
+
+The tests execute the actual SQL migrations in pinned PGlite/PostgreSQL, including transaction rollback, replay, leases, RLS, owner isolation, reset races, memory grounding, correction/supersession, graph cycles, delivery ordering and expired-response tombstones. This validates database behavior locally; it does not establish that target PostgREST grants are configured correctly before migration.
+
+There are 100 narrow reminder trajectories and 150 additional multi-turn trajectories across ten domains and fifteen behavior families. The broader set covers exceptions, corrections, conflicts, deferrals, pause/resume, reminders, retry, failed writes, malformed/truncated output, settled questions and permissions. Thirty broader fixtures are labeled held-out, but the set is synthetic and template-based. Deterministic mocked-provider passes are orchestration checks, not live-model intelligence scores.
+
+GitHub workflows run the existing regression/build checks. The Android workflow compiles a debug APK and uploads it for review. A separate workflow attempts 30 synthetic held-out live DeepSeek checks when repository credentials are available. Missing credentials create a report marked `blocked`; workflow success in that case does not mean live-model validation passed.
+
+Local live evaluation currently records `blocked` because DeepSeek credentials are unavailable in this execution environment. No authenticated new-runtime PostgREST request, physical Android session or Phonic listening session has been performed. Those checks cannot be inferred from mocks, builds, a debug APK or successful CI.
+
+Runtime logs expose phase durations for claim, context, model, manual lookup and commit, along with model-call count, action type and replay status. Existing provider usage accounting receives token usage. The optional live evaluator reports generation p50/p95 and token totals. No unmeasured speed, cost, voice-quality or general-intelligence improvement is claimed. Warm/cold end-to-end latency and subjective clipping quality require actual deployment and listening measurements.
+
+## Commands
+
+- `npm test`
+- `npm run build`
+- Android source: `npm run build -- --mode mobile` and `npx cap sync android`
+- Native CI: `cd android && ./gradlew assembleDebug --no-daemon`
+- Live model: `node scripts/evaluate-cognitive-runtime.mjs` with existing server credentials supplied securely
+- Local recording diagnostics: `node scripts/analyze-phonic-pcm.mjs /absolute/path/recording.wav`
+
+The supported WAV diagnostic input is PCM16. It reports peak/RMS/clipped samples without sending the recording to a service. These measurements are diagnostic signals; clipped-sample counts alone cannot establish the cause of an audible interruption.

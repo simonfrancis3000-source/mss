@@ -7,6 +7,7 @@ import { createRobotRewardBalance } from "./robot-rewards-balance.js";
 import { coalesceTranscriptTurns, preferTranscriptTurn, bestUserTranscript, isServiceErrorText } from "./transcript-turns.js";
 import { createRememberedSessionStorage, nativePersistentSessionStorage } from "./session-storage.js";
 import { applianceReminderTurn } from "./appliance-reminders.js";
+import { createCognitiveClient } from './cognitive-client.js';
 import { conversationCheckpoint, englishResumeReply } from "./conversation-resume.js";
 import { syncRobotSpeaking } from "./robot-speaking.js";
 import { collectReviewableFragments, preferenceDisplayLabel, preferenceIdentity } from "./preference-review.js";
@@ -135,6 +136,7 @@ const rememberMeStorage = createRememberedSessionStorage({
   }
 });
 let trainingRevision = 0;
+const cognitiveClient=createCognitiveClient({apiBase:API_BASE,getUserId:()=>cloudUserId,getHeaders:authenticatedApiHeaders});
 const trainingSessionStartedAt = Date.now();
 const supabase = SUPABASE_URL && SUPABASE_KEY
   ? createClient(SUPABASE_URL, SUPABASE_KEY, {
@@ -1500,6 +1502,7 @@ function writePendingMemoryJobs(userId, revision, jobs) {
   catch { if (elements.personaMemoryStatus) elements.personaMemoryStatus.textContent = "Memory updates are waiting to sync. Keep this page open until connected."; }
 }
 function queueStructuredMemoryTurn(userMessage, userTimestamp) {
+  if(state.cognitiveServerMemory===true)return;
   if (voiceModeActive && voiceBreakTracker.awaiting() && breakResponse(userMessage) !== 'other') return;
   if (todoCommandForMessage(userMessage)) return;
   const userId = cloudUserId, revision = trainingRevision;
@@ -1521,6 +1524,7 @@ function queueStructuredMemoryTurn(userMessage, userTimestamp) {
   void flushMemoryQueue(userId, revision);
 }
 async function flushMemoryQueue(userId = cloudUserId, revision = trainingRevision) {
+  if(state.cognitiveServerMemory===true)await loadPersonaMemories();
   if (!userId || userId !== cloudUserId || revision !== trainingRevision || !supabase || memoryQueueFlushing) return;
   memoryQueueFlushing = true;
   try {
@@ -3681,6 +3685,7 @@ function extractExplicitPreferenceFacets(text) {
 }
 
 function savePreference(message) {
+  if(state.cognitiveServerMemory===true)return;
   if (voiceModeActive && voiceBreakTracker.awaiting() && breakResponse(message) !== 'other') return;
   if (todoCommandForMessage(message)) return;
   if (!["answer", "correction"].includes(conversationIntent(message))) return;
@@ -3777,6 +3782,7 @@ function detectPendingClarification(userMessage, reply) {
 }
 
 function resolvePendingClarification(message) {
+  if(state.cognitiveServerMemory===true)return false;
   const pending = state.pendingClarification;
   if (!pending) return false;
   const preference = state.preferences.find((item) => item.id === pending.preferenceId);
@@ -4968,6 +4974,7 @@ function showVoiceWaitingForUser() {
 }
 
 function handlePhonicVoiceEvent(event) {
+  if(event.runtimeTurnId){const status={assistant_text_dispatched:'dispatched',assistant_started_speaking:'playback_started',assistant_finished_speaking:'playback_completed',assistant_playback_interrupted:'interrupted'}[event.type];if(status)void cognitiveClient.report({turnId:event.runtimeTurnId,deliveryKey:event.deliveryKey,channel:'phonic',status,sequence:event.deliverySequence});}
   const companion = selectedCompanionDisplayName();
   switch (event.type) {
     case "open":
@@ -5097,6 +5104,8 @@ async function translatedVoiceBreakQuestion(language, kind = "offer") {
 }
 
 async function handlePhonicAmiaToolCall({ name, parameters = {}, items = [] } = {}) {
+  if(!state.apiProvider&&API_BASE)await checkAIBackend();
+  state.cognitiveServerMemory=await cognitiveClient.enabled(state.amiaCognitiveRuntime,state.profile.preferredLanguage || 'en');
   const language = state.profile.preferredLanguage || "en";
   const unavailable = localizedAIUnavailable(language);
   if (name !== "amia_next_turn") return { status: "error", assistant_text: unavailable };
@@ -5192,7 +5201,7 @@ async function handlePhonicAmiaToolCall({ name, parameters = {}, items = [] } = 
     persist();
     renderAll();
     void flushCloudSave();
-    return { status: "ok", decision_owner: "AMÏA", assistant_text: spokenReply.replace(/\bSYNQ\.ME\b/gi, "sink me") };
+    return { status: "ok", decision_owner: "AMÏA", runtime_turn_id:cognitiveClient.forSource(mappedMessage?.timestamp || metadata.timestamp)?.turnId, assistant_text: spokenReply.replace(/\bSYNQ\.ME\b/gi, "sink me") };
   } catch (error) {
     console.info("SYNQ.ME AMÏA voice decision failed.", error);
     return { status: "error", assistant_text: state.apiErrorDetail || unavailable };
@@ -5629,7 +5638,8 @@ async function requestAIReply(repairMode = false, sourceTimestamp = null) {
   const sourceIndex = sourceTimestamp ? state.messages.findLastIndex(item => item.role === 'user' && item.timestamp === sourceTimestamp) : -1;
   const turnMessages = sourceIndex >= 0 ? state.messages.slice(0, sourceIndex + 1) : state.messages;
   if (!state.apiProvider && API_BASE) await checkAIBackend();
-  const runtimeActive = state.amiaCognitiveRuntime?.version === 1 && state.amiaCognitiveRuntime.languages?.includes(state.profile.preferredLanguage || 'en');
+  const runtimeActive = await cognitiveClient.enabled(state.amiaCognitiveRuntime,state.profile.preferredLanguage || 'en');
+  state.cognitiveServerMemory=runtimeActive;
   const latestReminderText = [...turnMessages].reverse().find(item => item.role === "user")?.content || "";
   const reminderCommand = todoCommandForMessage(latestReminderText);
   if (reminderCommand && !runtimeActive) {
@@ -5753,7 +5763,8 @@ async function requestAIReply(repairMode = false, sourceTimestamp = null) {
     const reply = typeof data.reply === "string" ? data.reply : typeof data.message === "string" ? data.message : "";
     if (!reply.trim()) throw new Error("AI endpoint returned no reply text");
     if (data.runtime?.action) void loadTodoReminders();
-    if (data.appliance && cloudUserId === requestUserId) {
+    if(data.runtime)cognitiveClient.remember(turnMessages.at(-1)?.timestamp,data.runtime);
+    if (data.appliance && !data.runtime && cloudUserId === requestUserId) {
       if (data.amiaPersistence?.appliance_saved) void loadPersonaMemories();
       else await saveApplianceRecord(data.appliance);
     }
@@ -5850,6 +5861,8 @@ async function sendMessage(rawText) {
   const message = rawText.trim();
   chatReturnSummary = "";
   if (!message || isSending) return;
+  try{if(!state.apiProvider&&API_BASE)await checkAIBackend();state.cognitiveServerMemory=await cognitiveClient.enabled(state.amiaCognitiveRuntime,state.profile.preferredLanguage || 'en');}
+  catch{elements.conversationStatus.textContent='Your conversation connection could not be verified. Please retry.';return;}
   beginTrainingVisit();
   const todoTurn = Boolean(todoCommandForMessage(message));
   welcomeBackPending ||= shouldWelcomeBack(state.messages);
@@ -5871,7 +5884,7 @@ async function sendMessage(rawText) {
     ? state.messages[state.messages.length - 2].content
     : "";
   const previousUserMessage = state.messages.slice(0, -1).reverse().find((item) => item.role === "user")?.content || "";
-  const inferredPending = !state.pendingClarification &&
+  const inferredPending = !state.cognitiveServerMemory && !state.pendingClarification &&
     /(which laundry detail matters most|sorting, washing and drying|how clothes are put away)/i.test(previousAssistantMessage) &&
     /^(washing|wash|washing and drying|wash and dry|laundering|cleaning clothes|sorting|sort|separating|separate clothes|sorting clothes|put(ting)? clothes away|clothes are put away|put away|folding|fold clothes|hanging|hang clothes|storage)$/i.test(message.trim())
     ? (() => {
@@ -5928,6 +5941,8 @@ async function sendMessage(rawText) {
   persist();
   renderAll();
 
+  // The reply is already visible. Release the composer immediately instead of
+  const delivered=cognitiveClient.forSource(userMessageTimestamp);if(delivered&&!isServiceErrorText(reply))void cognitiveClient.report({turnId:delivered.turnId,deliveryKey:'chat:'+userMessageTimestamp,channel:'chat',status:'dispatched',sequence:1});
   // The reply is already visible. Release the composer immediately instead of
   // keeping the UI in a thinking state while Supabase finishes syncing.
   isSending = false;

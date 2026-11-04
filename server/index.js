@@ -3,6 +3,9 @@ import { createCognitiveRuntime } from './cognitive-runtime.js';
 import { createCognitiveStore } from './cognitive-store.js';
 import { createCognitiveProvider } from './cognitive-provider.js';
 import { RuntimeError } from './cognitive-core.js';
+import { createCognitiveMemoryWorker } from './cognitive-memory.js';
+import { createCognitiveApplianceResolver } from './cognitive-appliance.js';
+import { cognitiveRollout } from './cognitive-rollout.js';
 import { shouldMeterVoice } from './voice-billing-policy.js';
 import { betaTesterEmailSet, ensureBetaVoiceAllowance } from './voice-beta-allowance.js';
 import { shouldContinueGuidedTurn, guidedReplyNeedsRepair, finalizeGuidedReply, guidedNextStep, GUIDED_TURN_CORRECTION } from "./guided-turn.js";
@@ -65,9 +68,13 @@ const MODEL = String(process.env.DEEPSEEK_CHAT_MODEL || process.env.DEEPSEEK_FLA
 // Opt-in rollout. Old clients keep the existing route unless they explicitly
 // negotiate version 1. The server still authenticates every turn normally.
 const COGNITIVE_RUNTIME_ENABLED = process.env.AMIA_COGNITIVE_RUNTIME_ENABLED === 'true';
+const cognitiveForUser = cognitiveRollout({enabled:COGNITIVE_RUNTIME_ENABLED,userIds:process.env.AMIA_RUNTIME_USER_IDS,emails:process.env.AMIA_RUNTIME_EMAILS});
 const cognitiveStore = createCognitiveStore({ supabaseUrl: SUPABASE_URL, secretKey: BILLING_SERVICE_KEY });
+const cognitiveWorker=createCognitiveMemoryWorker({store:cognitiveStore});
 const cognitiveRuntime = createCognitiveRuntime({
   store: cognitiveStore, contextStore: amiaStore,
+  onCommitted:()=>{void cognitiveWorker.drain();},
+  resolveAppliance:createCognitiveApplianceResolver({key:DEEPSEEK_SEARCH_API_KEY,onUsage:async(auth,kind)=>recordUsageEvent({user_id:auth.user.id,event_type:kind==='search'?'deepseek_search':'deepseek_fetch',provider:'deepseek',request_id:randomUUID(),status:'estimated',search_requests:kind==='search'?1:0,fetch_requests:kind==='fetch'?1:0,currency:'USD',cost_method:'provider_request_count',metadata:{operation:'cognitive_appliance_manual'},started_at:new Date().toISOString(),ended_at:new Date().toISOString()},auth.accessToken)}),
   generate: async ({ auth, ...input }) => createCognitiveProvider({ key: DEEPSEEK_API_KEY, model: MODEL,
     onUsage: data => recordDeepSeekUsage(auth, data, 'chat_cognitive') })(input)
 });
@@ -556,9 +563,10 @@ const app = http.createServer(async (request, response) => {
   const authenticatedRoutes = new Set([
     "/api/chat", "/api/memory/extract", "/api/knowledge/extract", "/api/simulation", "/api/voice/break-offer",
     "/api/phonic/session", "/api/phonic/usage", "/api/billing/verify", "/api/billing/status", "/api/rewards/status"
+    , "/api/runtime/status", "/api/runtime/delivery"
   ]);
   let authContext = null;
-  if ((request.method === "POST" || (request.method === "GET" && ["/api/billing/status", "/api/rewards/status"].includes(url.pathname))) && authenticatedRoutes.has(url.pathname)) {
+  if ((request.method === "POST" || (request.method === "GET" && ["/api/billing/status", "/api/rewards/status", "/api/runtime/status"].includes(url.pathname))) && authenticatedRoutes.has(url.pathname)) {
     const authResult = await authenticateSupabaseRequest(request, {
       supabaseUrl: SUPABASE_URL,
       publishableKey: SUPABASE_PUBLISHABLE_KEY
@@ -575,7 +583,7 @@ const app = http.createServer(async (request, response) => {
       configured: Boolean(API_KEY),
       model: MODEL,
       diagnosticsVersion: "deepseek-flash-chat-v1",
-      amiaCognitiveRuntime: COGNITIVE_RUNTIME_ENABLED && Boolean(BILLING_SERVICE_KEY) ? { version: 1, languages: ['en', 'es'] } : null,
+      amiaCognitiveRuntime: COGNITIVE_RUNTIME_ENABLED && Boolean(BILLING_SERVICE_KEY) ? { version: 1, languages: ['en', 'es'], requiresAccountCheck:true,serverMemory:true } : null,
       phonicConfigured: Boolean(PHONIC_API_KEY),
       accountAuthConfigured: Boolean(SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY),
       usageTrackingConfigured: Boolean(SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY),
@@ -584,6 +592,15 @@ const app = http.createServer(async (request, response) => {
     }, headers || {});
   }
 
+  // Runtime capabilities are scoped to the authenticated rollout account.
+  if (request.method==='GET' && url.pathname==='/api/runtime/status') {
+    return json(response,200,{enabled:cognitiveForUser(authContext.user)&&Boolean(BILLING_SERVICE_KEY),version:1,languages:['en','es'],serverMemory:true},headers || {});
+  }
+  if (request.method==='POST' && url.pathname==='/api/runtime/delivery') {
+    if(!cognitiveForUser(authContext.user))return json(response,404,{error:'Runtime unavailable.'},headers || {});
+    try {const body=await readJson(request,4096);await cognitiveStore.delivery(authContext,body);return json(response,200,{recorded:true},headers || {});}
+    catch{return json(response,409,{error:'Delivery observation could not be recorded.'},headers || {});}
+  }
   // Billing endpoints remain unavailable until both the service account
   // and RLS-protected entitlements migration are configured.
   if (request.method === "GET" && url.pathname === "/api/billing/status") {
@@ -1150,8 +1167,11 @@ const app = http.createServer(async (request, response) => {
 
   try {
     const body = await readJson(request, 96 * 1024);
+    if(body.runtimeVersion===1 && !cognitiveForUser(authContext.user))return json(response,403,{error:'Runtime is not enabled for this account.'},headers || {});
     if (COGNITIVE_RUNTIME_ENABLED && body.runtimeVersion === 1 && ['en', 'es'].includes(body.profile?.preferredLanguage || 'en')) {
-      const messages = cleanMessages(body.messages).slice(-20);
+      const rawUser=body.messages?.at(-1);
+      if(rawUser?.role!=='user'||typeof rawUser.content!=='string'||!rawUser.content.trim()||rawUser.content.length>3000)return json(response,400,{error:'Provide a user message of up to 3000 characters.'},headers || {});
+      const messages = [{role:'user',content:rawUser.content.trim()}];
       if (!messages.length || messages.at(-1).role !== 'user') return json(response, 400, { error: 'A user message is required.' }, headers || {});
       const profile = cleanProfile(body.profile);
       const room = cleanRoomJourney(body.roomJourney);
@@ -1162,8 +1182,8 @@ const app = http.createServer(async (request, response) => {
       try {
         const result = await cognitiveRuntime.turn({ auth: authContext, body: { ...body, messages }, scope,
           objectives: scenarioLearningObjectives(scenario), profile,
-          active: body.voiceBreakDue !== true && body.roomJourney?.completionConfirmed !== true });
-        console.info('AMIA cognitive turn', { turnId: result.runtime.turnId, replayed: result.runtime.replayed, modelCalls: result.runtime.modelCalls, durationMs: result.runtime.durationMs, action: result.runtime.action });
+          active: body.voiceBreakDue !== true });
+        console.info('AMIA cognitive turn', { turnId: result.runtime.turnId, replayed: result.runtime.replayed, modelCalls: result.runtime.modelCalls, durationMs: result.runtime.durationMs, timings: result.runtime.timings, action: result.runtime.action });
         return json(response, 200, { ...result, model: MODEL }, headers || {});
       } catch (error) {
         const known = error instanceof RuntimeError;
@@ -1670,4 +1690,7 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log("AI API key configured: " + Boolean(API_KEY));
 
 });
+
+if(COGNITIVE_RUNTIME_ENABLED && BILLING_SERVICE_KEY){cognitiveWorker.start();const maintenance=setInterval(()=>{void cognitiveStore.prune().catch(()=>{});},86400000);maintenance.unref();}
+process.once('SIGTERM',()=>{cognitiveWorker.stop();app.close();});
 

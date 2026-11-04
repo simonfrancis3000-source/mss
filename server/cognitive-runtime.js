@@ -3,6 +3,9 @@ import { matchReminder, validReminderTitle } from '../src/reminders.js';
 import { conversationCheckpoint } from '../src/conversation-resume.js';
 import { applianceIntakeRequirement } from '../src/appliance-persona.js';
 import { applianceReminderTurn } from '../src/appliance-reminders.js';
+import { validateMemoryProposals } from './cognitive-memory.js';
+import { buildDecisionPlan } from './cognitive-planner.js';
+import { applianceMemoryProposal, verifiedFeatureQuotes } from './cognitive-appliance.js';
 
 function followup(objectives, state, language) {
   // Deterministic recovery is deliberately limited to the evaluated languages.
@@ -42,14 +45,17 @@ async function reminderAction(store, auth, command, language) {
   return { action: { type: command.action, id: match.item.id, title }, reply: prefixes[command.action] + title + '.' };
 }
 
-export function createCognitiveRuntime({ store, generate, contextStore, onObservation = async () => {} }) {
+export function createCognitiveRuntime({ store, generate, contextStore, resolveAppliance = async () => null, onCommitted = () => {}, onObservation = async () => {} }) {
   return {
     async turn({ auth, body, scope, objectives, profile, active = true }) {
       const latestUser = body.messages?.at(-1)?.content;
       if (typeof latestUser !== 'string' || !latestUser.trim() || latestUser.length > 3000) throw new RuntimeError('invalid_user_turn', 400);
       const identity = turnIdentity(body, scope, latestUser);
       const started = performance.now();
-      const claimed = await store.claim(auth, { ...identity, scope });
+      const timings = {};
+      const measured = async (phase, task) => { const start=performance.now();try{return await task();}finally{timings[phase]=(timings[phase] || 0)+Math.round(performance.now()-start);} };
+      const claimed = await measured('claimMs',()=>store.claim(auth, { ...identity, scope }));
+      if (claimed?.status === 'completed' && claimed.result?.expired) throw new RuntimeError('runtime_turn_expired',409);
       if (claimed?.status === 'completed' && claimed.result) return { ...claimed.result, runtime: { ...claimed.result.runtime, replayed: true } };
       if (claimed?.status !== 'claimed' || !claimed.lease) throw new RuntimeError('runtime_storage_unavailable');
       const handle = { ...identity, scope, lease: claimed.lease };
@@ -60,9 +66,10 @@ export function createCognitiveRuntime({ store, generate, contextStore, onObserv
         const language = profile.preferredLanguage || 'en';
         const es = language === 'es';
         let reply, offer = null, action = null, proposal = null, contextLoaded = false, modelCalls = 0;
+        let memoryProposals = [], appliance = null, intake = null;
         const requestMessages = [...state.messages, { role: 'user', content: latestUser }];
         const paused = resolved.intent === 'pause' || body.voiceBreakDue === true;
-        const training = active && !paused;
+        let training = active && !paused;
         if (['en', 'es'].includes(language) && paused) {
           reply = es ? 'Hacemos una pausa. Podemos continuar desde este punto cuando quieras.' : 'We can pause here and pick up from this point when you are ready.';
         } else if (['en', 'es'].includes(language) && resolved.intent === 'resume' && state.lastQuestion) {
@@ -81,14 +88,20 @@ export function createCognitiveRuntime({ store, generate, contextStore, onObserv
           reply = result.reply;
           if (training && (action || resolved.command.action === 'list')) reply += ' ' + followup(objectives, state, language);
         } else {
-          const saved = await contextStore.loadContext(auth, { scopeKey: scope, query: latestUser + ' ' + (state.lastQuestion || '') });
+          const [saved,review] = await measured('contextMs',()=>Promise.all([
+            contextStore.loadContext(auth, { scopeKey: scope, query: latestUser + ' ' + (state.lastQuestion || '') }),
+            store.review ? store.review(auth,scope) : Promise.resolve({})
+          ]));
           contextLoaded = saved.available === true;
           // Missing memory is not equivalent to no preferences. Keep the turn
           // retryable rather than reasoning around unknown boundaries.
           if (!contextLoaded) throw new RuntimeError('runtime_memory_unavailable');
-          const planned = nextRuntimeObjective(objectives, state, saved);
-          let intake = applianceIntakeRequirement(requestMessages, saved.appliances || [], []);
-          const deferred = state.dispositions.some(d => ['deferred', 'not_applicable'].includes(d.status) && /\b(?:model|brand|make|manufacturer)\b/i.test(d.question));
+          const qualityState={...state,dispositions:[...state.dispositions,...(saved.decisions || []).filter(d=>['response_received','deferred'].includes(d.status)&&d.question).map(d=>({question:d.question,status:d.status,decisionKey:d.decision_key?.startsWith('cogd:')?d.decision_key.slice(5):null}))]};
+          if (review.completionConfirmed) training = false;
+          const planned = buildDecisionPlan({objectives,state,context:{...saved,relations:review.relations || []},review});
+          if (review.activeAreaId && objectives.some(o=>o.id===review.activeAreaId)) state.objectiveId=review.activeAreaId;
+          intake = applianceIntakeRequirement(requestMessages, saved.appliances || [], []);
+          const deferred = intake && state.dispositions.some(d => ['deferred', 'not_applicable'].includes(d.status) && d.question.toLowerCase().includes(intake.type.toLowerCase()));
           if (deferred || ['deferred', 'not_applicable'].includes(resolved.intent)) intake = null;
           const missing = language === 'en' ? applianceReminderTurn(requestMessages) : null;
           if (missing?.reply) {
@@ -97,7 +110,7 @@ export function createCognitiveRuntime({ store, generate, contextStore, onObserv
           }
           if (!reply) {
             const context = { version: RUNTIME_VERSION, scope, language, profile: { ownerName: profile.ownerName, companionName: profile.companionName || profile.robotName },
-              activeTraining: training, intent: resolved.intent, state, latestUser, memory: relevantMemory(saved), plan: planned, objectives, intake,
+              activeTraining: training, intent: resolved.intent, state:{...state,messages:state.messages.slice(-10).map(m=>({...m,content:m.content.slice(0,650)})),dispositions:qualityState.dispositions.slice(-40)}, latestUser, memory: relevantMemory(saved), plan: planned, objectives, intake,
               boundaries: 'Do not change scenario or mark completion. No live robot is connected. Appliance identities do not establish any feature.',
               currentApplianceIdentities: (saved.appliances || []).slice(0, 10).map(a => ({ type: a.type, brand: a.brand, model: a.model })) };
             let violation;
@@ -106,8 +119,8 @@ export function createCognitiveRuntime({ store, generate, contextStore, onObserv
             for (let attempt = 0; attempt < 2; attempt++) {
               modelCalls++;
               try {
-                proposal = await generate({ context, objectives, correction: violation || null, auth });
-                violation = checkRuntimeReply(proposal, { state, active: training && !['explain', 'progress', 'service_help'].includes(resolved.intent), intake, language });
+                proposal = await measured('modelMs',()=>generate({ context, objectives, correction: violation || null, auth }));
+                violation = checkRuntimeReply(proposal, { state:qualityState, active: training && !['explain', 'progress', 'service_help'].includes(resolved.intent), intake, language });
                 if (!violation) break;
               } catch (error) {
                 if (!['invalid_model_proposal', 'incomplete_model_proposal', 'model_action_rejected', 'unknown_objective', 'invalid_reminder_offer'].includes(error.code)) throw error;
@@ -116,23 +129,49 @@ export function createCognitiveRuntime({ store, generate, contextStore, onObserv
               proposal = null;
             }
             if (!proposal || violation) throw new RuntimeError('runtime_quality_check_failed', 502);
+            // Exact-model turns may need one additional composition after the
+            // official manual has been verified. Ordinary turns do not pay it.
+            if (proposal.applianceIdentity) {
+              const resolvedAppliance = await measured('manualMs',()=>resolveAppliance({identity:proposal.applianceIdentity,messages:requestMessages,saved:saved.appliances || [],auth}));
+              if (resolvedAppliance) {
+                appliance = resolvedAppliance.record;
+                if (resolvedAppliance.evidence) {
+                  modelCalls++;
+                  proposal = await measured('modelMs',()=>generate({context:{...context,intake:null,verifiedManual:resolvedAppliance.evidence},objectives,auth}));
+                  const invalid = checkRuntimeReply(proposal,{state:qualityState,active:training,intake:null,language});
+                  if (invalid) throw new RuntimeError('runtime_quality_check_failed',502);
+                  const quotes=verifiedFeatureQuotes(proposal.featureQuotes,resolvedAppliance.evidence);
+                  const featureBudget=Math.max(0,3000-proposal.reply.length-70);
+                  while(quotes.length && quotes.join('; ').length>featureBudget)quotes.pop();
+                  // Feature passages are quoted verbatim from verified content,
+                  // not treated as model-established appliance capabilities.
+                  if (quotes.length) proposal.reply=(es?'El manual destaca: ':'The manual highlights: ')+quotes.map(q=>'“'+q.replace(/[?？؟]/gu,'')+'”').join('; ')+'. '+proposal.reply;
+                }
+              }
+            }
             reply = proposal.reply;
             offer = proposal.reminderOffer;
+            memoryProposals = validateMemoryProposals(proposal.memoryProposals || [],{latestUser,knownRules:saved.rules || [],objectives,turnKey:identity.key,scope});
+            if (appliance) {const memory=applianceMemoryProposal(appliance,latestUser);if(memory)memoryProposals=[...memoryProposals.slice(0,7),memory];}
           }
         }
-        const next = reduceRuntimeState(state, { latestUser, reply, intent: paused ? 'pause' : resolved.intent, offer, turnKey: identity.key, objectiveId: proposal?.objectiveId, active: training });
+        const next = reduceRuntimeState(state, { latestUser, reply, intent: paused ? 'pause' : resolved.intent, offer, turnKey: identity.key, objectiveId: proposal?.objectiveId, decisionKey:proposal?.decisionKey, active: training });
+        const sourceDate=Date.parse(body.sourceMessageTimestamp || '');
+        const sourceTimestamp=Number.isFinite(sourceDate)&&sourceDate>=Date.UTC(2010,0,1)&&sourceDate<=Date.now()+300000?new Date(sourceDate).toISOString():new Date().toISOString();
         const result = { reply, provider: 'deepseek', usedFallback: true,
           ...(resolved.intent === 'resume' ? { resumed: true } : {}),
-          amiaPersistence: { status: 'saved', context_loaded: contextLoaded },
+          amiaPersistence: { status: 'saved', context_loaded: contextLoaded, memory_queued:memoryProposals.length>0, appliance_saved:false },
+          ...(appliance ? {appliance} : {}),
           runtime: { version: RUNTIME_VERSION, turnId: identity.key, replayed: false, action: action?.type || null, modelCalls } };
         // The reminder operation, canonical response and state transition are
         // one database transaction. A failed transaction cannot emit success.
-        const committed = await store.commit(auth, { ...handle, state: next, result, action });
+        const committed = await measured('commitMs',()=>store.commit(auth, { ...handle, state: next, result, action,enrichment:{memories:memoryProposals,sourceTimestamp} }));
         if (committed?.status !== 'completed' || !committed.result) throw new RuntimeError('runtime_storage_unavailable');
+        try { onCommitted(); } catch {}
         // Observations are optional telemetry, explicitly not passed tests.
         // They cannot change the already-committed action or user response.
         void Promise.resolve().then(() => onObservation({ auth, scope, latestUser, reply, source: body.sourceMessageTimestamp })).catch(() => {});
-        return { ...committed.result, runtime: { ...committed.result.runtime, durationMs: Math.round(performance.now() - started) } };
+        return { ...committed.result, runtime: { ...committed.result.runtime, durationMs: Math.round(performance.now() - started), timings } };
       } catch (error) {
         // This is safe even if a timed-out commit actually succeeded: release
         // does not change a completed ledger row. Retry returns its result.

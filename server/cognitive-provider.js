@@ -9,7 +9,7 @@ export function createCognitiveProvider({ key, model, fetchImpl = fetch, onUsage
     try {
       response = await fetchImpl('https://api.deepseek.com/chat/completions', {
         method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model, thinking: { type: 'disabled' }, response_format: { type: 'json_object' }, temperature: 0.4, max_tokens: 1400, stream: false,
+        body: JSON.stringify({ model, thinking: { type: 'disabled' }, response_format: { type: 'json_object' }, temperature: 0.4, max_tokens: 2600, stream: false,
           messages: [{ role: 'system', content: runtimePrompt + (correction ? '\nRepair the proposal. Violation: ' + correction : '') }, { role: 'user', content: JSON.stringify(context) }] }),
         signal: AbortSignal.timeout(25000)
       });

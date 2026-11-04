@@ -1,0 +1,39 @@
+name: AMIA cognitive validation
+on:
+  pull_request:
+    branches: [SYNQ.ME, mobile/current-mss]
+    paths: ["server/cognitive-*.js", "src/cognitive-client.js", "src/audio-quality.js", "evals/**", "scripts/evaluate-cognitive-runtime.mjs", ".github/workflows/amia-cognitive-validation.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  provider-evaluation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Run optional live model checks and record availability accurately
+        env:
+          DEEPSEEK_PERSON_API_KEY: ${{ secrets.DEEPSEEK_PERSON_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          AMIA_EVAL_LIMIT: '30'
+        shell: bash
+        run: |
+          set +e
+          node scripts/evaluate-cognitive-runtime.mjs > amia-live-evaluation.json
+          result=$?
+          if [ "$result" -eq 2 ]; then
+            echo "::notice::Live model evaluation is blocked by missing credentials; the report records blocked, not passed."
+            exit 0
+          fi
+          exit "$result"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: amia-live-evaluation
+          path: amia-live-evaluation.json
