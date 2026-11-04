@@ -9,6 +9,9 @@ on:
       - "src/session-storage.js"
       - "test/session-storage.test.js"
       - ".github/workflows/web-login-persistence.yml"
+  pull_request:
+    branches:
+      - SYNQ.ME
   workflow_dispatch:
 
 permissions:
