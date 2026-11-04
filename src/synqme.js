@@ -5148,13 +5148,13 @@ async function handlePhonicAmiaToolCall({ name, parameters = {}, items = [] } = 
     voiceBreakOfferDue = !answeringBreak && !lastVoiceWasTodo && !voicePauseAfterReply && voiceBreakTracker.due();
     let reply = answeringBreak && ["pause", "clarify"].includes(breakChoice)
       ? await translatedVoiceBreakQuestion(language, breakChoice) || unavailable
-      : await requestAIReply();
+      : await requestAIReply(false, mappedMessage?.timestamp || metadata.timestamp);
     const replyNeedsRepair = (value) => !value ||
       value === "__SYNQME_UNHELPFUL_AI_RESPONSE__" ||
       responseRepeatsUser(value, latestUserText) ||
       responseRepeatsRecentAssistant(value);
     if (!answeringBreak && replyNeedsRepair(reply) && state.apiConnected && !lastAIReplyUsedFallback) {
-      const retriedReply = await requestAIReply(true);
+      const retriedReply = await requestAIReply(true, mappedMessage?.timestamp || metadata.timestamp);
       if (retriedReply && retriedReply !== "__SYNQME_UNHELPFUL_AI_RESPONSE__" && !replyNeedsRepair(retriedReply)) {
         reply = retriedReply;
       }
@@ -5623,19 +5623,25 @@ async function saveApplianceRecord(appliance) {
   } catch (error) { console.info("Appliance details could not be saved.", error?.code || "storage error"); return false; }
 }
 
-async function requestAIReply(repairMode = false) {
-  const latestReminderText = [...state.messages].reverse().find(item => item.role === "user")?.content || "";
+async function requestAIReply(repairMode = false, sourceTimestamp = null) {
+  // A repeated voice callback may arrive after its assistant response. Select
+  // the original user turn so the server sees the same stable request identity.
+  const sourceIndex = sourceTimestamp ? state.messages.findLastIndex(item => item.role === 'user' && item.timestamp === sourceTimestamp) : -1;
+  const turnMessages = sourceIndex >= 0 ? state.messages.slice(0, sourceIndex + 1) : state.messages;
+  if (!state.apiProvider && API_BASE) await checkAIBackend();
+  const runtimeActive = state.amiaCognitiveRuntime?.version === 1 && state.amiaCognitiveRuntime.languages?.includes(state.profile.preferredLanguage || 'en');
+  const latestReminderText = [...turnMessages].reverse().find(item => item.role === "user")?.content || "";
   const reminderCommand = todoCommandForMessage(latestReminderText);
-  if (reminderCommand) {
+  if (reminderCommand && !runtimeActive) {
     const reminderReply = await handleTodoCommand(reminderCommand);
     const reply = welcomeBackPending ? welcomeBackReply(reminderReply, state.profile.ownerName, state.profile.preferredLanguage || "en") : reminderReply;
     welcomeBackPending = false; lastAIReplyUsedFallback = true; return reply;
   }
-  const deferredInfo = applianceReminderTurn(state.messages);
-  if (deferredInfo?.reply && (state.profile.preferredLanguage || "en") === "en") { lastAIReplyUsedFallback = true; return deferredInfo.reply; }
+  const deferredInfo = applianceReminderTurn(turnMessages);
+  if (!runtimeActive && deferredInfo?.reply && (state.profile.preferredLanguage || "en") === "en") { lastAIReplyUsedFallback = true; return deferredInfo.reply; }
   const requestUserId = cloudUserId;
   if (roomJourney) {
-    const currentUser = [...state.messages].reverse().find(item => item.role === "user");
+    const currentUser = [...turnMessages].reverse().find(item => item.role === "user");
     const maySwitch = completedScenarioIds(scenarioData().completed).includes("room:" + roomJourney.active_room_id);
     const focusId = maySwitch ? resolveConversationRoomId(currentUser ? [currentUser] : [], roomJourney.active_room_id) : roomJourney.active_room_id;
     if (focusId !== roomJourney.active_room_id) {
@@ -5672,12 +5678,12 @@ async function requestAIReply(repairMode = false) {
     const domesticFunctions = state.functions
       .map((id) => ACTIVITIES.find((activity) => activity.id === id)?.label)
       .filter(Boolean);
-    const conversationMessages = state.messages.slice(-20).map((message) => ({
+    const conversationMessages = turnMessages.slice(-20).map((message) => ({
       role: message.role,
       content: message.content,
       scenario_id: message.scenario_id
     }));
-    const currentUserText = state.messages[state.messages.length - 1]?.content || "";
+    const currentUserText = turnMessages[turnMessages.length - 1]?.content || "";
     const activeRoomName = ROOM_JOURNEY_ROOMS.find(room => room.id === roomJourney?.active_room_id)?.name || "";
     const retrievalQuery = currentUserText + (activeOutOfHomeScenarioContext ? "" : " " + activeRoomName);
     const [memoryReferences, sharedKnowledgeReferences, relevantPersonaMemories, requestHeaders] = await Promise.all([
@@ -5687,21 +5693,22 @@ async function requestAIReply(repairMode = false) {
       authenticatedApiHeaders()
     ]);
     if (!requestUserId || requestUserId !== cloudUserId) return null;
-    const firstConversationIntro = await onboardingState.claimIntroduction(state.messages.at(-1)?.timestamp || "first-turn");
+    const firstConversationIntro = await onboardingState.claimIntroduction(turnMessages.at(-1)?.timestamp || "first-turn");
     if (requestUserId !== cloudUserId) return null;
     const response = await fetch(API_BASE + "/api/chat", {
       method: "POST",
       headers: requestHeaders,
       body: JSON.stringify({
         messages: conversationMessages,
-        sourceMessageTimestamp: state.messages[state.messages.length - 1]?.timestamp || null,
-        conversationCheckpoint: conversationCheckpoint(state.messages.slice(0,-1), activeOutOfHomeScenarioContext ? "outside:" + activeOutOfHomeScenarioContext.categoryId + ":" + activeOutOfHomeScenarioContext.scenarioId : "room:" + (roomJourney?.active_room_id || "kitchen")),
+        ...(runtimeActive ? { runtimeVersion: 1, clientTurnId: turnMessages.at(-1)?.timestamp } : {}),
+        sourceMessageTimestamp: turnMessages[turnMessages.length - 1]?.timestamp || null,
+        conversationCheckpoint: conversationCheckpoint(turnMessages.slice(0,-1), activeOutOfHomeScenarioContext ? "outside:" + activeOutOfHomeScenarioContext.categoryId + ":" + activeOutOfHomeScenarioContext.scenarioId : "room:" + (roomJourney?.active_room_id || "kitchen")),
         areaLearningStatus: (() => {
           const id = activeOutOfHomeScenarioContext ? "outside:" + activeOutOfHomeScenarioContext.categoryId + ":" + activeOutOfHomeScenarioContext.scenarioId : "room:" + (roomJourney?.active_room_id || "kitchen");
           const scenario = scenarioForId(id);
           return scenario ? scenarioTasks(scenario).map(task => ({ id: task.id, status: areaLearningState(id, task.id, personaMemoryRecords, scenarioData().reviewed?.[id] || []).status })) : [];
         })(),
-        conversationContinuity: buildConversationContinuity(state.messages, activeOutOfHomeScenarioContext ? "outside:" + activeOutOfHomeScenarioContext.categoryId + ":" + activeOutOfHomeScenarioContext.scenarioId : "room:" + (roomJourney?.active_room_id || "kitchen")),
+        conversationContinuity: buildConversationContinuity(turnMessages, activeOutOfHomeScenarioContext ? "outside:" + activeOutOfHomeScenarioContext.categoryId + ":" + activeOutOfHomeScenarioContext.scenarioId : "room:" + (roomJourney?.active_room_id || "kitchen")),
         preferences,
         profile: {
           ownerName: state.profile.ownerName,
@@ -5745,6 +5752,7 @@ async function requestAIReply(repairMode = false) {
     }
     const reply = typeof data.reply === "string" ? data.reply : typeof data.message === "string" ? data.message : "";
     if (!reply.trim()) throw new Error("AI endpoint returned no reply text");
+    if (data.runtime?.action) void loadTodoReminders();
     if (data.appliance && cloudUserId === requestUserId) {
       if (data.amiaPersistence?.appliance_saved) void loadPersonaMemories();
       else await saveApplianceRecord(data.appliance);
@@ -5761,8 +5769,8 @@ async function requestAIReply(repairMode = false) {
     // for a turn that already used its own fallback or repair strategy.
     lastAIReplyUsedFallback = Boolean(data.usedFallback || data.responseNeedsReview || data.resumed);
     if (data.responseNeedsReview) return "__SYNQME_UNHELPFUL_AI_RESPONSE__";
-    const returningReply = welcomeBackPending ? welcomeBackReply(reply.trim(), state.profile.ownerName, state.profile.preferredLanguage || "en") : reply.trim();
-    const personalised = addressByNameReply(returningReply, state.profile.ownerName, state.messages);
+    const returningReply = welcomeBackPending && !data.runtime ? welcomeBackReply(reply.trim(), state.profile.ownerName, state.profile.preferredLanguage || "en") : reply.trim();
+    const personalised = data.runtime ? returningReply : addressByNameReply(returningReply, state.profile.ownerName, turnMessages);
     welcomeBackPending = false;
   chatReturnSummary = "";
     return personalised;
@@ -5808,6 +5816,7 @@ async function checkAIBackend() {
     const data = await response.json();
     state.apiProvider = typeof data.provider === "string" ? data.provider.toLowerCase() : "";
     state.apiModel = typeof data.model === "string" ? data.model : "";
+    state.amiaCognitiveRuntime = data.amiaCognitiveRuntime || null;
     state.apiConfigured = Boolean(data.configured);
     state.apiError = "";
     if (!state.apiConnected) {

@@ -1,4 +1,6 @@
 import { createSentencePausePlanner } from "./sentence-pause.js";
+import { createVoiceToolDeduplicator } from './voice-tool-dedup.js';
+const deduplicateToolCall = createVoiceToolDeduplicator();
 import { PHONIC_PLAYBACK_GAIN, phonicAudioChunkStart } from "./phonic-playback-policy.js";
 // Real-time browser voice adapter for Phonic's Speech-to-Speech WebSocket.
 // Adapted from Phonic-Co/phonic-web-demo (MIT): https://github.com/Phonic-Co/phonic-web-demo
@@ -246,11 +248,11 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
     const activeSocket = socket;
     let output;
     try {
-      output = await onToolCall({
+      output = await deduplicateToolCall(activeSocket, toolCallId, () => onToolCall({
         name: String(message.tool_name || ""),
         parameters: message.parameters && typeof message.parameters === "object" ? message.parameters : {},
         items: conversationItems.map((item) => ({ ...item }))
-      });
+      }));
     } catch (error) {
       console.error("SYNQ.ME AMÏA tool call failed.", error);
       output = {

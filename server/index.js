@@ -1,4 +1,8 @@
 import { firstConversationGuidance } from '../src/getting-started-content.js';
+import { createCognitiveRuntime } from './cognitive-runtime.js';
+import { createCognitiveStore } from './cognitive-store.js';
+import { createCognitiveProvider } from './cognitive-provider.js';
+import { RuntimeError } from './cognitive-core.js';
 import { shouldMeterVoice } from './voice-billing-policy.js';
 import { betaTesterEmailSet, ensureBetaVoiceAllowance } from './voice-beta-allowance.js';
 import { shouldContinueGuidedTurn, guidedReplyNeedsRepair, finalizeGuidedReply, guidedNextStep, GUIDED_TURN_CORRECTION } from "./guided-turn.js";
@@ -58,6 +62,15 @@ const PROVIDER = "deepseek";
 const amiaStore = createAmiaStore({ supabaseUrl:SUPABASE_URL,publishableKey:SUPABASE_PUBLISHABLE_KEY });
 const API_KEY = DEEPSEEK_API_KEY;
 const MODEL = String(process.env.DEEPSEEK_CHAT_MODEL || process.env.DEEPSEEK_FLASH_MODEL || "deepseek-flash").trim() || "deepseek-flash";
+// Opt-in rollout. Old clients keep the existing route unless they explicitly
+// negotiate version 1. The server still authenticates every turn normally.
+const COGNITIVE_RUNTIME_ENABLED = process.env.AMIA_COGNITIVE_RUNTIME_ENABLED === 'true';
+const cognitiveStore = createCognitiveStore({ supabaseUrl: SUPABASE_URL, secretKey: BILLING_SERVICE_KEY });
+const cognitiveRuntime = createCognitiveRuntime({
+  store: cognitiveStore, contextStore: amiaStore,
+  generate: async ({ auth, ...input }) => createCognitiveProvider({ key: DEEPSEEK_API_KEY, model: MODEL,
+    onUsage: data => recordDeepSeekUsage(auth, data, 'chat_cognitive') })(input)
+});
 // Render deployments need CORS to work even when FRONTEND_ORIGIN has not
 // been populated. Keep the known SYNQ.ME origins as safe defaults and allow
 // additional exact origins through FRONTEND_ORIGIN (comma-separated).
@@ -562,6 +575,7 @@ const app = http.createServer(async (request, response) => {
       configured: Boolean(API_KEY),
       model: MODEL,
       diagnosticsVersion: "deepseek-flash-chat-v1",
+      amiaCognitiveRuntime: COGNITIVE_RUNTIME_ENABLED && Boolean(BILLING_SERVICE_KEY) ? { version: 1, languages: ['en', 'es'] } : null,
       phonicConfigured: Boolean(PHONIC_API_KEY),
       accountAuthConfigured: Boolean(SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY),
       usageTrackingConfigured: Boolean(SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY),
@@ -1136,6 +1150,30 @@ const app = http.createServer(async (request, response) => {
 
   try {
     const body = await readJson(request, 96 * 1024);
+    if (COGNITIVE_RUNTIME_ENABLED && body.runtimeVersion === 1 && ['en', 'es'].includes(body.profile?.preferredLanguage || 'en')) {
+      const messages = cleanMessages(body.messages).slice(-20);
+      if (!messages.length || messages.at(-1).role !== 'user') return json(response, 400, { error: 'A user message is required.' }, headers || {});
+      const profile = cleanProfile(body.profile);
+      const room = cleanRoomJourney(body.roomJourney);
+      const outside = cleanOutOfHomeScenarioContext(body.outOfHomeScenarioContext);
+      const scope = outside ? 'outside:' + outside.categoryId + ':' + outside.scenarioId : 'room:' + (room?.activeRoomId || 'kitchen');
+      const scenario = scenarioForId(scope);
+      if (!scenario) return json(response, 400, { error: 'Choose a valid training scenario.' }, headers || {});
+      try {
+        const result = await cognitiveRuntime.turn({ auth: authContext, body: { ...body, messages }, scope,
+          objectives: scenarioLearningObjectives(scenario), profile,
+          active: body.voiceBreakDue !== true && body.roomJourney?.completionConfirmed !== true });
+        console.info('AMIA cognitive turn', { turnId: result.runtime.turnId, replayed: result.runtime.replayed, modelCalls: result.runtime.modelCalls, durationMs: result.runtime.durationMs, action: result.runtime.action });
+        return json(response, 200, { ...result, model: MODEL }, headers || {});
+      } catch (error) {
+        const known = error instanceof RuntimeError;
+        const code = known ? error.code : 'runtime_turn_unavailable';
+        const status = known ? error.statusCode : 503;
+        console.warn('AMIA cognitive turn unavailable', { code });
+        return json(response, status, { provider: PROVIDER, errorCode: code,
+          error: status === 409 ? 'Another turn or a training reset changed this conversation. Wait briefly, then retry or reload.' : 'This turn could not be completed and confirmed. Please retry.' }, headers || {});
+      }
+    }
     const repairMode = body?.repairMode === true;
     const normalizedMessages = cleanMessages(body?.messages).slice(-20);
     const recentMessages = normalizedMessages.slice(-10);
@@ -1632,3 +1670,4 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log("AI API key configured: " + Boolean(API_KEY));
 
 });
+
