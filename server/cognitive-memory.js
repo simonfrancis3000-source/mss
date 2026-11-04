@@ -1,4 +1,4 @@
-import { cleanPersonaMemoryCandidate, buildPersonaMemorySearchKeys, SENSITIVE_MEMORY_PATTERN } from '../src/persona-memory.js';
+import { cleanPersonaMemoryCandidate, buildPersonaMemorySearchKeys, SENSITIVE_MEMORY_PATTERN, deriveMemoryScopeKey } from '../src/persona-memory.js';
 import { hash, normalized } from './cognitive-core.js';
 
 export function validateMemoryProposals(raw, { latestUser, knownRules = [], objectives = [], turnKey, scope }) {
@@ -23,6 +23,22 @@ export function validateMemoryProposals(raw, { latestUser, knownRules = [], obje
       const affirmative = /\b(?:you (?:may|can)(?!['’]t)|I (?:allow|authorize|permit)|without asking|puedes|te permito|te autorizo)\b/i.test(quote);
       const negated = /\b(?:not|never|cannot|can['’]t|don['’]t|doesn['’]t|won['’]t|no|nunca|jam[aá]s)\b/i.test(latestUser);
       if (!affirmative || negated) candidate.permission_policy = 'unspecified';
+    }
+    if (target && candidate.relation === 'refines' && target.statement) {
+      if (!normalized(candidate.statement).includes(normalized(target.statement))) {
+        const combined = target.statement + ' ' + candidate.statement;
+        if (combined.length > 420) return [];
+        candidate.statement = combined;
+      }
+      if (['ask_first','prohibited'].includes(target.permission_policy) && candidate.permission_policy === 'unspecified') candidate.permission_policy = target.permission_policy;
+      if (target.kind === 'boundary') candidate.kind = 'boundary';
+    }
+    if (!target && candidate.relation === 'new') {
+      const precise = typeof input.decision_key === 'string' && /^[a-z0-9._-]{3,100}$/i.test(input.decision_key) ? input.decision_key.toLowerCase() : null;
+      const compact = value => String(value || '').replace(/[^a-z0-9]/gi,'').toLowerCase();
+      const broad = compact(candidate.scope_key) === compact(scope) || objectives.some(o=>compact(o.id)===compact(candidate.scope_key));
+      if (precise) candidate.scope_key = precise;
+      else if (broad) candidate.scope_key = deriveMemoryScopeKey(candidate.statement,candidate.topic,candidate.kind);
     }
     const area = objectives.find(o => o.id === candidate.attributes?.area_id)?.id || null;
     const relations = (Array.isArray(input.relations) ? input.relations : []).filter(r => ['depends_on','exception_to','conflicts_with'].includes(r?.kind) && known.has(r.target_memory_key) && !(target && ['updates','refines'].includes(candidate.relation) && r.target_memory_key === target.memory_key)).slice(0, 6);

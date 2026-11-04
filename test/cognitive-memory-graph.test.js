@@ -71,6 +71,13 @@ test('PostgreSQL durable memory jobs apply corrections, graph links, ownership a
    const rows=(await db.query('select attributes from public.synqme_persona_memories where memory_key=$1',[key])).rows;
    assert.equal(rows.length,1);assert.equal(rows[0].attributes.appliance_v1.manual_status,'matched');
   });
+  await t.test('later proposals in one job can confirm the version replaced earlier in that same job',async()=>{
+   const target=(await db.query("select * from public.synqme_persona_memories where scope_key='kitchen.hob.cloth' and status not in ('superseded','archived') order by created_at desc limit 1")).rows[0];
+   await queue([candidate({statement:'I prefer a soft cloth on the cool hob.',relation:'updates',target_memory_key:target.memory_key}),candidate({statement:'I prefer a soft cloth on the cool hob.',relation:'confirms',target_memory_key:target.memory_key})],'Actually, use a soft cloth on the cool hob.',[target]);
+   await finish();
+   const active=(await db.query("select * from public.synqme_persona_memories where scope_key='kitchen.hob.cloth' and status not in ('superseded','archived')")).rows;
+   assert.equal(active.length,1);assert.equal(active[0].status,'user_confirmed');assert.match(active[0].statement,/soft cloth/);
+  });
   await t.test('dependency edges reject cycles and cross-owner rule links',async()=>{
    const a=(await db.query('select id from public.synqme_persona_memories order by created_at')).rows;
    await db.query("insert into public.synqme_rule_relations(user_id,from_rule_id,to_rule_id,relation) values($1::uuid,$2::uuid,$3::uuid,'depends_on')",[OWNER,a[0].id,a[1].id]);
@@ -114,4 +121,16 @@ test('permission evidence stays conservative for denials and requires quoted exp
   const [row]=validateMemoryProposals([candidate({statement:'You may buy tea without asking.',kind:'boundary',permission_policy:'allowed',source_quote})],{latestUser,knownRules:[],objectives,turnKey:'permission',scope:'room:kitchen'});
   assert.equal(row?.permission_policy,expected,latestUser);
  }
+});
+
+test('a refinement retains the operative preference and boundary while adding a reason',()=>{
+ const old={memory_key:'old',scope_key:'towels.arrangement',statement:'Keep towels folded.',kind:'boundary',permission_policy:'ask_first'};
+ const [row]=validateMemoryProposals([candidate({statement:'The reason is to find towels quickly.',relation:'refines',target_memory_key:'old',source_quote:'find towels quickly'})],{latestUser:'I want to find towels quickly.',knownRules:[old],objectives,turnKey:'reason',scope:'room:bathroom'});
+ assert.ok(row.statement.includes('Keep towels folded.'));assert.equal(row.permission_policy,'ask_first');
+});
+test('new fact dimensions do not collide merely because they share a room',()=>{
+ const context={latestUser:'Use a soft cloth.',knownRules:[],objectives,turnKey:'dimensions',scope:'room:kitchen'};
+ const a=validateMemoryProposals([candidate({decision_key:'hob.cloth',scope_key:'hob'})],context)[0];
+ const b=validateMemoryProposals([candidate({decision_key:'hob.reason',scope_key:'hob'})],context)[0];
+ assert.notEqual(a.scope_key,b.scope_key);
 });

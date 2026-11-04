@@ -117,7 +117,7 @@ export function createCognitiveRuntime({ store, generate, contextStore, resolveA
             const checked = await generateCheckedCognitiveTurn({
               generate: input => { modelCalls++; return measured('modelMs',()=>generate({...input,auth})); },
               context, objectives,
-              quality: { state:qualityState, active:training && !['explain','progress','service_help'].includes(resolved.intent), intake, language }
+              quality: { state:qualityState, active:training && resolved.intent !== 'service_help', intake, language }
             });
             proposal = checked.proposal;
             // Exact-model turns may need one additional composition after the

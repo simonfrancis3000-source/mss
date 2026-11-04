@@ -113,7 +113,7 @@ end $$;
 
 create function public.complete_synqme_cognitive_memory_job(p_job_id uuid,p_lease uuid) returns jsonb
 language plpgsql security invoker set search_path='' as $$
-declare job public.synqme_memory_jobs; revision bigint; c jsonb; target public.synqme_persona_memories; saved uuid; refs jsonb; relation text; status text; conditions jsonb; edge jsonb; other_id uuid; count_saved integer:=0; evidence_text text;
+declare job public.synqme_memory_jobs; revision bigint; c jsonb; target public.synqme_persona_memories; saved uuid; refs jsonb; relation text; status text; conditions jsonb; edge jsonb; other_id uuid; count_saved integer:=0; evidence_text text; retired_id uuid;
 begin
  -- Lock order matches reset: revision before queue/rule rows.
  select r.revision into revision from public.synqme_training_revisions r join public.synqme_memory_jobs j on j.user_id=r.user_id where j.id=p_job_id for share of r;
@@ -131,7 +131,14 @@ begin
   if length(coalesce(c->>'source_quote',''))<2 or position(lower(c->>'source_quote') in lower(evidence_text))=0 then raise exception 'memory_source_not_grounded'; end if;
   if coalesce(c->>'target_memory_key','')<>'' then
    select * into target from public.synqme_persona_memories m where m.user_id=job.user_id and m.memory_key=c->>'target_memory_key' and m.status not in ('archived','superseded') for update;
-   if not found then raise exception 'memory_target_changed'; end if;
+   if not found then
+    select m.id into retired_id from public.synqme_persona_memories m where m.user_id=job.user_id and m.memory_key=c->>'target_memory_key' and m.status='superseded';
+    with recursive versions(id,depth) as (
+     select m.id,1 from public.synqme_persona_memories m where m.user_id=job.user_id and m.supersedes_id=retired_id and m.attributes->>'cognitive_job_id'=job.id::text
+     union all select m.id,v.depth+1 from public.synqme_persona_memories m join versions v on m.supersedes_id=v.id where m.user_id=job.user_id and m.attributes->>'cognitive_job_id'=job.id::text and v.depth<8
+    ) select m.* into target from public.synqme_persona_memories m join versions v on v.id=m.id where m.status not in ('superseded','archived') order by v.depth desc limit 1 for update of m;
+    if not found then raise exception 'memory_target_changed'; end if;
+   end if;
   end if;
   if relation='no_change' then continue; end if;
   if relation='new' then
@@ -168,7 +175,7 @@ begin
   end if;
   insert into public.synqme_persona_memories(user_id,memory_key,topic,kind,scope_key,statement,status,relation,confidence,conditions,permission_policy,source_refs,attributes,search_terms,search_keys,source_message,source_timestamp,source_conversation_key,supersedes_id,conflict_group)
    values(job.user_id,c->>'memory_key',c->>'topic',c->>'kind',c->>'scope_key',c->>'statement',status,relation,(c->>'confidence')::numeric,conditions,c->>'permission_policy',refs,
-    coalesce(c->'attributes','{}')||jsonb_build_object('scenario_id',job.scenario_id),array(select jsonb_array_elements_text(coalesce(c->'search_terms','[]'))),array(select jsonb_array_elements_text(coalesce(c->'search_keys','[]'))),c->>'statement',job.source_timestamp,'main',case when relation in ('updates','refines') then target.id end,case when relation='conflicts' then c->>'scope_key' end)
+    coalesce(c->'attributes','{}')||jsonb_build_object('scenario_id',job.scenario_id,'cognitive_job_id',job.id::text),array(select jsonb_array_elements_text(coalesce(c->'search_terms','[]'))),array(select jsonb_array_elements_text(coalesce(c->'search_keys','[]'))),c->>'statement',job.source_timestamp,'main',case when relation in ('updates','refines') then target.id end,case when relation='conflicts' then c->>'scope_key' end)
    on conflict(user_id,memory_key) do nothing returning id into saved;
   if saved is null then
    select id into saved from public.synqme_persona_memories where user_id=job.user_id and memory_key=c->>'memory_key';
