@@ -120,11 +120,11 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
         <filter id="mssTalkMouthFeather" x="-25%" y="-50%" width="150%" height="200%"><feGaussianBlur stdDeviation="3"/></filter>
         <filter id="mssTalkMouthGlow" x="-50%" y="-100%" width="200%" height="300%"><feGaussianBlur stdDeviation="2.3"/></filter>
       </defs>
-      <ellipse cx="348" cy="345" rx="55" ry="24" fill="url(#mssTalkFaceShade)" filter="url(#mssTalkMouthFeather)"/>
+      <ellipse cx="348" cy="343" rx="53" ry="18" fill="url(#mssTalkFaceShade)" filter="url(#mssTalkMouthFeather)"/>
       <g class="mss-robot-mouth-shape">
-        <path d="M313 338 Q348 348 383 338 Q383 361 348 361 Q313 361 313 338Z" fill="#03151e" stroke="#27c9ff" stroke-width="6" filter="url(#mssTalkMouthGlow)"/>
-        <path d="M313 338 Q348 348 383 338 Q383 361 348 361 Q313 361 313 338Z" fill="#041d29" stroke="#93eeff" stroke-width="2.8"/>
-        <path d="M323 351 Q348 359 373 351" fill="none" stroke="#2ba6d9" stroke-width="2" opacity=".65"/>
+        <!-- A shallow sine-wave smile, not an opening or closing mouth. -->
+        <path d="M315 342 C326 338 337 338 348 342 S370 346 381 342" fill="none" stroke="#61cee9" stroke-width="4.2" stroke-linecap="round" opacity=".44" filter="url(#mssTalkMouthGlow)"/>
+        <path d="M315 342 C326 338 337 338 348 342 S370 346 381 342" fill="none" stroke="#c4ecf5" stroke-width="2.8" stroke-linecap="round"/>
       </g>
     </svg>`;
     portrait.append(image, mouth);

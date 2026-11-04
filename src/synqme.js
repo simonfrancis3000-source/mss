@@ -4668,7 +4668,7 @@ function robotSvgMarkup(robotId) {
     '<rect x="33" y="43" width="54" height="34" rx="13" fill="#192432"/>' +
     '<g class="robot-eyes">' + eyes + '</g>' +
     '<path class="robot-mouth-rest" d="M52 68q8 5 16 0" fill="none" stroke="#dce6f2" stroke-width="2" stroke-linecap="round"/>' +
-    '<g class="robot-mouth-speaking"><ellipse cx="60" cy="69" rx="7" ry="4" fill="#dce6f2"/><ellipse cx="60" cy="71" rx="3.5" ry="1.5" fill="' + accent + '"/></g>' +
+    '<g class="robot-mouth-speaking"><path d="M52 69 C55 67 57 67 60 69 S65 71 68 69" fill="none" stroke="#dce6f2" stroke-width="2" stroke-linecap="round"/></g>' +
     '<circle cx="60" cy="86" r="3" fill="' + accent + '"/>' +
     '<path d="M42 94v5m36-5v5" stroke="' + accent + '" stroke-width="3" stroke-linecap="round"/>' +
     '</svg>';
