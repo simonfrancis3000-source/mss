@@ -28,7 +28,7 @@ export function createConnectedHome({ apiBase, getHeaders, getUserId }) {
   const devices = text("div", "mss-connected-home-devices");
   const controls = text("div", "mss-connected-home-controls");
   const connect = text("button", "mss-connected-home-primary", "Connect SmartThings");
-  const sync = text("button", "", "Refresh devices");
+  const sync = text("button", "", "Refresh Devices");
   const disconnect = text("button", "mss-connected-home-danger", "Disconnect");
   for (const button of [connect, sync, disconnect]) button.type = "button";
   controls.append(connect, sync, disconnect);
@@ -65,7 +65,17 @@ export function createConnectedHome({ apiBase, getHeaders, getUserId }) {
     const found = Array.isArray(data.devices) ? data.devices : [];
     setMessage(found.length + " devices discovered" + (data.syncedAt ? " · Last updated " + new Date(data.syncedAt).toLocaleString() : "") + ".");
     if (!found.length) {
-      devices.append(text("p", "", "No devices have been imported yet. Select Refresh devices to check your SmartThings account."));
+      if (data.syncedAt) {
+        setMessage("SmartThings connected successfully");
+        devices.append(
+          text("p", "", "No devices were found in your SmartThings account."),
+          text("p", "", "That's fine! You can continue training your future robot by telling AMÏA about your appliances and household equipment. SmartThings is entirely optional."),
+          text("p", "", "If you add compatible devices later, select Refresh Devices to import them.")
+        );
+      } else {
+        setMessage("SmartThings connected. Device discovery has not yet completed.");
+        devices.append(text("p", "", "Select Refresh Devices to import any compatible devices in your SmartThings account."));
+      }
       return;
     }
     for (const device of found) {
