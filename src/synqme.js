@@ -3,6 +3,7 @@ import { createOnboardingState, supabaseOnboardingRepository } from './onboardin
 import { createTrainingVisitStore, nextTrainingStep, visitLearnings, visitAnswerCount, saveVisitCheckpoint } from './training-visit.js';
 import { createVoiceBalance } from './voice-balance.js';
 import { createMssInterface, buildInterfaceModel, COMPANION_HEAD_IMAGE } from "./mss-interface.js";
+import { createConnectedHome } from "./connected-home.js";
 import { createRobotRewardBalance } from "./robot-rewards-balance.js";
 import { coalesceTranscriptTurns, preferTranscriptTurn, bestUserTranscript, isServiceErrorText } from "./transcript-turns.js";
 import { createRememberedSessionStorage, nativePersistentSessionStorage } from "./session-storage.js";
@@ -4386,10 +4387,12 @@ async function beginTrainingStep(step) {
 
 const voiceBalance = createVoiceBalance({apiBase:API_BASE,getUserId:()=>cloudUserId,getHeaders:authenticatedApiHeaders,onChange:()=>mssInterface?.render()});
 const robotRewards = createRobotRewardBalance({apiBase:API_BASE,getUserId:()=>cloudUserId,getHeaders:authenticatedApiHeaders,onChange:()=>mssInterface?.render()});
+const connectedHome = createConnectedHome({apiBase:API_BASE,getUserId:()=>cloudUserId,getHeaders:authenticatedApiHeaders});
 
 mssInterface = createMssInterface({
   refreshBalance:()=>voiceBalance.refresh(),
   openHelp: () => gettingStarted?.openHelp(),
+  openConnectedHome: () => connectedHome.open(),
   openGuide: () => gettingStarted?.openGuide(),
   startStep: beginTrainingStep,
   finishVisit: finishTrainingVisit,
