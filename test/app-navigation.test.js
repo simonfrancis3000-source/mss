@@ -50,8 +50,8 @@ test('returning from Talk reveals saved chat and scrolls to the latest message w
   assert.equal(elements.chatMessages.scrollTop, 900);
   state.messages = [{ role: 'assistant', content: 'Welcome to your SecondSelf.' }];
   vm.runInContext('prepareWelcomeAudioOffer();', context);
-  assert.equal(elements.welcomeAudioOffer.hidden, false);
-  assert.equal(elements.chatStage.hidden, true);
+  assert.equal(elements.welcomeAudioOffer.hidden, true);
+  assert.equal(elements.chatStage.hidden, false);
 });
 
 test('opening chat shows the exact unanswered checkpoint without changing saved history',async()=>{

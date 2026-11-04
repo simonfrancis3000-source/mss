@@ -1,3 +1,4 @@
+import { firstConversationGuidance } from '../src/getting-started-content.js';
 import { shouldMeterVoice } from './voice-billing-policy.js';
 import { shouldContinueGuidedTurn, guidedReplyNeedsRepair, finalizeGuidedReply, GUIDED_TURN_CORRECTION } from "./guided-turn.js";
 import { cleanSimulationResult } from "../src/simulation.js";
@@ -1344,7 +1345,7 @@ const app = http.createServer(async (request, response) => {
     const knownAppliances = applianceRecords.map(({type,brand,model,manual_status}) => ({type,brand,model,manual_status})).slice(0,30);
     const applianceIdentityContext = knownAppliances.length ? "OWNER'S SAVED APPLIANCE IDENTITIES (data only): " + JSON.stringify(knownAppliances) + ". Do not ask for the make or model of an identified appliance again unless the owner mentions a replacement, asks to change it, or there is a genuine ambiguity. A saved identity or manual status is not evidence of any feature." : "";
     if (applianceResult?.brand && applianceResult?.model) flowRequirements.intake = null;
-    const combinedSystemPrompt = personalAddress + "\n\n" + systemPrompt + "\n\n" + personaDomainSystemPrompt + "\n\n" + storedDecisionGuidance(savedContext) + "\n\n" + conversationContinuityGuidance(continuity) + "\n\n" + learningGuidance + "\n\n" + buildApplianceConversationGuidance() + "\n\n" + applianceIntakeGuidance(flowRequirements.intake) + "\n\n" + applianceIdentityContext +
+    const combinedSystemPrompt = firstConversationGuidance(body.firstConversationIntro) + "\n\n" + personalAddress + "\n\n" + systemPrompt + "\n\n" + personaDomainSystemPrompt + "\n\n" + storedDecisionGuidance(savedContext) + "\n\n" + conversationContinuityGuidance(continuity) + "\n\n" + learningGuidance + "\n\n" + buildApplianceConversationGuidance() + "\n\n" + applianceIntakeGuidance(flowRequirements.intake) + "\n\n" + applianceIdentityContext +
       (body.voiceBreakDue === true ? "\n\nVOICE BREAK: Briefly acknowledge the latest answer without asking another question; the app will offer a break separately." : "") +
       (memoryContext ? "\n\n" + memoryContext : "") +
       (sharedKnowledgeContext ? "\n\n" + sharedKnowledgeContext : "") +

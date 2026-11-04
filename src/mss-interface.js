@@ -89,7 +89,7 @@ const el = (tag, className, text) => {
 const symbol = (name, className = '') => { const node = el('span', 'mss-symbol ' + className); node.innerHTML = icon(name); return node; };
 function action(label, className, onClick) { const node = el('button', className, label); node.type = 'button'; node.addEventListener('click', onClick); return node; }
 
-export function createMssInterface({ getSnapshot, navigate, editSettings, openScenario, openWorkspace, shareProgress, refreshBalance, startStep, finishVisit, resumeVisit }) {
+export function createMssInterface({ getSnapshot, navigate, editSettings, openScenario, openWorkspace, shareProgress, refreshBalance, startStep, finishVisit, resumeVisit, openHelp, openGuide }) {
   const main = document.querySelector('main');
   let sharingProgress = false;
   let shareStatus = '';
@@ -421,6 +421,7 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
       begin.disabled = snapshot.busy || !startStep;
       actions.append(begin, action('Choose a task', 'mss-text-button', () => openScenario(model.active.id))); next.append(actions); home.append(next);
     }
+    const how = action('How it works', 'mss-how-link', () => openGuide?.()); home.querySelector('.mss-page-heading')?.append(how);
     const focus = el('div', 'mss-section-heading'); focus.append(el('h2', '', 'Today’s focus'));
     const seeAll = action('See all', 'mss-text-button', () => navigate('passport')); seeAll.append(symbol('arrow')); focus.append(seeAll); home.append(focus);
     const topics = el('div', 'mss-focus-grid');
@@ -468,7 +469,7 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
     settings.append(linkCard('Reminders', 'Your saved to-do list and things to return to', 'bell', () => openWorkspace('todoReminders')),
       linkCard('Privacy', 'Your data, training and sharing preferences', 'lock', () => editSettings('shareAnonymizedLearning')),
       linkCard('Voice settings', 'Voice and conversation language', 'mic', () => editSettings('robotVoice')),
-      linkCard('Support', 'Get help, report an issue or contact us', 'support', () => window.open('https://mysecondself.app/contact/', '_blank', 'noopener')));
+      linkCard('Help & Getting Started', 'FAQs, replay the introduction and contact support', 'support', () => openHelp?.()));
     profile.append(settings);
 
     renderTranscript(snapshot); renderVoiceState(); renderVisitControls(snapshot);
