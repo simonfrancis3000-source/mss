@@ -1,5 +1,5 @@
 export const ONBOARDING_VERSION = 1;
-export const AMIA_INTRO_AUDIO = 'https://mysecondself.app/wp-content/uploads/2026/10/MSS-Intro.mp3';
+export const AMIA_INTRO_AUDIO = 'https://mysecondself.app/wp-content/uploads/2026/10/MSS-Intro.mp3?v=20261104-113624';
 
 export function onboardingPages(companion = 'your future robot') {
   return [
