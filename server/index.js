@@ -16,6 +16,7 @@ import { buildApplianceConversationGuidance, applianceIntakeRequirement, applian
 import { buildCompanionNameGuidance } from "../src/companion-personality.js";
 import { createAmiaStore, amiaScope, buildTurnObservation, storedDecisionGuidance } from "./amia-store.js";
 import http from "node:http";
+import { createSmartThingsHomeConnect } from "./smartthings-home-connect.js";
 import { createClient } from "@supabase/supabase-js";
 import { verifyGooglePlayToken, hashPurchaseToken, consumeVerifiedGoogleTopUp, acknowledgeVerifiedGoogleSubscription, getGooglePlayOrder } from "./google-play-billing.js";
 import { loadRobotRewards } from "./robot-rewards.js";
@@ -77,6 +78,9 @@ const ALLOWED_ORIGINS = new Set([
   ...DEFAULT_ALLOWED_ORIGINS,
   ...(process.env.FRONTEND_ORIGIN || "").split(",")
 ].map((value) => value.trim().replace(/\/+$/, "")).filter(Boolean));
+const smartThingsHomeConnect = createSmartThingsHomeConnect({
+  db: billingDb, supabaseUrl: SUPABASE_URL, publishableKey: SUPABASE_PUBLISHABLE_KEY
+});
 const voiceRelay = billingDb ? createVoiceRelay({
   db: billingDb,
   permittedOrigin: (origin) => ALLOWED_ORIGINS.has(origin),
@@ -514,6 +518,7 @@ const app = http.createServer(async (request, response) => {
   }
 
   const url = new URL(request.url || "/", "http://localhost");
+  if (await smartThingsHomeConnect(request, response, url, headers || {})) return;
   // Serve only explicitly published, immutable OTA artifacts. The manifest starts disabled.
   // Filenames are strictly allowlisted to prevent path traversal.
   const otaName = url.pathname.slice("/ota/".length);
