@@ -225,3 +225,11 @@ test('a repeated multiple-question failure exhausts one repair and commits no ca
   await assert.rejects(f.turn('Wait for my guidance.'),error=>error.code==='runtime_quality_check_failed'&&error.attempts.length===2);
   assert.equal(f.calls,2);assert.equal(f.states.size,0);assert.equal(f.effects.length,0);
 });
+
+
+test('an explicit explanation request preserves the pending question and needs no new question',async()=>{
+ const f=fixture({generate:async({context})=>{assert.equal(context.intent,'explain');return answer('Your current preference is folded towels, with approval before changes.');}});
+ const result=await f.turn('Explain my current towel preference and its exception.');
+ assert.match(result.reply,/folded towels/);assert.equal(f.calls,1);
+ assert.equal(resolveRuntimeContext('Explícame mi preferencia actual.',cleanRuntimeState()).intent,'explain');
+});

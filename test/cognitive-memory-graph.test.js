@@ -43,7 +43,9 @@ test('PostgreSQL durable memory jobs apply corrections, graph links, ownership a
    const job=(await db.query('select * from public.synqme_memory_jobs')).rows[0];assert.equal(job.status,'done');assert.equal(job.user_message,'');assert.deepEqual(job.proposals,[]);
   });
   await t.test('explicit correction supersedes the old rule and preserves an exception',async()=>{
-   await queue([candidate({statement:'I prefer a damp cloth on the hob, except while it is hot.',source_quote:'damp cloth',relation:'updates',target_memory_key:old.memory_key,conditions:['except while it is hot']})],'Actually, use a damp cloth, except while the hob is hot.',[old]);
+   await queue([candidate({statement:'I prefer a damp cloth on the hob, except while it is hot.',source_quote:'damp cloth',relation:'updates',target_memory_key:old.memory_key,conditions:['except while it is hot'],relations:[{kind:'depends_on',target_memory_key:old.memory_key}]})],'Actually, use a damp cloth, except while the hob is hot.',[old]);
+   // Exercise the SQL defense with a pre-existing, unsanitized queued proposal.
+   await db.query("update public.synqme_memory_jobs set proposals=jsonb_set(proposals,'{0,relations}',$1::jsonb) where server_owned and status='pending'",[JSON.stringify([{kind:'depends_on',target_memory_key:old.memory_key}])]);
    await finish();const rules=(await db.query('select * from public.synqme_persona_memories order by created_at')).rows;
    assert.equal(rules[0].status,'superseded');assert.deepEqual(rules[1].conditions,['except while it is hot']);assert.equal(rules[1].supersedes_id,old.id);
    assert.equal((await db.query('select relation from public.synqme_rule_relations')).rows[0].relation,'supersedes');

@@ -178,6 +178,9 @@ begin
    insert into public.synqme_rule_relations values(job.user_id,saved,target.id,case when relation='conflicts' then 'conflicts_with' else 'supersedes' end,refs,now()) on conflict do nothing;
   end if;
   for edge in select value from jsonb_array_elements(coalesce(c->'relations','[]')) loop
+   -- A refinement already links to its previous version through supersedes.
+   -- It cannot depend on the version that this same transaction just retired.
+   if relation in ('updates','refines') and edge->>'target_memory_key'=c->>'target_memory_key' then continue; end if;
    select m.id into other_id from public.synqme_persona_memories m where m.user_id=job.user_id and m.memory_key=edge->>'target_memory_key' and m.status not in ('archived','superseded');
    if other_id is null then raise exception 'relation_target_changed'; end if;
    insert into public.synqme_rule_relations values(job.user_id,saved,other_id,edge->>'kind',refs,now()) on conflict do nothing;

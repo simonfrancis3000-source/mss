@@ -25,7 +25,7 @@ export function validateMemoryProposals(raw, { latestUser, knownRules = [], obje
       if (!affirmative || negated) candidate.permission_policy = 'unspecified';
     }
     const area = objectives.find(o => o.id === candidate.attributes?.area_id)?.id || null;
-    const relations = (Array.isArray(input.relations) ? input.relations : []).filter(r => ['depends_on','exception_to','conflicts_with'].includes(r?.kind) && known.has(r.target_memory_key)).slice(0, 6);
+    const relations = (Array.isArray(input.relations) ? input.relations : []).filter(r => ['depends_on','exception_to','conflicts_with'].includes(r?.kind) && known.has(r.target_memory_key) && !(target && ['updates','refines'].includes(candidate.relation) && r.target_memory_key === target.memory_key)).slice(0, 6);
     return [{ ...candidate, confidence: candidate.status === 'inferred_pending_confirmation' ? 0 : 1,
       memory_key: 'cog-' + hash((target?.scope_key || candidate.scope_key) + '\n' + candidate.statement + (target ? '\n' + turnKey : '')).slice(0, 40),
       target_memory_key: target?.memory_key || '', scope_key: target?.scope_key || candidate.scope_key,

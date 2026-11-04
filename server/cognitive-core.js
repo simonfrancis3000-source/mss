@@ -36,7 +36,8 @@ export function cleanRuntimeState(input = {}) {
 
 export function resolveRuntimeContext(latestUser, state) {
   const value = normalized(latestUser);
-  const intent = /^(?:continuar|continuemos|sigamos|he vuelto|estoy de vuelta|hola)$/.test(value) ? 'resume'
+  const intent = /^(?:explain\b|explica\b|expl[ií]came\b)/.test(value) ? 'explain'
+    : /^(?:continuar|continuemos|sigamos|he vuelto|estoy de vuelta|hola)$/.test(value) ? 'resume'
     : /^(?:por qué|por qué preguntas eso)$/.test(value) ? 'explain'
     : /^(?:qué hemos cubierto|qué falta|dónde nos quedamos)$/.test(value) ? 'progress' : conversationIntent(latestUser);
   const pause = intent === 'pause' || /^(?:pause|stop|stop for now|goodbye|that is all|thats all|no more questions|give me a moment|pausa|parar|paramos|terminar por ahora)$/.test(value);
