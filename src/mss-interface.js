@@ -481,10 +481,10 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
     memoryContent.append(symbol('brain', 'mss-icon-tile'), list); remembered.append(memoryContent); profile.append(remembered, el('h2', 'mss-section-title', 'Settings'));
     const settings = el('div', 'mss-settings-list');
     settings.append(linkCard('Help & Getting Started', 'FAQs, replay the introduction and contact support', 'support', () => openHelp?.()),
-      linkCard('Connected Home', 'Identify supported devices for robot training (read-only)', 'home', () => openConnectedHome?.()),
+      linkCard('Voice settings', 'Voice and conversation language', 'mic', () => editSettings('robotVoice')),
       linkCard('Reminders', 'Your saved to-do list and things to return to', 'bell', () => openWorkspace('todoReminders')),
-      linkCard('Privacy', 'Your data, training and sharing preferences', 'lock', () => editSettings('shareAnonymizedLearning')),
-      linkCard('Voice settings', 'Voice and conversation language', 'mic', () => editSettings('robotVoice')));
+      linkCard('Connected Home', 'Identify supported devices for robot training (read-only)', 'home', () => openConnectedHome?.()),
+      linkCard('Privacy', 'Your data, training and sharing preferences', 'lock', () => editSettings('shareAnonymizedLearning')));
     profile.append(settings);
 
     renderTranscript(snapshot); renderVoiceState(); renderVisitControls(snapshot);
