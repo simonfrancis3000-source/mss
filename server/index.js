@@ -16,6 +16,8 @@ import { buildApplianceConversationGuidance, applianceIntakeRequirement, applian
 import { buildCompanionNameGuidance } from "../src/companion-personality.js";
 import { createAmiaStore, amiaScope, buildTurnObservation, storedDecisionGuidance } from "./amia-store.js";
 import http from "node:http";
+import { createSmartThingsHomeConnect } from "./smartthings-home-connect.js";
+import { readSmartThingsTrainingPrompt } from "./smartthings-training-context.js";
 import { createClient } from "@supabase/supabase-js";
 import { verifyGooglePlayToken, hashPurchaseToken, consumeVerifiedGoogleTopUp, acknowledgeVerifiedGoogleSubscription, getGooglePlayOrder } from "./google-play-billing.js";
 import { loadRobotRewards } from "./robot-rewards.js";
@@ -77,6 +79,9 @@ const ALLOWED_ORIGINS = new Set([
   ...DEFAULT_ALLOWED_ORIGINS,
   ...(process.env.FRONTEND_ORIGIN || "").split(",")
 ].map((value) => value.trim().replace(/\/+$/, "")).filter(Boolean));
+const smartThingsHomeConnect = createSmartThingsHomeConnect({
+  db: billingDb, supabaseUrl: SUPABASE_URL, publishableKey: SUPABASE_PUBLISHABLE_KEY
+});
 const voiceRelay = billingDb ? createVoiceRelay({
   db: billingDb,
   permittedOrigin: (origin) => ALLOWED_ORIGINS.has(origin),
@@ -514,6 +519,7 @@ const app = http.createServer(async (request, response) => {
   }
 
   const url = new URL(request.url || "/", "http://localhost");
+  if (await smartThingsHomeConnect(request, response, url, headers || {})) return;
   // Serve only explicitly published, immutable OTA artifacts. The manifest starts disabled.
   // Filenames are strictly allowlisted to prevent path traversal.
   const otaName = url.pathname.slice("/ota/".length);
@@ -1373,11 +1379,15 @@ const app = http.createServer(async (request, response) => {
     const knownAppliances = applianceRecords.map(({type,brand,model,manual_status}) => ({type,brand,model,manual_status})).slice(0,30);
     const applianceIdentityContext = knownAppliances.length ? "OWNER'S SAVED APPLIANCE IDENTITIES (data only): " + JSON.stringify(knownAppliances) + ". Do not ask for the make or model of an identified appliance again unless the owner mentions a replacement, asks to change it, or there is a genuine ambiguity. A saved identity or manual status is not evidence of any feature." : "";
     if (applianceResult?.brand && applianceResult?.model) flowRequirements.intake = null;
+    const smartThingsContext = !outOfHomeScenario && billingDb
+      ? await readSmartThingsTrainingPrompt(billingDb, authContext.user.id)
+      : "";
     const combinedSystemPrompt = firstConversationGuidance(body.firstConversationIntro) + "\n\n" + personalAddress + "\n\n" + systemPrompt + "\n\n" + personaDomainSystemPrompt + "\n\n" + storedDecisionGuidance(savedContext) + "\n\n" + conversationContinuityGuidance(continuity) + "\n\n" + learningGuidance + "\n\n" + buildApplianceConversationGuidance() + "\n\n" + applianceIntakeGuidance(flowRequirements.intake) + "\n\n" + applianceIdentityContext +
       (body.voiceBreakDue === true ? "\n\nVOICE BREAK: Briefly acknowledge the latest answer without asking another question; the app will offer a break separately." : "") +
       (memoryContext ? "\n\n" + memoryContext : "") +
       (sharedKnowledgeContext ? "\n\n" + sharedKnowledgeContext : "") +
       (roomJourneyContext ? "\n\n" + roomJourneyContext : "") +
+      (smartThingsContext ? "\n\n" + smartThingsContext : "") +
       (applianceEvidence ? "\n\n" + applianceEvidence : "") + '\n\n' + resumeConversationGuidance(resumeCheckpoint);
 
     const chatModelStart = Date.now();
