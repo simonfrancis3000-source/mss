@@ -113,7 +113,21 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
     const portrait = el('span', 'mss-robot-portrait');
     const image = el('img', 'mss-robot-portrait-image');
     image.src = COMPANION_HEAD_IMAGE; image.alt = ''; image.width = 600; image.height = 600;
-    portrait.append(image, el('span', 'mss-robot-speech-light'));
+    const mouth = el('span', 'mss-robot-mouth'); mouth.setAttribute('aria-hidden', 'true');
+    mouth.innerHTML = `<svg viewBox="0 0 600 600" preserveAspectRatio="xMidYMid meet" focusable="false">
+      <defs>
+        <radialGradient id="mssTalkFaceShade"><stop offset="0" stop-color="#242725"/><stop offset="1" stop-color="#272a28"/></radialGradient>
+        <filter id="mssTalkMouthFeather" x="-25%" y="-50%" width="150%" height="200%"><feGaussianBlur stdDeviation="3"/></filter>
+        <filter id="mssTalkMouthGlow" x="-50%" y="-100%" width="200%" height="300%"><feGaussianBlur stdDeviation="2.3"/></filter>
+      </defs>
+      <ellipse cx="348" cy="345" rx="55" ry="24" fill="url(#mssTalkFaceShade)" filter="url(#mssTalkMouthFeather)"/>
+      <g class="mss-robot-mouth-shape">
+        <path d="M313 338 Q348 348 383 338 Q383 361 348 361 Q313 361 313 338Z" fill="#03151e" stroke="#27c9ff" stroke-width="6" filter="url(#mssTalkMouthGlow)"/>
+        <path d="M313 338 Q348 348 383 338 Q383 361 348 361 Q313 361 313 338Z" fill="#041d29" stroke="#93eeff" stroke-width="2.8"/>
+        <path d="M323 351 Q348 359 373 351" fill="none" stroke="#2ba6d9" stroke-width="2" opacity=".65"/>
+      </g>
+    </svg>`;
+    portrait.append(image, mouth);
     voiceCore.replaceChildren(portrait);
   }
   const voiceTitle = el('h2', 'mss-voice-title'); voiceTitle.id = 'mssVoiceState';
