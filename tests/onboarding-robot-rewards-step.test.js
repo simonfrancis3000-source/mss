@@ -18,13 +18,13 @@ test('Getting Started has five steps, with Robot Rewards immediately before What
 test('Robot Rewards step is inviting, explains double credit and qualifies priority access', () => {
   const page = onboardingPages()[3];
   const copy = [page.lead, ...page.paragraphs].join(' ');
-  assert.match(copy, /every \\$1 of eligible spending/);
-  assert.match(copy, /earns \\$2 in Robot Rewards credit/);
+  assert.match(copy, /every \$1 of eligible spending/);
+  assert.match(copy, /earns \$2 in Robot Rewards credit/);
   assert.match(copy, /priority purchase opportunities/);
   assert.match(copy, /working with robot partners/);
   assert.match(copy, /partner availability/);
   assert.match(copy, /See Robot Rewards for full terms and conditions/);
-  assert.ok(copy.split(/\\s+/).length < 125, 'copy must fit the onboarding panel');
+  assert.ok(copy.split(/\s+/).length < 125, 'copy must fit the onboarding panel');
 });
 
 test('Guide uses dynamic page count and rewards-specific compact presentation', () => {
@@ -58,13 +58,13 @@ test('Journey step remains compact with no lost training context', () => {
   assert.match(copy, /Finish for now/);
   assert.match(copy, /unanswered question/);
   assert.match(copy, /outings/);
-  assert.ok(copy.split(/\\s+/).length < 95);
+  assert.ok(copy.split(/\s+/).length < 95);
 });
 
 test('All five onboarding panels share fixed dimensions and pinned actions', () => {
   const css = readFileSync(new URL('../src/mss-interface.css', import.meta.url), 'utf8');
   assert.match(css, /Keep all five Getting Started dialog panels exactly the same outer size/);
-  assert.match(css, /height:min\\(590px,calc\\(100dvh - 28px\\)\\)/);
-  assert.match(css, /\\.mss-onboarding \\.mss-guide-content\\{[^}]*overflow-y:auto/s);
-  assert.match(css, /\\.mss-onboarding \\.mss-guide-actions,[\\s\\S]*?flex:0 0 auto/s);
+  assert.match(css, /height:min\(590px,calc\(100dvh - 28px\)\)/);
+  assert.match(css, /\.mss-onboarding \.mss-guide-content\{[^}]*overflow-y:auto/s);
+  assert.match(css, /\.mss-onboarding \.mss-guide-actions,[\s\S]*?flex:0 0 auto/s);
 });
