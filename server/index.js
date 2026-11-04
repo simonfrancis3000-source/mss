@@ -1,4 +1,11 @@
 import { firstConversationGuidance } from '../src/getting-started-content.js';
+import { createCognitiveRuntime } from './cognitive-runtime.js';
+import { createCognitiveStore } from './cognitive-store.js';
+import { createCognitiveProvider } from './cognitive-provider.js';
+import { RuntimeError } from './cognitive-core.js';
+import { createCognitiveMemoryWorker } from './cognitive-memory.js';
+import { createCognitiveApplianceResolver } from './cognitive-appliance.js';
+import { cognitiveRollout } from './cognitive-rollout.js';
 import { shouldMeterVoice } from './voice-billing-policy.js';
 import { shouldContinueGuidedTurn, guidedReplyNeedsRepair, finalizeGuidedReply, GUIDED_TURN_CORRECTION } from "./guided-turn.js";
 import { cleanSimulationResult } from "../src/simulation.js";
@@ -55,6 +62,19 @@ const PROVIDER = "deepseek";
 const amiaStore = createAmiaStore({ supabaseUrl:SUPABASE_URL,publishableKey:SUPABASE_PUBLISHABLE_KEY });
 const API_KEY = DEEPSEEK_API_KEY;
 const MODEL = String(process.env.DEEPSEEK_CHAT_MODEL || process.env.DEEPSEEK_FLASH_MODEL || "deepseek-flash").trim() || "deepseek-flash";
+// Opt-in rollout. Old clients keep the existing route unless they explicitly
+// negotiate version 1. The server still authenticates every turn normally.
+const COGNITIVE_RUNTIME_ENABLED = process.env.AMIA_COGNITIVE_RUNTIME_ENABLED === 'true';
+const cognitiveForUser = cognitiveRollout({enabled:COGNITIVE_RUNTIME_ENABLED,userIds:process.env.AMIA_RUNTIME_USER_IDS,emails:process.env.AMIA_RUNTIME_EMAILS});
+const cognitiveStore = createCognitiveStore({ supabaseUrl: SUPABASE_URL, secretKey: BILLING_SERVICE_KEY });
+const cognitiveWorker=createCognitiveMemoryWorker({store:cognitiveStore});
+const cognitiveRuntime = createCognitiveRuntime({
+  store: cognitiveStore, contextStore: amiaStore,
+  onCommitted:()=>{void cognitiveWorker.drain();},
+  resolveAppliance:createCognitiveApplianceResolver({key:DEEPSEEK_SEARCH_API_KEY,onUsage:async(auth,kind)=>recordUsageEvent({user_id:auth.user.id,event_type:kind==='search'?'deepseek_search':'deepseek_fetch',provider:'deepseek',request_id:randomUUID(),status:'estimated',search_requests:kind==='search'?1:0,fetch_requests:kind==='fetch'?1:0,currency:'USD',cost_method:'provider_request_count',metadata:{operation:'cognitive_appliance_manual'},started_at:new Date().toISOString(),ended_at:new Date().toISOString()},auth.accessToken)}),
+  generate: async ({ auth, ...input }) => createCognitiveProvider({ key: DEEPSEEK_API_KEY, model: MODEL,
+    onUsage: data => recordDeepSeekUsage(auth, data, 'chat_cognitive') })(input)
+});
 // Render deployments need CORS to work even when FRONTEND_ORIGIN has not
 // been populated. Keep the known SYNQ.ME origins as safe defaults and allow
 // additional exact origins through FRONTEND_ORIGIN (comma-separated).
@@ -540,9 +560,10 @@ const app = http.createServer(async (request, response) => {
   const authenticatedRoutes = new Set([
     "/api/chat", "/api/memory/extract", "/api/knowledge/extract", "/api/simulation", "/api/voice/break-offer",
     "/api/phonic/session", "/api/phonic/usage", "/api/billing/verify", "/api/billing/status"
+    , "/api/runtime/status", "/api/runtime/delivery"
   ]);
   let authContext = null;
-  if ((request.method === "POST" || (request.method === "GET" && url.pathname === "/api/billing/status")) && authenticatedRoutes.has(url.pathname)) {
+  if ((request.method === "POST" || (request.method === "GET" && ["/api/billing/status", "/api/runtime/status"].includes(url.pathname))) && authenticatedRoutes.has(url.pathname)) {
     const authResult = await authenticateSupabaseRequest(request, {
       supabaseUrl: SUPABASE_URL,
       publishableKey: SUPABASE_PUBLISHABLE_KEY
@@ -559,6 +580,7 @@ const app = http.createServer(async (request, response) => {
       configured: Boolean(API_KEY),
       model: MODEL,
       diagnosticsVersion: "deepseek-flash-chat-v1",
+      amiaCognitiveRuntime: COGNITIVE_RUNTIME_ENABLED && Boolean(BILLING_SERVICE_KEY) ? { version: 1, languages: ['en', 'es'], requiresAccountCheck:true,serverMemory:true } : null,
       phonicConfigured: Boolean(PHONIC_API_KEY),
       accountAuthConfigured: Boolean(SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY),
       usageTrackingConfigured: Boolean(SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY),
@@ -567,6 +589,15 @@ const app = http.createServer(async (request, response) => {
     }, headers || {});
   }
 
+  // Runtime capabilities are scoped to the authenticated rollout account.
+  if (request.method==='GET' && url.pathname==='/api/runtime/status') {
+    return json(response,200,{enabled:cognitiveForUser(authContext.user)&&Boolean(BILLING_SERVICE_KEY),version:1,languages:['en','es'],serverMemory:true},headers || {});
+  }
+  if (request.method==='POST' && url.pathname==='/api/runtime/delivery') {
+    if(!cognitiveForUser(authContext.user))return json(response,404,{error:'Runtime unavailable.'},headers || {});
+    try {const body=await readJson(request,4096);await cognitiveStore.delivery(authContext,body);return json(response,200,{recorded:true},headers || {});}
+    catch{return json(response,409,{error:'Delivery observation could not be recorded.'},headers || {});}
+  }
   // Billing endpoints remain unavailable until both the service account
   // and RLS-protected entitlements migration are configured.
   if (request.method === "GET" && url.pathname === "/api/billing/status") {
@@ -603,11 +634,16 @@ const app = http.createServer(async (request, response) => {
     if (limitReached(request, requestHistory, MAX_REQUESTS_PER_MINUTE, authContext.user.id)) {
       return json(response, 429, { error: "Too many purchase verification attempts." }, headers || {});
     }
+    let verificationStage = "read_purchase";
+    let requestedProductId = "";
     try {
       const body = await readJson(request, 12000);
       const productId = String(body?.productId || "");
+      requestedProductId = productId;
       const purchaseToken = String(body?.purchaseToken || "");
+      verificationStage = "google_play_lookup";
       const verified = await verifyGooglePlayToken({ productId, purchaseToken, userId: authContext.user.id });
+      verificationStage = "database_credit_grant";
       const { data, error } = await billingDb.rpc("mss_apply_verified_play_purchase", {
         p_user_id: authContext.user.id,
         p_product_id: verified.productId,
@@ -628,9 +664,16 @@ const app = http.createServer(async (request, response) => {
         } else if (verified.kind === "subscription" && verified.requiresAcknowledgement) {
           await acknowledgeVerifiedGoogleSubscription(purchaseToken);
         }
-      } catch {
+      } catch (error) {
         finalizationPending = true;
+        console.warn("Google Play purchase credited but not finalized", {
+          productId, kind: verified.kind, errorCode: error?.code || "google_finalization_failed"
+        });
       }
+      console.info("Google Play purchase verified and recorded", {
+        productId, kind: verified.kind, isTest: verified.isTest,
+        newlyCredited: Boolean(data?.credited), finalizationPending
+      });
       return json(response, 200, {
         verified: true,
         productId,
@@ -640,6 +683,14 @@ const app = http.createServer(async (request, response) => {
       }, headers || {});
     } catch (error) {
       const status = Number.isInteger(error?.statusCode) ? error.statusCode : 502;
+      // Log a safe diagnostic stage only. Never log a Play purchase token,
+      // authorization header, signed-in identity, or service-account key.
+      console.warn("Google Play purchase verification unsuccessful", {
+        stage: verificationStage,
+        productId: requestedProductId.slice(0, 48),
+        status,
+        code: typeof error?.code === "string" ? error.code.slice(0, 48) : "unknown"
+      });
       return json(response, status, { error: status >= 500 ? "Google Play verification is temporarily unavailable." : error.message }, headers || {});
     }
   }
@@ -1080,6 +1131,33 @@ const app = http.createServer(async (request, response) => {
 
   try {
     const body = await readJson(request, 96 * 1024);
+    if(body.runtimeVersion===1 && !cognitiveForUser(authContext.user))return json(response,403,{error:'Runtime is not enabled for this account.'},headers || {});
+    if (COGNITIVE_RUNTIME_ENABLED && body.runtimeVersion === 1 && ['en', 'es'].includes(body.profile?.preferredLanguage || 'en')) {
+      const rawUser=body.messages?.at(-1);
+      if(rawUser?.role!=='user'||typeof rawUser.content!=='string'||!rawUser.content.trim()||rawUser.content.length>3000)return json(response,400,{error:'Provide a user message of up to 3000 characters.'},headers || {});
+      const messages = [{role:'user',content:rawUser.content.trim()}];
+      if (!messages.length || messages.at(-1).role !== 'user') return json(response, 400, { error: 'A user message is required.' }, headers || {});
+      const profile = cleanProfile(body.profile);
+      const room = cleanRoomJourney(body.roomJourney);
+      const outside = cleanOutOfHomeScenarioContext(body.outOfHomeScenarioContext);
+      const scope = outside ? 'outside:' + outside.categoryId + ':' + outside.scenarioId : 'room:' + (room?.activeRoomId || 'kitchen');
+      const scenario = scenarioForId(scope);
+      if (!scenario) return json(response, 400, { error: 'Choose a valid training scenario.' }, headers || {});
+      try {
+        const result = await cognitiveRuntime.turn({ auth: authContext, body: { ...body, messages }, scope,
+          objectives: scenarioLearningObjectives(scenario), profile,
+          active: body.voiceBreakDue !== true });
+        console.info('AMIA cognitive turn', { turnId: result.runtime.turnId, replayed: result.runtime.replayed, modelCalls: result.runtime.modelCalls, durationMs: result.runtime.durationMs, timings: result.runtime.timings, action: result.runtime.action });
+        return json(response, 200, { ...result, model: MODEL }, headers || {});
+      } catch (error) {
+        const known = error instanceof RuntimeError;
+        const code = known ? error.code : 'runtime_turn_unavailable';
+        const status = known ? error.statusCode : 503;
+        console.warn('AMIA cognitive turn unavailable', { code });
+        return json(response, status, { provider: PROVIDER, errorCode: code,
+          error: status === 409 ? 'Another turn or a training reset changed this conversation. Wait briefly, then retry or reload.' : 'This turn could not be completed and confirmed. Please retry.' }, headers || {});
+      }
+    }
     const repairMode = body?.repairMode === true;
     const normalizedMessages = cleanMessages(body?.messages).slice(-20);
     const recentMessages = normalizedMessages.slice(-10);
@@ -1561,3 +1639,6 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log("AI API key configured: " + Boolean(API_KEY));
 
 });
+
+if(COGNITIVE_RUNTIME_ENABLED && BILLING_SERVICE_KEY){cognitiveWorker.start();const maintenance=setInterval(()=>{void cognitiveStore.prune().catch(()=>{});},86400000);maintenance.unref();}
+process.once('SIGTERM',()=>{cognitiveWorker.stop();app.close();});
