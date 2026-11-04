@@ -58,6 +58,23 @@ export function createGooglePlayCheckout({ apiBase, getHeaders, getUserId }) {
   let loading = false;
   let serverAvailable = false;
   let listener = null;
+  let checkoutStartedAt = 0;
+  let lastAutoRestoreAt = 0;
+  let checkoutRecoveryTimers = [];
+
+  function stopCheckoutRecovery() {
+    for (const timer of checkoutRecoveryTimers) clearTimeout(timer);
+    checkoutRecoveryTimers = [];
+  }
+
+  function startCheckoutRecovery() {
+    stopCheckoutRecovery();
+    // Play can return without delivering the native purchase event. Short,
+    // bounded retries are essential for Google's 3-minute license-test window.
+    for (const delayMs of [2000, 8000, 20000, 45000, 90000, 145000]) {
+      checkoutRecoveryTimers.push(setTimeout(reconcileAfterReturningFromPlay, delayMs));
+    }
+  }
 
   function message(text) { status.textContent = text; }
   function setBusy(next) {
@@ -101,8 +118,14 @@ export function createGooglePlayCheckout({ apiBase, getHeaders, getUserId }) {
     const result = await request("/api/billing/verify", "POST", {
       productId, purchaseToken: purchase.purchaseToken
     });
-    if (result.finalizationPending) message("Credits saved. Google Play confirmation is still pending and will be retried.");
-    else if (result.newlyCredited) message(productId === "mss_premium"
+    if (result.finalizationPending) {
+      await refreshBalance();
+      // The wallet is credited, but Google Play still requires consumption
+      // or acknowledgement. Keep the purchase in the retry loop so a test
+      // purchase is not automatically refunded after three minutes.
+      throw new Error("Minutes credited, but Google Play confirmation is pending. Retrying.");
+    }
+    if (result.newlyCredited) message(productId === "mss_premium"
       ? "Premium is active. Your monthly voice minutes have been added."
       : result.minutes + " voice minutes added successfully.");
     await refreshBalance();
@@ -120,17 +143,32 @@ export function createGooglePlayCheckout({ apiBase, getHeaders, getUserId }) {
       const purchases = queries.flatMap(result => result.status === "fulfilled" ? result.value.purchases || [] : []);
       if (queries.every(result => result.status === "rejected")) throw new Error("Google Play purchase history is unavailable.");
       let restored = 0;
+      const errors = queries
+        .filter(result => result.status === "rejected")
+        .map(result => result.reason?.message || "A Google Play purchase query failed.");
       const seen = new Set();
       for (const purchase of purchases) {
         const token = purchase.purchaseToken;
         if (!token || seen.has(token)) continue;
         seen.add(token);
-        if (await verifyPurchase(purchase)) restored++;
+        try {
+          if (await verifyPurchase(purchase)) restored++;
+        } catch (error) {
+          // Continue checking other purchases and surface the actual error.
+          // Never treat a failed server verification as a successful restore.
+          errors.push(error?.message || "Purchase verification failed.");
+        }
       }
       await refreshBalance();
-      message(restored ? "Purchases checked and your balance updated." : "No new completed purchases to restore.");
+      message(errors.length
+        ? "Some purchases could not be verified: " + errors[0]
+        : restored
+          ? "Purchases verified. Your current balance is shown above."
+          : "No active purchases to restore. Refunded test orders cannot be restored.");
+      return restored;
     } catch (error) {
       message(error?.message || "Purchases could not be restored.");
+      return 0;
     } finally { setBusy(false); }
   }
   restore.addEventListener("click", restorePurchases);
@@ -143,8 +181,18 @@ export function createGooglePlayCheckout({ apiBase, getHeaders, getUserId }) {
       if (loading || !serverAvailable) return;
       setBusy(true);
       message("Opening Google Play's secure checkout…");
-      try { await onclick(); message("Complete your purchase in Google Play. Minutes will appear after confirmation."); }
-      catch (error) { message(error?.message || "Google Play checkout could not start."); }
+      try {
+        // The native purchase callback can be missed while Android switches
+        // to the Play checkout. Reconcile unconsumed purchases on return.
+        checkoutStartedAt = Date.now();
+        startCheckoutRecovery();
+        await onclick();
+        message("Complete your purchase in Google Play. Minutes will appear after confirmation.");
+      } catch (error) {
+        checkoutStartedAt = 0;
+        stopCheckoutRecovery();
+        message(error?.message || "Google Play checkout could not start.");
+      }
       finally { setBusy(false); }
     });
     return btn;
@@ -208,14 +256,50 @@ export function createGooglePlayCheckout({ apiBase, getHeaders, getUserId }) {
     } finally { setBusy(false); }
   }
 
+  function reconcileAfterReturningFromPlay() {
+    if (!checkoutStartedAt || !getUserId() || loading) return;
+    const now = Date.now();
+    // Avoid polling on unrelated focus events and duplicate lifecycle events.
+    if (now - checkoutStartedAt > 30 * 60 * 1000) {
+      checkoutStartedAt = 0;
+      stopCheckoutRecovery();
+      return;
+    }
+    if (now - lastAutoRestoreAt < 3000) return;
+    lastAutoRestoreAt = now;
+    void restorePurchases().then((restored) => {
+      if (restored > 0) {
+        checkoutStartedAt = 0;
+        stopCheckoutRecovery();
+      }
+    });
+  }
+
+  window.addEventListener("focus", reconcileAfterReturningFromPlay);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") reconcileAfterReturningFromPlay();
+  });
+
   void MSSBilling.addListener("purchaseUpdated", async (event) => {
     if (!event || event.responseCode !== 0) {
-      if (dialog.open && event?.responseCode !== 1) message("Google Play did not complete the purchase.");
+      if (event?.responseCode === 1) {
+        checkoutStartedAt = 0;
+        stopCheckoutRecovery();
+      } else if (dialog.open) {
+        message("Google Play did not complete the purchase.");
+      }
       return;
     }
     for (const purchase of event.purchases || []) {
-      try { await verifyPurchase(purchase); }
-      catch (error) { if (dialog.open) message(error?.message || "Payment verification is pending."); }
+      try {
+        if (await verifyPurchase(purchase)) {
+          checkoutStartedAt = 0;
+          stopCheckoutRecovery();
+        }
+      } catch (error) {
+        // Preserve the failed purchase for the next foreground reconciliation.
+        if (dialog.open) message(error?.message || "Payment verification is pending.");
+      }
     }
   }).then(value => { listener = value; }).catch(() => {});
 
@@ -240,5 +324,5 @@ export function createGooglePlayCheckout({ apiBase, getHeaders, getUserId }) {
   });
 
   return { enabled: true, open, refreshBalance, restorePurchases, syncOnSignIn,
-    close() { dialog.close(); void listener?.remove?.(); } };
+    close() { dialog.close(); stopCheckoutRecovery(); void listener?.remove?.(); } };
 }
