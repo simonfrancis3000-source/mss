@@ -3,6 +3,7 @@ import { Capacitor } from "@capacitor/core";
 import { Preferences } from "@capacitor/preferences";
 import { createMobileAuthTurnstile } from "./mobile-turnstile-bridge.js";
 import { createMssInterface, buildInterfaceModel, COMPANION_HEAD_IMAGE } from "./mss-interface.js";
+import { createRobotRewardBalance } from "./robot-rewards-balance.js";
 import { coalesceTranscriptTurns, preferTranscriptTurn, bestUserTranscript, isServiceErrorText } from "./transcript-turns.js";
 import { createRememberedSessionStorage, nativePersistentSessionStorage } from "./session-storage.js";
 import { applianceReminderTurn } from "./appliance-reminders.js";
@@ -4330,6 +4331,7 @@ const googlePlayCheckout = createGooglePlayCheckout({
   getUserId: () => cloudUserId
 });
 const voiceBalance = createVoiceBalance({apiBase:API_BASE,getUserId:()=>cloudUserId,getHeaders:authenticatedApiHeaders,onChange:()=>mssInterface?.render()});
+const robotRewards = createRobotRewardBalance({apiBase:API_BASE,getUserId:()=>cloudUserId,getHeaders:authenticatedApiHeaders,onChange:()=>mssInterface?.render()});
 
 mssInterface = createMssInterface({
   refreshBalance:()=>voiceBalance.refresh(),
@@ -4347,7 +4349,8 @@ mssInterface = createMssInterface({
     const pending = conversationCheckpoint(state.messages, model.active?.id);
     return { owner: state.profile.ownerName.trim(), companion: selectedCompanionDisplayName(),
       voice: normaliseVoicePreference(state.profile.robotVoice), avatar: ownerAvatarData,
-      billing:voiceBalance.snapshot(), preferences: curatedPreferences(), messages: state.messages, pendingQuestion: pending?.question || "", model };
+      billing:voiceBalance.snapshot(),
+      rewards:robotRewards.snapshot(), preferences: curatedPreferences(), messages: state.messages, pendingQuestion: pending?.question || "", model };
   },
   navigate: selectAppView,
   async shareProgress() {
@@ -5372,7 +5375,7 @@ initialisePexiManifestControls();
 
 function syncAppNavigation() {
   const view = document.body.dataset.appView || "home";
-  const selected = elements.voiceExperience && !elements.voiceExperience.hidden ? "talk" : view === "journey" ? "passport" : view;
+  const selected = elements.voiceExperience && !elements.voiceExperience.hidden ? "talk" : view === "journey" ? "passport" : view === "rewards" ? "home" : view;
   document.querySelectorAll("[data-app-tab]").forEach((button) => {
     if (button.dataset.appTab === selected) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
@@ -5381,6 +5384,7 @@ function syncAppNavigation() {
 
 function selectAppView(view) {
   if(view === "profile") void voiceBalance.refresh();
+  if(view === "home" || view === "rewards") void robotRewards.refresh();
   closeSettings();
   if (elements.taskResult) elements.taskResult.hidden = true;
   if (view === "chat" && document.body.dataset.appView !== "chat" && cloudUserId && roomJourney && state.messages.some(item=>item.role==='user')) {
@@ -5390,7 +5394,7 @@ function selectAppView(view) {
     chatReturnSummary = (state.profile.preferredLanguage || "en") === "en" ? (checkpoint ? englishResumeReply(checkpoint,state.profile.ownerName) : "Welcome back, " + state.profile.ownerName.trim().split(/\s+/)[0] + ". We were working on " + (scenarioForId(scope)?.title || roomJourney.active_room_id.replaceAll('_',' ')) + ". Your saved conversation is above.") : "";
   }
   if (elements.voiceExperience && !elements.voiceExperience.hidden) closeVoiceExperience("Returned to your conversation.");
-  document.body.dataset.appView = ["home", "passport", "profile", "journey"].includes(view) ? view : "chat";
+  document.body.dataset.appView = ["home", "passport", "profile", "journey", "rewards"].includes(view) ? view : "chat";
   const workspace = document.querySelector("#moreWorkspace");
   if (workspace) workspace.open = view === "journey";
   if (view === "journey") { journeyDisplay = "scenarios"; renderScenarioJourney(); }
