@@ -152,6 +152,18 @@ test('a question response is not a confirmed preference or a completed objective
   assert.equal(next.completed, undefined);
 });
 
+test('an unrelated rule does not settle an unanswered decision; a grounded answer does', () => {
+  const initial=cleanRuntimeState({lastQuestion:'Where should damaged books wait?',lastDecisionKey:'books.damaged_location',objectiveId:'books'});
+  const unrelated=reduceRuntimeState(initial,{latestUser:'If unsure, ask me instead of guessing.',reply:'What should I learn next?',intent:'answer',turnKey:'one',active:true});
+  assert.equal(unrelated.dispositions[0].answered,false);
+  assert.equal(checkRuntimeReply({...answer('Should damaged books wait on the desk or stay on the shelf?'),decisionKey:'books.damaged_location'},{state:unrelated,active:true}),null);
+  const answered=reduceRuntimeState(initial,{latestUser:'Leave damaged books on the desk.',reply:'What should I learn next?',intent:'answer',turnKey:'two',previousAnswer:{answered:true,sourceQuote:'on the desk'},active:true});
+  assert.equal(answered.dispositions[0].answered,true);
+  assert.equal(checkRuntimeReply({...answer('Should they wait on the shelf?'),decisionKey:'books.damaged_location'},{state:answered,active:true}),'settled_decision');
+  const forged=reduceRuntimeState(initial,{latestUser:'If unsure, ask me.',reply:'What should I learn next?',intent:'answer',turnKey:'three',previousAnswer:{answered:true,sourceQuote:'on the desk'},active:true});
+  assert.equal(forged.dispositions[0].answered,false);
+});
+
 test('provider validates JSON locally, reports usage, and rejects fabricated tool actions', async () => {
   let payload, usage = 0;
   const provider = createCognitiveProvider({ key: 'fixture', model: 'fixture-model', onUsage: async () => { usage++; }, fetchImpl: async (url, options) => {

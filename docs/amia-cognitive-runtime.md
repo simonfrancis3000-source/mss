@@ -102,3 +102,18 @@ Runtime logs expose phase durations for claim, context, model, manual lookup and
 - Local recording diagnostics: `node scripts/analyze-phonic-pcm.mjs /absolute/path/recording.wav`
 
 The supported WAV diagnostic input is PCM16. It reports peak/RMS/clipped samples without sending the recording to a service. These measurements are diagnostic signals; clipped-sample counts alone cannot establish the cause of an audible interruption.
+
+
+### Advanced programme: latest completed development run
+
+Run [41911343431](https://github.com/simonfrancis3000-source/mss/actions/runs/41911343431) evaluated commit 7fb403831e567ecf8df51b70e0374cfea93a41c1. All 450 development repeats were attempted: 36 passed, 414 failed, and 4,354 of 5,400 planned user turns completed. The reserved cases were not run. Failure codes overlap: stale_preference_active 321, runtime_quality_check_failed 159, relation_target_changed 5, correction_missing 1 and final_recall_missing_current_value 1. The majority of exhausted quality repairs were settled_decision, followed by repeated_question and settled_question.
+
+The following corrections require a fresh live run before their effectiveness can be claimed:
+
+- Receiving a message is distinct from answering the preceding question. A structured, quoted answer annotation records coverage; missing or ungrounded annotations leave the dimension unresolved. Deferred questions remain excluded. This is model-assisted conversational classification, not independent proof of semantic correctness or consent.
+- Answer coverage survives the canonical session and decision-state records. Reminder commands do not settle unrelated questions. A substantive grounded answer still prevents repeating the same decision.
+- Memory links can follow a version replaced earlier in the same atomic job. Confirmation proposals now process explicit exception links. A different stale job is still rejected rather than silently redirected.
+- Correcting a detail in an exception does not prepend the obsolete placement to the replacement. Restrictive permissions remain preserved; confirming a boundary may strengthen an unspecified policy but cannot grant permission.
+- Evaluation version 2 checks the original preference scope rather than treating every historical reason mentioning the old value as a current default. It accepts the demonstrated shelf/shelves variation. Conflicting old defaults still fail. Reports identify the grading version; aggregating mixed versions fails completeness checks. Scores across the grading change are not directly comparable.
+
+These are development fixes. Production activation, hosted authenticated PostgREST coverage, device audio and human conversational review remain separate acceptance work.

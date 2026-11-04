@@ -84,6 +84,20 @@ test('PostgreSQL durable memory jobs apply corrections, graph links, ownership a
    await assert.rejects(db.query("insert into public.synqme_rule_relations(user_id,from_rule_id,to_rule_id,relation) values($1::uuid,$2::uuid,$3::uuid,'depends_on')",[OWNER,a[1].id,a[0].id]),/cognitive_dependency_cycle/);
    await assert.rejects(db.query("insert into public.synqme_rule_relations(user_id,from_rule_id,to_rule_id,relation) values($1::uuid,$2::uuid,$3::uuid,'conflicts_with')",[OTHER,a[0].id,a[1].id]),/foreign key/);
   });
+  await t.test('a correction and confirmed exception link to the current version in one transaction',async()=>{
+   const target=(await db.query("select * from public.synqme_persona_memories where scope_key='kitchen.hob.cloth' and status not in ('superseded','archived') order by created_at desc limit 1")).rows[0];
+   await queue([candidate({statement:'Ask before changing the hob cloth when guests visit.',scope_key:'kitchen.hob.guest.approval',source_quote:'Ask before changing',kind:'boundary',permission_policy:'ask_first'})],'Ask before changing the hob cloth when guests visit.');
+   await finish();
+   const exception=(await db.query("select * from public.synqme_persona_memories where scope_key='kitchen.hob.guest.approval'")).rows[0];
+   await queue([candidate({statement:'Use a dry cloth on the hob.',source_quote:'dry cloth',relation:'updates',target_memory_key:target.memory_key}),candidate({statement:exception.statement,scope_key:exception.scope_key,kind:'boundary',permission_policy:'ask_first',source_quote:'Keep asking',relation:'confirms',target_memory_key:exception.memory_key,relations:[{kind:'exception_to',target_memory_key:target.memory_key}]})],'Actually, use a dry cloth. Keep asking when guests visit.',[target,exception]);
+   await finish();
+   const linked=(await db.query("select m.statement,m.status from public.synqme_rule_relations e join public.synqme_persona_memories m on m.id=e.to_rule_id where e.from_rule_id=$1::uuid and e.relation='exception_to'",[exception.id])).rows;
+   assert.equal(linked.length,1);assert.match(linked[0].statement,/dry cloth/);assert.notEqual(linked[0].status,'superseded');
+   // A later stale job cannot silently point a dependency at a new version.
+   await queue([candidate({statement:'Keep a separate cloth for the table.',scope_key:'table.cloth',source_quote:'separate cloth',relations:[{kind:'depends_on',target_memory_key:target.memory_key}]})],'Use a separate cloth.',[target]);
+   await assert.rejects(finish(),/relation_target_changed/);
+   await db.query("delete from public.synqme_memory_jobs where status='processing'");
+  });
   await t.test('reset removes pending server jobs and rules cannot be restored by stale work',async()=>{
    await queue([candidate({statement:'I prefer a dry cloth for the table.'})],'Use a soft cloth.');
    const job=(await db.query('select public.claim_synqme_cognitive_memory_job() v')).rows[0].v;
@@ -127,6 +141,12 @@ test('a refinement retains the operative preference and boundary while adding a 
  const old={memory_key:'old',scope_key:'towels.arrangement',statement:'Keep towels folded.',kind:'boundary',permission_policy:'ask_first'};
  const [row]=validateMemoryProposals([candidate({statement:'The reason is to find towels quickly.',relation:'refines',target_memory_key:'old',source_quote:'find towels quickly'})],{latestUser:'I want to find towels quickly.',knownRules:[old],objectives,turnKey:'reason',scope:'room:bathroom'});
  assert.ok(row.statement.includes('Keep towels folded.'));assert.equal(row.permission_policy,'ask_first');
+});
+
+test('a corrected exception retains approval without duplicating its old placement',()=>{
+ const old={memory_key:'old',scope_key:'slippers.working_approval',statement:'Ask before moving slippers from bedside while I work.',kind:'boundary',permission_policy:'ask_first'};
+ const [row]=validateMemoryProposals([candidate({statement:'Ask before moving slippers from the wardrobe while I work.',relation:'refines',target_memory_key:'old',source_quote:'Keep asking'})],{latestUser:'Actually, use the wardrobe. Keep asking while I work.',knownRules:[old],objectives,turnKey:'correction',scope:'room:bedroom'});
+ assert.equal(row.relation,'updates');assert.equal(row.permission_policy,'ask_first');assert.equal(row.kind,'boundary');assert.ok(!row.statement.includes('bedside'));
 });
 test('new fact dimensions do not collide merely because they share a room',()=>{
  const context={latestUser:'Use a soft cloth.',knownRules:[],objectives,turnKey:'dimensions',scope:'room:kitchen'};
