@@ -16,10 +16,15 @@ export function onboardingPages(companion = 'your future robot') {
       'Finish for now gives you a recap and keeps your place. Return to the unanswered question when you are ready. Areas explored and reviewed are different from fully completed modules.',
       'Scenarios also cover visits and life outside your home. You can discuss a friend’s garden even if you do not have one, or say when something is not relevant.'
     ] },
+    { title: 'Robot Rewards', lead: 'Your training can help you earn a future robot discount.', paragraphs: [
+      'Earn $2 in promotional robot credit for every $1 of eligible, verified USD spending on MySecondSelf. Credit is capped at $100 per month and $1,000 per account.',
+      'To redeem, complete at least 80% of core training, pass the Robot Ready assessment and have six qualifying paid subscription months. The discount is limited to your earned credit or 5% of eligible robot hardware price, whichever is lower.',
+      'Only participating robots qualify. Rewards are not cash and do not guarantee a robot. See Robot Rewards for full terms.'
+    ] },
     { title: 'What happens next?', lead: 'Your Persona Passport is what you are building.', paragraphs: [
       'Your saved preferences, conditions and boundaries form your personalisation profile. Passport shows your progress and modules, with links to review and refine your learning.',
       'Transfer to compatible robots, hardware simulations and physical robot integrations are future development stages. No physical robot is connected through this app today. Any future transfer will depend on verified compatibility and your permission.',
-      'Share only what you are comfortable sharing. Review, correct or remove learning, and check Privacy settings for optional shared learning. Robot Rewards is an additional incentive, separate from building your Passport.'
+      'Share only what you are comfortable sharing. Review, correct or remove learning, and check Privacy settings for optional shared learning.'
     ] }
   ];
 }
