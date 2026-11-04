@@ -1,0 +1,20 @@
+.mss-connected-home-open{overflow:hidden}
+.mss-connected-home-overlay[hidden]{display:none}
+.mss-connected-home-overlay{position:fixed;inset:0;z-index:10050;background:rgba(17,24,39,.48);display:flex;align-items:center;justify-content:center;padding:16px}
+.mss-connected-home-panel{background:var(--surface,#fff);color:var(--text,#1d2939);border-radius:22px;max-width:560px;width:100%;max-height:90vh;overflow:auto;padding:24px;box-shadow:0 20px 70px rgba(0,0,0,.18)}
+.mss-connected-home-top{display:flex;align-items:start;justify-content:space-between;gap:12px}
+.mss-connected-home-top h2{font-size:1.3rem;margin:0 0 3px}
+.mss-connected-home-top p{font-size:.89rem;color:#64748b;margin:0 0 14px}
+.mss-connected-home-close{border:0;background:transparent;color:inherit;cursor:pointer;font-size:.88rem}
+.mss-connected-home-panel h3{margin:10px 0;font-size:1rem}
+.mss-connected-home-privacy{padding:12px;background:#f2f6f5;color:#2b5547;border-radius:12px;font-size:.88rem}
+.mss-connected-home-status{color:#51627b;font-size:.86rem;line-height:1.5}
+.mss-connected-home-devices{max-height:40vh;overflow:auto;display:grid;gap:8px}
+.mss-connected-home-device{border:1px solid #e4e9ec;border-radius:11px;padding:12px}
+.mss-connected-home-device strong{font-size:.92rem}
+.mss-connected-home-device p,.mss-connected-home-device small{display:block;margin:4px 0 0;color:#64748b;font-size:.8rem}
+.mss-connected-home-controls{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+.mss-connected-home-controls button{border:1px solid #cbd5df;border-radius:12px;background:#fff;padding:10px 14px;font-size:.88rem;color:#253042;cursor:pointer}
+.mss-connected-home-controls button:disabled{opacity:.55;cursor:wait}
+.mss-connected-home-controls .mss-connected-home-primary{background:#286653;color:#fff;border-color:#286653}
+.mss-connected-home-controls .mss-connected-home-danger{color:#ad3434}

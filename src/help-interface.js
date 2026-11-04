@@ -40,6 +40,8 @@ export function createHelpInterface({ getContext, navigate, dismiss, pauseTalk, 
   }
   function renderGuide() {
     const context = getContext(), companion = String(context.companion || '').trim() || 'Vikki', pages = onboardingPages(companion), item = pages[index];
+    guide.classList.toggle('mss-guide-rewards', item.title === 'Robot Rewards');
+    guide.classList.toggle('mss-guide-final', index === pages.length - 1);
     guideContent.replaceChildren();
     const top = el('div', 'mss-guide-top');
     const skip = button(automatic ? 'Skip for now' : 'Close', 'mss-text-button', () => void finishGuide('skipped'));

@@ -12,14 +12,19 @@ export function onboardingPages(companion = 'your future robot') {
       'Work on one small task at a time. You can decline a question, explain an exception, or correct an answer. Saved learning is available to review; a conversation alone does not complete a module.'
     ] },
     { title: 'Your journey, your pace', lead: 'A few useful minutes is a good start.', paragraphs: [
-      'Talk is for spoken conversation and uses your available voice minutes. Chat is for typing. Both contribute to the same account and training journey.',
-      'Finish for now gives you a recap and keeps your place. Return to the unanswered question when you are ready. Areas explored and reviewed are different from fully completed modules.',
-      'Scenarios also cover visits and life outside your home. You can discuss a friend’s garden even if you do not have one, or say when something is not relevant.'
+      'Talk uses your available voice minutes; Chat is for typing. Both build the same training journey.',
+      'Finish for now saves a recap and your place. Come back to the unanswered question anytime. Exploring an area is different from completing a module.',
+      'Training includes home life and outings. You can discuss a friend’s garden even if you have none, or skip what is not relevant.'
+    ] },
+    { title: 'Robot Rewards', lead: 'Teach your future robot. Get rewarded for getting ready!', paragraphs: [
+      'Here’s the exciting part: every $1 of eligible spending on training your MySecondSelf earns $2 in Robot Rewards credit toward a participating robot purchase. Double the credit for getting your future robot to know you!',
+      'And there’s more: we’re working with robot partners to offer trained, Robot Ready members priority purchase opportunities as participating robots become available. Train today so your robot can arrive knowing you.',
+      'Actual discounts and priority opportunities depend on programme limits and partner availability. See Robot Rewards for full terms and conditions.'
     ] },
     { title: 'What happens next?', lead: 'Your Persona Passport is what you are building.', paragraphs: [
-      'Your saved preferences, conditions and boundaries form your personalisation profile. Passport shows your progress and modules, with links to review and refine your learning.',
-      'Transfer to compatible robots, hardware simulations and physical robot integrations are future development stages. No physical robot is connected through this app today. Any future transfer will depend on verified compatibility and your permission.',
-      'Share only what you are comfortable sharing. Review, correct or remove learning, and check Privacy settings for optional shared learning. Robot Rewards is an additional incentive, separate from building your Passport.'
+      'Your preferences and boundaries build your Persona Passport. Review your training progress, modules and saved learning whenever you like.',
+      'Robot simulations and physical integrations are future stages. No robot is connected today; any transfer will require verified compatibility and your permission.',
+      'Share only what you choose. You can edit or remove saved learning and manage optional shared learning in Privacy settings.'
     ] }
   ];
 }

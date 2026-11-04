@@ -89,7 +89,7 @@ const el = (tag, className, text) => {
 const symbol = (name, className = '') => { const node = el('span', 'mss-symbol ' + className); node.innerHTML = icon(name); return node; };
 function action(label, className, onClick) { const node = el('button', className, label); node.type = 'button'; node.addEventListener('click', onClick); return node; }
 
-export function createMssInterface({ getSnapshot, navigate, editSettings, openScenario, openWorkspace, shareProgress, refreshBalance, startStep, finishVisit, resumeVisit, openHelp, openGuide }) {
+export function createMssInterface({ getSnapshot, navigate, editSettings, openScenario, openWorkspace, shareProgress, refreshBalance, startStep, finishVisit, resumeVisit, openHelp, openGuide, openConnectedHome }) {
   const main = document.querySelector('main');
   let sharingProgress = false;
   let shareStatus = '';
@@ -120,11 +120,11 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
         <filter id="mssTalkMouthFeather" x="-25%" y="-50%" width="150%" height="200%"><feGaussianBlur stdDeviation="3"/></filter>
         <filter id="mssTalkMouthGlow" x="-50%" y="-100%" width="200%" height="300%"><feGaussianBlur stdDeviation="2.3"/></filter>
       </defs>
-      <ellipse cx="348" cy="345" rx="55" ry="24" fill="url(#mssTalkFaceShade)" filter="url(#mssTalkMouthFeather)"/>
+      <ellipse cx="348" cy="343" rx="53" ry="18" fill="url(#mssTalkFaceShade)" filter="url(#mssTalkMouthFeather)"/>
       <g class="mss-robot-mouth-shape">
-        <path d="M313 338 Q348 348 383 338 Q383 361 348 361 Q313 361 313 338Z" fill="#03151e" stroke="#27c9ff" stroke-width="6" filter="url(#mssTalkMouthGlow)"/>
-        <path d="M313 338 Q348 348 383 338 Q383 361 348 361 Q313 361 313 338Z" fill="#041d29" stroke="#93eeff" stroke-width="2.8"/>
-        <path d="M323 351 Q348 359 373 351" fill="none" stroke="#2ba6d9" stroke-width="2" opacity=".65"/>
+        <!-- A shallow sine-wave smile, not an opening or closing mouth. -->
+        <path d="M315 342 C326 338 337 338 348 342 S370 346 381 342" fill="none" stroke="#61cee9" stroke-width="4.2" stroke-linecap="round" opacity=".44" filter="url(#mssTalkMouthGlow)"/>
+        <path d="M315 342 C326 338 337 338 348 342 S370 346 381 342" fill="none" stroke="#c4ecf5" stroke-width="2.8" stroke-linecap="round"/>
       </g>
     </svg>`;
     portrait.append(image, mouth);
@@ -481,9 +481,10 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
     memoryContent.append(symbol('brain', 'mss-icon-tile'), list); remembered.append(memoryContent); profile.append(remembered, el('h2', 'mss-section-title', 'Settings'));
     const settings = el('div', 'mss-settings-list');
     settings.append(linkCard('Help & Getting Started', 'FAQs, replay the introduction and contact support', 'support', () => openHelp?.()),
+      linkCard('Voice settings', 'Voice and conversation language', 'mic', () => editSettings('robotVoice')),
       linkCard('Reminders', 'Your saved to-do list and things to return to', 'bell', () => openWorkspace('todoReminders')),
-      linkCard('Privacy', 'Your data, training and sharing preferences', 'lock', () => editSettings('shareAnonymizedLearning')),
-      linkCard('Voice settings', 'Voice and conversation language', 'mic', () => editSettings('robotVoice')));
+      linkCard('Connected Home', 'Identify supported devices for robot training (read-only)', 'home', () => openConnectedHome?.()),
+      linkCard('Privacy', 'Your data, training and sharing preferences', 'lock', () => editSettings('shareAnonymizedLearning')));
     profile.append(settings);
 
     renderTranscript(snapshot); renderVoiceState(); renderVisitControls(snapshot);

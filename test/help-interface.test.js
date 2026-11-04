@@ -4,7 +4,9 @@ import { createHelpInterface } from '../src/help-interface.js';
 
 function fixture(t, overrides = {}) {
   class Node {
-    constructor(tag) { this.tagName = tag.toUpperCase(); this.children = []; this.events = {}; this.attributes = {}; this.open = false; this.paused = true; this.currentTime = 0; this.plays = 0; }
+    constructor(tag) { this.tagName = tag.toUpperCase(); this.children = []; this.events = {}; this.attributes = {}; this.open = false; this.paused = true; this.currentTime = 0; this.plays = 0;
+      this.classList={toggle:(name,force)=>{const names=new Set(String(this.className || '').split(/\s+/).filter(Boolean));const enabled=force===undefined?!names.has(name):Boolean(force);if(enabled)names.add(name);else names.delete(name);this.className=[...names].join(' ');return enabled;}};
+    }
     append(...nodes) { for (const node of nodes) { if (node.parentElement) node.parentElement.children = node.parentElement.children.filter(item => item !== node); node.parentElement = this; this.children.push(node); } }
     replaceChildren(...nodes) { for (const node of this.children) node.parentElement = null; this.children = []; this.append(...nodes); }
     setAttribute(key, value) { this.attributes[key] = value; }
@@ -31,16 +33,18 @@ function fixture(t, overrides = {}) {
 test('only step one offers Hear Introduction, using the chosen name or Vikki, without automatic playback', t => {
   const f = fixture(t); f.help.openGuide({ auto: true });
   assert.ok(f.find(node => node.textContent === 'Hear Vikki Introduce MySecondSelf')); assert.equal(f.audio.plays, 0);
-  for (let step = 2; step <= 4; step++) {
+  for (let step = 2; step <= 5; step++) {
     f.click('Next');
     assert.equal(f.find(node => node.tagName === 'BUTTON' && /^Hear /.test(node.textContent)), undefined);
+    if(step===4)assert.ok(f.find(node=>node.tagName==='H1'&&node.textContent==='Robot Rewards'));
+    if(step===5)assert.ok(f.find(node=>node.textContent==='Step 5 of 5'));
   }
 });
 
-test('a long recording remains connected and playing while navigating all four steps', t => {
+test('a long recording remains connected and playing while navigating all five steps', t => {
   const f = fixture(t, { companion: 'Freddie' }); f.help.openGuide(); f.click('Hear Freddie Introduce MySecondSelf');
   const parent = f.audio.parentElement; f.audio.currentTime = 130;
-  for (let step = 2; step <= 4; step++) {
+  for (let step = 2; step <= 5; step++) {
     f.click('Next'); assert.equal(f.audio.parentElement, parent); assert.equal(parent.parentElement, f.guide);
     assert.equal(f.audio.paused, false); assert.equal(f.audio.currentTime, 130); assert.equal(f.audio.plays, 1);
   }
