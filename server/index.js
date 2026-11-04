@@ -1,7 +1,7 @@
 import { firstConversationGuidance } from '../src/getting-started-content.js';
 import { shouldMeterVoice } from './voice-billing-policy.js';
 import { betaTesterEmailSet, ensureBetaVoiceAllowance } from './voice-beta-allowance.js';
-import { shouldContinueGuidedTurn, guidedReplyNeedsRepair, finalizeGuidedReply, GUIDED_TURN_CORRECTION } from "./guided-turn.js";
+import { shouldContinueGuidedTurn, guidedReplyNeedsRepair, finalizeGuidedReply, guidedNextStep, GUIDED_TURN_CORRECTION } from "./guided-turn.js";
 import { cleanSimulationResult } from "../src/simulation.js";
 import { buildScenarioConversationPlan, scenarioConversationGuidance } from "../src/conversation-plan.js";
 import { scenarioLearningObjectives, scenarioForId } from "../src/scenario-learning.js";
@@ -1534,11 +1534,26 @@ const app = http.createServer(async (request, response) => {
       }
     };
     let guarded = await guardScenarioQuestion({...guardOptions,draft:finalReply});
-    if (!guarded.blocked && !guarded.reviewUnavailable && guidedReplyNeedsRepair(guarded.reply,flowRequirements)) {
+    // Rejected/repeated questions must not leave the owner with a dead-end
+    // acknowledgement. Try a fresh, independently checked continuation first.
+    if (!guarded.reviewUnavailable && guidedReplyNeedsRepair(guarded.reply,flowRequirements)) {
       const recovered = await repairGuidedReply(guarded.reply);
       if (!guidedReplyNeedsRepair(recovered,flowRequirements)) {
-        guarded = await guardScenarioQuestion({...guardOptions,draft:enforceFirstPersonTaskQuestions(guardRobotExecutionClaims(recovered,preferences,profile.preferredLanguage),companionName)});
+        const alternative = await guardScenarioQuestion({...guardOptions,draft:enforceFirstPersonTaskQuestions(guardRobotExecutionClaims(recovered,preferences,profile.preferredLanguage),companionName)});
+        if (!guidedReplyNeedsRepair(alternative.reply,flowRequirements)) guarded = alternative;
       }
+    }
+    // If no independently checked follow-up survived, advance with a precise,
+    // non-question task instruction grounded in the outstanding scenario areas.
+    // This keeps the robot guiding the owner without resurrecting a rejected
+    // or unchecked question. Do not use during pauses or completed scenarios.
+    if (continueRoutine && guidedReplyNeedsRepair(guarded.reply,flowRequirements)) {
+      const nextStep = guidedNextStep({
+        scenario:selectedScenario, objectives, plan, recentMessages:messages,
+        intake:flowRequirements.intake, language:flowRequirements.language,
+        completionConfirmed:roomCompletionConfirmed
+      });
+      if (nextStep) guarded = {reply:nextStep,blocked:false,guidedInstruction:true};
     }
     finalReply = guarded.reply.replace(/(^|\n\n)One thing (?:to settle|that follows from that|to check|to decide|to clarify)\s*:\s*/gi,'$1');
     const finalized = finalizeGuidedReply({...guarded,reply:finalReply},flowRequirements);
