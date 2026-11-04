@@ -260,7 +260,7 @@ export function createGooglePlayCheckout({ apiBase, getHeaders, getUserId }) {
     if (!checkoutStartedAt || !getUserId() || loading) return;
     const now = Date.now();
     // Avoid polling on unrelated focus events and duplicate lifecycle events.
-    if (now - checkoutStartedAt > 3 * 60 * 1000) {
+    if (now - checkoutStartedAt > 30 * 60 * 1000) {
       checkoutStartedAt = 0;
       stopCheckoutRecovery();
       return;
