@@ -2,7 +2,7 @@ name: AMIA advanced conversation programme
 on:
   pull_request:
     branches: [SYNQ.ME]
-    paths: ['evals/advanced/**', 'scripts/evaluate-advanced-conversations.mjs', 'scripts/summarize-advanced-evaluation.mjs', '.github/workflows/amia-advanced-evaluation.yml']
+    paths: ['server/cognitive-*.js', 'supabase/migrations/*cognitive*.sql', 'evals/advanced/**', 'scripts/evaluate-advanced-conversations.mjs', 'scripts/summarize-advanced-evaluation.mjs', '.github/workflows/amia-advanced-evaluation.yml']
   workflow_dispatch:
 permissions:
   contents: read

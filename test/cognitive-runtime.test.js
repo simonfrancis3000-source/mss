@@ -227,9 +227,9 @@ test('a repeated multiple-question failure exhausts one repair and commits no ca
 });
 
 
-test('an explicit explanation request preserves the pending question and needs no new question',async()=>{
- const f=fixture({generate:async({context})=>{assert.equal(context.intent,'explain');return answer('Your current preference is folded towels, with approval before changes.');}});
+test('an active explanation answers first and leads with one useful next question',async()=>{
+ const f=fixture({generate:async({context})=>{assert.equal(context.intent,'explain');return answer('Your current preference is folded towels, with approval before changes. What should I do if a towel is damaged?');}});
  const result=await f.turn('Explain my current towel preference and its exception.');
- assert.match(result.reply,/folded towels/);assert.equal(f.calls,1);
+ assert.match(result.reply,/folded towels/);assert.match(result.reply,/What should I do if a towel is damaged\?/);assert.equal(f.calls,1);
  assert.equal(resolveRuntimeContext('Explícame mi preferencia actual.',cleanRuntimeState()).intent,'explain');
 });

@@ -5,12 +5,17 @@ import { RuntimeError, runtimePrompt, validateTurnProposal, checkRuntimeReply } 
 export function createCognitiveProvider({ key, model, fetchImpl = fetch, onUsage = async () => {} }) {
   return async ({ context, objectives, correction = null }) => {
     if (!key) throw new RuntimeError('runtime_model_not_configured');
+    const answerOnly = context?.intent === 'service_help' || context?.activeTraining === false;
+    const turnContract = answerOnly
+      ? '\nTURN CONTRACT: Answer the request directly. Do not ask a question, append an open point, offer a reminder, or extract new memories from this answer-only request. Return reminder_offer:null, decision_key:null and memory_proposals:[] unless the latest message itself states a new durable fact.'
+      : '\nTURN CONTRACT: Answer the current point, including any explanation or progress request, then lead with one useful unresolved question. Keep the conversation moving unless the owner pauses or finishes. Do not ask the owner to confirm a rule or exception they have already explicitly stated.';
+    const repairInstructions = {unexpected_question:'Remove every follow-up and question. Give only the requested explanation, ending in a statement.',missing_continuation:'End with one relevant unresolved question.',settled_decision:'Choose a genuinely different unresolved decision and key; do not paraphrase the settled question.',multiple_questions:'Use one final question only. Remove quoted and rhetorical questions.'};
     let response;
     try {
       response = await fetchImpl('https://api.deepseek.com/chat/completions', {
         method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
         body: JSON.stringify({ model, thinking: { type: 'disabled' }, response_format: { type: 'json_object' }, temperature: 0.4, max_tokens: 2600, stream: false,
-          messages: [{ role: 'system', content: runtimePrompt + (correction ? '\nRepair the proposal. Violation: ' + correction : '') }, { role: 'user', content: JSON.stringify(context) }] }),
+          messages: [{ role: 'system', content: runtimePrompt + turnContract + (correction ? '\nRepair the proposal. Violation: ' + correction + '. ' + (repairInstructions[correction] || 'Return a corrected valid proposal.') : '') }, { role: 'user', content: JSON.stringify(context) }] }),
         signal: AbortSignal.timeout(25000)
       });
     } catch { throw new RuntimeError('runtime_model_unavailable', 502); }
