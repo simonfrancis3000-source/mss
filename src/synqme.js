@@ -4360,7 +4360,7 @@ async function beginTrainingStep(step) {
   const scenario = scenarioForId(step.scenarioId);
   if (!scenario) return;
   if (step.kind === "review") { mssInterface && selectAppView("journey"); selectedJourneyScenario = scenario.id; journeyDisplay = "scenarios"; renderScenarioJourney(); return; }
-  if (step.kind === "resume") { selectAppView("chat"); beginTrainingVisit(step.areaId); elements.messageInput.focus({ preventScroll: true }); return; }
+  if (step.kind === "resume") { beginTrainingVisit(step.areaId); selectAppView("talk"); return; }
   const task = scenarioTasks(scenario).find(item => item.id === step.areaId);
   if (!task || !(await startJourneyScenario(scenario, task))) return;
   if (!elements.chatStage?.hidden) elements.chatForm.requestSubmit();
@@ -5375,7 +5375,7 @@ function updateVoiceModeButton() {
     elements.voiceModeButton.setAttribute("aria-label", voiceModeActive ? "Stop voice conversation" : "Start voice conversation");
     elements.voiceModeButton.title = voiceModeActive ? "Stop voice conversation" : "Start a spoken conversation";
     const label = elements.voiceModeButton.querySelector("span");
-    if (label) label.textContent = voiceModeActive ? "Stop" : "Voice";
+    if (label) label.textContent = voiceModeActive ? "Stop" : "Talk";
   }
   if (elements.voiceStatus && !voiceModeActive && !elements.voiceStatus.dataset.error) {
     elements.voiceStatus.textContent = "";
@@ -5424,6 +5424,12 @@ function syncAppNavigation() {
 }
 
 function selectAppView(view) {
+  if (view === "talk") {
+    if (elements.voiceExperience && !elements.voiceExperience.hidden) return;
+    selectAppView("chat");
+    void openVoiceExperience();
+    return;
+  }
   if(view === "profile") void voiceBalance.refresh();
   if(view === "home" || view === "rewards") void robotRewards.refresh();
   closeSettings();
@@ -5449,11 +5455,7 @@ function selectAppView(view) {
 document.querySelectorAll("[data-app-tab]").forEach((button) => {
   button.addEventListener("click", () => {
     const view = button.dataset.appTab;
-    if (view === "talk") {
-      if (elements.voiceExperience && !elements.voiceExperience.hidden) return;
-      selectAppView("chat");
-      void openVoiceExperience();
-    } else selectAppView(view);
+    selectAppView(view);
   });
 });
 syncAppNavigation();
