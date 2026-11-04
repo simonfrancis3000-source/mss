@@ -58,6 +58,8 @@ export function createGooglePlayCheckout({ apiBase, getHeaders, getUserId }) {
   let loading = false;
   let serverAvailable = false;
   let listener = null;
+  let checkoutStartedAt = 0;
+  let lastAutoRestoreAt = 0;
 
   function message(text) { status.textContent = text; }
   function setBusy(next) {
@@ -129,8 +131,10 @@ export function createGooglePlayCheckout({ apiBase, getHeaders, getUserId }) {
       }
       await refreshBalance();
       message(restored ? "Purchases checked and your balance updated." : "No new completed purchases to restore.");
+      return restored;
     } catch (error) {
       message(error?.message || "Purchases could not be restored.");
+      return 0;
     } finally { setBusy(false); }
   }
   restore.addEventListener("click", restorePurchases);
@@ -143,8 +147,16 @@ export function createGooglePlayCheckout({ apiBase, getHeaders, getUserId }) {
       if (loading || !serverAvailable) return;
       setBusy(true);
       message("Opening Google Play's secure checkout…");
-      try { await onclick(); message("Complete your purchase in Google Play. Minutes will appear after confirmation."); }
-      catch (error) { message(error?.message || "Google Play checkout could not start."); }
+      try {
+        // The native purchase callback can be missed while Android switches
+        // to the Play checkout. Reconcile unconsumed purchases on return.
+        checkoutStartedAt = Date.now();
+        await onclick();
+        message("Complete your purchase in Google Play. Minutes will appear after confirmation.");
+      } catch (error) {
+        checkoutStartedAt = 0;
+        message(error?.message || "Google Play checkout could not start.");
+      }
       finally { setBusy(false); }
     });
     return btn;
@@ -208,14 +220,38 @@ export function createGooglePlayCheckout({ apiBase, getHeaders, getUserId }) {
     } finally { setBusy(false); }
   }
 
+  function reconcileAfterReturningFromPlay() {
+    if (!checkoutStartedAt || !getUserId() || loading) return;
+    const now = Date.now();
+    // Avoid polling on unrelated focus events and duplicate lifecycle events.
+    if (now - checkoutStartedAt > 30 * 60 * 1000) {
+      checkoutStartedAt = 0;
+      return;
+    }
+    if (now - lastAutoRestoreAt < 3000) return;
+    lastAutoRestoreAt = now;
+    void restorePurchases().then((restored) => {
+      if (restored > 0) checkoutStartedAt = 0;
+    });
+  }
+
+  window.addEventListener("focus", reconcileAfterReturningFromPlay);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") reconcileAfterReturningFromPlay();
+  });
+
   void MSSBilling.addListener("purchaseUpdated", async (event) => {
     if (!event || event.responseCode !== 0) {
       if (dialog.open && event?.responseCode !== 1) message("Google Play did not complete the purchase.");
       return;
     }
     for (const purchase of event.purchases || []) {
-      try { await verifyPurchase(purchase); }
-      catch (error) { if (dialog.open) message(error?.message || "Payment verification is pending."); }
+      try {
+        if (await verifyPurchase(purchase)) checkoutStartedAt = 0;
+      } catch (error) {
+        // Preserve the failed purchase for the next foreground reconciliation.
+        if (dialog.open) message(error?.message || "Payment verification is pending.");
+      }
     }
   }).then(value => { listener = value; }).catch(() => {});
 
