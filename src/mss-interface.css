@@ -481,3 +481,12 @@ body[data-app-view='rewards'] .mss-rewards{display:flex}
   font-size:15px;
   font-weight:750;
 }
+
+/* Home progress cards are full-width, keyboard-accessible navigation controls. */
+.mss-home button.mss-progress { display:block; width:100%; color:inherit; font:inherit; text-align:left; cursor:pointer; }
+.mss-home button.mss-progress:hover { filter:brightness(.99); }
+.mss-home button.mss-progress:focus-visible,.mss-home button.mss-rewards-teaser:focus-visible{outline:3px solid #2474be;outline-offset:3px;}
+/* The entire Robot Rewards card opens rewards. No separate chevron is needed. */
+.mss-home .mss-rewards-teaser{padding-right:14px;cursor:pointer;}
+.mss-home .mss-rewards-teaser-row{padding-right:0;}
+.mss-home .mss-rewards-teaser-chevron{display:none;}
