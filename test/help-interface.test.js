@@ -28,17 +28,17 @@ function fixture(t, overrides = {}) {
   return { help, context, click, find, guide: find(node => node.tagName === 'DIALOG'), audio: find(node => node.tagName === 'AUDIO') };
 }
 
-test('only step one offers Listen, using the chosen name or Vikki, without automatic playback', t => {
+test('only step one offers Hear Introduction, using the chosen name or Vikki, without automatic playback', t => {
   const f = fixture(t); f.help.openGuide({ auto: true });
-  assert.ok(f.find(node => node.textContent === 'Listen to Vikki')); assert.equal(f.audio.plays, 0);
+  assert.ok(f.find(node => node.textContent === 'Hear Vikki Introduce MySecondSelf')); assert.equal(f.audio.plays, 0);
   for (let step = 2; step <= 4; step++) {
     f.click('Next');
-    assert.equal(f.find(node => node.tagName === 'BUTTON' && /^Listen to /.test(node.textContent)), undefined);
+    assert.equal(f.find(node => node.tagName === 'BUTTON' && /^Hear /.test(node.textContent)), undefined);
   }
 });
 
 test('a long recording remains connected and playing while navigating all four steps', t => {
-  const f = fixture(t, { companion: 'Freddie' }); f.help.openGuide(); f.click('Listen to Freddie');
+  const f = fixture(t, { companion: 'Freddie' }); f.help.openGuide(); f.click('Hear Freddie Introduce MySecondSelf');
   const parent = f.audio.parentElement; f.audio.currentTime = 130;
   for (let step = 2; step <= 4; step++) {
     f.click('Next'); assert.equal(f.audio.parentElement, parent); assert.equal(parent.parentElement, f.guide);
@@ -59,7 +59,26 @@ test('Help replay starts step one and restarts audio even when optional profile 
 });
 
 test('playback failure gives visible retry guidance instead of failing silently', async t => {
-  const f = fixture(t); f.help.openGuide(); f.audio.fail = true; f.click('Listen to Vikki'); await Promise.resolve();
+  const f = fixture(t); f.help.openGuide(); f.audio.fail = true; f.click('Hear Vikki Introduce MySecondSelf'); await Promise.resolve();
   const status = f.find(node => node.attributes.role === 'status' && /could not start/.test(node.textContent));
   assert.ok(status); assert.equal(status.hidden, false); assert.equal(f.audio.parentElement.hidden, false);
+});
+
+test('audio controls appear directly below the step-one introduction button and above Next', t => {
+  const f=fixture(t); f.help.openGuide({auto:true});
+  const content=f.guide.children[0], player=f.guide.children[1], actions=f.guide.children[2];
+  const intro=content.children.at(-1);
+  assert.equal(intro.tagName,'BUTTON');
+  assert.equal(intro.textContent,'Hear Vikki Introduce MySecondSelf');
+  assert.equal(player.className,'mss-guide-player');
+  assert.equal(player.parentElement,f.guide);
+  assert.equal(player.hidden,true);
+  assert.equal(actions.className,'mss-guide-actions');
+  f.click('Hear Vikki Introduce MySecondSelf');
+  assert.equal(player.hidden,false);
+  assert.equal(f.guide.children.indexOf(player)<f.guide.children.indexOf(actions),true);
+  assert.equal(player.children[0],f.audio);
+  f.click('Next');
+  assert.equal(f.audio.parentElement,player);
+  assert.equal(f.audio.paused,false);
 });

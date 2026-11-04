@@ -27,3 +27,23 @@ test('absence, secrets, skip and a declined repeated offer do not create reminde
  h.push({role:'assistant',content:o.reply},{role:'user',content:'No thanks'},...turns('What model is your oven?',"I don't know"));
  assert.equal(applianceReminderTurn(h),null);
 });
+
+test('natural hob-model reminder offer in voice accepts an explicit reminder reply',()=>{
+ const history=[
+  {role:'assistant',content:'Which make is your hob, so I can find the right care instructions?'},
+  {role:'user',content:'I do not have the model number.'},
+  {role:'assistant',content:"Since you don't have the model number to hand, shall I add a to-do reminder to look it up later, or would you rather leave it for now?"},
+  {role:'user',content:'And as a reminder.'}
+ ];
+ assert.deepEqual(applianceReminderTurn(history).command,{action:'add',title:'Find the hob model number'});
+ history[3]={role:'user',content:'Yes, please add it'};
+ assert.deepEqual(applianceReminderTurn(history).command,{action:'add',title:'Find the hob model number'});
+ history[3]={role:'user',content:'Not now'};
+ assert.match(applianceReminderTurn(history).reply,/won't add/);
+ history[3]={role:'user',content:'What about my dishwasher?'};
+ assert.equal(applianceReminderTurn(history),null);
+});
+test('yes alone must not create reminders if the robot did not offer one',()=>{
+ const history=[{role:'assistant',content:'Which model is your hob?'},{role:'user',content:'Yes'}];
+ assert.equal(applianceReminderTurn(history),null);
+});
