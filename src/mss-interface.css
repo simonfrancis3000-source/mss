@@ -538,3 +538,73 @@ body[data-app-view='help'] .mss-help{display:flex}.mss-how-link{display:inline-f
  .mss-onboarding.mss-guide-final .mss-guide-content>.mss-guide-lead{font-size:14px}
  .mss-onboarding.mss-guide-final .mss-guide-actions{margin-top:6px}
 }
+
+/* Keep all five Getting Started dialog panels exactly the same outer size.
+   The body alone may scroll on extremely small displays; navigation never clips. */
+.mss-onboarding[open],
+.mss-onboarding.mss-guide-rewards[open],
+.mss-onboarding.mss-guide-final[open]{
+  display:flex;
+  flex-direction:column;
+  width:min(500px,calc(100vw - 26px));
+  height:min(590px,calc(100dvh - 28px));
+  max-height:calc(100dvh - 28px);
+  box-sizing:border-box;
+  overflow:hidden;
+  padding:16px 20px;
+}
+.mss-onboarding .mss-guide-content{
+  flex:1 1 auto;
+  min-height:0;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+}
+.mss-onboarding .mss-guide-player{flex:0 0 auto;min-height:0}
+.mss-onboarding .mss-guide-actions,
+.mss-onboarding.mss-guide-rewards .mss-guide-actions,
+.mss-onboarding.mss-guide-final .mss-guide-actions{
+  flex:0 0 auto;
+  margin-top:10px;
+  gap:9px;
+}
+.mss-onboarding .mss-guide-robot,
+.mss-onboarding.mss-guide-rewards .mss-guide-robot,
+.mss-onboarding.mss-guide-final .mss-guide-robot{
+  width:88px;height:88px;margin:0 auto 7px;
+}
+.mss-onboarding h1,
+.mss-onboarding.mss-guide-rewards h1,
+.mss-onboarding.mss-guide-final h1{
+  font-size:25px;margin-bottom:8px;
+}
+.mss-onboarding .mss-guide-content>p,
+.mss-onboarding.mss-guide-rewards .mss-guide-content>p,
+.mss-onboarding.mss-guide-final .mss-guide-content>p{
+  font-size:13px;line-height:1.4;margin-bottom:10px;
+}
+.mss-onboarding .mss-guide-content>.mss-guide-lead,
+.mss-onboarding.mss-guide-rewards .mss-guide-content>.mss-guide-lead,
+.mss-onboarding.mss-guide-final .mss-guide-content>.mss-guide-lead{
+  font-size:15px;line-height:1.32;
+}
+@media(max-width:360px),(max-height:620px){
+  .mss-onboarding[open],
+  .mss-onboarding.mss-guide-rewards[open],
+  .mss-onboarding.mss-guide-final[open]{padding:12px 15px}
+  .mss-onboarding .mss-guide-robot,
+  .mss-onboarding.mss-guide-rewards .mss-guide-robot,
+  .mss-onboarding.mss-guide-final .mss-guide-robot{
+    width:60px;height:60px;margin-bottom:4px;
+  }
+  .mss-onboarding h1,
+  .mss-onboarding.mss-guide-rewards h1,
+  .mss-onboarding.mss-guide-final h1{font-size:22px;margin-bottom:6px}
+  .mss-onboarding .mss-guide-content>p,
+  .mss-onboarding.mss-guide-rewards .mss-guide-content>p,
+  .mss-onboarding.mss-guide-final .mss-guide-content>p{
+    font-size:12px;line-height:1.32;margin-bottom:7px;
+  }
+  .mss-onboarding .mss-guide-content>.mss-guide-lead,
+  .mss-onboarding.mss-guide-rewards .mss-guide-content>.mss-guide-lead,
+  .mss-onboarding.mss-guide-final .mss-guide-content>.mss-guide-lead{font-size:14px}
+}
