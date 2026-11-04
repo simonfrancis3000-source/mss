@@ -218,7 +218,7 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
       const traits = el('span', 'sr-only', 'Character illustration traits'); tags.prepend(traits); copy.append(tags);
     } else {
       copy.append(el('p', '', 'Your future robot, personalised with your life and experience.'));
-      const next = action('Continue training', 'mss-primary', () => navigate('chat')); next.append(symbol('arrow')); copy.append(next);
+      const next = action('View training', 'mss-primary', () => navigate('passport')); next.append(symbol('arrow')); copy.append(next);
     }
     card.append(image, copy); return card;
   }
@@ -417,7 +417,7 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
       next.append(el('p', 'mss-area-progress', (snapshot.explored || 0) + '/' + model.active.total + ' areas explored · ' + model.active.reviewed + ' reviewed'));
       next.append(el('p', 'mss-visit-note', snapshot.step.kind === 'review' ? 'Review at your own pace.' : 'Try a few minutes. Pause whenever you like.'));
       const actions = el('div', 'mss-next-actions');
-      const begin = action(snapshot.step.kind === 'resume' ? 'Continue conversation' : snapshot.step.kind === 'review' ? 'Review learning' : 'Start in Chat', 'mss-primary', () => startStep?.(snapshot.step));
+      const begin = action(snapshot.step.kind === 'resume' ? 'Continue talking' : snapshot.step.kind === 'review' ? 'Review learning' : 'Start in Chat', 'mss-primary', () => startStep?.(snapshot.step));
       begin.disabled = snapshot.busy || !startStep;
       actions.append(begin, action('Choose a task', 'mss-text-button', () => openScenario(model.active.id))); next.append(actions); home.append(next);
     }
