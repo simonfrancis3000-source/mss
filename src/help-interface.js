@@ -18,7 +18,7 @@ export function createHelpInterface({ getContext, navigate, dismiss, pauseTalk, 
     if (restart) { try { audio.currentTime = 0; } catch {} }
     audioStatus.textContent = 'Loading the introduction…'; audioStatus.hidden = false;
     void audio.play().catch(() => {
-      audioStatus.textContent = 'The introduction could not start. Press Play in the audio controls, or try Listen again.';
+      audioStatus.textContent = 'The introduction could not start. Press Play in the audio controls, or use the introduction button again.';
       audioStatus.hidden = false;
     });
   }
