@@ -37,3 +37,18 @@ test('Guide uses dynamic page count and rewards-specific compact presentation', 
   assert.match(css, /\.mss-onboarding\.mss-guide-rewards/);
   assert.match(css, /max-height:620px/);
 });
+
+test('What happens next stays short and keeps final navigation accessible', () => {
+  const page = onboardingPages()[4];
+  const copy = [page.lead, ...page.paragraphs].join(' ');
+  assert.ok(copy.split(/\s+/).length < 80, 'final page must use compact wording');
+  assert.match(copy, /Persona Passport/);
+  assert.match(copy, /verified compatibility/);
+  assert.match(copy, /Privacy settings/);
+  const help = readFileSync(new URL('../src/help-interface.js', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../src/mss-interface.css', import.meta.url), 'utf8');
+  assert.match(help, /mss-guide-final/);
+  assert.match(help, /Return to my journey/);
+  assert.match(css, /mss-guide-final \.mss-guide-actions\{flex-shrink:0/);
+  assert.match(css, /mss-guide-final \.mss-guide-content\{min-height:0;overflow-y:auto/);
+});
