@@ -17,7 +17,7 @@ export const GUIDED_TURN_CORRECTION = 'GUIDED TURN CORRECTION: The previous draf
 export function finalizeGuidedReply(guarded, requirements) {
  let reply = String(guarded.reply || '').trim();
  if (!reply && guarded.blocked) reply = "I don't have a new question on this point right now. Your conversation is still here; we can pause or revisit a detail whenever you choose.";
- const responseNeedsReview = !reply || (!guarded.blocked && !guarded.reviewUnavailable && guidedReplyNeedsRepair(reply,{...requirements,continueRoutine:false}));
+ const responseNeedsReview = !reply || (!guarded.guidedInstruction && !guarded.blocked && !guarded.reviewUnavailable && guidedReplyNeedsRepair(reply,{...requirements,continueRoutine:false}));
  return {reply,responseNeedsReview};
 }
 
