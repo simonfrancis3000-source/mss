@@ -100,7 +100,9 @@ export function createConnectedHome({ apiBase, getHeaders, getUserId }) {
     document.body.classList.remove("mss-connected-home-open");
   }
   async function open() {
-    if (!getUserId()) return;
+    // Always present the panel, even if Supabase is still restoring the account.
+    // A missing account token must produce a visible status, never a dead settings button.
+    if (!overlay.isConnected) document.body.append(overlay);
     overlay.hidden = false;
     document.body.classList.add("mss-connected-home-open");
     closeButton.focus();
