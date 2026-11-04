@@ -1,4 +1,5 @@
 import { createSentencePausePlanner } from "./sentence-pause.js";
+import { PHONIC_PLAYBACK_GAIN, phonicAudioChunkStart } from "./phonic-playback-policy.js";
 import { Capacitor } from "@capacitor/core";
 // Real-time browser voice adapter for Phonic's Speech-to-Speech WebSocket.
 // Adapted from Phonic-Co/phonic-web-demo (MIT): https://github.com/Phonic-Co/phonic-web-demo
@@ -6,7 +7,6 @@ import { Capacitor } from "@capacitor/core";
 const DEFAULT_WS_URL = "wss://api.phonic.ai/v1/sts/ws";
 const SAMPLE_RATE = 44100;
 const MICROPHONE_PACKET_SAMPLES = Math.floor(SAMPLE_RATE * 0.02);
-const PLAYBACK_BUFFER_SECONDS = 0.08;
 
 // Provider errors can contain a token-bearing URL. Keep useful validation
 // details while ensuring credentials never reach a status label or console.
@@ -115,8 +115,6 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
   let silentGain = null;
   let playbackContext = null;
   let playbackGain = null;
-  let playbackLimiter = null;
-  let playbackHeadroom = null;
   let playbackSources = new Set();
   const playbackTimings = new Map();
   let nextPlaybackTime = 0;
@@ -222,8 +220,7 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
     source.connect(playbackGain);
     // A small initial buffer absorbs packet jitter. Once queued, append samples
     // contiguously instead of adding a fresh scheduling gap to every packet.
-    const baseStart = nextPlaybackTime > playbackContext.currentTime
-      ? nextPlaybackTime : playbackContext.currentTime + PLAYBACK_BUFFER_SECONDS;
+    const baseStart = phonicAudioChunkStart(playbackContext.currentTime, nextPlaybackTime);
     const elapsedGap = Math.max(0, baseStart - nextPlaybackTime);
     const startAt = baseStart + sentencePauses.gapBefore(pcm, text, elapsedGap);
     nextPlaybackTime = startAt + buffer.duration;
@@ -449,20 +446,12 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
       if (!sessionToken) throw new Error("The SYNQ.ME backend did not return a Phonic session token.");
 
       playbackContext = new AudioContextClass();
-      // Raise quiet speech by 6 dB and limit peaks before speaker output.
+      // Phonic provides fully mixed 16-bit PCM. Play it with a little
+      // headroom, not the previous 2x amplification and 20:1 compression
+      // that made the synthesized voice sound distorted on phone speakers.
       playbackGain = playbackContext.createGain();
-      playbackGain.gain.value = 2;
-      playbackLimiter = playbackContext.createDynamicsCompressor();
-      playbackLimiter.threshold.value = -4.5;
-      playbackLimiter.knee.value = 6;
-      playbackLimiter.ratio.value = 20;
-      playbackLimiter.attack.value = 0.001;
-      playbackLimiter.release.value = 0.12;
-      playbackGain.connect(playbackLimiter);
-      playbackHeadroom = playbackContext.createGain();
-      playbackHeadroom.gain.value = 0.9;
-      playbackLimiter.connect(playbackHeadroom);
-      playbackHeadroom.connect(playbackContext.destination);
+      playbackGain.gain.value = PHONIC_PLAYBACK_GAIN;
+      playbackGain.connect(playbackContext.destination);
       await playbackContext.resume();
       const wsBase = String(session.websocketUrl || session.wsUrl || DEFAULT_WS_URL);
       const separator = wsBase.includes("?") ? "&" : "?";
@@ -560,12 +549,8 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
       try { await microphoneContext.close(); } catch {}
       microphoneContext = null;
     }
-    try { playbackHeadroom?.disconnect(); } catch {}
-    playbackHeadroom = null;
     try { playbackGain?.disconnect(); } catch {}
-    try { playbackLimiter?.disconnect(); } catch {}
     playbackGain = null;
-    playbackLimiter = null;
     if (playbackContext) {
       try { await playbackContext.close(); } catch {}
       playbackContext = null;
