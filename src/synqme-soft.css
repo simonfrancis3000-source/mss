@@ -623,3 +623,11 @@ body.auth-required { background: #fff; }
   /* Keep iPhone Safari from zooming and shifting the form on focus. */
   #authGate .auth-form input:not([type=checkbox]), .chat-composer textarea { font-size: 16px; }
 }
+
+/* Password reveal control stays inside the field without shifting the sign-in form. */
+#authGate .auth-password-control{position:relative;width:100%;min-width:0;}
+#authGate .auth-password-control input{display:block;width:100%;box-sizing:border-box;padding-right:54px!important;}
+#authGate .auth-password-toggle{position:absolute;top:50%;right:9px;transform:translateY(-50%);display:flex;align-items:center;justify-content:center;width:42px;height:42px;padding:0;border:0;border-radius:12px;background:transparent;color:#4d5a72;cursor:pointer;z-index:1;}
+#authGate .auth-password-toggle:hover{background:#e9eef6;}
+#authGate .auth-password-toggle:focus-visible{outline:2px solid #2b72b8;outline-offset:2px;}
+#authGate .auth-password-toggle[aria-pressed="true"] .auth-password-hidden-slash{display:none;}

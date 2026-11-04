@@ -319,6 +319,7 @@ const elements = {
   authEmail: $("#authEmail"),
   authEmailLabel: $("#authEmailLabel"),
   authPassword: $("#authPassword"),
+  authPasswordToggle: $("#authPasswordToggle"),
   authPasswordLabel: $("#authPasswordLabel"),
   rememberMe: $("#rememberMe"),
   authStatus: $("#authStatus"),
@@ -533,7 +534,7 @@ let roomJourneySaveInFlight = false;
 let welcomeBackPending = false;
 let chatReturnSummary = "";
 let selectedJourneyScenario = null;
-let journeyDisplay = "chart";
+let journeyDisplay = "scenarios";
 let selectedReviewArea = null;
 let simulationSession = null;
 let todoItems = [];
@@ -763,20 +764,19 @@ function renderScenarioJourney() {
   if (header) header.setAttribute("aria-label", ready ? done.length + " of " + SCENARIOS.length + " scenarios completed" : "Scenario progress unavailable");
   target.replaceChildren();
   target.closest(".scenario-journey").dataset.journeyDisplay = journeyDisplay;
-  const tabs = document.createElement("div"); tabs.className = "journey-view-tabs"; tabs.setAttribute("role", "group"); tabs.setAttribute("aria-label", "Journey view");
-  [["chart", "Chart"], ["scenarios", "Scenarios"]].forEach(([id, label]) => {
-    const button = document.createElement("button"); button.type = "button"; button.textContent = label;
-    button.setAttribute("aria-pressed", String(journeyDisplay === id));
-    button.addEventListener("click", () => { journeyDisplay = id; renderScenarioJourney(); }); tabs.append(button);
-  });
-  target.append(tabs);
+  // Passport owns the only progress chart and complete module grid.
+  // Journey is the selected scenario detail view, not a second chart screen.
+  const backRow = document.createElement("div"); backRow.className = "journey-view-tabs";
+  const backToPassport = document.createElement("button");
+  backToPassport.type = "button";
+  backToPassport.textContent = "← Back to Passport";
+  backToPassport.setAttribute("aria-label", "Back to Passport chart and training modules");
+  backToPassport.addEventListener("click", () => selectAppView("passport"));
+  backRow.append(backToPassport);
+  target.append(backRow);
   if (!ready) {
     const unavailable = document.createElement("p"); unavailable.textContent = roomJourneyTableUnavailable ? "Your scenario progress could not connect to your account. Try again when account sync is available." : "Sign in and complete your profile to begin your journey.";
     target.append(unavailable);
-    return;
-  }
-  if (journeyDisplay === "chart") {
-    if (mssInterface) target.append(mssInterface.createProgressChart());
     return;
   }
   const available = availableScenarioCount(done);
@@ -2659,6 +2659,11 @@ function setAuthMode(mode, message = "") {
   if (elements.authEmailLabel) elements.authEmailLabel.hidden = isRecovery;
   if (elements.authPasswordLabel) elements.authPasswordLabel.textContent = isRecovery ? "New password" : "Password";
   if (elements.authPassword) {
+    elements.authPassword.type = "password";
+    if (elements.authPasswordToggle) {
+      elements.authPasswordToggle.setAttribute("aria-pressed", "false");
+      elements.authPasswordToggle.setAttribute("aria-label", "Show password");
+    }
     elements.authPassword.autocomplete = isSignup || isRecovery ? "new-password" : "current-password";
     elements.authPassword.minLength = 8;
   }
@@ -5379,7 +5384,7 @@ function selectAppView(view) {
   document.body.dataset.appView = ["home", "passport", "profile", "journey", "rewards"].includes(view) ? view : "chat";
   const workspace = document.querySelector("#moreWorkspace");
   if (workspace) workspace.open = view === "journey";
-  if (view === "journey") { journeyDisplay = "chart"; renderScenarioJourney(); }
+  if (view === "journey") { journeyDisplay = "scenarios"; renderScenarioJourney(); }
   else if (view === "chat") { prepareWelcomeAudioOffer(); renderMessages(); }
   if (typeof mssInterface !== "undefined") mssInterface?.render();
   syncAppNavigation();
@@ -6180,6 +6185,16 @@ async function submitAccountForm(event) {
     }
   }
 }
+
+// Keep password visibility under explicit user control on sign-in, sign-up and reset.
+elements.authPasswordToggle?.addEventListener("click", () => {
+  const visible = elements.authPassword?.type === "password";
+  if (!elements.authPassword) return;
+  elements.authPassword.type = visible ? "text" : "password";
+  elements.authPasswordToggle.setAttribute("aria-pressed", String(visible));
+  elements.authPasswordToggle.setAttribute("aria-label", visible ? "Hide password" : "Show password");
+  elements.authPassword?.focus({ preventScroll: true });
+});
 
 elements.authForm?.addEventListener("submit", submitAccountForm);
 elements.rememberMe?.addEventListener("change", () => {

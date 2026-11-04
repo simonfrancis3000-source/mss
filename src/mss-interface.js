@@ -152,7 +152,10 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
   }
   function progress(snapshot, passport = false) {
     const model = snapshot.model;
-    const card = el('section', 'mss-card mss-progress');
+    const card = passport
+      ? el('section', 'mss-card mss-progress')
+      : action('', 'mss-card mss-progress', () => navigate('passport'));
+    if (!passport) card.setAttribute('aria-label', 'Open Passport training progress and modules');
     const row = el('div', 'mss-progress-heading'); row.append(el('h2', '', passport ? snapshot.companion + ' profile completion' : 'Training progress'), el('strong', '', model.ready ? model.percent + '%' : '—'));
     const track = el('div', 'mss-progress-track'); track.setAttribute('role', 'progressbar'); track.setAttribute('aria-label', 'Training scenarios completed'); track.setAttribute('aria-valuemin', '0'); track.setAttribute('aria-valuemax', '100');
     if (model.ready) track.setAttribute('aria-valuenow', String(model.percent)); else track.setAttribute('aria-valuetext', 'Progress unavailable');
@@ -243,7 +246,7 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
     const label = el('span', 'mss-rewards-teaser-title');
     label.append(el('strong', '', 'Robot Rewards'));
     row.append(label, el('strong', 'mss-rewards-teaser-value', summary.verified ? money(summary.earned) + ' / $1,000' : 'Credit pending'));
-    card.append(row, rewardTrack('mss-rewards-teaser-track', summary.percent, 'Robot credit earned'), symbol('chevron', 'mss-rewards-teaser-chevron'));
+    card.append(row, rewardTrack('mss-rewards-teaser-track', summary.percent, 'Robot credit earned'));
     return card;
   }
   function rewardsPage(snapshot) {

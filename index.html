@@ -34,7 +34,16 @@
           <label id="authEmailLabel" for="authEmail">Email address</label>
           <input id="authEmail" name="email" type="email" autocomplete="email" maxlength="254" placeholder="you@example.com" required />
           <label id="authPasswordLabel" for="authPassword">Password</label>
-          <input id="authPassword" name="password" type="password" autocomplete="current-password" minlength="8" placeholder="At least 8 characters" required />
+          <div class="auth-password-control">
+            <input id="authPassword" name="password" type="password" autocomplete="current-password" minlength="8" placeholder="At least 8 characters" required />
+            <button id="authPasswordToggle" class="auth-password-toggle" type="button" aria-controls="authPassword" aria-label="Show password" aria-pressed="false">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+                <circle cx="12" cy="12" r="3" />
+                <path class="auth-password-hidden-slash" d="M3 3 21 21" />
+              </svg>
+            </button>
+          </div>
           <label class="auth-remember" for="rememberMe">
             <input type="checkbox" id="rememberMe" name="rememberMe" checked />
             <span>Remember me on this device</span>
