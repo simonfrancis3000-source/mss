@@ -14,7 +14,7 @@ export function applianceReminderTurn(messages = []) {
   const naturalOffer = /\b(?:would you like|shall i|should i|do you want|want me to|can i|could i)\b[\s\S]{0,220}\b(?:add|create|put|save|set)\b[\s\S]{0,150}\b(?:reminder|to[ -]?do)\b/i.test(previous);
   if (quotedOffer || naturalOffer) {
     const confirmation = text.replace(/[.!?]+$/g, '').trim();
-    const accepted = /^(?:yes(?:\s*,?\s*(?:please|go ahead|add (?:it|that)|do (?:that|it)|make (?:it|that) a reminder))?|yeah|yep|yup|sure|okay|ok|please do|do that|add it|please add it|(?:and\s+)?as a reminder|(?:yes,?\s*)?add (?:it|that)(?: to (?:my|the) reminders?)?|(?:save|put) (?:it|that) (?:as|in|on) (?:a|my|the) reminder(?:s| list)?)$/i.test(confirmation);
+    const accepted = /^(?:(?:yes|yeah|yep|yup|sure|okay|ok)(?:\s+please)?(?:\s+(?:add (?:it|that)|do (?:it|that)|go ahead|make (?:it|that) a reminder))?|please do|do that|add it|please add it|(?:and\s+)?as a reminder|(?:yes\s+)?add (?:it|that)(?: to (?:my|the) reminders?)?|(?:save|put) (?:it|that) (?:as|in|on) (?:a|my|the) reminder(?:s| list)?)$/i.test(confirmation.replace(/,/g, ' ').replace(/\s+/g, ' '));
     if (/^(?:no(?: thanks| thank you)?|not now|skip(?: it)?|cancel|never mind)[.! ]*$/i.test(text)) return {reply:"Okay, I won't add a reminder. We can leave that detail open."};
     if (!accepted) return null; // Do not treat a changed subject as consent.
     const history = [previous, ...messages.slice(-12, -2).reverse().map(item => String(item.content || ''))];
