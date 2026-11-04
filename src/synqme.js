@@ -319,6 +319,7 @@ const elements = {
   authEmail: $("#authEmail"),
   authEmailLabel: $("#authEmailLabel"),
   authPassword: $("#authPassword"),
+  authPasswordToggle: $("#authPasswordToggle"),
   authPasswordLabel: $("#authPasswordLabel"),
   rememberMe: $("#rememberMe"),
   authStatus: $("#authStatus"),
@@ -2660,6 +2661,11 @@ function setAuthMode(mode, message = "") {
   if (elements.authEmailLabel) elements.authEmailLabel.hidden = isRecovery;
   if (elements.authPasswordLabel) elements.authPasswordLabel.textContent = isRecovery ? "New password" : "Password";
   if (elements.authPassword) {
+    elements.authPassword.type = "password";
+    if (elements.authPasswordToggle) {
+      elements.authPasswordToggle.setAttribute("aria-pressed", "false");
+      elements.authPasswordToggle.setAttribute("aria-label", "Show password");
+    }
     elements.authPassword.autocomplete = isSignup || isRecovery ? "new-password" : "current-password";
     elements.authPassword.minLength = 8;
   }
@@ -6188,6 +6194,16 @@ async function submitAccountForm(event) {
     }
   }
 }
+
+// Keep password visibility under explicit user control on sign-in, sign-up and reset.
+elements.authPasswordToggle?.addEventListener("click", () => {
+  const visible = elements.authPassword?.type === "password";
+  if (!elements.authPassword) return;
+  elements.authPassword.type = visible ? "text" : "password";
+  elements.authPasswordToggle.setAttribute("aria-pressed", String(visible));
+  elements.authPasswordToggle.setAttribute("aria-label", visible ? "Hide password" : "Show password");
+  elements.authPassword?.focus({ preventScroll: true });
+});
 
 elements.authForm?.addEventListener("submit", submitAccountForm);
 elements.rememberMe?.addEventListener("change", () => {
