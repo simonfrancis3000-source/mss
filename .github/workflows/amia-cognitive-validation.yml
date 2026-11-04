@@ -30,7 +30,7 @@ jobs:
           node <<'NODE'
           const fs = require('node:fs');
           const report = JSON.parse(fs.readFileSync('amia-live-evaluation.json', 'utf8'));
-          console.log(JSON.stringify({status:report.status,mode:report.mode,sampleCount:report.sampleCount,plannedSampleCount:report.plannedSampleCount,stoppedEarly:report.stoppedEarly,p50Ms:report.p50Ms,p95Ms:report.p95Ms,inputTokens:report.inputTokens,outputTokens:report.outputTokens},null,2));
+          console.log(JSON.stringify({status:report.status,mode:report.mode,sampleCount:report.sampleCount,plannedSampleCount:report.plannedSampleCount,stoppedEarly:report.stoppedEarly,firstPassPassedCount:report.firstPassPassedCount,repairCount:report.repairCount,generationCalls:report.generationCalls,p50Ms:report.p50Ms,p95Ms:report.p95Ms,inputTokens:report.inputTokens,outputTokens:report.outputTokens},null,2));
           const failures = [...new Set((report.results || []).filter(r=>r.status==='failed').map(r=>(r.errorCode || r.qualityViolation || 'evaluation_failed')+(r.providerStatus?' (HTTP '+r.providerStatus+')':'')))];
           for (const failure of failures) console.error('::error::DeepSeek evaluation: '+failure);
           NODE

@@ -210,3 +210,18 @@ test('provider diagnostics distinguish setup failures without exposing upstream 
     await assert.rejects(provider({context:{},objectives}),error=>error.code===code && error.providerStatus===status && !String(error).includes('fixture-secret') && !String(error).includes('account-private-details'));
   }
 });
+
+
+test('a quoted example question is repaired before the canonical reply is committed', async () => {
+  const f=fixture({generate:async({correction})=>answer(correction ? 'I will wait for your guidance. When should I ask the dog owner for permission?' : 'Should I say "May I pet the dog?", or wait for your guidance?')});
+  const result=await f.turn('If a dog approaches, wait for my guidance.');
+  assert.equal(f.calls,2);
+  assert.equal(result.reply,'I will wait for your guidance. When should I ask the dog owner for permission?');
+  assert.equal([...f.states.values()][0].messages.at(-1).content,result.reply);
+});
+
+test('a repeated multiple-question failure exhausts one repair and commits no canonical reply', async () => {
+  const f=fixture({generate:async()=>answer('Should I ask permission? Or wait for your guidance?')});
+  await assert.rejects(f.turn('Wait for my guidance.'),error=>error.code==='runtime_quality_check_failed'&&error.attempts.length===2);
+  assert.equal(f.calls,2);assert.equal(f.states.size,0);assert.equal(f.effects.length,0);
+});

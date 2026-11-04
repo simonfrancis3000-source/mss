@@ -1,4 +1,4 @@
-import { RuntimeError, runtimePrompt, validateTurnProposal } from './cognitive-core.js';
+import { RuntimeError, runtimePrompt, validateTurnProposal, checkRuntimeReply } from './cognitive-core.js';
 
 // JSON object mode is not a schema guarantee. Validate independently. The
 // adapter can later use another provider without moving AMIA's state or rules.
@@ -28,4 +28,28 @@ export function createCognitiveProvider({ key, model, fetchImpl = fetch, onUsage
     try { value = JSON.parse(data.choices[0].message.content); } catch { throw new RuntimeError('invalid_model_proposal', 502); }
     return validateTurnProposal(value, objectives);
   };
+}
+
+
+// Shared by the runtime and live evaluator. One invalid proposal may be
+// repaired once; neither caller can accept a reply that still fails quality.
+export async function generateCheckedCognitiveTurn({ generate, context, objectives, quality }) {
+  let violation = null;
+  const attempts = [];
+  const repairable = new Set(['invalid_model_proposal','incomplete_model_proposal','model_action_rejected','unknown_objective','invalid_reminder_offer']);
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const proposal = await generate({ context, objectives, correction: violation });
+      violation = checkRuntimeReply(proposal, quality);
+      attempts.push({ attempt, qualityViolation: violation });
+      if (!violation) return { proposal, attempts };
+    } catch (error) {
+      attempts.push({ attempt, errorCode: error.code || 'provider_unavailable', ...(error.providerStatus ? {providerStatus:error.providerStatus} : {}) });
+      if (!repairable.has(error.code)) { error.attempts = attempts; throw error; }
+      violation = error.code;
+    }
+  }
+  const error = new RuntimeError('runtime_quality_check_failed', 502);
+  error.attempts = attempts;
+  throw error;
 }

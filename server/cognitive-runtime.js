@@ -1,3 +1,4 @@
+import { generateCheckedCognitiveTurn } from './cognitive-provider.js';
 import { cleanRuntimeState, turnIdentity, resolveRuntimeContext, relevantMemory, nextRuntimeObjective, checkRuntimeReply, reduceRuntimeState, RuntimeError, RUNTIME_VERSION, normalized } from './cognitive-core.js';
 import { matchReminder, validReminderTitle } from '../src/reminders.js';
 import { conversationCheckpoint } from '../src/conversation-resume.js';
@@ -113,22 +114,12 @@ export function createCognitiveRuntime({ store, generate, contextStore, resolveA
               activeTraining: training, intent: resolved.intent, state:{...state,messages:state.messages.slice(-10).map(m=>({...m,content:m.content.slice(0,650)})),dispositions:qualityState.dispositions.slice(-40)}, latestUser, memory: relevantMemory(saved), plan: planned, objectives, intake,
               boundaries: 'Do not change scenario or mark completion. No live robot is connected. Appliance identities do not establish any feature.',
               currentApplianceIdentities: (saved.appliances || []).slice(0, 10).map(a => ({ type: a.type, brand: a.brand, model: a.model })) };
-            let violation;
-            // At most one repair for invalid JSON or a failed deterministic
-            // quality check. No actions occur during either generation call.
-            for (let attempt = 0; attempt < 2; attempt++) {
-              modelCalls++;
-              try {
-                proposal = await measured('modelMs',()=>generate({ context, objectives, correction: violation || null, auth }));
-                violation = checkRuntimeReply(proposal, { state:qualityState, active: training && !['explain', 'progress', 'service_help'].includes(resolved.intent), intake, language });
-                if (!violation) break;
-              } catch (error) {
-                if (!['invalid_model_proposal', 'incomplete_model_proposal', 'model_action_rejected', 'unknown_objective', 'invalid_reminder_offer'].includes(error.code)) throw error;
-                violation = error.code;
-              }
-              proposal = null;
-            }
-            if (!proposal || violation) throw new RuntimeError('runtime_quality_check_failed', 502);
+            const checked = await generateCheckedCognitiveTurn({
+              generate: input => { modelCalls++; return measured('modelMs',()=>generate({...input,auth})); },
+              context, objectives,
+              quality: { state:qualityState, active:training && !['explain','progress','service_help'].includes(resolved.intent), intake, language }
+            });
+            proposal = checked.proposal;
             // Exact-model turns may need one additional composition after the
             // official manual has been verified. Ordinary turns do not pay it.
             if (proposal.applianceIdentity) {
