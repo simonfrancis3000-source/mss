@@ -96,7 +96,7 @@ export function buildOutOfHomePersonaSystemPrompt({
         "Situation: " + scenario.situation,
         "Behavioural focus: " + scenario.behaviouralFocus,
         "Learning areas: " + JSON.stringify(scenarioDepth("outside:" + scenario.categoryId + ":" + scenario.scenarioId)),
-        "Aim for around 30 minutes of useful conversation across relevant areas at the owner's pace. Ask one question at a time; where relevant, explore a normal preference, a concrete exception and when to ask or stop. Skip irrelevant or already answered points, and never pad or enforce a timer."
+        "Work in short visits on one small part of this situation at the owner's pace. Stay with the outstanding question and selected focus instead of automatically moving through other areas. The owner can finish a visit and return later without completing the whole module. Ask one question at a time; where relevant, explore a normal preference, a concrete exception and when to ask or stop. Skip irrelevant or already answered points, and never pad or enforce a timer."
       ].join("\n")
     : "The user is exploring out-of-home behaviour. Establish the situation from their latest message.";
 

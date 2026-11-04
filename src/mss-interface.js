@@ -89,7 +89,7 @@ const el = (tag, className, text) => {
 const symbol = (name, className = '') => { const node = el('span', 'mss-symbol ' + className); node.innerHTML = icon(name); return node; };
 function action(label, className, onClick) { const node = el('button', className, label); node.type = 'button'; node.addEventListener('click', onClick); return node; }
 
-export function createMssInterface({ getSnapshot, navigate, editSettings, openScenario, openWorkspace, shareProgress, refreshBalance }) {
+export function createMssInterface({ getSnapshot, navigate, editSettings, openScenario, openWorkspace, shareProgress, refreshBalance, startStep, finishVisit, resumeVisit }) {
   const main = document.querySelector('main');
   let sharingProgress = false;
   let shareStatus = '';
@@ -118,6 +118,78 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
   }
   const voiceTitle = el('h2', 'mss-voice-title'); voiceTitle.id = 'mssVoiceState';
   document.querySelector('#voiceExperienceStatus')?.before(voiceTitle);
+
+  const visitToolbars = [];
+  for (const target of [document.querySelector('.conversation-panel > [data-scenario-progress]'), voiceControls]) {
+    if (!target) continue;
+    const toolbar = el('div', 'mss-visit-toolbar');
+    target.after(toolbar); visitToolbars.push(toolbar);
+  }
+  const visitDialog = el('dialog', 'mss-visit-dialog');
+  visitDialog.setAttribute('aria-labelledby', 'mssVisitTitle'); document.body.append(visitDialog);
+  let recapSaving = false, recapError = '', recapScope = null;
+  const snapshotScope = snapshot => snapshot.userId ? snapshot.userId + ':' + snapshot.revision : null;
+  async function openVisitRecap() {
+    const snapshot = getSnapshot();
+    if (!snapshot.model.ready || snapshot.busy || recapSaving) return;
+    recapScope = snapshotScope(snapshot); recapSaving = true; recapError = '';
+    renderVisitControls(snapshot);
+    if (!visitDialog.open) visitDialog.showModal();
+    try { await finishVisit?.(); }
+    catch (error) { if (recapScope === snapshotScope(getSnapshot())) recapError = error.message || 'Your visit could not be saved. Please try again.'; }
+    finally { recapSaving = false; renderVisitControls(); }
+  }
+  function renderVisitControls(snapshot = getSnapshot()) {
+    for (const toolbar of visitToolbars) {
+      toolbar.hidden = !snapshot.model.ready || !finishVisit;
+      toolbar.replaceChildren();
+      if (toolbar.hidden) continue;
+      const count = snapshot.savedLearning?.length || 0;
+      const label = count ? (snapshot.visit?.ended_at ? 'Last visit: ' : '') + count + (count === 1 ? ' preference saved' : ' preferences saved')
+        : snapshot.learningSyncPending ? 'Learning is syncing…' : snapshot.visitAnswers >= 3 && !snapshot.visit?.ended_at ? 'A good place to pause' : 'One small step at a time';
+      const finish = action('Finish for now', 'mss-text-button', openVisitRecap); finish.disabled = Boolean(snapshot.busy || recapSaving);
+      toolbar.append(el('span', '', label), finish);
+    }
+    if (!recapScope) return;
+    if (recapScope !== snapshotScope(snapshot)) { visitDialog.close(); recapScope = null; return; }
+    visitDialog.replaceChildren();
+    const title = el('h2', '', 'Your visit recap'); title.id = 'mssVisitTitle';
+    const status = el('p', 'mss-visit-save-status', recapSaving ? 'Saving your conversation and place…' : recapError || 'Your conversation and place are saved.');
+    status.setAttribute('role', 'status');
+    visitDialog.append(title, status);
+    const saved = snapshot.savedLearning || [];
+    if (saved.length) {
+      visitDialog.append(el('h3', '', 'Saved learning from this visit'));
+      const list = el('ul', 'mss-visit-learnings');
+      for (const memory of saved) {
+        const item = el('li', '', memory.statement);
+        const conditions = (memory.conditions || []).filter(value => typeof value === 'string');
+        if (conditions.length) item.append(el('small', '', 'Conditions: ' + conditions.join('; ')));
+        const permission = { ask_first: 'Ask me first', allowed: 'Explicitly allowed for this action', prohibited: 'Do not do this' }[memory.permission_policy];
+        if (permission) item.append(el('small', '', 'Permission: ' + permission));
+        list.append(item);
+      }
+      visitDialog.append(list);
+    } else visitDialog.append(el('p', '', 'No new saved preferences to show for this visit yet. Your conversation can still be continued.'));
+    if (snapshot.learningSyncPending) visitDialog.append(el('p', 'mss-visit-note', 'Some learning is still syncing. This recap updates when it is saved.'));
+    visitDialog.append(el('p', 'mss-visit-note', 'Finishing a visit does not complete a module. Review your learning when you are ready.'));
+    if (snapshot.pendingQuestion) {
+      visitDialog.append(el('h3', '', 'Next time'), el('p', 'mss-visit-checkpoint', snapshot.pendingQuestion));
+    }
+    const actions = el('div', 'mss-visit-actions');
+    const finish = action(recapError ? 'Retry saving' : 'Finish for now', 'mss-primary', () => {
+      if (recapError) { void openVisitRecap(); return; }
+      visitDialog.close(); navigate('home');
+    });
+    const keepGoing = action('Continue', 'mss-secondary', () => { visitDialog.close(); resumeVisit?.(); renderVisitControls(); });
+    finish.disabled = keepGoing.disabled = recapSaving; actions.append(finish, keepGoing);
+    if (saved.length && snapshot.visit?.scenario_id) {
+      const review = action('Review or edit learning', 'mss-text-button', () => { visitDialog.close(); openScenario(snapshot.visit.scenario_id); });
+      review.disabled = recapSaving; actions.append(review);
+    }
+    visitDialog.append(actions);
+  }
+  visitDialog.addEventListener('close', () => { recapScope = null; });
 
   for (const brand of document.querySelectorAll('.brand')) {
     const image = brand.querySelector('img'); if (image) image.src = '/mss-logo.png';
@@ -161,7 +233,8 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
     if (model.ready) track.setAttribute('aria-valuenow', String(model.percent)); else track.setAttribute('aria-valuetext', 'Progress unavailable');
     const fill = el('span'); fill.style.width = model.percent + '%'; track.append(fill);
     const caption = el('p', '', model.ready ? model.completed + ' of ' + model.total + ' scenarios confirmed complete.' : 'Your saved progress will appear when your account is connected.'); caption.prepend(symbol('bars'));
-    card.append(row, track, caption); return card;
+    card.append(row, track, caption);
+    return card;
   }
   function progressChart(snapshot) {
     const { model } = snapshot;
@@ -338,12 +411,22 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
     avatar(headerAvatar, snapshot); avatar(voiceAvatar, snapshot);
     headerAvatar?.setAttribute('aria-label', 'Open profile');
     const home = screens.home; home.replaceChildren(heading('Hi ' + (snapshot.owner?.split(/\s+/)[0] || 'there'), 'Keep training your future robot with your knowledge, habits, boundaries and preferences.'), banner(snapshot), progress(snapshot), rewardTeaser(snapshot));
+    if (snapshot.step && model.ready) {
+      const next = el('section', 'mss-card mss-next-step');
+      next.append(el('p', 'mss-next-eyebrow', 'Your next small step · ' + model.active.title), el('h2', '', snapshot.step.title), el('p', 'mss-next-description', snapshot.step.description));
+      next.append(el('p', 'mss-area-progress', (snapshot.explored || 0) + '/' + model.active.total + ' areas explored · ' + model.active.reviewed + ' reviewed'));
+      next.append(el('p', 'mss-visit-note', snapshot.step.kind === 'review' ? 'Review at your own pace.' : 'Try a few minutes. Pause whenever you like.'));
+      const actions = el('div', 'mss-next-actions');
+      const begin = action(snapshot.step.kind === 'resume' ? 'Continue conversation' : snapshot.step.kind === 'review' ? 'Review learning' : 'Start in Chat', 'mss-primary', () => startStep?.(snapshot.step));
+      begin.disabled = snapshot.busy || !startStep;
+      actions.append(begin, action('Choose a task', 'mss-text-button', () => openScenario(model.active.id))); next.append(actions); home.append(next);
+    }
     const focus = el('div', 'mss-section-heading'); focus.append(el('h2', '', 'Today’s focus'));
     const seeAll = action('See all', 'mss-text-button', () => navigate('passport')); seeAll.append(symbol('arrow')); focus.append(seeAll); home.append(focus);
     const topics = el('div', 'mss-focus-grid');
     const currentIndex = Math.max(0, model.modules.findIndex(m => m.id === model.active?.id));
     model.modules.slice(currentIndex, currentIndex + 3).forEach(item => topics.append(moduleCard(item, true))); home.append(topics);
-    home.append(linkCard('Current conversation', snapshot.pendingQuestion || 'Continue where you left off with ' + snapshot.companion + '.', 'chat', () => navigate('chat')));
+    if (!snapshot.step) home.append(linkCard('Current conversation', snapshot.pendingQuestion || 'Continue where you left off with ' + snapshot.companion + '.', 'chat', () => navigate('chat')));
 
     screens.rewards.replaceChildren(rewardsPage(snapshot));
 
@@ -388,7 +471,7 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
       linkCard('Support', 'Get help, report an issue or contact us', 'support', () => window.open('https://mysecondself.app/contact/', '_blank', 'noopener')));
     profile.append(settings);
 
-    renderTranscript(snapshot); renderVoiceState();
+    renderTranscript(snapshot); renderVoiceState(); renderVisitControls(snapshot);
   }
   function renderTranscript(snapshot = getSnapshot()) {
     const messages = snapshot.messages.filter(m => ['user', 'assistant'].includes(m.role) && m.content?.trim()).slice(-2);
@@ -405,5 +488,5 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
     const states = { idle: 'is ready', connecting: 'is connecting', listening: 'is listening', 'user-speaking': 'is listening', muted: 'is muted', thinking: 'is thinking', speaking: 'is speaking', 'speech-pause': 'is speaking' };
     voiceTitle.textContent = name + ' ' + (states[mode] || 'is ready');
   }
-  return { render, renderTranscript, renderVoiceState, createProgressChart: () => progressChart(getSnapshot()), getActiveScenarioId: () => { const { model } = getSnapshot(); return model.ready ? model.active?.id : null; } };
+  return { render, renderTranscript, renderVoiceState, renderVisitControls, createProgressChart: () => progressChart(getSnapshot()), getActiveScenarioId: () => { const { model } = getSnapshot(); return model.ready ? model.active?.id : null; } };
 }
