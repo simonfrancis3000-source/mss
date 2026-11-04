@@ -1,3 +1,4 @@
+import { createTrainingVisitStore, nextTrainingStep, visitLearnings, visitAnswerCount, saveVisitCheckpoint } from './training-visit.js';
 import { createVoiceBalance } from './voice-balance.js';
 import { Capacitor } from "@capacitor/core";
 import { Preferences } from "@capacitor/preferences";
@@ -811,7 +812,7 @@ function renderScenarioJourney() {
   });
   const navLabel = document.createElement("div"); navLabel.id = "journeyScenarioLabel"; navLabel.className = "journey-select-label"; navLabel.textContent = "Choose your scenario"; toggle.setAttribute("aria-labelledby", "journeyScenarioLabel journeyScenarioSelect");
   const title = document.createElement("h3"); title.textContent = scenario.title;
-  const desc = document.createElement("p"); desc.textContent = scenario.description + " Allow around 30 minutes, depending on what matters to you. You can pause and return whenever you like.";
+  const desc = document.createElement("p"); desc.textContent = scenario.description + " Take one small task at a time. A few minutes is enough to get started, and you can pause whenever you like.";
   const start = document.createElement("button"); start.type = "button"; start.className = "out-of-home-scenario-action";
   start.textContent = done.includes(scenario.id) ? "Revisit this scenario" : data.started === scenario.id ? "Continue conversation" : "Start conversation";
   start.addEventListener("click", () => void startJourneyScenario(scenario));
@@ -1073,6 +1074,7 @@ async function startJourneyScenario(scenario, task = null) {
   patch.room_progress[SCENARIO_PROGRESS_KEY].focusStartedAt = new Date().toISOString();
   if (scenario.kind === "room") patch.active_task_id = task?.id || (scenarioData().started === scenario.id ? roomJourney.active_task_id : null);
   if (!(await persistRoomJourneyChanges(patch))) { alert("Your scenario could not be saved. Please try again."); return false; }
+  beginTrainingVisit(task?.id || (scenario.kind === "room" ? roomJourney.active_task_id : null));
   if (scenario.kind === "room") {
     activeOutOfHomeScenarioContext = null;
     state.pendingClarification = null;
@@ -1550,7 +1552,7 @@ async function flushMemoryQueue(userId = cloudUserId, revision = trainingRevisio
   } catch (error) {
     console.info("SYNQ.ME memory queue will retry.", String(error?.code || error?.message || "storage unavailable").slice(0, 120));
     if (elements.personaMemoryStatus) elements.personaMemoryStatus.textContent = "Memory updates are waiting to sync and will retry automatically.";
-  } finally { memoryQueueFlushing = false; }
+  } finally { memoryQueueFlushing = false; mssInterface?.renderVisitControls(); }
 }
 function startMemoryQueue() {
   // A reset invalidates old local pending copies; the database kept only jobs
@@ -3242,7 +3244,7 @@ function updateChatScrollbar() {
 }
 
 function renderMessages() {
-  if (typeof mssInterface !== "undefined") mssInterface?.renderTranscript();
+  if (typeof mssInterface !== "undefined") { mssInterface?.renderTranscript(); mssInterface?.renderVisitControls(); }
   elements.chatMessages.replaceChildren();
   // Render in conversation order so newer turns naturally appear at the bottom.
   state.messages.slice(-50).forEach((message) => appendMessage(message.role, message.content, message.timestamp, message.scenario_id));
@@ -4330,12 +4332,58 @@ const googlePlayCheckout = createGooglePlayCheckout({
   getHeaders: authenticatedApiHeaders,
   getUserId: () => cloudUserId
 });
+const trainingVisitStore = createTrainingVisitStore({ storage: {
+  getItem: key => localStorage.getItem(key), setItem: (key, value) => localStorage.setItem(key, value)
+} });
+function currentTrainingVisit() {
+  return trainingVisitStore.read(cloudUserId, trainingRevision, roomJourney?.room_progress?.short_visit_v1);
+}
+function beginTrainingVisit(areaId) {
+  const scenarioId = mssInterface?.getActiveScenarioId();
+  if (!cloudUserId || !scenarioId) return null;
+  const previous = currentTrainingVisit();
+  const roomArea = scenarioForId(scenarioId)?.kind === "room" ? roomJourney?.active_task_id : null;
+  const selectedArea = areaId === undefined ? roomArea || (previous?.scenario_id === scenarioId ? previous.area_id : null) : areaId;
+  return trainingVisitStore.begin({ userId: cloudUserId, revision: trainingRevision, scenarioId, areaId: selectedArea, remote: roomJourney?.room_progress?.short_visit_v1 });
+}
+async function finishTrainingVisit() {
+  if (isSending) throw new Error("Wait for the current reply, then finish your visit.");
+  const userId = cloudUserId, revision = trainingRevision;
+  if (!userId || !roomJourney) throw new Error("Sign in to save your visit.");
+  const current = currentTrainingVisit();
+  const visit = current?.ended_at && current.scenario_id === mssInterface?.getActiveScenarioId() ? current : trainingVisitStore.finish(beginTrainingVisit());
+  persist();
+  const saved = await saveVisitCheckpoint({
+    visit,
+    stopVoice: () => { if (voiceModeActive) stopVoiceConversation("Paused. Press Start to continue."); },
+    saveConversation: flushCloudSave,
+    saveCheckpoint: value => persistRoomJourneyChanges({ room_progress: { ...roomJourney.room_progress, short_visit_v1: value } }),
+    isCurrent: () => userId === cloudUserId && revision === trainingRevision
+  });
+  if (!saved) return;
+  welcomeBackPending = true;
+  void flushMemoryQueue(userId, revision);
+}
+async function beginTrainingStep(step) {
+  if (!step || isSending) return;
+  const scenario = scenarioForId(step.scenarioId);
+  if (!scenario) return;
+  if (step.kind === "review") { mssInterface && selectAppView("journey"); selectedJourneyScenario = scenario.id; journeyDisplay = "scenarios"; renderScenarioJourney(); return; }
+  if (step.kind === "resume") { selectAppView("chat"); beginTrainingVisit(step.areaId); elements.messageInput.focus({ preventScroll: true }); return; }
+  const task = scenarioTasks(scenario).find(item => item.id === step.areaId);
+  if (!task || !(await startJourneyScenario(scenario, task))) return;
+  if (!elements.chatStage?.hidden) elements.chatForm.requestSubmit();
+}
+
 const voiceBalance = createVoiceBalance({apiBase:API_BASE,getUserId:()=>cloudUserId,getHeaders:authenticatedApiHeaders,onChange:()=>mssInterface?.render()});
 const robotRewards = createRobotRewardBalance({apiBase:API_BASE,getUserId:()=>cloudUserId,getHeaders:authenticatedApiHeaders,onChange:()=>mssInterface?.render()});
 
 mssInterface = createMssInterface({
   refreshBalance:()=>voiceBalance.refresh(),
   openBilling: googlePlayCheckout.enabled ? () => googlePlayCheckout.open() : undefined,
+  startStep: beginTrainingStep,
+  finishVisit: finishTrainingVisit,
+  resumeVisit() { beginTrainingVisit(); if (elements.voiceExperience?.hidden) elements.messageInput.focus({ preventScroll: true }); },
   getSnapshot() {
     const ready = Boolean(cloudUserId && roomJourney && roomJourney.user_id === cloudUserId);
     const data = ready ? scenarioData() : {};
@@ -4347,7 +4395,12 @@ mssInterface = createMssInterface({
     }
     const model = buildInterfaceModel({ scenarios: SCENARIOS, data, ready, activeRoomId: roomJourney?.active_room_id, taskCounts, reviewedCounts });
     const pending = conversationCheckpoint(state.messages, model.active?.id);
-    return { owner: state.profile.ownerName.trim(), companion: selectedCompanionDisplayName(),
+    const visit = ready ? currentTrainingVisit() : null;
+    const step = ready ? nextTrainingStep({ scenario: model.active, tasks: model.active ? scenarioTasks(model.active) : [], reviewed: data.reviewed?.[model.active?.id] || [], activeAreaId: (model.active?.kind === "room" ? roomJourney?.active_task_id : null) || (visit?.scenario_id === model.active?.id ? visit.area_id : null), checkpoint: pending }) : null;
+    const savedLearning = ready ? visitLearnings(personaMemoryRecords, visit) : [];
+    const explored = model.active ? scenarioTasks(model.active).filter(task => areaLearningState(model.active.id, task.id, personaMemoryRecords, data.reviewed?.[model.active.id] || []).status !== 'not_started').length : 0;
+    return { userId: cloudUserId, revision: trainingRevision, busy: isSending, step, visit, savedLearning, visitAnswers: visitAnswerCount(state.messages, visit), explored,
+      learningSyncPending: Boolean(ready && (pendingMemoryJobs(cloudUserId, trainingRevision).length || memoryQueueFlushing || memoryQueueRunner?.running || personaMemoryWriteInFlight)), owner: state.profile.ownerName.trim(), companion: selectedCompanionDisplayName(),
       voice: normaliseVoicePreference(state.profile.robotVoice), avatar: ownerAvatarData,
       billing:voiceBalance.snapshot(),
       rewards:robotRewards.snapshot(), preferences: curatedPreferences(), messages: state.messages, pendingQuestion: pending?.question || "", model };
@@ -5143,6 +5196,7 @@ async function openVoiceExperience({ activate = false } = {}) {
     updateVoiceModeButton();
     return;
   }
+  beginTrainingVisit();
   voiceInputMuted = false;
   voiceModeActive = true;
   void requestVoiceWakeLock();
@@ -5763,6 +5817,7 @@ async function sendMessage(rawText) {
   const message = rawText.trim();
   chatReturnSummary = "";
   if (!message || isSending) return;
+  beginTrainingVisit();
   const todoTurn = Boolean(todoCommandForMessage(message));
   welcomeBackPending ||= shouldWelcomeBack(state.messages);
   if (isOutOfHomeTopicChange(message)) {
@@ -5843,6 +5898,7 @@ async function sendMessage(rawText) {
   // The reply is already visible. Release the composer immediately instead of
   // keeping the UI in a thinking state while Supabase finishes syncing.
   isSending = false;
+  mssInterface?.renderVisitControls();
   elements.sendButton.disabled = false;
   elements.messageInput.disabled = false;
   elements.conversationStatus.textContent = sentToAIThisTurn && state.apiConnected
@@ -5873,6 +5929,7 @@ elements.chatForm.addEventListener("submit", (event) => {
   void sendMessage(text).catch((error) => {
     console.error("SYNQ.ME could not complete the submitted message.", error);
     isSending = false;
+  mssInterface?.renderVisitControls();
     if (elements.sendButton) elements.sendButton.disabled = false;
     if (elements.messageInput) elements.messageInput.disabled = false;
 
