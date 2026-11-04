@@ -80,7 +80,7 @@ The inspected Render workspace contains `synqme-api` on `SYNQ.ME` and `synqme-de
 
 ## Verification and limits
 
-Local web verification: 660 tests pass and production frontend build passes. Local Android verification: 644 tests pass, mobile build passes and Capacitor Android sync passes. The branch-specific count differs because the source branches contain different existing tests.
+Local web verification against current SYNQ.ME: 680 tests pass and production frontend build passes. Local Android verification: 644 tests pass, mobile build passes and Capacitor Android sync passes. The branch-specific count differs because the source branches contain different existing tests.
 
 The tests execute the actual SQL migrations in pinned PGlite/PostgreSQL, including transaction rollback, replay, leases, RLS, owner isolation, reset races, memory grounding, correction/supersession, graph cycles, delivery ordering and expired-response tombstones. This validates database behavior locally; it does not establish that target PostgREST grants are configured correctly before migration.
 
@@ -88,7 +88,7 @@ There are 100 narrow reminder trajectories and 150 additional multi-turn traject
 
 GitHub workflows run the existing regression/build checks. The Android workflow compiles a debug APK and uploads it for review. A separate workflow attempts 30 synthetic held-out live DeepSeek checks when repository credentials are available. The evaluator uses the same checked-generation helper as the runtime, with at most one repair. The report preserves each attempt and separately counts first-pass success, repairs and total model calls. Missing credentials create a report marked `blocked`; workflow success in that case does not mean live-model validation passed.
 
-Local live evaluation records `blocked` because credentials are kept in GitHub rather than this workspace. GitHub now authenticates successfully. Its first authenticated 30-check run passed 29 checks on the first attempt; a quoted example question plus a follow-up triggered the multiple-question guard. The prompt now avoids quoted questions, and the evaluator shares the runtime repair path. The final live result is recorded in the PR validation report. No authenticated new-runtime PostgREST request, physical Android session or Phonic listening session has been performed. Those checks cannot be inferred from mocks, builds, a debug APK or successful CI.
+Local live evaluation records `blocked` because credentials are kept in GitHub rather than this workspace. GitHub now authenticates successfully. Its first authenticated 30-check run passed 29 checks on the first attempt; a quoted example question plus a follow-up triggered the multiple-question guard. The prompt now avoids quoted questions, and the evaluator shares the runtime repair path. The subsequent run 41898684720 passed all 30 checks on the first attempt with zero repairs, generation p50 2,021 ms and p95 2,456 ms. These are synthetic regression checks after prompt tuning, not an untouched independent hold-out or authenticated end-to-end measurement. Its artifact and the latest validation results are linked in the PR. No authenticated new-runtime PostgREST request, physical Android session or Phonic listening session has been performed. Those checks cannot be inferred from mocks, builds, a debug APK or successful CI.
 
 Runtime logs expose phase durations for claim, context, model, manual lookup and commit, along with model-call count, action type and replay status. Existing provider usage accounting receives token usage. The optional live evaluator reports generation p50/p95 and token totals. No unmeasured speed, cost, voice-quality or general-intelligence improvement is claimed. Warm/cold end-to-end latency and subjective clipping quality require actual deployment and listening measurements.
 
@@ -102,3 +102,18 @@ Runtime logs expose phase durations for claim, context, model, manual lookup and
 - Local recording diagnostics: `node scripts/analyze-phonic-pcm.mjs /absolute/path/recording.wav`
 
 The supported WAV diagnostic input is PCM16. It reports peak/RMS/clipped samples without sending the recording to a service. These measurements are diagnostic signals; clipped-sample counts alone cannot establish the cause of an audible interruption.
+
+
+### Advanced programme: latest completed development run
+
+Run [41911343431](https://github.com/simonfrancis3000-source/mss/actions/runs/41911343431) evaluated commit 7fb403831e567ecf8df51b70e0374cfea93a41c1. All 450 development repeats were attempted: 36 passed, 414 failed, and 4,354 of 5,400 planned user turns completed. The reserved cases were not run. Failure codes overlap: stale_preference_active 321, runtime_quality_check_failed 159, relation_target_changed 5, correction_missing 1 and final_recall_missing_current_value 1. The majority of exhausted quality repairs were settled_decision, followed by repeated_question and settled_question.
+
+The following corrections require a fresh live run before their effectiveness can be claimed:
+
+- Receiving a message is distinct from answering the preceding question. A structured, quoted answer annotation records coverage; missing or ungrounded annotations leave the dimension unresolved. Deferred questions remain excluded. This is model-assisted conversational classification, not independent proof of semantic correctness or consent.
+- Answer coverage survives the canonical session and decision-state records. Reminder commands do not settle unrelated questions. A substantive grounded answer still prevents repeating the same decision.
+- Memory links can follow a version replaced earlier in the same atomic job. Confirmation proposals now process explicit exception links. A different stale job is still rejected rather than silently redirected.
+- Correcting a detail in an exception does not prepend the obsolete placement to the replacement. Restrictive permissions remain preserved; confirming a boundary may strengthen an unspecified policy but cannot grant permission.
+- Evaluation version 2 checks the original preference scope rather than treating every historical reason mentioning the old value as a current default. It accepts the demonstrated shelf/shelves variation. Conflicting old defaults still fail. Reports identify the grading version; aggregating mixed versions fails completeness checks. Scores across the grading change are not directly comparable.
+
+These are development fixes. Production activation, hosted authenticated PostgREST coverage, device audio and human conversational review remain separate acceptance work.

@@ -25,7 +25,10 @@ export function validateMemoryProposals(raw, { latestUser, knownRules = [], obje
       if (!affirmative || negated) candidate.permission_policy = 'unspecified';
     }
     if (target && candidate.relation === 'refines' && target.statement) {
-      if (!normalized(candidate.statement).includes(normalized(target.statement))) {
+      // A correction may change a detail inside an existing exception. Copying
+      // its entire old statement would reintroduce the value just replaced.
+      if (explicitCorrection) candidate.relation = 'updates';
+      else if (!normalized(candidate.statement).includes(normalized(target.statement))) {
         const combined = target.statement + ' ' + candidate.statement;
         if (combined.length > 420) return [];
         candidate.statement = combined;

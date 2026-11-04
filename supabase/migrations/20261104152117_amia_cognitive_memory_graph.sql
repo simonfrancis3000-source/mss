@@ -76,7 +76,9 @@ begin
   previous_key:=coalesce('cogd:'||nullif(previous_state->>'lastDecisionKey',''),'cogq:'||md5(lower(previous_state->>'lastQuestion')));
   if p_state#>>'{dispositions,-1,question}'=previous_state->>'lastQuestion' and p_state->'dispositions' is distinct from previous_state->'dispositions' then
    outcome:=case when p_state#>>'{dispositions,-1,status}' in ('deferred','not_applicable') then 'deferred' else 'response_received' end;
-   update public.synqme_decision_states set status=outcome,responded_at=source_time,updated_at=now() where user_id=p_user_id and scope_key=p_scope and decision_key=previous_key and source_memory_id is null;
+   update public.synqme_decision_states set status=outcome,responded_at=source_time,
+    source_refs=jsonb_build_array(source_refs->0,jsonb_build_object('conversation_key','main','role','user','turn_key',p_turn_key,'answered',coalesce(p_state#>>'{dispositions,-1,answered}','false')='true')),updated_at=now()
+    where user_id=p_user_id and scope_key=p_scope and decision_key=previous_key and source_memory_id is null;
   end if;
  end if;
  if p_state->>'lastQuestion' is not null and p_state->>'lastQuestion' is distinct from previous_state->>'lastQuestion' then
@@ -161,9 +163,13 @@ begin
    update public.synqme_preferences set preference_status='rejected' where user_id=job.user_id and id::text=target.source_preference_id;
    continue;
   elsif relation='confirms' then
-   update public.synqme_persona_memories set status='user_confirmed',relation='confirms',reviewed_at=now(),source_refs=refs where id=target.id;
-   count_saved:=count_saved+1; continue;
+   update public.synqme_persona_memories set status='user_confirmed',relation='confirms',reviewed_at=now(),source_refs=refs,
+    permission_policy=case when permission_policy='unspecified' and c->>'permission_policy' in ('ask_first','prohibited') then c->>'permission_policy' else permission_policy end,
+    kind=case when permission_policy='unspecified' and c->>'permission_policy' in ('ask_first','prohibited') then 'boundary' else kind end
+    where id=target.id;
+   saved:=target.id;
   end if;
+  if relation<>'confirms' then
   if relation='updates' and coalesce((c->>'explicit_correction')::boolean,false)=false then raise exception 'correction_not_explicit'; end if;
   conditions:=coalesce(c->'conditions','[]');
   if relation='refines' then select coalesce(jsonb_agg(v),'[]') into conditions from (select distinct value v from jsonb_array_elements(target.conditions||conditions) limit 8) valueset; end if;
@@ -184,11 +190,19 @@ begin
   if target.id is not null and saved<>target.id and relation in ('updates','refines','conflicts') then
    insert into public.synqme_rule_relations values(job.user_id,saved,target.id,case when relation='conflicts' then 'conflicts_with' else 'supersedes' end,refs,now()) on conflict do nothing;
   end if;
+  end if;
   for edge in select value from jsonb_array_elements(coalesce(c->'relations','[]')) loop
    -- A refinement already links to its previous version through supersedes.
    -- It cannot depend on the version that this same transaction just retired.
    if relation in ('updates','refines') and edge->>'target_memory_key'=c->>'target_memory_key' then continue; end if;
    select m.id into other_id from public.synqme_persona_memories m where m.user_id=job.user_id and m.memory_key=edge->>'target_memory_key' and m.status not in ('archived','superseded');
+   if other_id is null then
+    select m.id into retired_id from public.synqme_persona_memories m where m.user_id=job.user_id and m.memory_key=edge->>'target_memory_key' and m.status='superseded';
+    with recursive versions(id,depth) as (
+     select m.id,1 from public.synqme_persona_memories m where m.user_id=job.user_id and m.supersedes_id=retired_id and m.attributes->>'cognitive_job_id'=job.id::text
+     union all select m.id,v.depth+1 from public.synqme_persona_memories m join versions v on m.supersedes_id=v.id where m.user_id=job.user_id and m.attributes->>'cognitive_job_id'=job.id::text and v.depth<8
+    ) select m.id into other_id from public.synqme_persona_memories m join versions v on v.id=m.id where m.status not in ('superseded','archived') order by v.depth desc limit 1;
+   end if;
    if other_id is null then raise exception 'relation_target_changed'; end if;
    insert into public.synqme_rule_relations values(job.user_id,saved,other_id,edge->>'kind',refs,now()) on conflict do nothing;
   end loop;

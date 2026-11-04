@@ -97,7 +97,8 @@ export function createCognitiveRuntime({ store, generate, contextStore, resolveA
           // Missing memory is not equivalent to no preferences. Keep the turn
           // retryable rather than reasoning around unknown boundaries.
           if (!contextLoaded) throw new RuntimeError('runtime_memory_unavailable');
-          const qualityState={...state,dispositions:[...state.dispositions,...(saved.decisions || []).filter(d=>['response_received','deferred'].includes(d.status)&&d.question).map(d=>({question:d.question,status:d.status,decisionKey:d.decision_key?.startsWith('cogd:')?d.decision_key.slice(5):null}))]};
+          // Receipt alone does not establish that the owner answered a question.
+          const qualityState={...state,dispositions:[...state.dispositions,...(saved.decisions || []).filter(d=>['response_received','deferred'].includes(d.status)&&d.question).map(d=>({question:d.question,status:d.status,answered:d.status==='deferred'||d.source_refs?.some(r=>r?.answered===true)===true,decisionKey:d.decision_key?.startsWith('cogd:')?d.decision_key.slice(5):null}))]};
           if (review.completionConfirmed) training = false;
           const planned = buildDecisionPlan({objectives,state,context:{...saved,relations:review.relations || []},review});
           if (review.activeAreaId && objectives.some(o=>o.id===review.activeAreaId)) state.objectiveId=review.activeAreaId;
@@ -146,7 +147,7 @@ export function createCognitiveRuntime({ store, generate, contextStore, resolveA
             if (appliance) {const memory=applianceMemoryProposal(appliance,latestUser);if(memory)memoryProposals=[...memoryProposals.slice(0,7),memory];}
           }
         }
-        const next = reduceRuntimeState(state, { latestUser, reply, intent: paused ? 'pause' : resolved.intent, offer, turnKey: identity.key, objectiveId: proposal?.objectiveId, decisionKey:proposal?.decisionKey, active: training });
+        const next = reduceRuntimeState(state, { latestUser, reply, intent: paused ? 'pause' : resolved.intent, offer, turnKey: identity.key, objectiveId: proposal?.objectiveId, decisionKey:proposal?.decisionKey, previousAnswer:proposal?.previousAnswer, active: training });
         const sourceDate=Date.parse(body.sourceMessageTimestamp || '');
         const sourceTimestamp=Number.isFinite(sourceDate)&&sourceDate>=Date.UTC(2010,0,1)&&sourceDate<=Date.now()+300000?new Date(sourceDate).toISOString():new Date().toISOString();
         const result = { reply, provider: 'deepseek', usedFallback: true,
