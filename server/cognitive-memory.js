@@ -17,10 +17,20 @@ export function validateMemoryProposals(raw, { latestUser, knownRules = [], exis
       candidate.permission_policy = input.permission_policy;
     }
     // Avoid converting someone else's tastes into an owner's preference.
-    if (/\b(?:my (?:guest|friend|wife|husband|child|daughter|son)|mi (?:invitado|amigo|esposa|hijo))\b/i.test(latestUser) && !/\b(?:I (?:prefer|want|would)|prefiero|quiero)\b/i.test(latestUser)) return [];
-    const target = candidate.target_memory_key ? known.get(candidate.target_memory_key) : null;
-    if (candidate.target_memory_key && !target) return [];
-    if (['updates','withdraws','confirms','refines','conflicts'].includes(candidate.relation) && !target) return [];
+    if (/\b(?:my (?:guest|friend|wife|husband|child|daughter|son)|mi (?:invitado|amigo|esposa|hijo))\b/i.test(latestUser) && !/\b(?:I\s+(?:(?:now|still|personally|currently|usually|normally|always|actually|really)\s+){0,2}(?:prefer|want|would)|prefiero|quiero)\b/i.test(latestUser)) return [];
+    let target = candidate.target_memory_key ? known.get(candidate.target_memory_key) : null;
+    const requiresTarget=['updates','withdraws','confirms','refines','conflicts'].includes(candidate.relation);
+    if(!target&&requiresTarget){
+      const dimensions=new Set([input.scope_key,input.decision_key].filter(v=>typeof v==='string'&&/^[a-z0-9._-]{3,120}$/i.test(v)).map(v=>v.toLowerCase()));
+      const matches=[...known.values()].filter(r=>dimensions.has(String(r.scope_key||'').toLowerCase())&&!['archived','superseded'].includes(r.status));
+      const exactAlias=matches.length===1&&candidate.target_memory_key===matches[0].scope_key;
+      // Resolve only an exact, unique owner fact dimension. Never guess by
+      // similarity between opaque IDs or select between conflicting rules.
+      if(matches.length===1&&matches[0].status!=='conflicting'&&(exactAlias||(explicitCorrection&&['updates','refines'].includes(candidate.relation)))){
+        target=matches[0];candidate.attributes={...candidate.attributes,target_resolution:'exact_scope'};
+      }
+    }
+    if((candidate.target_memory_key||requiresTarget)&&!target)throw new RuntimeError('invalid_memory_target',502);
     if (candidate.relation === 'withdraws' && !explicitWithdrawal) return [];
     if (candidate.relation === 'updates' && !explicitCorrection) candidate.relation = 'conflicts';
     if (candidate.permission_policy === 'allowed') {

@@ -70,6 +70,20 @@ test('storage failures are reported without discarding the conversation reply',a
   assert.equal((await store.loadContext(auth,{scopeKey:'room:kitchen',query:'dishwasher'})).available,false);
   assert.equal((await store.recordTurn(auth,{})).status,'unavailable');
 });
+
+test('durable answer evidence is selected and returned with older decision states',async()=>{
+ const row={decision_key:'cogd:products.storage',question:'Where do you keep the products?',status:'response_received',source_refs:[{role:'user',answered:true}]};
+ const store=createAmiaStore({supabaseUrl:'https://database.test',publishableKey:'key',fetchImpl:async raw=>{
+  const url=new URL(raw);
+  if(url.pathname.endsWith('/synqme_decision_states')){
+   const select=url.searchParams.get('select').split(',');
+   return Response.json([Object.fromEntries(Object.entries(row).filter(([key])=>select.includes(key)))]);
+  }
+  return Response.json([]);
+ }});
+ const context=await store.loadContext(auth,{scopeKey:'room:kitchen',query:'products'});
+ assert.equal(context.available,true);assert.equal(context.decisions[0].source_refs[0].answered,true);
+});
 test('decision scope follows validated room task or outdoor scenario',()=>{
   assert.equal(amiaScope({roomJourney:{activeRoomId:'kitchen',activeTaskId:'dishwashing'},query:'plates'}).scopeKey,'room:kitchen:dishwashing');
   assert.equal(amiaScope({outOfHomeScenario:{categoryId:'strangers',scenarioId:'adult-approaches'}}).scopeKey,'outside:strangers:adult-approaches');

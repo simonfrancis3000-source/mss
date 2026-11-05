@@ -12,6 +12,7 @@ export function createCognitiveProvider({ key, model, fetchImpl = fetch, onUsage
       : '\nTURN CONTRACT: Put the answer to the current point in reply. Always provide next_question as one direct, useful unresolved question ending in a question mark. The runtime attaches that question after the answer. Explanation and progress requests still need next_question; you may return to the open unanswered question after a requested recap. Do not end with a statement such as "the open point is" or "I would like to know" instead. Do not ask the owner to confirm a rule or exception they have already explicitly stated.';
     const repairInstructions = {unexpected_question:'Remove every follow-up and question. Give only the requested explanation, ending in a statement.',missing_continuation:'End with one relevant unresolved question.',settled_decision:'Choose a genuinely different unresolved decision and key; do not paraphrase the settled question.',settled_question:'The owner already answered or deferred that question. Ask one different unresolved question.',repeated_question:'The current decision has reached its unanswered-ask limit. Choose a different relevant unresolved decision and a different decision_key. Do not paraphrase the same question. Keep next_question as one direct question.',multiple_questions:'Use one final question only. Remove quoted and rhetorical questions.'};
     repairInstructions.invalid_model_proposal='Return schema_version:1, a nonempty reply string (answer only), next_question as one question string ending in ?, and memory_proposals as an array of at most eight items. Do not return objects for string fields.';
+    repairInstructions.invalid_memory_target='Use an exact supplied memory id for the fact being corrected or confirmed. A precise scope may identify a fact only when it matches exactly one existing rule. Never invent or alter an opaque id, and do not guess between conflicting rules.';
     const messages=[{role:'system',content:runtimePrompt+turnContract+(correction?'\nRepair the proposal. Violation: '+correction+'. '+(correctionDetail?'Field failure: '+correctionDetail+'. ':'')+(repairInstructions[correction]||'Return a corrected valid proposal.'):'')},{role:'user',content:JSON.stringify(context)}];
     if (correction && rejectedProposal) {
       messages.push({role:'assistant',content:JSON.stringify({schema_version:1,reply:rejectedProposal.reply,next_question:rejectedProposal.nextQuestion||null,decision_key:rejectedProposal.decisionKey,memory_proposals:rejectedProposal.memoryProposals,actions:[]})});
@@ -49,7 +50,7 @@ export async function generateCheckedCognitiveTurn({ generate, context, objectiv
   let violation = null, correctionDetail = null, rejectedProposal = null,formatFailures=0,qualityFailures=0;
   const expires=Math.min(deadline,performance.now()+55000);
   const attempts = [];
-  const repairable = new Set(['invalid_model_proposal','incomplete_model_proposal','model_action_rejected','unknown_objective','invalid_reminder_offer','invalid_memory_graph_proposal']);
+  const repairable = new Set(['invalid_model_proposal','incomplete_model_proposal','model_action_rejected','unknown_objective','invalid_reminder_offer','invalid_memory_graph_proposal','invalid_memory_target']);
   for (let attempt = 1; attempt <= 3; attempt++) {
     if(performance.now()>=expires)break;
     try {

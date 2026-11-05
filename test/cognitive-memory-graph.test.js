@@ -12,7 +12,7 @@ test('memory proposals preserve conditions, grounded evidence, correction target
  const [row]=validateMemoryProposals([candidate({relation:'updates',target_memory_key:'old',conditions:['except on the hot hob']})],context);
  assert.equal(row.explicit_correction,true);assert.deepEqual(row.conditions,['except on the hot hob']);
  assert.equal(validateMemoryProposals([candidate({source_quote:'not in the user message'})],context).length,0);
- assert.equal(validateMemoryProposals([candidate({target_memory_key:'someone-elses-rule'})],context).length,0);
+ assert.throws(()=>validateMemoryProposals([candidate({target_memory_key:'someone-elses-rule'})],context),/invalid_memory_target/);
  assert.equal(validateMemoryProposals([candidate()],{...context,latestUser:'My guest likes coffee and a soft cloth.'}).length,0);
  const allowed=validateMemoryProposals([candidate({kind:'boundary',permission_policy:'allowed'})],context)[0];assert.equal(allowed.permission_policy,'unspecified');
 });
@@ -184,6 +184,26 @@ test('circular same-job dependencies are rejected before any memory job is commi
  assert.throws(()=>validateMemoryProposals(raw,context),/invalid_memory_graph_proposal/);
  raw[0].relations=[];
  assert.equal(validateMemoryProposals(raw,context).length,2);
+});
+
+test('an explicit owner correction remains owner evidence when a household label mentions a guest',()=>{
+ const old={memory_key:'old',scope_key:'visitor.towels.location',statement:'Keep visitor towels in a basket.',status:'user_stated'};
+ const [row]=validateMemoryProposals([candidate({statement:'Keep visitor towels in the cupboard.',scope_key:old.scope_key,relation:'updates',target_memory_key:'old',source_quote:'I now prefer cupboard instead of basket'})],{latestUser:'Actually, change my guest towel storage preference: I now prefer cupboard instead of basket.',knownRules:[old],objectives,turnKey:'adverb',scope:'room:bathroom'});
+ assert.equal(row.target_memory_key,'old');assert.match(row.statement,/cupboard/);
+ assert.equal(validateMemoryProposals([candidate({source_quote:'soft cloth'})],{latestUser:'My guest now prefers a soft cloth.',knownRules:[],objectives,turnKey:'third-party',scope:'room:kitchen'}).length,0);
+});
+
+test('owner corrections resolve a unique exact fact dimension and reject ambiguous or foreign references',()=>{
+ const old={memory_key:'correct-id',scope_key:'kitchen.hob.cloth',statement:'Use a soft cloth.',status:'user_stated'};
+ const context={latestUser:'Actually, use a damp cloth.',knownRules:[old],objectives,turnKey:'resolved',scope:'room:kitchen'};
+ for(const target_memory_key of ['mistyped-id',old.scope_key]){
+  const [row]=validateMemoryProposals([candidate({statement:'Use a damp cloth.',source_quote:'damp cloth',relation:'updates',target_memory_key})],context);
+  assert.equal(row.target_memory_key,old.memory_key);assert.equal(row.attributes.target_resolution,'exact_scope');
+ }
+ const [confirmed]=validateMemoryProposals([candidate({relation:'confirms',target_memory_key:old.scope_key})],{...context,latestUser:'Keep using a soft cloth.'});
+ assert.equal(confirmed.target_memory_key,old.memory_key);
+ assert.throws(()=>validateMemoryProposals([candidate({relation:'updates',target_memory_key:'unknown'})],{...context,knownRules:[old,{...old,memory_key:'other'}],latestUser:'Actually, use a soft cloth.'}),/invalid_memory_target/);
+ assert.throws(()=>validateMemoryProposals([candidate({scope_key:'other.scope',relation:'updates',target_memory_key:'foreign'})],{...context,latestUser:'Actually, use a soft cloth.'}),/invalid_memory_target/);
 });
 test('new fact dimensions do not collide merely because they share a room',()=>{
  const context={latestUser:'Use a soft cloth.',knownRules:[],objectives,turnKey:'dimensions',scope:'room:kitchen'};
