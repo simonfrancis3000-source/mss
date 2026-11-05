@@ -51,14 +51,15 @@ test('What happens next stays short and keeps final navigation accessible', () =
   assert.match(css, /mss-guide-final \.mss-guide-content\{min-height:0;overflow-y:auto/);
 });
 
-test('Journey step remains compact with no lost training context', () => {
+test('Journey step stays compact and explains free Chat, Premium voice and profile settings', () => {
   const page = onboardingPages()[2];
   const copy = [page.lead, ...page.paragraphs].join(' ');
-  assert.match(copy, /voice minutes/);
-  assert.match(copy, /Finish for now/);
-  assert.match(copy, /unanswered question/);
-  assert.match(copy, /outings/);
-  assert.ok(copy.split(/\s+/).length < 95);
+  assert.match(copy, /Chat starts free for a limited time/);
+  assert.match(copy, /\$9\.99\/month/);
+  assert.match(copy, /two-way voice conversation/);
+  assert.match(copy, /Profile - Edit Profile/);
+  assert.match(copy, /conversation language/);
+  assert.ok(copy.split(/\s+/).length < 65);
 });
 
 test('All five onboarding panels share fixed dimensions and pinned actions', () => {
