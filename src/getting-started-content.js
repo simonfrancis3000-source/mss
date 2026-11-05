@@ -12,9 +12,8 @@ export function onboardingPages(companion = 'your future robot') {
       'Answer at your own pace. You can skip a question, explain an exception or correct something. Your learning is saved for you to review and improve.'
     ] },
     { title: 'Your journey, your pace', lead: 'Start free in Chat. Talk when you subscribe.', paragraphs: [
-      'Chat starts free with $0.10 in one-time AI usage, not a timed trial. You can see your remaining allowance in Profile.',
-      'Premium is $9.99/month, including 60 voice minutes and $0.50 in AI usage. At the limit, Chat and Talk pause until renewal or a voice-minute pack adds another $0.50.',
-      'Both modes build your Passport. Use Finish for now to return to your unanswered question. Scenarios cover home life and outings.'
+      'Chat starts free for a limited time to get you started. Upgrade to Premium at $9.99/month to enjoy a two-way voice conversation with your robot.',
+      'And don’t forget to go to Profile - Edit Profile to give your robot a custom name and set the conversation language.'
     ] },
     { title: 'Robot Rewards', lead: 'Teach your future robot. Get rewarded for getting ready!', paragraphs: [
       'Here’s the exciting part: every $1 of eligible spending on MySecondSelf subscriptions or voice-minute packs earns $2 in Robot Rewards credit toward a participating robot purchase. Free Chat is a way to start learning; qualifying paid purchases unlock rewards.',
