@@ -213,6 +213,13 @@ export function createMssAccessPolicy({ db, enforcementEnabled = false, betaEmai
     const previousEnd = Date.parse(old?.valid_until || '');
     const now = Date.now();
     const sameToken = old?.provider === 'google_play' && old.purchase_token_hash === tokenHash;
+    // An unpaid replacement purchase cannot cancel an existing paid
+    // subscription whose original token is still valid.
+    if (['pending','revoked'].includes(stateStatus) && old &&
+        ['active','grace','canceled','test'].includes(old.status) &&
+        Number.isFinite(previousEnd) && previousEnd > now && !sameToken) {
+      return {updated:false,newPeriod:false,reason:'unpaid_replacement'};
+    }
     if (old?.provider === 'google_play' && Number.isFinite(previousEnd) &&
         (!Number.isFinite(newEnd) || previousEnd > newEnd) &&
         (!sameToken || !currentlyInactive)) {
