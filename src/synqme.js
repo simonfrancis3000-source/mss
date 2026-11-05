@@ -5802,6 +5802,14 @@ async function requestAIReply(repairMode = false, sourceTimestamp = null) {
   chatReturnSummary = "";
     return personalised;
   } catch (error) {
+    if (error?.apiStatus === 402 &&
+      ['free_trial_exhausted','premium_chat_exhausted','subscription_required','premium_required_for_feature'].includes(error?.errorCode)) {
+      state.apiConnected = true;
+      state.apiError = error.errorCode;
+      state.apiErrorDetail = String(error.message || 'Your conversation allowance is exhausted.');
+      void voiceBalance.refresh();
+      return null;
+    }
     console.info("SYNQ.ME AI request failed; no scripted question will be substituted.", error);
     state.apiConnected = false;
     state.apiError = responseErrorLabel(error);
@@ -5877,6 +5885,23 @@ async function sendMessage(rawText) {
   const message = rawText.trim();
   chatReturnSummary = "";
   if (!message || isSending) return;
+  await voiceBalance.refresh();
+  const accessBalance=voiceBalance.snapshot();
+  if (accessBalance.status === 'error') {
+    elements.conversationStatus.textContent='Your chat allowance could not be verified. Please retry.';
+    return;
+  }
+  const conversationAccess=accessBalance.wallet?.access;
+  if (accessBalance.status==='ready' && conversationAccess?.enforcementEnabled && !conversationAccess.canChat) {
+    elements.conversationStatus.textContent=conversationAccess.mode==='free_trial_exhausted'
+      ? 'Your free Chat trial has ended. Subscribe to Premium to continue.'
+      : conversationAccess.mode==='premium_chat_exhausted'
+        ? 'Your monthly AI allowance is used. Buy a voice-minute pack or wait for renewal.'
+        : 'Your Premium subscription is inactive. Renew to continue training.';
+    selectAppView('profile');
+    return;
+  }
+  if (elements.messageInput.value.trim()===message) elements.messageInput.value='';
   try{if(!state.apiProvider&&API_BASE)await checkAIBackend();state.cognitiveServerMemory=await cognitiveClient.enabled(state.amiaCognitiveRuntime,state.profile.preferredLanguage || 'en');}
   catch{elements.conversationStatus.textContent='Your conversation connection could not be verified. Please retry.';return;}
   beginTrainingVisit();
@@ -5925,6 +5950,21 @@ async function sendMessage(rawText) {
 
   const sentToAIThisTurn = true;
   let reply = await requestAIReply();
+  if (['free_trial_exhausted','premium_chat_exhausted','subscription_required','premium_required_for_feature'].includes(state.apiError)) {
+    // Another device may have exhausted the allowance after preflight.
+    // Rejected turns must not enter the saved transcript as robot training.
+    state.messages = state.messages.filter(item=>item.timestamp!==userMessageTimestamp);
+    isSending=false;
+    elements.sendButton.disabled=false;
+    elements.messageInput.disabled=false;
+    elements.messageInput.value=message;
+    persist();
+    renderAll();
+    elements.conversationStatus.textContent=state.apiErrorDetail;
+    selectAppView('profile');
+    void flushCloudSave();
+    return;
+  }
   const replyNeedsRepair = (value) => !value ||
     responseRepeatsUser(value, message) ||
     responseRepeatsRecentAssistant(value) ||
@@ -5987,10 +6027,7 @@ elements.chatForm.addEventListener("submit", (event) => {
   if (maybeOfferOnboarding()) return;
   if (!text.trim() || isSending) return;
 
-  // Preserve the draft when the account/profile gate prevents sending.
-  // Once a valid turn begins, sendMessage immediately renders the user message.
-  if (cloudUserId && profileComplete()) elements.messageInput.value = "";
-
+  // Keep the draft until the server-side allowance preflight succeeds.
   void sendMessage(text).catch((error) => {
     console.error("SYNQ.ME could not complete the submitted message.", error);
     isSending = false;
