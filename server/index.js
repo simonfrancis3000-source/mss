@@ -26,7 +26,7 @@ import http from "node:http";
 import { createSmartThingsHomeConnect } from "./smartthings-home-connect.js";
 import { readSmartThingsTrainingPrompt } from "./smartthings-training-context.js";
 import { createClient } from "@supabase/supabase-js";
-import { verifyGooglePlayToken, hashPurchaseToken, consumeVerifiedGoogleTopUp, acknowledgeVerifiedGoogleSubscription, getGooglePlayOrder } from "./google-play-billing.js";
+import { verifyGooglePlayToken, verifyGooglePlaySubscriptionState, hashPurchaseToken, consumeVerifiedGoogleTopUp, acknowledgeVerifiedGoogleSubscription, getGooglePlayOrder } from "./google-play-billing.js";
 import { loadRobotRewards } from "./robot-rewards.js";
 import { createVoiceRelay } from "./voice-relay.js";
 import { createReadStream } from "node:fs";
@@ -35,6 +35,7 @@ import { fileURLToPath } from "node:url";
 import { createHash, randomUUID } from "node:crypto";
 import { authenticateSupabaseRequest, rateLimitIdentity } from "./supabase-auth.js";
 import { createMssAccessPolicy } from "./access-policy.js";
+import { verifyGooglePubSubPush, parseGooglePlayRtdn } from "./google-play-rtdn.js";
 import { buildDeepSeekUsageEvent, createPhonicUsageSession, verifyPhonicUsageSession, clampVoiceDuration } from "./usage.js";
 import { buildHomePersonaSystemPrompt } from "../src/home-persona-reasoning.js";
 import { buildOutOfHomePersonaSystemPrompt, cleanOutOfHomeScenarioContext, findOutOfHomeScenarioContext, isOutOfHomeTopicChange } from "../src/out-of-home-persona-prompt.js";
@@ -216,19 +217,21 @@ async function recordUsageEvent(event, accessToken) {
 }
 
 async function recordDeepSeekUsage(authContext, result, operation) {
-  if (!authContext?.user?.id || !authContext?.accessToken) return false;
+  if (!authContext?.user?.id || !authContext?.accessToken) {
+    throw new Error('Authenticated usage identity missing.');
+  }
   const event = buildDeepSeekUsageEvent({
     userId: authContext.user.id,
     result,
     operation,
     requestId: randomUUID()
   });
-  if (!event) return false;
+  if (!event) throw new Error('DeepSeek usage report is unavailable.');
   // Record the trusted DeepSeek cost before returning the provider result.
   // The existing analytics table is client-writable, so it must not be used
   // to enforce one-time free credit.
   if (authContext.accessSlot) {
-    await accessPolicy.recordCost(authContext.accessSlot, operation, event.deepseek_cost_usd || 0);
+    await accessPolicy.recordCost(authContext.accessSlot, operation, event.deepseek_cost_usd, event.request_id);
   }
   return recordUsageEvent(event, authContext.accessToken);
 }
@@ -554,6 +557,45 @@ const app = http.createServer(async (request, response) => {
 
   const url = new URL(request.url || "/", "http://localhost");
   if (await smartThingsHomeConnect(request, response, url, headers || {})) return;
+
+  // Pub/Sub pushes contain a purchase token but are not proof of entitlement.
+  // Verify the Google OIDC identity and then re-query the Android Publisher
+  // API before updating a subscription. This route has no customer bearer.
+  if (request.method==='POST' && url.pathname==='/api/google-play/rtdn') {
+    if (!billingDb || !process.env.MSS_PLAY_RTDN_AUDIENCE ||
+        !process.env.MSS_PLAY_RTDN_PUSH_EMAIL) {
+      return json(response,503,{error:'Google Play notifications are not configured.'});
+    }
+    try {
+      await verifyGooglePubSubPush(request.headers.authorization,{
+        audience:process.env.MSS_PLAY_RTDN_AUDIENCE,
+        serviceAccountEmail:process.env.MSS_PLAY_RTDN_PUSH_EMAIL
+      });
+      const notification=parseGooglePlayRtdn(await readJson(request,16000));
+      const hash=hashPurchaseToken(notification.purchaseToken);
+      const {data:known,error:lookupError}=await billingDb.from('mss_play_purchase_tokens')
+        .select('user_id').eq('token_hash',hash).maybeSingle();
+      if (lookupError) throw new Error('rtdn_owner_lookup_failed');
+      if (!known?.user_id) {
+        // The device may not have submitted its first purchase yet.
+        // Native restore will complete its initial verification.
+        return json(response,200,{received:true,matched:false});
+      }
+      const verified=await verifyGooglePlaySubscriptionState({
+        purchaseToken:notification.purchaseToken,userId:known.user_id
+      });
+      const result=await accessPolicy.recordVerifiedSubscriptionStatus(
+        known.user_id,verified
+      );
+      return json(response,200,{received:true,matched:true,updated:Boolean(result.updated)});
+    } catch (error) {
+      const status=error?.statusCode===401?401:503;
+      console.warn('Google Play subscription notification unsuccessful',{
+        code:String(error?.message||'notification_error').slice(0,75),status
+      });
+      return json(response,status,{error:'Subscription notification could not be processed.'});
+    }
+  }
   // Serve only explicitly published, immutable OTA artifacts. The manifest starts disabled.
   // Filenames are strictly allowlisted to prevent path traversal.
   const otaName = url.pathname.slice("/ota/".length);
@@ -629,7 +671,8 @@ const app = http.createServer(async (request, response) => {
       accountAuthConfigured: Boolean(SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY),
       usageTrackingConfigured: Boolean(SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY),
       applianceManualSearchConfigured: Boolean(DEEPSEEK_SEARCH_API_KEY),
-      paidVoiceEnabled: Boolean((VOICE_BILLING_ENABLED || VOICE_BILLING_TEST_EMAILS.size) && voiceRelay && process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON)
+      paidVoiceEnabled: Boolean((VOICE_BILLING_ENABLED || VOICE_BILLING_TEST_EMAILS.size || ACCESS_ENFORCEMENT_ENABLED) && voiceRelay && process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON),
+      googlePlayRtdnConfigured: Boolean(process.env.MSS_PLAY_RTDN_AUDIENCE && process.env.MSS_PLAY_RTDN_PUSH_EMAIL)
     }, headers || {});
   }
 
@@ -674,7 +717,7 @@ const app = http.createServer(async (request, response) => {
     catch (error) {return json(response,error.statusCode || 503,{error:error.message},headers || {});}
     return json(response, 200, {
       allowanceType,
-      billingEnabledForUser: voiceBillingFor(authContext),
+      billingEnabledForUser: ACCESS_ENFORCEMENT_ENABLED || voiceBillingFor(authContext),
       access,
       premiumActive: access.enforcementEnabled ? access.premiumActive :
         Boolean(data?.monthly_valid_until && Date.parse(data.monthly_valid_until) > Date.now()),
@@ -1564,8 +1607,11 @@ const app = http.createServer(async (request, response) => {
     let result = await upstream.json();
     const chatModelMs = Date.now() - chatModelStart;
     const pendingChatUsage = [];
+    let chatUsageError = null;
     const trackChatUsage = (usageResult, operation) => {
-      pendingChatUsage.push(recordDeepSeekUsage(authContext, usageResult, operation).catch(() => false));
+      const tracked = recordDeepSeekUsage(authContext, usageResult, operation)
+        .catch(error => { chatUsageError ||= error; return false; });
+      pendingChatUsage.push(tracked);
     };
     trackChatUsage(result, "chat");
     if (roomJourney && prematureRoomTransition(result?.choices?.[0]?.message?.content, roomJourney.activeRoomId, roomCompletionConfirmed)) {
@@ -1709,10 +1755,13 @@ const app = http.createServer(async (request, response) => {
     if (responseNeedsReview) console.info("SYNQ.ME reply withheld", {continuityBlocked:guarded.blocked,reviewUnavailable:Boolean(guarded.reviewUnavailable),missingFollowup:!/[?？؟]/u.test(finalReply),applianceIntake:Boolean(flowRequirements.intake)});
     const reviewMs = Date.now() - reviewStart;
     const saveStart = Date.now();
-    const [persistence] = await Promise.all([
-      persistDecisionTurn(responseNeedsReview ? "" : finalReply,{usedFallback:requiresRepair || guarded.blocked || responseNeedsReview,manualVerified:applianceResult?.manual_status === "matched",appliance:applianceResult}),
-      ...pendingChatUsage
-    ]);
+    await Promise.all(pendingChatUsage);
+    if (chatUsageError) throw chatUsageError;
+    const persistence = await persistDecisionTurn(
+      responseNeedsReview ? "" : finalReply,
+      {usedFallback:requiresRepair || guarded.blocked || responseNeedsReview,
+       manualVerified:applianceResult?.manual_status === "matched",appliance:applianceResult}
+    );
     const totalMs = Date.now() - chatTimingStart;
     console.info("SYNQ.ME chat timing", { totalMs, contextMs, modelMs:chatModelMs, generationMs:reviewStart-chatModelStart, reviewMs, saveMs:Date.now()-saveStart, reviewChecks:reviewMetrics.checks, reviewRewrites:reviewMetrics.rewrites, reviewCompletionTokens:reviewMetrics.completionTokens });
     return json(response, 200, {

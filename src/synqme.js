@@ -5806,6 +5806,17 @@ async function requestAIReply(repairMode = false, sourceTimestamp = null) {
   chatReturnSummary = "";
     return personalised;
   } catch (error) {
+    if (error?.apiStatus === 402 &&
+      ['free_trial_exhausted','premium_chat_exhausted','subscription_required','premium_required_for_feature'].includes(error?.errorCode)) {
+      state.apiConnected = true;
+      state.apiError = error.errorCode;
+      state.apiErrorDetail = String(error.message || 'Your conversation allowance is exhausted.');
+      // The authenticated backend remains authoritative if another tab or
+      // device exhausted the allowance after our preflight.
+      await voiceBalance.refresh();
+      selectAppView('profile');
+      return null;
+    }
     console.info("SYNQ.ME AI request failed; no scripted question will be substituted.", error);
     state.apiConnected = false;
     state.apiError = responseErrorLabel(error);

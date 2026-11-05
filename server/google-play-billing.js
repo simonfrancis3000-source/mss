@@ -169,6 +169,35 @@ export async function verifyGooglePlayToken({ productId, purchaseToken, userId }
   return { ...parseVerifiedPlayPurchase(details, { productId }), isTest: Boolean(details?.testPurchase || details?.testPurchaseContext) };
 }
 
+/**
+ * Google Play RTDN is only a change signal. Re-read SubscriptionPurchaseV2
+ * using the purchase token before changing access.
+ */
+export async function verifyGooglePlaySubscriptionState({ purchaseToken, userId } = {}) {
+  const expectedAccountId = obfuscatedPlayAccountId(userId);
+  hashPurchaseToken(purchaseToken);
+  const token = await googleAccessToken();
+  const path = '/androidpublisher/v3/applications/' + MSS_PLAY_PACKAGE +
+    '/purchases/subscriptionsv2/tokens/' + encodeURIComponent(purchaseToken);
+  const response = await fetch('https://androidpublisher.googleapis.com' + path, {
+    headers: {Authorization:'Bearer ' + token},signal:AbortSignal.timeout(12000)
+  });
+  if (!response.ok) throw fail('Google Play subscription status is unavailable.',502);
+  const details = await response.json();
+  if (details?.externalAccountIdentifiers?.obfuscatedExternalAccountId !== expectedAccountId) {
+    throw fail('Google Play subscription account mismatch.',403);
+  }
+  const lines = (details.lineItems || []).filter(item=>item?.productId===MSS_PREMIUM_PRODUCT);
+  if (!lines.length) throw fail('Unexpected Google Play subscription product.',403);
+  const latest = [...lines].sort((a,b)=>Date.parse(b?.expiryTime||'')-Date.parse(a?.expiryTime||''))[0];
+  return {
+    state:details.subscriptionState,
+    periodEnd:latest.expiryTime,
+    orderId:latest.latestSuccessfulOrderId || '',
+    tokenHash:hashPurchaseToken(purchaseToken)
+  };
+}
+
 /** Consume only AFTER the corresponding minute grant has been durably committed. */
 export async function consumeVerifiedGoogleTopUp({ productId, purchaseToken } = {}) {
   if (!Object.hasOwn(MSS_TOPUP_MINUTES, productId)) throw fail("Unknown voice credit package.");
