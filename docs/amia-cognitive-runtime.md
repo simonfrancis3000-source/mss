@@ -156,3 +156,19 @@ The next revision makes next_question authoritative and removes draft questions 
 Run [41997811069](https://github.com/simonfrancis3000-source/mss/actions/runs/41997811069) at fc7430c569fb5abd92a165d0212e875348da7469 passed 448/450 development repeats (99.6%), failed two and completed 5,384/5,400 turns. The two failures were format+quality recovery exhaustion and two consecutive invalid proposal formats. No memory, reminder, correction or dependency failure was recorded. Reserved cases remained sealed.
 
 The next revision identifies the invalid field without logging its raw value and gives that field-specific reason to the format repair. Recovery permits one format repair and one quality repair, with at most three requests only when different failure classes occur. Two consecutive failures of the same class still stop after two requests; ordinary replies still use one. Generation has a 55-second recovery deadline within the runtime's 70-second model deadline, leaving room before the 90-second database lease. This prevents rare mixed recovery failures from exhausting a single shared retry without introducing an unbounded loop. Fresh live evaluation is required for this revision.
+
+
+### Independent reserved evaluation
+
+Development and reserved phases now run independently against the same frozen runtime and grading revision. This permits the fresh reserved evaluation to proceed when development is highly reliable but still has explicitly reported failures. The reserved phase has its own 150-run/1,800-turn summary; development retains its separate 450-run/5,400-turn summary. The combined 600-run/7,200-turn acceptance check still reports every failure and enforces complete coverage. Running the reserved phase does not convert a failing result into a pass. Runtime and scoring code remain unchanged while this fresh evaluation is in progress.
+
+
+### First independent reserved result and subsequent corrections
+
+The frozen [600-run evaluation 42001835006](https://github.com/simonfrancis3000-source/mss/actions/runs/42001835006) completed all planned runs: development 447/450 (99.3%), reserved 142/150 (94.7%), combined 589/600 (98.2%), with 7,182/7,200 turns completed. Development had three quality-recovery failures. Eight reserved runs failed correction/stale-preference checks; those failures were not grading-wording errors.
+
+Six correction proposals were discarded because the owner-evidence guard did not recognize first-person preferences with an adverb such as “I now prefer” in a household label containing “guest”. Two proposals supplied an incorrect opaque memory ID or supplied its fact-dimension key instead. The correction now preserves explicit first-person owner evidence and resolves references only through one exact, unique known owner fact dimension. It never fuzzy-matches opaque IDs and rejects ambiguous/foreign references for bounded repair rather than silently losing the correction. Replaying the eight captured provider traces through the corrected runtime and actual migration SQL passed all eight correction checks.
+
+A separate integration review found that the account-context query omitted decision source_refs, which carry durable answer-coverage evidence. The query now retrieves that metadata so older answered questions retain their coverage after they leave the recent canonical session window. A projection-based storage regression verifies it.
+
+The original reserved score remains 142/150 for the frozen revision. These examples have now been inspected and used for remediation. Subsequent runs explicitly label them previously_reserved_regression and cannot be presented as a new untouched final evaluation. A genuinely fresh future acceptance sample or human review is needed to reassess generalization after tuning.
