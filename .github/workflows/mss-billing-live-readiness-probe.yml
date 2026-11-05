@@ -12,4 +12,4 @@ jobs:
         shell: bash
         run: |
           curl --fail --silent --show-error --max-time 40 https://synqme-api.onrender.com/health > /tmp/mss-health.json
-          node -e "const x=require('/tmp/mss-health.json'); console.log(JSON.stringify({service:x.service,configured:x.configured,paidVoiceEnabled:x.paidVoiceEnabled,googlePlayRtdnConfigured:x.googlePlayRtdnConfigured,accountAuthConfigured:x.accountAuthConfigured},null,2))"
+          node -e "const x=require('/tmp/mss-health.json'); console.log(JSON.stringify({service:x.service,configured:x.configured,freeTrialGateReady:x.freeTrialGateReady,paidVoiceEnabled:x.paidVoiceEnabled,googlePlayRtdnConfigured:x.googlePlayRtdnConfigured,accountAuthConfigured:x.accountAuthConfigured},null,2));if(x.freeTrialGateReady!==true)process.exit(1)"
