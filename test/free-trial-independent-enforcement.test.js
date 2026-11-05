@@ -16,7 +16,8 @@ const allowance={usedUsd:0.62,limitUsd:0.50};
 function assess(entitlement,used=0,opts={}){
  return evaluateMssEntitlement({
    settings:{...settings,...opts},entitlement,
-   usage:{used_usd:used},premiumAllowance:allowance,now,enabledByServer:false
+   usage:{used_usd:used},premiumAllowance:allowance,now,enabledByServer:false,
+   freeTrialEnabledByServer:true
  });
 }
 test('independent $0.10 free Chat: new users can Chat, not Talk',()=>{
@@ -103,7 +104,7 @@ function simulatedDb() {
 }
 test('only free users reserve and meter DeepSeek calls when Premium control is OFF',async()=>{
  const {db,ids,events}=simulatedDb();
- const policy=createMssAccessPolicy({db,enforcementEnabled:false});
+ const policy=createMssAccessPolicy({db,enforcementEnabled:false,freeTrialCapable:true});
  const free={id:ids.free,email:'free@example.invalid'};
  const paid={id:ids.paid,email:'premium@example.invalid'};
  const slot=await policy.reserve(free,'chat');
@@ -117,4 +118,19 @@ test('only free users reserve and meter DeepSeek calls when Premium control is O
  const paidVoice=await policy.requireVoice(paid);
  assert.equal(paidVoice.mode,'legacy');
  assert.equal(paidVoice.canTalk,true);
+});
+
+test('server free-trial gate OFF continues previous legacy behaviour even if database flag ON',async()=>{
+ const {db,ids,events}=simulatedDb();
+ const policy=createMssAccessPolicy({db,enforcementEnabled:false,freeTrialCapable:false});
+ const user={id:ids.free,email:'free@example.invalid'};
+ assert.equal(await policy.reserve(user,'chat'),null);
+ assert.equal((await policy.requireVoice(user)).mode,'legacy');
+ assert.deepEqual(events,[]);
+ const access=evaluateMssEntitlement({
+  settings,entitlement:null,usage:{used_usd:0.10},premiumAllowance:allowance,
+  now,enabledByServer:false,freeTrialEnabledByServer:false
+ });
+ assert.equal(access.mode,'legacy');
+ assert.equal(access.canChat,true);
 });
