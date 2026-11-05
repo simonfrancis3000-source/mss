@@ -11,7 +11,7 @@ test('bottom navigation selects journey and chat, with voice taking the active s
   const elements={voiceExperience:{hidden:true}};
   const document={body:{dataset:{appView:'chat'}},querySelectorAll:()=>buttons,querySelector:()=>workspace};
   let rendered=0;
-  const context=vm.createContext({closeSettings(){},cloudUserId:null,chatReturnSummary:"",elements,document,renderScenarioJourney:()=>{rendered++;},updateChatScrollbar(){},prepareWelcomeAudioOffer(){},renderMessages(){},closeVoiceExperience(){elements.voiceExperience.hidden=true;},window:{requestAnimationFrame(){},scrollTo(){}}});
+  const context=vm.createContext({androidChatKeyboard:{sync(){},scrollLatest(){}},closeSettings(){},cloudUserId:null,chatReturnSummary:"",elements,document,renderScenarioJourney:()=>{rendered++;},updateChatScrollbar(){},prepareWelcomeAudioOffer(){},renderMessages(){},closeVoiceExperience(){elements.voiceExperience.hidden=true;},window:{requestAnimationFrame(){},scrollTo(){}}});
   vm.runInContext(functions+'\n;globalThis.navigation={syncAppNavigation,selectAppView};',context);
   context.navigation.selectAppView('journey');
   assert.equal(document.body.dataset.appView,'journey');
@@ -38,7 +38,7 @@ test('returning from Talk reveals saved chat and scrolls to the latest message w
     chatMessages: { scrollTop: 0, scrollHeight: 900, replaceChildren() { shown.length = 0; } } };
   const state = { messages: [{ role: 'user', content: 'Leave the remote on the side table.' }, { role: 'assistant', content: 'I will leave it there.' }] };
   const document = { body: { dataset: { appView: 'chat' } }, querySelectorAll: () => [], querySelector: () => ({ open: false }) };
-  const context = vm.createContext({closeSettings(){}, chatReturnSummary:"", elements, state, document, cloudUserId: 'account-a',
+  const context = vm.createContext({androidChatKeyboard:{sync(){},scrollLatest(){}},closeSettings(){}, chatReturnSummary:"", elements, state, document, cloudUserId: 'account-a',
     localStorage: { getItem: () => null }, introAudioStorageKey: () => 'intro-account-a',
     syncRobotSpeaking() {}, updateChatScrollbar() {}, renderScenarioJourney() {}, appendMessage: (role, content) => shown.push(content),
     closeVoiceExperience() { elements.voiceExperience.hidden = true; },
@@ -59,7 +59,7 @@ test('opening chat shows the exact unanswered checkpoint without changing saved 
  const source=await readFile(new URL('../src/synqme.js',import.meta.url),'utf8');
  const fn=source.match(/function selectAppView\([^]*?\n\}/)[0];
  const messages=[{role:'user',content:'Use the dishwasher.'},{role:'assistant',content:'What should I do with wooden spoons?'}];
- const context=vm.createContext({closeSettings(){},cloudUserId:'a',roomJourney:{active_room_id:'kitchen'},activeOutOfHomeScenarioContext:null,state:{messages,profile:{ownerName:'Simon',preferredLanguage:'en'}},conversationCheckpoint,englishResumeReply,chatReturnSummary:'',welcomeBackPending:false,elements:{},document:{body:{dataset:{appView:'home'}},querySelector:()=>null},prepareWelcomeAudioOffer(){},renderMessages(){},syncAppNavigation(){},updateChatScrollbar(){},window:{requestAnimationFrame(){},scrollTo(){}}});
+ const context=vm.createContext({androidChatKeyboard:{sync(){},scrollLatest(){}},closeSettings(){},cloudUserId:'a',roomJourney:{active_room_id:'kitchen'},activeOutOfHomeScenarioContext:null,state:{messages,profile:{ownerName:'Simon',preferredLanguage:'en'}},conversationCheckpoint,englishResumeReply,chatReturnSummary:'',welcomeBackPending:false,elements:{},document:{body:{dataset:{appView:'home'}},querySelector:()=>null},prepareWelcomeAudioOffer(){},renderMessages(){},syncAppNavigation(){},updateChatScrollbar(){},window:{requestAnimationFrame(){},scrollTo(){}}});
  vm.runInContext(fn+'\nselectAppView("chat");',context);
  assert.match(context.chatReturnSummary,/Welcome back, Simon/);
  assert.match(context.chatReturnSummary,/What should I do with wooden spoons\?/);
