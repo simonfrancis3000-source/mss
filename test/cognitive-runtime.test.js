@@ -198,9 +198,23 @@ test('structured follow-up questions are attached once and still pass the full q
  assert.equal(validateTurnProposal({...raw,reply:proposal.reply}).reply,proposal.reply);
  assert.throws(()=>validateTurnProposal({...raw,next_question:'The open point is the basket location.'}),/invalid_model_proposal/);
  assert.throws(()=>validateTurnProposal({...raw,next_question:'Where should it sit? Who can move it?'}),/invalid_model_proposal/);
- assert.throws(()=>validateTurnProposal({...raw,reply:'Who can move it?'}),/invalid_model_proposal/);
+ assert.equal(validateTurnProposal({...raw,reply:'Your normal arrangement is a basket. Who can move it?'}).reply,proposal.reply);
  const unverified=validateTurnProposal({...raw,reply:'I have added your reminder.'});
  assert.equal(checkRuntimeReply(unverified,{state:cleanRuntimeState(),active:true}),'unverified_action_claim');
+});
+
+test('an unanswered question may be revisited once; detours do not count as new asks',()=>{
+ const question='Where should the basket sit?',key='basket.location';
+ let state=cleanRuntimeState({lastQuestion:question,lastDecisionKey:key});
+ const proposal={...answer('Your spending rule is clear. '+question),decisionKey:key,previousAnswer:{answered:false,sourceQuote:''}};
+ assert.equal(checkRuntimeReply(proposal,{state,active:true,intent:'answer'}),null);
+ state=reduceRuntimeState(state,{latestUser:'List my reminders',reply:'Your reminders are listed. '+question,intent:'answer',turnKey:'list',decisionKey:key,preserveOpenQuestion:true});
+ assert.equal(state.lastQuestionAskCount,1);
+ state=reduceRuntimeState(state,{latestUser:'Ask me before spending.',reply:proposal.reply,intent:'answer',turnKey:'boundary',decisionKey:key,previousAnswer:proposal.previousAnswer});
+ assert.equal(state.lastQuestionAskCount,2);
+ assert.equal(checkRuntimeReply({...proposal,reply:'Would the basket fit on a shelf?'},{state,active:true,intent:'answer'}),'repeated_question');
+ assert.equal(checkRuntimeReply(proposal,{state,active:true,intent:'answer'}),'repeated_question');
+ assert.equal(checkRuntimeReply(proposal,{state,active:true,intent:'explain'}),null);
 });
 
 test('provider validates JSON locally, reports usage, and rejects fabricated tool actions', async () => {

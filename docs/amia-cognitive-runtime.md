@@ -142,3 +142,10 @@ Run [41992396407](https://github.com/simonfrancis3000-source/mss/actions/runs/41
 The next correction distinguishes a requested recap returning to an unanswered question from repeating a settled question. It also requests separate answer and next_question fields; the server validates and attaches one question, rejects malformed or conflicting follow-ups, avoids attaching duplicates and applies the same action-claim and repetition checks to the composed reply. Legacy proposals already containing a valid follow-up remain compatible. The generation budget remains one request plus at most one repair. Fresh live evaluation is required after this revision.
 
 Reminder detours also return to the current unanswered training question and retain its decision key instead of replacing it with a generic first-step question. Unit and real migration-SQL harness tests cover this continuity.
+
+
+### Structured-question regression and correction
+
+Run [41994950577](https://github.com/simonfrancis3000-source/mss/actions/runs/41994950577) at 4006ba3a1aa3f40db3d1c9db60ea2994b3c932ac regressed to 332/450 passes, 118 failures and 4,953/5,400 turns. Every failure exhausted the response-quality budget. Most occurred after a reminder detour: the model returned to an unanswered question, the repetition guard rejected it, and the repair often left conflicting draft/question fields. This revision is not release-ready; its score must not be hidden by the earlier 438/450 result.
+
+The next revision makes next_question authoritative and removes draft questions from the answer field before applying the complete response checks. It permits one explicit revisit of an unanswered decision, tracks active asks in canonical state and blocks further repetition of that decision, including paraphrases. Answered and deferred questions stay blocked. Reminder detours, pause/resume and owner-requested recaps do not count as additional active asks. Focused regressions verify these behaviors; a fresh full live run is required.
