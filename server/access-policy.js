@@ -213,6 +213,12 @@ export function createMssAccessPolicy({ db, enforcementEnabled = false, betaEmai
     const previousEnd = Date.parse(old?.valid_until || '');
     const now = Date.now();
     const sameToken = old?.provider === 'google_play' && old.purchase_token_hash === tokenHash;
+    // A lapsed license-test receipt must not replace a distinct active beta
+    // entitlement that was granted for a longer testing period.
+    if (old?.provider === 'beta' && old?.status === 'test' &&
+        Number.isFinite(previousEnd) && previousEnd > now && currentlyInactive) {
+      return {updated:false,newPeriod:false,reason:'beta_entitlement_preserved'};
+    }
     // An unpaid replacement purchase cannot cancel an existing paid
     // subscription whose original token is still valid.
     if (['pending','revoked'].includes(stateStatus) && old &&
