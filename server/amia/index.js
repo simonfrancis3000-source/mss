@@ -1,7 +1,7 @@
 import { buildSystemInstructions } from "./instructions.js";
 import { selectRelevantPreferences } from "./memory.js";
 import { selectModel } from "./router.js";
-import { fetchWebPage, formatSearchResults, searchWeb, shouldUseWebSearch } from "./search.js";
+import { fetchWebPage, formatSearchResults, searchWeb, shouldUseWebSearch, knowledgeSearchQuery } from "./search.js";
 
 export { searchWeb, fetchWebPage } from "./search.js";
 
@@ -10,6 +10,7 @@ const DEEPSEEK_CHAT_URL = "https://api.deepseek.com/chat/completions";
 export async function createAmiaReply({
   apiKey,
   searchApiKey,
+  searchProvider = "deepseek",
   messages = [],
   preferences = [],
   profile = {},
@@ -33,16 +34,18 @@ export async function createAmiaReply({
       webContext = "A live web search was requested, but Search is not configured. Do not invent current facts or imply that live information was checked.";
     } else {
       try {
-        const results = await searchWeb(searchApiKey, latestUserMessage, {
+        const researchQuery = knowledgeSearchQuery(latestUserMessage);
+        const results = await searchWeb(searchApiKey, researchQuery, {
           count: 5,
-          originalQuestion: latestUserMessage
+          originalQuestion: researchQuery,
+          provider: searchProvider
         });
         searchRequests += 1;
         if (results.length) {
           const needsFetch = results.find((item) => !String(item.content || "").trim());
           if (needsFetch?.url) {
             try {
-              const page = await fetchWebPage(searchApiKey, needsFetch.url);
+              const page = await fetchWebPage(searchApiKey, needsFetch.url, { provider: searchProvider, objective: researchQuery });
               fetchRequests += 1;
               needsFetch.content = page.content || "";
               if (!needsFetch.title && page.title) needsFetch.title = page.title;
@@ -104,6 +107,7 @@ export async function createAmiaReply({
     provider: "deepseek",
     model,
     webSearchStatus,
+    webSearchProvider: searchProvider,
     relevantPreferenceCount: relevantPreferences.length,
     usage: {
       promptTokens: Number(result?.usage?.prompt_tokens || 0),
