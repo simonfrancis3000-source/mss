@@ -1,6 +1,7 @@
 package app.mysecondself;
 
 import android.os.Bundle;
+import android.content.Intent;
 import android.webkit.CookieManager;
 import android.webkit.WebView;
 
@@ -10,6 +11,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         registerPlugin(MSSBillingPlugin.class);
+        registerPlugin(MSSSmartThingsPlugin.class);
         super.onCreate(savedInstanceState);
         // Turnstile is hosted on synqme.mysecondself.app in an embedded frame.
         // Android WebView must allow cookies used by Cloudflare's challenge.
@@ -23,5 +25,11 @@ public class MainActivity extends BridgeActivity {
                 webView.getSettings().setDomStorageEnabled(true);
             }
         }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
     }
 }
