@@ -12,6 +12,7 @@ function followup(objectives, state, language) {
   // Deterministic recovery is deliberately limited to the evaluated languages.
   // For other languages the provider composes the continuation before commit.
   const es = language === 'es';
+  if(state.lastQuestion&&!state.pendingOffer&&!state.dispositions.some(d=>d.answered!==false&&normalized(d.question)===normalized(state.lastQuestion)))return state.lastQuestion;
   const ordered = [...objectives.filter(o => o.id === state.objectiveId), ...objectives.filter(o => o.id !== state.objectiveId)];
   for (const area of ordered) {
     const subject = String(area.title || '').toLowerCase();
@@ -131,7 +132,7 @@ export function createCognitiveRuntime({ store, generate, contextStore, resolveA
                 if (resolvedAppliance.evidence) {
                   modelCalls++;
                   proposal = await measured('modelMs',()=>generate({context:{...context,intake:null,verifiedManual:resolvedAppliance.evidence},objectives,auth}));
-                  const invalid = checkRuntimeReply(proposal,{state:qualityState,active:training,intake:null,language,latestUser});
+                  const invalid = checkRuntimeReply(proposal,{state:qualityState,active:training,intake:null,language,latestUser,intent:resolved.intent});
                   if (invalid) throw new RuntimeError('runtime_quality_check_failed',502);
                   const quotes=verifiedFeatureQuotes(proposal.featureQuotes,resolvedAppliance.evidence);
                   const featureBudget=Math.max(0,3000-proposal.reply.length-70);
@@ -148,7 +149,8 @@ export function createCognitiveRuntime({ store, generate, contextStore, resolveA
             if (appliance) {const memory=applianceMemoryProposal(appliance,latestUser);if(memory)memoryProposals=[...memoryProposals.slice(0,7),memory];}
           }
         }
-        const next = reduceRuntimeState(state, { latestUser, reply, intent: paused ? 'pause' : resolved.intent, offer, turnKey: identity.key, objectiveId: proposal?.objectiveId, decisionKey:proposal?.decisionKey, previousAnswer:proposal?.previousAnswer, active: training });
+        const preserveOpenQuestion=Boolean(resolved.command&&training&&!state.pendingOffer&&state.lastQuestion&&reply.includes(state.lastQuestion));
+        const next = reduceRuntimeState(state, { latestUser, reply, intent: paused ? 'pause' : resolved.intent, offer, turnKey: identity.key, objectiveId: proposal?.objectiveId, decisionKey:proposal?.decisionKey || (preserveOpenQuestion?state.lastDecisionKey:null), previousAnswer:proposal?.previousAnswer, preserveOpenQuestion, active: training });
         const sourceDate=Date.parse(body.sourceMessageTimestamp || '');
         const sourceTimestamp=Number.isFinite(sourceDate)&&sourceDate>=Date.UTC(2010,0,1)&&sourceDate<=Date.now()+300000?new Date(sourceDate).toISOString():new Date().toISOString();
         const result = { reply, provider: 'deepseek', usedFallback: true,

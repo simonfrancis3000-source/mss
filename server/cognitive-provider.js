@@ -7,13 +7,13 @@ export function createCognitiveProvider({ key, model, fetchImpl = fetch, onUsage
     if (!key) throw new RuntimeError('runtime_model_not_configured');
     const answerOnly = context?.intent === 'service_help' || context?.activeTraining === false;
     const turnContract = answerOnly
-      ? '\nTURN CONTRACT: Answer the request directly. Do not ask a question, append an open point, offer a reminder, or extract new memories from this answer-only request. Return reminder_offer:null, decision_key:null and memory_proposals:[] unless the latest message itself states a new durable fact.'
-      : '\nTURN CONTRACT: Answer the current point, including any explanation or progress request, then lead with one useful unresolved question. Keep the conversation moving unless the owner pauses or finishes. Do not ask the owner to confirm a rule or exception they have already explicitly stated.';
+      ? '\nTURN CONTRACT: Answer the request directly. Do not ask a question, append an open point, offer a reminder, or extract new memories from this answer-only request. Return next_question:null, reminder_offer:null, decision_key:null and memory_proposals:[] unless the latest message itself states a new durable fact.'
+      : '\nTURN CONTRACT: Put the answer to the current point in reply. Always provide next_question as one direct, useful unresolved question ending in a question mark. The runtime attaches that question after the answer. Explanation and progress requests still need next_question; you may return to the open unanswered question after a requested recap. Do not end with a statement such as "the open point is" or "I would like to know" instead. Do not ask the owner to confirm a rule or exception they have already explicitly stated.';
     const repairInstructions = {unexpected_question:'Remove every follow-up and question. Give only the requested explanation, ending in a statement.',missing_continuation:'End with one relevant unresolved question.',settled_decision:'Choose a genuinely different unresolved decision and key; do not paraphrase the settled question.',settled_question:'The owner already answered or deferred that question. Ask one different unresolved question.',repeated_question:'Do not repeat the immediately preceding question verbatim. Acknowledge the current point and ask a focused unresolved follow-up.',multiple_questions:'Use one final question only. Remove quoted and rhetorical questions.'};
     const messages=[{role:'system',content:runtimePrompt+turnContract+(correction?'\nRepair the proposal. Violation: '+correction+'. '+(repairInstructions[correction]||'Return a corrected valid proposal.'):'')},{role:'user',content:JSON.stringify(context)}];
     if (correction && rejectedProposal) {
-      messages.push({role:'assistant',content:JSON.stringify({schema_version:1,reply:rejectedProposal.reply,decision_key:rejectedProposal.decisionKey,memory_proposals:rejectedProposal.memoryProposals,actions:[]})});
-      messages.push({role:'user',content:JSON.stringify({task:'Replace this rejected draft. Preserve the owner facts and answer the latest owner message.',violation:correction,instruction:repairInstructions[correction]||'Remove circular or self-referencing dependency links. Keep the grounded facts and valid restrictions.',avoid:'Do not repeat the rejected question or merely rename its decision key. End active training with one direct unresolved question, using a question mark.'})});
+      messages.push({role:'assistant',content:JSON.stringify({schema_version:1,reply:rejectedProposal.reply,next_question:rejectedProposal.nextQuestion||null,decision_key:rejectedProposal.decisionKey,memory_proposals:rejectedProposal.memoryProposals,actions:[]})});
+      messages.push({role:'user',content:JSON.stringify({task:'Replace this rejected draft. Preserve the owner facts and answer the latest owner message.',violation:correction,instruction:repairInstructions[correction]||'Return a valid schema. Remove circular or self-referencing dependency links if present. Keep the grounded facts and valid restrictions.',response_format:answerOnly?'Answer in reply and set next_question:null.':'Answer in reply and set next_question to one direct unresolved question ending in a question mark.',avoid:'Do not repeat a rejected settled question or merely rename its decision key. A requested recap may return to an unanswered question.'})});
     }
     let response;
     try {
@@ -51,7 +51,7 @@ export async function generateCheckedCognitiveTurn({ generate, context, objectiv
     try {
       const proposal = await generate({ context, objectives, correction: violation, rejectedProposal });
       rejectedProposal = proposal;
-      violation = checkRuntimeReply(proposal, {...quality,latestUser:context?.latestUser || ''});
+      violation = checkRuntimeReply(proposal, {...quality,latestUser:context?.latestUser || '',intent:context?.intent || quality.intent});
       if (!violation) validateProposal(proposal);
       attempts.push({ attempt, qualityViolation: violation });
       if (!violation) return { proposal, attempts };

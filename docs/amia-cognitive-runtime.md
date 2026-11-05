@@ -133,3 +133,12 @@ Run [41914625715](https://github.com/simonfrancis3000-source/mss/actions/runs/41
 Run [41914625415](https://github.com/simonfrancis3000-source/mss/actions/runs/41914625415) completed all 450 development repeats at commit 9507f9f722973a258177ed921158a7f8f48162d2: 428 passed (95.1%), 22 failed, and 5,279 of 5,400 planned user turns completed. The remaining failures were 21 exhausted quality repairs and one circular memory dependency. Reserved cases stayed sealed. This is the first full baseline using the corrected grading rules, so its percentage must not be treated as directly comparable with the preceding grader.
 
 The next revision gives the bounded repair request its rejected draft and a concrete replacement instruction. It validates the visible proposed dependency graph before committing a memory job, allowing the same repair budget to correct a circular proposal while retaining the database cycle guard. Appliance intake now requires an owner mention, a contextual identity answer or confirmed ownership, rather than being triggered by an incidental assistant disclaimer about appliance manuals. Unit regressions cover these failures. Fresh live results are still required for this revision.
+
+
+### Second development evaluation with unchanged version 2 grading
+
+Run [41992396407](https://github.com/simonfrancis3000-source/mss/actions/runs/41992396407) at ad9723a80d24f7fc97bea5d57df7f1fed2205efb passed 438/450 development repeats (97.3%), failed 12 and completed 5,334/5,400 turns. Every remaining failed conversation exhausted a quality repair; no memory, reminder, correction or dependency failure was reported. Reserved cases stayed sealed. This is comparable to the 428/450 version 2 baseline because the scoring and dataset were unchanged.
+
+The next correction distinguishes a requested recap returning to an unanswered question from repeating a settled question. It also requests separate answer and next_question fields; the server validates and attaches one question, rejects malformed or conflicting follow-ups, avoids attaching duplicates and applies the same action-claim and repetition checks to the composed reply. Legacy proposals already containing a valid follow-up remain compatible. The generation budget remains one request plus at most one repair. Fresh live evaluation is required after this revision.
+
+Reminder detours also return to the current unanswered training question and retain its decision key instead of replacing it with a generic first-step question. Unit and real migration-SQL harness tests cover this continuity.
