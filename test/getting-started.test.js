@@ -16,11 +16,11 @@ function fixture() {
   return { rows, repository, storage, offline: value => { fail = value; }, make: () => createOnboardingState({ repository, storage, now: () => '2026-11-04T10:00:00Z' }) };
 }
 
-test('guide contains four named screens and FAQ contains 23 distinct answers in five categories', () => {
-  assert.equal(onboardingPages('Andy').length, 4); assert.match(onboardingPages('Andy')[0].title, /Andy/);
+test('guide contains five named screens and FAQ contains 26 distinct answers in five categories', () => {
+  assert.equal(onboardingPages('Andy').length, 5); assert.match(onboardingPages('Andy')[0].title, /Andy/);
   assert.equal(FAQ_CATEGORIES.length, 5);
   const questions = FAQ_CATEGORIES.flatMap(category => category.questions);
-  assert.equal(questions.length, 23); assert.equal(new Set(questions.map(item => item.id)).size, 23);
+  assert.equal(questions.length, 26); assert.equal(new Set(questions.map(item => item.id)).size, 26);
   assert.match(questions.find(item => item.id === 'compatible-robots').answer, /future development/);
   assert.match(questions.find(item => item.id === 'simulation').answer, /not hardware simulations or physical robot tests/);
 });
