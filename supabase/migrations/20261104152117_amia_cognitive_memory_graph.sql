@@ -180,6 +180,19 @@ begin
   if relation in ('updates','refines') then
    update public.synqme_persona_memories set status='superseded' where id=target.id;
    update public.synqme_preferences set preference_status='superseded' where user_id=job.user_id and id::text=target.source_preference_id;
+   -- Descriptive facts that depended on the old version are historical now.
+   -- Keep approval boundaries and other operative rules for clarification.
+   with recursive dependent_facts(id) as (
+    select m.id from public.synqme_rule_relations e join public.synqme_persona_memories m on m.id=e.from_rule_id and m.user_id=e.user_id
+     where e.user_id=job.user_id and e.to_rule_id=target.id and e.relation='depends_on' and m.kind='fact' and m.permission_policy='unspecified' and m.status not in ('superseded','archived')
+    union
+    select m.id from dependent_facts d join public.synqme_rule_relations e on e.to_rule_id=d.id and e.user_id=job.user_id
+     join public.synqme_persona_memories m on m.id=e.from_rule_id and m.user_id=e.user_id
+     where e.relation='depends_on' and m.kind='fact' and m.permission_policy='unspecified' and m.status not in ('superseded','archived')
+   ), retired as (
+    update public.synqme_persona_memories m set status='superseded',attributes=m.attributes||jsonb_build_object('invalidated_dependency_id',target.id)
+     where m.user_id=job.user_id and m.id in (select id from dependent_facts) returning m.source_preference_id
+   ) update public.synqme_preferences set preference_status='superseded' where user_id=job.user_id and id::text in (select source_preference_id from retired);
   elsif relation='conflicts' then update public.synqme_persona_memories set status='conflicting',conflict_group=target.scope_key where id=target.id;
   end if;
   insert into public.synqme_persona_memories(user_id,memory_key,topic,kind,scope_key,statement,status,relation,confidence,conditions,permission_policy,source_refs,attributes,search_terms,search_keys,source_message,source_timestamp,source_conversation_key,supersedes_id,conflict_group)

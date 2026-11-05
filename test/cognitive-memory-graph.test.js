@@ -120,6 +120,26 @@ test('PostgreSQL durable memory jobs apply corrections, graph links, ownership a
    active=(await db.query("select * from public.synqme_persona_memories where scope_key=$1 and status not in ('superseded','archived')",[raceScope])).rows;
    assert.equal(active.length,1);assert.match(active[0].statement,/damp cloth/);
   });
+  await t.test('same-batch dependencies preserve evidence and retire descriptive facts after a correction',async()=>{
+   const latest='For my throw placement, I prefer chair. Please treat this as my normal arrangement. Ask before moving throws when I work.';
+   const arrangement=candidate({statement:'The owner prefers throws on the chair.',scope_key:'throws.arrangement',decision_key:'throws.arrangement',source_quote:'I prefer chair'});
+   const description=candidate({statement:'The chair is the normal standing arrangement for throws.',kind:'fact',scope_key:'throws.arrangement_status',decision_key:'throws.arrangement_status',source_quote:'Please treat this as my normal arrangement',relations:[{kind:'depends_on',target_memory_key:'throws.arrangement'}]});
+   const restriction=candidate({statement:'Ask before moving throws when I work.',kind:'boundary',permission_policy:'ask_first',scope_key:'throws.work_approval',decision_key:'throws.work_approval',source_quote:'Ask before moving throws when I work',relations:[{kind:'depends_on',target_memory_key:'throws.arrangement'}]});
+   const proposals=await queue([arrangement,description,restriction],latest);
+   assert.equal(proposals[1].relations[0].target_memory_key,proposals[0].memory_key);
+   await finish();
+   const known=(await db.query("select * from public.synqme_persona_memories where scope_key like 'throws.%'")).rows;
+   const target=known.find(r=>r.scope_key==='throws.arrangement');
+   await queue([candidate({statement:'The owner prefers throws on the sofa.',scope_key:'throws.arrangement',source_quote:'sofa',relation:'updates',target_memory_key:target.memory_key})],'Actually, use the sofa.',known);
+   await finish();
+   const rows=(await db.query("select * from public.synqme_persona_memories where scope_key like 'throws.%'")).rows;
+   const fact=rows.find(r=>r.scope_key==='throws.arrangement_status');
+   assert.equal(fact.status,'superseded');assert.equal(fact.attributes.invalidated_dependency_id,target.id);assert.ok(fact.source_refs.length);assert.match(fact.statement,/chair/);
+   assert.equal(rows.find(r=>r.scope_key==='throws.work_approval').status,'user_stated');
+   const active=rows.filter(r=>!['superseded','archived'].includes(r.status));
+   assert.ok(!active.some(r=>/chair/.test(r.statement)));assert.equal(active.length,2);
+   assert.equal(evaluatePermission({rules:active,actionScope:'throws.work_approval',conditionsKnown:true,capabilityKnown:true}).outcome,'ask');
+  });
   await t.test('reset removes pending server jobs and rules cannot be restored by stale work',async()=>{
    await queue([candidate({statement:'I prefer a dry cloth for the table.'})],'Use a soft cloth.');
    const job=(await db.query('select public.claim_synqme_cognitive_memory_job() v')).rows[0].v;
@@ -184,6 +204,13 @@ test('circular same-job dependencies are rejected before any memory job is commi
  assert.throws(()=>validateMemoryProposals(raw,context),/invalid_memory_graph_proposal/);
  raw[0].relations=[];
  assert.equal(validateMemoryProposals(raw,context).length,2);
+});
+
+test('ambiguous and forward scope dependencies request repair instead of silently losing the link',()=>{
+ const input=candidate({relations:[{kind:'depends_on',target_memory_key:'pens.arrangement'}]});
+ const context={latestUser:'Use a soft cloth.',objectives,turnKey:'dependency',scope:'room:kitchen'};
+ assert.throws(()=>validateMemoryProposals([input],{...context,knownRules:[{memory_key:'one',scope_key:'pens.arrangement'},{memory_key:'two',scope_key:'pens.arrangement'}]}),/invalid_memory_target/);
+ assert.throws(()=>validateMemoryProposals([input,candidate({scope_key:'pens.arrangement'})],context),/invalid_memory_target/);
 });
 
 test('an explicit owner correction remains owner evidence when a household label mentions a guest',()=>{

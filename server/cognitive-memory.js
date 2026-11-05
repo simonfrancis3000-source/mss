@@ -60,7 +60,7 @@ export function validateMemoryProposals(raw, { latestUser, knownRules = [], exis
       else if (broad) candidate.scope_key = deriveMemoryScopeKey(candidate.statement,candidate.topic,candidate.kind);
     }
     const area = objectives.find(o => o.id === candidate.attributes?.area_id)?.id || null;
-    const relations = (Array.isArray(input.relations) ? input.relations : []).filter(r => ['depends_on','exception_to','conflicts_with'].includes(r?.kind) && known.has(r.target_memory_key) && !(target && ['updates','refines'].includes(candidate.relation) && r.target_memory_key === target.memory_key)).slice(0, 6);
+    const relations = (Array.isArray(input.relations) ? input.relations : []).filter(r => ['depends_on','exception_to','conflicts_with'].includes(r?.kind)).slice(0, 6).map(r=>({kind:r.kind,target_memory_key:r.target_memory_key}));
     return [{ ...candidate, confidence: candidate.status === 'inferred_pending_confirmation' ? 0 : 1,
       memory_key: 'cog-' + hash((target?.scope_key || candidate.scope_key) + '\n' + candidate.statement + (target || explicitCorrection ? '\n' + turnKey : '')).slice(0, 40),
       target_memory_key: target?.memory_key || '', scope_key: target?.scope_key || candidate.scope_key,
@@ -68,6 +68,24 @@ export function validateMemoryProposals(raw, { latestUser, knownRules = [], exis
       attributes: { ...candidate.attributes, scenario_id: scope, area_id: area },
       search_keys: buildPersonaMemorySearchKeys(candidate.statement, candidate.search_terms, candidate.topic), relations }];
   });
+  // A later fact may depend on a fact introduced earlier in this same batch.
+  // Resolve only exact keys or unique precise scopes, never similar opaque IDs.
+  const available=new Map(known);
+  for(const proposal of proposals){
+    proposal.relations=proposal.relations.flatMap(edge=>{
+      let target=available.get(edge.target_memory_key);
+      if(!target){
+        const matches=[...available.values()].filter(r=>r.scope_key===edge.target_memory_key&&!['superseded','archived'].includes(r.status));
+        if(matches.length===1&&matches[0].status!=='conflicting')target=matches[0];
+      }
+      if(!target)throw new RuntimeError('invalid_memory_target',502);
+      const key=target.memory_key||target.id;
+      if(['updates','refines'].includes(proposal.relation)&&key===proposal.target_memory_key)return [];
+      return [{kind:edge.kind,target_memory_key:key}];
+    });
+    if(['updates','refines','withdraws'].includes(proposal.relation)&&available.has(proposal.target_memory_key))available.set(proposal.target_memory_key,{...available.get(proposal.target_memory_key),status:proposal.relation==='withdraws'?'archived':'superseded'});
+    if(!['withdraws','no_change','confirms'].includes(proposal.relation))available.set(proposal.memory_key,proposal);
+  }
   // Simulate the visible graph in job order. Existing edges keep their original
   // version; only a new edge may follow a replacement made earlier in this job.
   const recordKeys=new Map(knownRules.map(r=>[r.id,r.memory_key||r.id]));

@@ -241,6 +241,43 @@ test('bounded repair receives the rejected draft rather than repeating a blind r
  assert.equal(JSON.parse(requests[1].messages[3].content).violation,'missing_continuation');
 });
 
+test('one repair receives every reply violation and preserves unanswered context',async()=>{
+ const requests=[];
+ const provider=createCognitiveProvider({key:'fixture',model:'fixture',fetchImpl:async(url,options)=>{
+  requests.push(JSON.parse(options.body));
+  const raw=requests.length===1?{reply:"I've updated your cushion arrangement.",next_question:'Where should cushions wait?',decision_key:'cushions.location'}:{reply:'The sofa is your preferred placement.',next_question:'When should I ask about damaged cushions?',decision_key:'cushions.damage'};
+  return Response.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify({schema_version:1,...raw,previous_answer:{answered:false,source_quote:''},actions:[]})}}]});
+ }});
+ const result=await generateCheckedCognitiveTurn({generate:provider,context:{latestUser:'Actually, use the sofa.',activeTraining:true},objectives:[],quality:{state:{...cleanRuntimeState(),lastQuestion:'Where should cushions wait?',lastDecisionKey:'cushions.location',lastQuestionAskCount:2},active:true}});
+ assert.deepEqual(result.attempts[0].qualityViolations,['unverified_action_claim','repeated_question']);
+ const draft=JSON.parse(requests[1].messages[2].content);
+ assert.deepEqual(draft.previous_answer,{answered:false,source_quote:''});
+ assert.match(requests[1].messages[0].content,/Remove any claim/);assert.match(requests[1].messages[0].content,/different decision_key/);
+ assert.equal(result.attempts.length,2);
+});
+
+test('explicit negative write statements are allowed while positive claims remain blocked',()=>{
+ const quality={state:cleanRuntimeState(),active:true};
+ for(const reply of ["That is not something I've saved as a finished rule yet. When should I ask?","That is not anything I’ve updated yet. When should I ask?",'No he guardado la regla. ¿Cuándo debo preguntar?'])assert.equal(checkRuntimeReply(answer(reply),quality),null,reply);
+ for(const reply of ["I've saved it. When should I ask?","I’ve updated it. When should I ask?","That is not something I've saved yet. I've added a reminder. When should I ask?"])assert.equal(checkRuntimeReply(answer(reply),quality),'unverified_action_claim',reply);
+});
+
+test('temporary provider failures retry once within the shared request budget',async()=>{
+ let calls=0;
+ const provider=createCognitiveProvider({key:'fixture',model:'fixture',fetchImpl:async()=>{
+  if(++calls===1)return new Response(null,{status:503});
+  return Response.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify({schema_version:1,reply:'Use the drawer.',next_question:'When should I ask about damage?',actions:[]})}}]});
+ }});
+ const input={generate:provider,context:{latestUser:'Use the drawer.'},objectives:[],quality:{state:cleanRuntimeState(),active:true}};
+ const result=await generateCheckedCognitiveTurn(input);assert.equal(calls,2);assert.equal(result.attempts[0].providerStatus,503);
+ calls=0;
+ await assert.rejects(generateCheckedCognitiveTurn({...input,generate:async()=>{calls++;throw new RuntimeError('runtime_model_unavailable',502);}}),error=>error.code==='runtime_model_unavailable'&&error.attempts.length===2);
+ assert.equal(calls,2);
+ calls=0;
+ await assert.rejects(generateCheckedCognitiveTurn({...input,generate:async()=>{calls++;throw new RuntimeError('runtime_model_auth_rejected',502);}}),/runtime_model_auth_rejected/);
+ assert.equal(calls,1);
+});
+
 test('invalid memory graphs use the same single repair budget before persistence',async()=>{
  let calls=0;
  const result=await generateCheckedCognitiveTurn({generate:async input=>{calls++;if(calls===2){assert.equal(input.correction,'invalid_memory_graph_proposal');assert.ok(input.rejectedProposal);}return answer(calls===1?'Where should pens wait?':'When should I ask about damaged pens?');},context:{latestUser:'Use a drawer.'},objectives:[],quality:{state:cleanRuntimeState(),active:true},validateProposal:()=>{if(calls===1)throw new RuntimeError('invalid_memory_graph_proposal',502);}});

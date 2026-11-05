@@ -1,8 +1,7 @@
 name: AMIA advanced conversation programme
 on:
-  pull_request:
-    branches: [SYNQ.ME]
-    paths: ['server/cognitive-*.js', 'supabase/migrations/*cognitive*.sql', 'evals/advanced/**', 'scripts/evaluate-advanced-conversations.mjs', 'scripts/summarize-advanced-evaluation.mjs', '.github/workflows/amia-advanced-evaluation.yml']
+  # The completed programme remains available explicitly, without starting
+  # another 600 paid live-model runs on every implementation change.
   workflow_dispatch:
 permissions:
   contents: read
