@@ -16,6 +16,11 @@ import {
 const PORT = Number.parseInt(process.env.PORT || "10000", 10);
 const DEEPSEEK_PERSON_API_KEY = process.env.DEEPSEEK_PERSON_API_KEY || "";
 const DEEPSEEK_SEARCH_API_KEY = process.env.DEEPSEEK_SEARCH_API_KEY || "";
+const PARALLEL_API_KEY = process.env.PARALLEL_API_KEY || "";
+// Feature flag keeps the existing provider unchanged until testing is complete.
+const PARALLEL_ACTIVE = process.env.PARALLEL_SEARCH_ENABLED === "true" && Boolean(PARALLEL_API_KEY);
+const SEARCH_API_KEY = PARALLEL_ACTIVE ? PARALLEL_API_KEY : DEEPSEEK_SEARCH_API_KEY;
+const SEARCH_PROVIDER = PARALLEL_ACTIVE ? "parallel" : "deepseek";
 const PHONIC_API_KEY = process.env.PHONIC_API_KEY || "";
 const PROVIDER = "deepseek";
 const API_KEY = DEEPSEEK_PERSON_API_KEY;
@@ -228,7 +233,10 @@ const app = http.createServer(async (request, response) => {
       configured: Boolean(API_KEY),
       model: MODEL,
       diagnosticsVersion: "amia-deepseek-v1",
-      searchConfigured: Boolean(DEEPSEEK_SEARCH_API_KEY),
+      searchConfigured: Boolean(SEARCH_API_KEY),
+      searchProvider: SEARCH_PROVIDER,
+      parallelConfigured: Boolean(PARALLEL_API_KEY),
+      parallelEnabled: PARALLEL_ACTIVE,
       phonicConfigured: Boolean(PHONIC_API_KEY),
       usageTrackingConfigured,
       adminAllowlistConfigured: Boolean(process.env.ADMIN_EMAILS || process.env.ADMIN_USER_IDS),
@@ -360,36 +368,37 @@ const app = http.createServer(async (request, response) => {
 
   if (request.method === "POST" && url.pathname === "/api/amia/search") {
     if (origin && headers === null) return json(response, 403, { error: "Origin not allowed." });
-    if (!DEEPSEEK_SEARCH_API_KEY) return json(response, 503, { error: "DeepSeek Search is not configured. Add DEEPSEEK_SEARCH_API_KEY to the backend environment." }, headers || {});
+    if (!SEARCH_API_KEY) return json(response, 503, { error: "Web Search is not configured." }, headers || {});
     if (limitReached(request)) return json(response, 429, { error: "Too many requests. Wait a minute, then try again." }, headers || {});
     try {
       const user = await requireAuthenticatedUser(request);
       const body = await readJson(request, 8 * 1024);
-      const results = await searchWeb(DEEPSEEK_SEARCH_API_KEY, body?.query, {
+      const results = await searchWeb(SEARCH_API_KEY, body?.query, {
         count: body?.count,
-        originalQuestion: body?.originalQuestion
+        originalQuestion: body?.originalQuestion,
+        provider: SEARCH_PROVIDER
       });
-      await recordSearchFetchUsage({ userId: user.id, type: "search" });
-      return json(response, 200, { results, provider: "deepseek-search" }, headers || {});
+      await recordSearchFetchUsage({ userId: user.id, type: "search", provider: SEARCH_PROVIDER });
+      return json(response, 200, { results, provider: SEARCH_PROVIDER }, headers || {});
     } catch (error) {
       const status = Number.isInteger(error?.statusCode) ? error.statusCode : 502;
-      return json(response, status, { error: String(error?.message || "DeepSeek Search failed.") }, headers || {});
+      return json(response, status, { error: String(error?.message || "Web Search failed.") }, headers || {});
     }
   }
 
   if (request.method === "POST" && url.pathname === "/api/amia/fetch") {
     if (origin && headers === null) return json(response, 403, { error: "Origin not allowed." });
-    if (!DEEPSEEK_SEARCH_API_KEY) return json(response, 503, { error: "DeepSeek Fetch is not configured. Add DEEPSEEK_SEARCH_API_KEY to the backend environment." }, headers || {});
+    if (!SEARCH_API_KEY) return json(response, 503, { error: "Web Fetch is not configured." }, headers || {});
     if (limitReached(request)) return json(response, 429, { error: "Too many requests. Wait a minute, then try again." }, headers || {});
     try {
       const user = await requireAuthenticatedUser(request);
       const body = await readJson(request, 8 * 1024);
-      const page = await fetchWebPage(DEEPSEEK_SEARCH_API_KEY, body?.url);
-      await recordSearchFetchUsage({ userId: user.id, type: "fetch" });
-      return json(response, 200, { ...page, provider: "deepseek-fetch" }, headers || {});
+      const page = await fetchWebPage(SEARCH_API_KEY, body?.url, { provider: SEARCH_PROVIDER });
+      await recordSearchFetchUsage({ userId: user.id, type: "fetch", provider: SEARCH_PROVIDER });
+      return json(response, 200, { ...page, provider: SEARCH_PROVIDER }, headers || {});
     } catch (error) {
       const status = Number.isInteger(error?.statusCode) ? error.statusCode : 502;
-      return json(response, status, { error: String(error?.message || "DeepSeek Fetch failed.") }, headers || {});
+      return json(response, status, { error: String(error?.message || "Web Fetch failed.") }, headers || {});
     }
   }
 
@@ -425,7 +434,8 @@ const app = http.createServer(async (request, response) => {
     const requestTimestamp = new Date().toISOString();
     const amiaResult = await createAmiaReply({
       apiKey: DEEPSEEK_PERSON_API_KEY,
-      searchApiKey: DEEPSEEK_SEARCH_API_KEY,
+      searchApiKey: SEARCH_API_KEY,
+      searchProvider: SEARCH_PROVIDER,
       messages,
       preferences,
       profile,
@@ -442,6 +452,7 @@ const app = http.createServer(async (request, response) => {
       usage: { ...(amiaResult.usage || {}), searchRequests: amiaResult.searchRequests || 0, fetchRequests: amiaResult.fetchRequests || 0 },
       timestamp: requestTimestamp,
       webSearchStatus: amiaResult.webSearchStatus || "not_requested",
+      webSearchProvider: amiaResult.webSearchProvider || SEARCH_PROVIDER,
       relevantPreferenceCount: amiaResult.relevantPreferenceCount || 0
     });
     const robotName = String(profile.robotName || "").trim();
