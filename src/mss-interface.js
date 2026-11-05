@@ -89,7 +89,7 @@ const el = (tag, className, text) => {
 const symbol = (name, className = '') => { const node = el('span', 'mss-symbol ' + className); node.innerHTML = icon(name); return node; };
 function action(label, className, onClick) { const node = el('button', className, label); node.type = 'button'; node.addEventListener('click', onClick); return node; }
 
-export function createMssInterface({ getSnapshot, navigate, editSettings, openScenario, openWorkspace, shareProgress, openBilling, refreshBalance, startStep, finishVisit, resumeVisit, openHelp, openGuide }) {
+export function createMssInterface({ getSnapshot, navigate, editSettings, openScenario, openWorkspace, shareProgress, openBilling, refreshBalance, startStep, finishVisit, resumeVisit, openHelp, openGuide, openConnectedHome }) {
   const main = document.querySelector('main');
   let sharingProgress = false;
   let shareStatus = '';
@@ -494,6 +494,7 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
     settings.append(linkCard('Help & Getting Started', 'FAQs, replay the introduction and contact support', 'support', () => openHelp?.()),
       linkCard('Voice Settings', 'Voice and conversation language', 'mic', () => editSettings('robotVoice')),
       linkCard('Reminders', 'Your saved to-do list and things to return to', 'bell', () => openWorkspace('todoReminders')),
+      linkCard('Connected Home', 'Identify supported devices for robot training (read-only)', 'home', () => openConnectedHome?.()),
       linkCard('Privacy', 'Your data, training and sharing preferences', 'lock', () => editSettings('shareAnonymizedLearning')));
     profile.append(settings);
 
