@@ -481,6 +481,25 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
       balance.append(el('p','mss-balance-note',credit.periodEnd ? (credit.isTest ? 'Test allowance expires ' : 'Current period ends ') + new Intl.DateTimeFormat(undefined,{day:'numeric',month:'short',year:'numeric'}).format(new Date(credit.periodEnd)) + (credit.isTest ? '. No payment or automatic renewal.' : '. Allowance resets with the next subscription period.') : 'No subscription reset date yet.'));
       const topup = el('div','mss-balance-row');topup.append(el('strong','','Top-up minutes'),el('span','',credit.topupLabel + ' left'));balance.append(topup,el('p','mss-balance-note','Top-up minutes carry forward until used. Subscription minutes are used first.'));
     } else balance.append(el('p','mss-balance-note',snapshot.billing?.status === 'error' ? 'Your balance could not be loaded. Tap Refresh to try again.' : 'Checking your voice minutes…'));
+    const access=snapshot.billing?.wallet?.access;
+    if (access?.enforcementEnabled) {
+      const format=value=>String.fromCharCode(36)+Number(Math.max(0,Number(value)||0)).toFixed(2);
+      if (access.premiumActive) {
+        const limit=Number(access.premiumLimitUsd||0.50);
+        const remaining=Number(access.premiumRemainingUsd||0);
+        const row=el('div','mss-balance-row');
+        row.append(el('strong','','AI conversation credit'),el('span','',format(remaining)+' of '+format(limit)+' left'));
+        balance.append(row);
+        if (access.premiumHardStop) balance.append(el('p','mss-balance-note',
+          'Chat and Talk are paused. Buy a voice-minute pack to add 50 cents in AI credit or wait for your subscription renewal.'));
+      } else {
+        balance.append(el('p','mss-balance-note',access.mode==='trial'
+          ? 'Free Chat credit remaining: '+format(access.trialRemainingUsd)+'. Talk requires Premium.'
+          : access.mode==='free_trial_exhausted'
+            ? 'Your free Chat trial has ended. Subscribe to Premium to continue training.'
+            : 'Premium has expired. Renew to resume Chat and Talk. Your persona and purchased minutes are saved.'));
+      }
+    }
     profile.append(balance);
     const remembered = el('section', 'mss-card mss-remembered'); remembered.append(el('h2', '', 'Preferences remembered'));
     const memoryContent = el('div', 'mss-memory-content'); const list = el('ul');
