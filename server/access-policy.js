@@ -131,12 +131,17 @@ export function createMssAccessPolicy({ db, enforcementEnabled = false, betaEmai
     return {requestId,userId:user.id,mode:data.mode || access.mode,kind};
   }
 
-  async function recordCost(slot, operation, estimatedCostUsd) {
+  async function recordCost(slot, operation, estimatedCostUsd, providerRequestId) {
     if (!slot || !db) return;
-    const amount = clamp(estimatedCostUsd);
+    const amount = Number(estimatedCostUsd);
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 1 ||
+        !/^[a-f0-9-]{36}$/i.test(String(providerRequestId || ''))) {
+      throw failure('AI provider usage could not be measured.',503,'chat_cost_unavailable');
+    }
     const {error} = await db.rpc('mss_record_chat_cost',{
       p_user_id:slot.userId,p_request_id:slot.requestId,
-      p_operation:String(operation || 'chat').slice(0,80),p_cost_usd:amount
+      p_operation:String(operation || 'chat').slice(0,80),
+      p_cost_usd:amount,p_provider_request_id:providerRequestId
     });
     if (error) {
       console.error('MSS trusted chat cost ledger unavailable',{code:error.code || 'unknown'});
@@ -152,31 +157,66 @@ export function createMssAccessPolicy({ db, enforcementEnabled = false, betaEmai
     if (error) console.warn('MSS chat reservation release failed',{code:error.code || 'unknown'});
   }
 
+  // Called only after backend verification with the Google Play Developer API.
+  // The order/expiry pair identifies the actual billing period; repeated
+  // receipt restoration never resets the user's $0.50 usage allowance.
   async function recordVerifiedSubscription(userId,purchase) {
     if (!db || purchase.kind !== 'subscription' || !purchase.periodEnd) return;
+    return recordVerifiedSubscriptionStatus(userId, {
+      state:purchase.subscriptionState,
+      periodEnd:purchase.periodEnd,
+      tokenHash:purchase.tokenHash,
+      orderId:purchase.orderId || ''
+    });
+  }
+
+  async function recordVerifiedSubscriptionStatus(userId, {state,periodEnd,tokenHash,orderId}={}) {
+    if (!db || !userId || !tokenHash) {
+      throw failure('Verified subscription information is incomplete.',503,'entitlement_write_failed');
+    }
+    const statusMap = {
+      SUBSCRIPTION_STATE_ACTIVE:'active',
+      SUBSCRIPTION_STATE_CANCELED:'canceled',
+      SUBSCRIPTION_STATE_IN_GRACE_PERIOD:'grace',
+      SUBSCRIPTION_STATE_ON_HOLD:'hold',
+      SUBSCRIPTION_STATE_PAUSED:'hold',
+      SUBSCRIPTION_STATE_EXPIRED:'expired',
+      SUBSCRIPTION_STATE_PENDING_PURCHASE_CANCELED:'revoked'
+    };
+    const stateStatus = statusMap[state];
+    if (!stateStatus) throw failure('Unknown Google Play subscription state.',503,'entitlement_state_unknown');
+    const newEnd = Date.parse(periodEnd || '');
+    if (!Number.isFinite(newEnd)) throw failure('Google Play billing period is unavailable.',503,'entitlement_write_failed');
     const {data:old,error:oldError} = await db.from('mss_subscription_entitlements')
-      .select('period_start,valid_until').eq('user_id',userId).maybeSingle();
-    if (oldError) throw failure('Subscription entitlement could not be checked.',503,'entitlement_write_failed');
-    const now = new Date();
-    const oldEnd = Date.parse(old?.valid_until || '');
-    const nextEnd = Date.parse(purchase.periodEnd);
-    if (!Number.isFinite(nextEnd)) throw failure('Invalid subscription expiry.',503,'entitlement_write_failed');
-    // Never reset the chat allowance on receipt restoration or a canceled
-    // subscription that is still in the same paid period.
-    const samePeriod = old && oldEnd === nextEnd;
+      .select('provider,status,period_start,valid_until,purchase_token_hash,latest_order_id')
+      .eq('user_id',userId).maybeSingle();
+    if (oldError) throw failure('Subscription state could not be checked.',503,'entitlement_write_failed');
+    const previousEnd = Date.parse(old?.valid_until || '');
+    const now = Date.now();
+    // Never replace a more recent billing period with an old restoration or
+    // delayed developer notification.
+    if (old?.provider === 'google_play' && Number.isFinite(previousEnd) && previousEnd > newEnd) {
+      return {updated:false,newPeriod:false,reason:'stale_period'};
+    }
+    const samePeriod = old?.provider === 'google_play' && previousEnd === newEnd;
+    const renewed = Boolean(old?.provider === 'google_play' && Number.isFinite(previousEnd) && newEnd > previousEnd);
     const periodStart = samePeriod && old.period_start ? old.period_start :
-      Number.isFinite(oldEnd) && oldEnd < nextEnd && oldEnd >= now.getTime()-45*86400000
-        ? new Date(oldEnd).toISOString() : now.toISOString();
+      renewed ? new Date(previousEnd).toISOString() :
+      new Date(now).toISOString();
+    const existingEnd = old?.valid_until;
+    const nextStatus = stateStatus;
     const {error} = await db.from('mss_subscription_entitlements').upsert({
-      user_id:userId,provider:'google_play',
-      status:purchase.subscriptionState === 'SUBSCRIPTION_STATE_IN_GRACE_PERIOD' ? 'grace' :
-        purchase.subscriptionState === 'SUBSCRIPTION_STATE_CANCELED' ? 'canceled' : 'active',
+      user_id:userId,provider:'google_play',status:nextStatus,
       period_start:periodStart,
-      valid_until:purchase.periodEnd,
-      ...(purchase.tokenHash ? {purchase_token_hash:purchase.tokenHash} : {}),
-      last_verified_at:now.toISOString(),updated_at:now.toISOString()
+      valid_until:periodEnd,
+      purchase_token_hash:tokenHash,
+      latest_order_id:String(orderId || (samePeriod ? old?.latest_order_id || '' : '')).slice(0,180),
+      last_verified_at:new Date(now).toISOString(),
+      updated_at:new Date(now).toISOString()
     },{onConflict:'user_id'});
-    if (error) throw failure('Subscription entitlement could not be saved.',503,'entitlement_write_failed');
+    if (error) throw failure('Verified subscription could not be saved.',503,'entitlement_write_failed');
+    return {updated:true,newPeriod:renewed,periodStart,periodEnd,status:nextStatus,
+      previousEnd:existingEnd || null};
   }
 
   async function recordVerifiedTopup(userId, purchase) {
@@ -207,5 +247,5 @@ export function createMssAccessPolicy({ db, enforcementEnabled = false, betaEmai
     return {granted:true,bonusUsd:0.5};
   }
 
-  return {status,requireVoice,reserve,recordCost,release,recordVerifiedSubscription,recordVerifiedTopup};
+  return {status,requireVoice,reserve,recordCost,release,recordVerifiedSubscription,recordVerifiedSubscriptionStatus,recordVerifiedTopup};
 }
