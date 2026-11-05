@@ -55,7 +55,10 @@ jobs:
           node --check server/amia/memory.js
           node --check server/amia/router.js
           node --check server/amia/search.js
+          node --check server/amia/parallel.js
           node --check server/amia/index.js
+      - name: Test Parallel research integration
+        run: node --test server/amia/parallel.test.js
           node --check src/synqme.js
           node --check src/admin.js
           node --check src/phonic-voice.js
