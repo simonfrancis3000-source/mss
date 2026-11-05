@@ -12,6 +12,21 @@ test('rollout checks verified account IDs/emails and defaults to disabled',()=>{
  const enabled=cognitiveRollout({enabled:true,userIds:'a',emails:'owner@example.test'});
  assert.equal(enabled({id:'a'}),true);assert.equal(enabled({id:'b',email:'OWNER@example.test'}),true);assert.equal(enabled({id:'b'}),false);
 });
+test('reset policies explicitly reject anonymous authenticated sessions and preserve owner cleanup',async()=>{
+ const db=await runtimeDatabase();
+ try{
+  await db.query('insert into public.synqme_training_revisions(user_id,revision) values($1,1)',[OWNER]);
+  const insert=()=>db.query("insert into public.synqme_cognitive_sessions(user_id,scope_key,training_revision) values($1,'room:kitchen',0)",[OWNER]);
+  await insert();
+  await db.exec('reset role');await db.query("select set_config('request.jwt.claim.sub',$1,false)",[OWNER]);await db.query("select set_config('request.jwt.claims','{\"is_anonymous\":true}',false)");await db.exec('set role authenticated');
+  assert.equal((await db.query('delete from public.synqme_cognitive_sessions returning user_id')).rows.length,0);
+  await db.exec('reset role');
+  const policies=(await db.query("select qual from pg_policies where schemaname='public' and policyname in ('cognitive_sessions_reset','cognitive_turns_reset','cognitive_jobs_reset')")).rows;
+  assert.equal(policies.length,3);assert.ok(policies.every(p=>p.qual.includes('is_anonymous')));
+  await db.query("select set_config('request.jwt.claims','{\"is_anonymous\":false}',false)");await db.exec('set role authenticated');
+  assert.equal((await db.query('delete from public.synqme_cognitive_sessions returning user_id')).rows.length,1);
+ }finally{await db.close();}
+});
 test('client account negotiation is isolated and failed verification cannot enable mutations',async()=>{
  let owner='a',calls=0;
  const client=createCognitiveClient({apiBase:'https://fixture',getUserId:()=>owner,getHeaders:async()=>({}),fetchImpl:async()=>{calls++;return Response.json({enabled:owner==='a'});}});

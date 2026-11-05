@@ -23,6 +23,7 @@ export async function runtimeDatabase() {
   `);
   const files=['supabase/migrations/20261024205230_add_structured_persona_memories.sql','supabase/migrations/20261101113042_amia_decision_storage.sql','docs/todo-reminders.sql','docs/memory-processing-queue.sql','supabase/migrations/20261104145805_amia_cognitive_runtime.sql','supabase/migrations/20261104152117_amia_cognitive_memory_graph.sql'];
   files.push('supabase/migrations/20261104153147_amia_cognitive_delivery_retention.sql');
+  files.push('supabase/migrations/20261105111604_amia_cognitive_reset_registered_accounts.sql');
   for(const path of files)await db.exec(await readFile(new URL('../../'+path,import.meta.url),'utf8'));
   await db.exec('set role service_role');
   return db;

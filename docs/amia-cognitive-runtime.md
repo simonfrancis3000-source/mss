@@ -182,3 +182,11 @@ The final implementation resolves dependency references to earlier facts in the 
 At the owner's request, the broad automated programme is stopped. The 600-run programme and short live-provider workflow are now manual, preserving the reports, dataset and checks without automatically purchasing more live-model runs on a code update. Human voice sessions, authenticated hosted-runtime acceptance and controlled activation remain outstanding. The runtime stays disabled by default; no production migration or activation is implied by a passing local check.
 
 Final local verification passed 714 web/backend checks and 674 Android-branch checks, including 155 focused runtime/memory checks. These overlapping software checks do not replace live voice or hosted acceptance.
+
+### Production installation, 5 November 2026
+
+The owner authorized code and database deployment. The runtime, graph and delivery/retention migrations are installed in the hosted project. Web/backend PR #85 is merged at c140f388d5ba1f7d8b88465b41866bf377ddf341, preserving the current billing commits; Render deploy dep-dbm692ivcj2c7385ekug is live. Android PR #87 is merged at 030f0338a2bba5852a2038add3ffdbf0cd9e2d00. This does not publish a new Android bundle to devices. The current OTA manifest targets native code 8 and contains an older bundle.
+
+Hosted service-role verification passed claim, atomic reminder commit and canonical replay in a rolled-back transaction, leaving no test reminder or conversation behind. All new tables have RLS, client writes are denied, and server RPCs are unavailable to anonymous/client roles. A follow-up migration explicitly excludes anonymous authenticated sessions from all three reset-cleanup policies; 15 focused PostgreSQL/operations checks pass. Existing unrelated security advisories are unchanged.
+
+The deployed /health endpoint returns 200; unauthenticated runtime status returns 401. Runtime activation remains off. No authenticated end-to-end model/Phonic session or new Play/OTA release is claimed. Paid live-model workflows remain manual.
