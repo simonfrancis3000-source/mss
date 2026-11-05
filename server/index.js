@@ -34,6 +34,7 @@ import { stat } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { createHash, randomUUID } from "node:crypto";
 import { authenticateSupabaseRequest, rateLimitIdentity } from "./supabase-auth.js";
+import { createMssAccessPolicy } from "./access-policy.js";
 import { buildDeepSeekUsageEvent, createPhonicUsageSession, verifyPhonicUsageSession, clampVoiceDuration } from "./usage.js";
 import { buildHomePersonaSystemPrompt } from "../src/home-persona-reasoning.js";
 import { buildOutOfHomePersonaSystemPrompt, cleanOutOfHomeScenarioContext, findOutOfHomeScenarioContext, isOutOfHomeTopicChange } from "../src/out-of-home-persona-prompt.js";
@@ -63,6 +64,12 @@ const VOICE_BILLING_TEST_EMAILS = new Set(
 );
 const voiceBillingFor = (auth) => VOICE_BILLING_ENABLED ||
   VOICE_BILLING_TEST_EMAILS.has(String(auth?.user?.email || "").trim().toLowerCase());
+const ACCESS_ENFORCEMENT_ENABLED = process.env.MSS_ACCESS_ENFORCEMENT_ENABLED === "true";
+const accessPolicy = createMssAccessPolicy({
+  db: billingDb,
+  enforcementEnabled: ACCESS_ENFORCEMENT_ENABLED,
+  betaEmails: [...VOICE_BILLING_TEST_EMAILS, ...VOICE_BETA_ALLOWANCE_EMAILS]
+});
 const PROVIDER = "deepseek";
 const amiaStore = createAmiaStore({ supabaseUrl:SUPABASE_URL,publishableKey:SUPABASE_PUBLISHABLE_KEY });
 const API_KEY = DEEPSEEK_API_KEY;
@@ -216,6 +223,12 @@ async function recordDeepSeekUsage(authContext, result, operation) {
     requestId: randomUUID()
   });
   if (!event) return false;
+  // Record the trusted DeepSeek cost before returning the provider result.
+  // The existing analytics table is client-writable, so it must not be used
+  // to enforce one-time free credit.
+  if (authContext.accessSlot) {
+    await accessPolicy.recordCost(authContext.accessSlot, operation, event.deepseek_cost_usd || 0);
+  }
   return recordUsageEvent(event, authContext.accessToken);
 }
 
@@ -568,17 +581,38 @@ const app = http.createServer(async (request, response) => {
 
   const authenticatedRoutes = new Set([
     "/api/chat", "/api/memory/extract", "/api/knowledge/extract", "/api/simulation", "/api/voice/break-offer",
-    "/api/phonic/session", "/api/phonic/usage", "/api/billing/verify", "/api/billing/status", "/api/rewards/status"
+    "/api/phonic/session", "/api/phonic/usage", "/api/billing/verify", "/api/billing/status", "/api/access/status", "/api/rewards/status"
     , "/api/runtime/status", "/api/runtime/delivery"
   ]);
   let authContext = null;
-  if ((request.method === "POST" || (request.method === "GET" && ["/api/billing/status", "/api/rewards/status", "/api/runtime/status"].includes(url.pathname))) && authenticatedRoutes.has(url.pathname)) {
+  if ((request.method === "POST" || (request.method === "GET" && ["/api/billing/status", "/api/access/status", "/api/rewards/status", "/api/runtime/status"].includes(url.pathname))) && authenticatedRoutes.has(url.pathname)) {
     const authResult = await authenticateSupabaseRequest(request, {
       supabaseUrl: SUPABASE_URL,
       publishableKey: SUPABASE_PUBLISHABLE_KEY
     });
     if (!authResult.ok) return json(response, authResult.status, { error: authResult.error }, headers || {});
     authContext = { ...authResult, trainingRevision: String(request.headers["x-training-revision"] || "0") };
+    const requestKind = {
+      '/api/chat':'chat',
+      '/api/memory/extract':'memory',
+      '/api/knowledge/extract':'knowledge',
+      '/api/simulation':'simulation',
+      '/api/voice/break-offer':'break_prompt'
+    }[url.pathname];
+    if (request.method === 'POST' && requestKind) {
+      try {
+        const slot = await accessPolicy.reserve(authContext.user, requestKind);
+        if (slot) {
+          authContext.accessSlot = slot;
+          response.once('finish', () => { void accessPolicy.release(slot); });
+        }
+      } catch (error) {
+        return json(response, error.statusCode || 503, {
+          error:error.message, errorCode:error.code || 'entitlement_unavailable',
+          subscriptionRequired:error.statusCode === 402
+        },headers || {});
+      }
+    }
   }
 
   if (request.method === "GET" && url.pathname === "/health") {
@@ -607,6 +641,11 @@ const app = http.createServer(async (request, response) => {
     try {const body=await readJson(request,4096);await cognitiveStore.delivery(authContext,body);return json(response,200,{recorded:true},headers || {});}
     catch{return json(response,409,{error:'Delivery observation could not be recorded.'},headers || {});}
   }
+  if (request.method === 'GET' && url.pathname === '/api/access/status') {
+    try { return json(response,200,await accessPolicy.status(authContext.user),headers || {}); }
+    catch (error) { return json(response,error.statusCode || 503,{error:error.message,errorCode:error.code || 'entitlement_unavailable'},headers || {}); }
+  }
+
   // Billing endpoints remain unavailable until both the service account
   // and RLS-protected entitlements migration are configured.
   if (request.method === "GET" && url.pathname === "/api/billing/status") {
@@ -629,10 +668,15 @@ const app = http.createServer(async (request, response) => {
       if (verified.error) return json(response,503,{error:'Voice allowance details are unavailable.'},headers || {});
       if (!verified.data?.length) allowanceType = 'test';
     }
+    let access;
+    try { access=await accessPolicy.status(authContext.user); }
+    catch (error) {return json(response,error.statusCode || 503,{error:error.message},headers || {});}
     return json(response, 200, {
       allowanceType,
       billingEnabledForUser: voiceBillingFor(authContext),
-      premiumActive: Boolean(data?.monthly_valid_until && Date.parse(data.monthly_valid_until) > Date.now()),
+      access,
+      premiumActive: access.enforcementEnabled ? access.premiumActive :
+        Boolean(data?.monthly_valid_until && Date.parse(data.monthly_valid_until) > Date.now()),
       monthlyRemainingMs: Math.max(0, currentMonthlyMs),
       topupRemainingMs: Math.max(0, Number(data?.topup_remaining_ms || 0)),
       monthlyMinutes: Math.max(0, Math.floor(currentMonthlyMs / 60000)),
@@ -679,6 +723,11 @@ const app = http.createServer(async (request, response) => {
       if (error) {
         console.warn("Play purchase verified but credit grant failed", { code: error.code });
         return json(response, 503, { error: "Your purchase was verified, but credits could not yet be saved. Please retry." }, headers || {});
+      }
+      if (verified.kind === 'subscription') {
+        await accessPolicy.recordVerifiedSubscription(authContext.user.id,{
+          ...verified,tokenHash:hashPurchaseToken(purchaseToken)
+        });
       }
       // Licensed-tester transactions are not cash spending and must never earn
       // promotional robot credit, even if a sandbox order has a price field.
@@ -737,7 +786,10 @@ const app = http.createServer(async (request, response) => {
   }
 
   if (request.method === "POST" && url.pathname === "/api/phonic/session") {
-    const meteredVoice = shouldMeterVoice({globallyEnabled:VOICE_BILLING_ENABLED,accountEligible:voiceBillingFor(authContext),client:request.headers["x-mss-billing-client"]});
+    try { await accessPolicy.requireVoice(authContext.user); }
+    catch (error) { return json(response,error.statusCode || 503,{error:error.message,errorCode:error.code || 'subscription_required'},headers || {}); }
+    const meteredVoice = ACCESS_ENFORCEMENT_ENABLED ||
+      shouldMeterVoice({globallyEnabled:VOICE_BILLING_ENABLED,accountEligible:voiceBillingFor(authContext),client:request.headers["x-mss-billing-client"]});
     if (meteredVoice && !voiceRelay) {
       return json(response, 503, { error: "Voice billing is not configured." }, headers || {});
     }
