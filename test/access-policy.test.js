@@ -244,3 +244,32 @@ test('Google Play account hold is inactive and cannot resume chats',()=>{
   assert.equal(state.canChat,false);
   assert.equal(state.canTalk,false);
 });
+
+
+test('expired Google Play test receipt cannot remove a still-valid beta entitlement', async()=>{
+  let prior={
+    provider:'beta',status:'test',
+    valid_until:'2027-05-04T14:54:04Z',
+    period_start:'2026-11-05T14:54:04Z'
+  };
+  let writes=0;
+  const db={from(table){
+    assert.equal(table,'mss_subscription_entitlements');
+    const q={
+      select(){return q},eq(){return q},
+      async maybeSingle(){return {data:prior,error:null}},
+      async upsert(){writes++;return {error:null}}
+    };
+    return q;
+  }};
+  const policy=createMssAccessPolicy({db,enforcementEnabled:true});
+  const result=await policy.recordVerifiedSubscriptionStatus('beta-user',{
+    state:'SUBSCRIPTION_STATE_EXPIRED',
+    periodEnd:'2026-11-04T14:54:04Z',
+    tokenHash:'c'.repeat(64)
+  });
+  assert.equal(result.updated,false);
+  assert.equal(result.reason,'beta_entitlement_preserved');
+  assert.equal(prior.status,'test');
+  assert.equal(writes,0);
+});
