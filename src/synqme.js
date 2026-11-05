@@ -2823,6 +2823,7 @@ async function loadSignedInAccount(session, { migrateDraft = true } = {}) {
   }
   await onboardingState.load(cloudUserId, { returning: state.messages.some(item => item.role === "user" && item.content?.trim()) });
   setAuthGateVisible(false);
+  void voiceBalance.refresh();
   renderAccountStatus();
   renderAll();
   selectAppView("home");
@@ -5225,6 +5226,20 @@ async function openVoiceExperience({ activate = false } = {}) {
     return;
   }
   if (voiceModeActive || maybeOfferOnboarding()) return;
+  await voiceBalance.refresh();
+  const voiceAccess = voiceBalance.snapshot();
+  if (voiceAccess.status === 'ready' && voiceAccess.wallet?.access?.enforcementEnabled &&
+      !voiceAccess.wallet.access.canTalk) {
+    if (elements.conversationStatus) elements.conversationStatus.textContent =
+      'Voice requires MySecondSelf Premium ($9.99/month). Your free trial includes chat only.';
+    selectAppView('profile');
+    return;
+  }
+  if (voiceAccess.status === 'error') {
+    if (elements.conversationStatus) elements.conversationStatus.textContent =
+      'Subscription status could not be checked. Please retry.';
+    return;
+  }
 
   elements.voiceExperience.hidden = false;
   const appNav = document.querySelector("#appBottomNav");
@@ -5864,6 +5879,21 @@ async function sendMessage(rawText) {
   const message = rawText.trim();
   chatReturnSummary = "";
   if (!message || isSending) return;
+  await voiceBalance.refresh();
+  const chatAccess = voiceBalance.snapshot();
+  if (chatAccess.status === 'error') {
+    elements.conversationStatus.textContent = 'Could not verify your chat allowance. Please retry.';
+    return;
+  }
+  if (chatAccess.status === 'ready' && chatAccess.wallet?.access?.enforcementEnabled &&
+      !chatAccess.wallet.access.canChat) {
+    elements.conversationStatus.textContent = chatAccess.wallet.access.mode === 'free_trial_exhausted'
+      ? 'Your $0.10 free chat trial has ended. Subscribe to Premium ($9.99/month) to continue.'
+      : 'Your subscription is inactive. Renew Premium to continue training.';
+    selectAppView('profile');
+    return;
+  }
+  if (elements.messageInput.value.trim() === message) elements.messageInput.value = '';
   try{if(!state.apiProvider&&API_BASE)await checkAIBackend();state.cognitiveServerMemory=await cognitiveClient.enabled(state.amiaCognitiveRuntime,state.profile.preferredLanguage || 'en');}
   catch{elements.conversationStatus.textContent='Your conversation connection could not be verified. Please retry.';return;}
   beginTrainingVisit();
@@ -5957,6 +5987,7 @@ async function sendMessage(rawText) {
     : "Reply received · saving to your account…";
   if (!voiceModeActive) elements.messageInput.focus();
 
+  void voiceBalance.refresh();
   void flushCloudSave().then((conversationSaved) => {
     // An older save must not overwrite the status for a newer user turn.
     if (turnId !== sendSequence || isSending) return;
@@ -5976,8 +6007,7 @@ elements.chatForm.addEventListener("submit", (event) => {
 
   // Preserve the draft when the account/profile gate prevents sending.
   // Once a valid turn begins, sendMessage immediately renders the user message.
-  if (cloudUserId && profileComplete()) elements.messageInput.value = "";
-
+  // Clear the draft only after subscription access has been verified in sendMessage.
   void sendMessage(text).catch((error) => {
     console.error("SYNQ.ME could not complete the submitted message.", error);
     isSending = false;
