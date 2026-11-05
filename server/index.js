@@ -66,9 +66,11 @@ const VOICE_BILLING_TEST_EMAILS = new Set(
 const voiceBillingFor = (auth) => VOICE_BILLING_ENABLED ||
   VOICE_BILLING_TEST_EMAILS.has(String(auth?.user?.email || "").trim().toLowerCase());
 const ACCESS_ENFORCEMENT_ENABLED = process.env.MSS_ACCESS_ENFORCEMENT_ENABLED === "true";
+const FREE_TRIAL_ENFORCEMENT_CAPABLE = process.env.MSS_FREE_TRIAL_ENFORCEMENT_ENABLED === "true";
 const accessPolicy = createMssAccessPolicy({
   db: billingDb,
   enforcementEnabled: ACCESS_ENFORCEMENT_ENABLED,
+  freeTrialCapable: FREE_TRIAL_ENFORCEMENT_CAPABLE,
   betaEmails: [...VOICE_BILLING_TEST_EMAILS, ...VOICE_BETA_ALLOWANCE_EMAILS]
 });
 const PROVIDER = "deepseek";
@@ -694,7 +696,8 @@ const app = http.createServer(async (request, response) => {
       usageTrackingConfigured: Boolean(SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY),
       applianceManualSearchConfigured: Boolean(DEEPSEEK_SEARCH_API_KEY),
       paidVoiceEnabled: Boolean((VOICE_BILLING_ENABLED || VOICE_BILLING_TEST_EMAILS.size || ACCESS_ENFORCEMENT_ENABLED) && voiceRelay && process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON),
-      googlePlayRtdnConfigured: Boolean(process.env.MSS_PLAY_RTDN_AUDIENCE && process.env.MSS_PLAY_RTDN_PUSH_EMAIL)
+      googlePlayRtdnConfigured: Boolean(process.env.MSS_PLAY_RTDN_AUDIENCE && process.env.MSS_PLAY_RTDN_PUSH_EMAIL),
+      freeTrialGateReady: FREE_TRIAL_ENFORCEMENT_CAPABLE
     }, headers || {});
   }
 
