@@ -483,43 +483,7 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
     } else balance.append(el('p','mss-balance-note',snapshot.billing?.status === 'error' ? 'Your balance could not be loaded. Tap Refresh to try again.' : 'Checking your voice minutes…'));
     const access=snapshot.billing?.wallet?.access;
     if (access?.enforcementEnabled) {
-      const format=value=>'
-    const remembered = el('section', 'mss-card mss-remembered'); remembered.append(el('h2', '', 'Preferences remembered'));
-    const memoryContent = el('div', 'mss-memory-content'); const list = el('ul');
-    snapshot.preferences.slice(0, 4).forEach(p => list.append(el('li', '', p.text)));
-    if (!snapshot.preferences.length) list.append(el('li', '', 'Your preferences will appear here as you train your robot.'));
-    memoryContent.append(symbol('brain', 'mss-icon-tile'), list); remembered.append(memoryContent); profile.append(remembered, el('h2', 'mss-section-title', 'Settings'));
-    const settings = el('div', 'mss-settings-list');
-    if (typeof openBilling === 'function') {
-      settings.append(linkCard('Premium & Voice Minutes', 'Subscription, extra voice credits and purchase history', 'spark', openBilling));
-    }
-    settings.append(linkCard('Help & Getting Started', 'FAQs, replay the introduction and contact support', 'support', () => openHelp?.()),
-      linkCard('Voice Settings', 'Voice and conversation language', 'mic', () => editSettings('robotVoice')),
-      linkCard('Reminders', 'Your saved to-do list and things to return to', 'bell', () => openWorkspace('todoReminders')),
-      linkCard('Connected Home', 'Identify supported devices for robot training (read-only)', 'home', () => openConnectedHome?.()),
-      linkCard('Privacy', 'Your data, training and sharing preferences', 'lock', () => editSettings('shareAnonymizedLearning')));
-    profile.append(settings);
-
-    renderTranscript(snapshot); renderVoiceState(); renderVisitControls(snapshot);
-  }
-  function renderTranscript(snapshot = getSnapshot()) {
-    const messages = snapshot.messages.filter(m => ['user', 'assistant'].includes(m.role) && m.content?.trim()).slice(-2);
-    transcript.replaceChildren();
-    if (!messages.length) transcript.append(el('p', '', 'Your conversation will appear here.'));
-    for (const message of messages) {
-      const row = el('div', 'mss-voice-line ' + message.role);
-      row.append(el('strong', '', (message.role === 'user' ? snapshot.owner?.split(/\s+/)[0] || 'You' : snapshot.companion) + ':'), el('p', '', message.content)); transcript.append(row);
-    }
-  }
-  function renderVoiceState() {
-    const name = getSnapshot().companion;
-    const mode = document.querySelector('#voiceOrb')?.dataset.state || 'idle';
-    const states = { idle: 'is ready', connecting: 'is connecting', listening: 'is listening', 'user-speaking': 'is listening', muted: 'is muted', thinking: 'is thinking', speaking: 'is speaking', 'speech-pause': 'is speaking' };
-    voiceTitle.textContent = name + ' ' + (states[mode] || 'is ready');
-  }
-  return { render, renderTranscript, renderVoiceState, renderVisitControls, createProgressChart: () => progressChart(getSnapshot()), getActiveScenarioId: () => { const { model } = getSnapshot(); return model.ready ? model.active?.id : null; } };
-}
-+Number(Math.max(0,Number(value)||0)).toFixed(2);
+      const format=value=>String.fromCharCode(36)+Number(Math.max(0,Number(value)||0)).toFixed(2);
       if (access.premiumActive) {
         const limit=Number(access.premiumLimitUsd||0.50);
         const remaining=Number(access.premiumRemainingUsd||0);
@@ -527,7 +491,7 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
         row.append(el('strong','','AI conversation credit'),el('span','',format(remaining)+' of '+format(limit)+' left'));
         balance.append(row);
         if (access.premiumHardStop) balance.append(el('p','mss-balance-note',
-          'Chat and Talk are paused. Buy a voice-minute pack to add $0.50 in AI credit or wait for your subscription renewal.'));
+          'Chat and Talk are paused. Buy a voice-minute pack to add 50 cents in AI credit or wait for your subscription renewal.'));
       } else {
         balance.append(el('p','mss-balance-note',access.mode==='trial'
           ? 'Free Chat credit remaining: '+format(access.trialRemainingUsd)+'. Talk requires Premium.'
