@@ -118,8 +118,24 @@ async function googleAccessToken() {
 // authentication failures from Google Play purchase-API permission failures.
 // Never log credential material, access tokens, user IDs, or purchase tokens.
 if (process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON) {
-  void googleAccessToken().then(() => {
+  void googleAccessToken().then(async (token) => {
     console.info("Google Play OAuth diagnostic", { code: "oauth_ready" });
+    // A read-only purchase-API call, with a one-record page limit, verifies
+    // Android Publisher app access independently of a customer checkout.
+    // Only the HTTP status is logged. No purchase data is read into logs.
+    try {
+      const endpoint = "https://androidpublisher.googleapis.com/androidpublisher/v3/applications/" +
+        MSS_PLAY_PACKAGE + "/purchases/voidedpurchases?pageSelection.maxResults=1";
+      const response = await fetch(endpoint, {
+        headers: { Authorization: "Bearer " + token },
+        signal: AbortSignal.timeout(10000)
+      });
+      console.info("Google Play Publisher diagnostic", {
+        code: response.ok ? "publisher_ready" : "publisher_http_" + response.status
+      });
+    } catch {
+      console.warn("Google Play Publisher diagnostic", { code: "publisher_network_error" });
+    }
   }).catch((error) => {
     console.warn("Google Play OAuth diagnostic", { code: error?.code || "oauth_unknown_error" });
   });
