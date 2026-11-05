@@ -631,7 +631,7 @@ const app = http.createServer(async (request, response) => {
       accountAuthConfigured: Boolean(SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY),
       usageTrackingConfigured: Boolean(SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY),
       applianceManualSearchConfigured: Boolean(DEEPSEEK_SEARCH_API_KEY),
-      paidVoiceEnabled: Boolean((VOICE_BILLING_ENABLED || VOICE_BILLING_TEST_EMAILS.size) && voiceRelay && process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON)
+      paidVoiceEnabled: Boolean((VOICE_BILLING_ENABLED || VOICE_BILLING_TEST_EMAILS.size || ACCESS_ENFORCEMENT_ENABLED) && voiceRelay && process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON)
     }, headers || {});
   }
 
@@ -676,7 +676,7 @@ const app = http.createServer(async (request, response) => {
     catch (error) {return json(response,error.statusCode || 503,{error:error.message},headers || {});}
     return json(response, 200, {
       allowanceType,
-      billingEnabledForUser: voiceBillingFor(authContext),
+      billingEnabledForUser: ACCESS_ENFORCEMENT_ENABLED || voiceBillingFor(authContext),
       access,
       premiumActive: access.enforcementEnabled ? access.premiumActive :
         Boolean(data?.monthly_valid_until && Date.parse(data.monthly_valid_until) > Date.now()),
