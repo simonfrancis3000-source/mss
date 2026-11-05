@@ -461,6 +461,8 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
     const identityCopy = el('div'); identityCopy.append(el('h2', '', snapshot.owner || 'Your profile'), el('p', '', 'MySecondSelf account'));
     const edit = action('Edit profile', 'mss-edit-profile', () => editSettings('ownerName')); edit.prepend(symbol('edit')); identity.append(photo, identityCopy, edit); profile.append(identity, banner(snapshot, true));
     const balance = el('section', 'mss-card mss-voice-balance');
+    balance.id = 'mss-premium-voice-balance';
+    balance.tabIndex = -1;
     balance.setAttribute('aria-label', 'Subscription and voice minutes');
     const balanceHead = el('div','mss-balance-heading'); balanceHead.append(el('h2','','Membership & voice minutes'));
     const refresh = action('Refresh','mss-balance-refresh',()=>refreshBalance?.());
@@ -525,7 +527,11 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
     if (!snapshot.preferences.length) list.append(el('li', '', 'Your preferences will appear here as you train your robot.'));
     memoryContent.append(symbol('brain', 'mss-icon-tile'), list); remembered.append(memoryContent); profile.append(remembered, el('h2', 'mss-section-title', 'Settings'));
     const settings = el('div', 'mss-settings-list');
-    settings.append(linkCard('Help & Getting Started', 'FAQs, replay the introduction and contact support', 'support', () => openHelp?.()),
+    settings.append(linkCard('Premium & Voice Minutes', 'View subscription, remaining minutes and top-up balances', 'coins', () => {
+      balance.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      balance.focus({ preventScroll: true });
+    }),
+      linkCard('Help & Getting Started', 'FAQs, replay the introduction and contact support', 'support', () => openHelp?.()),
       linkCard('Voice settings', 'Voice and conversation language', 'mic', () => editSettings('robotVoice')),
       linkCard('Reminders', 'Your saved to-do list and things to return to', 'bell', () => openWorkspace('todoReminders')),
       linkCard('Connected Home', 'Identify supported devices for robot training (read-only)', 'home', () => openConnectedHome?.()),
