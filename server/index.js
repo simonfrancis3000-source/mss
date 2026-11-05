@@ -728,6 +728,12 @@ const app = http.createServer(async (request, response) => {
         await accessPolicy.recordVerifiedSubscription(authContext.user.id,{
           ...verified,tokenHash:hashPurchaseToken(purchaseToken)
         });
+      } else if (verified.kind === 'topup') {
+        // Each newly verified pack adds one $0.50 AI chat allowance block
+        // to the currently active Premium period. The grant is idempotent.
+        await accessPolicy.recordVerifiedTopup(authContext.user.id,{
+          ...verified,tokenHash:hashPurchaseToken(purchaseToken)
+        });
       }
       // Licensed-tester transactions are not cash spending and must never earn
       // promotional robot credit, even if a sandbox order has a price field.
@@ -1738,7 +1744,7 @@ const app = http.createServer(async (request, response) => {
 
 app.on("upgrade", (request, socket, head) => {
   const pathname = new URL(request.url || "/", "http://localhost").pathname;
-  if (pathname !== "/api/phonic/relay" || !(VOICE_BILLING_ENABLED || VOICE_BILLING_TEST_EMAILS.size) || !voiceRelay) {
+  if (pathname !== "/api/phonic/relay" || !(VOICE_BILLING_ENABLED || VOICE_BILLING_TEST_EMAILS.size || ACCESS_ENFORCEMENT_ENABLED) || !voiceRelay) {
     socket.end("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
     return;
   }
