@@ -84,7 +84,9 @@ export function validateTurnProposal(value, objectives = []) {
 
 // Text quality checks are intentionally deterministic. Semantic quality needs
 // the separately documented live-model evaluation; these checks do not prove it.
-export function checkRuntimeReply(proposal, { state, active, intake = null, language = 'en' }) {
+const groundedAnswer = (answer, latestUser) => answer?.answered === true && answer.sourceQuote?.length >= 2 && String(latestUser).toLowerCase().includes(answer.sourceQuote.toLowerCase());
+
+export function checkRuntimeReply(proposal, { state, active, intake = null, language = 'en', latestUser = '' }) {
   const questions = conversationQuestions(proposal.reply);
   if (questions.length > 1) return 'multiple_questions';
   if (proposal.reply.length > 200 && !/[.!?。！？؟]["”')]*$/u.test(proposal.reply)) return 'incomplete_reply';
@@ -98,6 +100,7 @@ export function checkRuntimeReply(proposal, { state, active, intake = null, lang
   const settled = state.dispositions.filter(d => d.answered !== false);
   if (questions.some(q => settled.some(d => normalized(d.question) === normalized(q)))) return 'settled_question';
   if (proposal.decisionKey && settled.some(d => d.decisionKey === proposal.decisionKey)) return 'settled_decision';
+  if (proposal.decisionKey && proposal.decisionKey === state.lastDecisionKey && groundedAnswer(proposal.previousAnswer,latestUser)) return 'settled_decision';
   if (questions.some(q => normalized(q) === normalized(state.lastQuestion)) && !proposal.reminderOffer) return 'repeated_question';
   if (intake && language === 'en' && !proposal.reminderOffer && !questions.some(q => /\b(?:brand|make|model|manufacturer|product number|pnc|e-nr)\b/i.test(q))) return 'missing_appliance_intake';
   if (proposal.reminderOffer && !questions.length) return 'offer_without_question';
@@ -110,7 +113,7 @@ export function reduceRuntimeState(state, { latestUser, reply, intent, offer, tu
   // or area completion. Pause, resume and explanation preserve the open question.
   if (next.lastQuestion && !['pause', 'resume', 'explain', 'progress', 'service_help', 'accept_offer', 'cancel_offer'].includes(intent)) {
     const deferred = ['deferred', 'not_applicable'].includes(intent);
-    const answered = previousAnswer?.answered === true && previousAnswer.sourceQuote?.length >= 2 && String(latestUser).toLowerCase().includes(previousAnswer.sourceQuote.toLowerCase());
+    const answered = groundedAnswer(previousAnswer, latestUser);
     next.dispositions.push({ question: next.lastQuestion, objectiveId: next.objectiveId, decisionKey: next.lastDecisionKey, status: deferred ? intent : 'response_received', answered: deferred || answered });
     next.dispositions = next.dispositions.slice(-60);
     next.lastQuestion = null;

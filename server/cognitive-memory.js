@@ -1,15 +1,21 @@
 import { cleanPersonaMemoryCandidate, buildPersonaMemorySearchKeys, SENSITIVE_MEMORY_PATTERN, deriveMemoryScopeKey } from '../src/persona-memory.js';
-import { hash, normalized } from './cognitive-core.js';
+import { hash, normalized, RuntimeError } from './cognitive-core.js';
 
-export function validateMemoryProposals(raw, { latestUser, knownRules = [], objectives = [], turnKey, scope }) {
+export function validateMemoryProposals(raw, { latestUser, knownRules = [], existingRelations = [], objectives = [], turnKey, scope }) {
   if (!Array.isArray(raw) || raw.length > 8 || SENSITIVE_MEMORY_PATTERN.test(latestUser)) return [];
   const known = new Map(knownRules.map(r => [r.memory_key || r.id, r]));
   const explicitCorrection = /\b(?:actually|changed my mind|change my|correct|instead|no longer|ahora prefiero|he cambiado|en realidad|corrige)\b/i.test(latestUser);
   const explicitWithdrawal = /\b(?:forget|withdraw|remove that rule|do not remember|olvida|elimina esa regla)\b/i.test(latestUser);
-  return raw.flatMap(input => {
+  const proposals = raw.flatMap(input => {
     const quote = typeof input?.source_quote === 'string' ? input.source_quote.trim() : '';
     const candidate = cleanPersonaMemoryCandidate(input);
     if (!candidate || quote.length < 2 || !String(latestUser).toLowerCase().includes(quote.toLowerCase())) return [];
+    // Approval exceptions are boundaries even when the model labels them as
+    // "exception". The shared cleaner otherwise discards their restriction.
+    if (candidate.status !== 'inferred_pending_confirmation' && ['ask_first','prohibited'].includes(input.permission_policy)) {
+      candidate.kind = 'boundary';
+      candidate.permission_policy = input.permission_policy;
+    }
     // Avoid converting someone else's tastes into an owner's preference.
     if (/\b(?:my (?:guest|friend|wife|husband|child|daughter|son)|mi (?:invitado|amigo|esposa|hijo))\b/i.test(latestUser) && !/\b(?:I (?:prefer|want|would)|prefiero|quiero)\b/i.test(latestUser)) return [];
     const target = candidate.target_memory_key ? known.get(candidate.target_memory_key) : null;
@@ -46,12 +52,32 @@ export function validateMemoryProposals(raw, { latestUser, knownRules = [], obje
     const area = objectives.find(o => o.id === candidate.attributes?.area_id)?.id || null;
     const relations = (Array.isArray(input.relations) ? input.relations : []).filter(r => ['depends_on','exception_to','conflicts_with'].includes(r?.kind) && known.has(r.target_memory_key) && !(target && ['updates','refines'].includes(candidate.relation) && r.target_memory_key === target.memory_key)).slice(0, 6);
     return [{ ...candidate, confidence: candidate.status === 'inferred_pending_confirmation' ? 0 : 1,
-      memory_key: 'cog-' + hash((target?.scope_key || candidate.scope_key) + '\n' + candidate.statement + (target ? '\n' + turnKey : '')).slice(0, 40),
+      memory_key: 'cog-' + hash((target?.scope_key || candidate.scope_key) + '\n' + candidate.statement + (target || explicitCorrection ? '\n' + turnKey : '')).slice(0, 40),
       target_memory_key: target?.memory_key || '', scope_key: target?.scope_key || candidate.scope_key,
       source_quote: quote, explicit_correction: explicitCorrection, explicit_withdrawal: explicitWithdrawal,
       attributes: { ...candidate.attributes, scenario_id: scope, area_id: area },
       search_keys: buildPersonaMemorySearchKeys(candidate.statement, candidate.search_terms, candidate.topic), relations }];
   });
+  // Simulate the visible graph in job order. Existing edges keep their original
+  // version; only a new edge may follow a replacement made earlier in this job.
+  const recordKeys=new Map(knownRules.map(r=>[r.id,r.memory_key||r.id]));
+  const graph=new Map(),versions=new Map();
+  const add=(from,to)=>{if(!graph.has(from))graph.set(from,new Set());graph.get(from).add(to);};
+  for(const edge of existingRelations)if(['depends_on','exception_to'].includes(edge.relation))add(recordKeys.get(edge.from_rule_id)||edge.from_rule_id,recordKeys.get(edge.to_rule_id)||edge.to_rule_id);
+  const current=key=>{const seen=new Set();while(versions.has(key)&&!seen.has(key)){seen.add(key);key=versions.get(key);}return key;};
+  const reaches=(from,to,seen=new Set())=>from===to||(!seen.has(from)&&(seen.add(from),[...(graph.get(from)||[])].some(next=>reaches(next,to,seen))));
+  for(const proposal of proposals){
+    if(['withdraws','no_change'].includes(proposal.relation))continue;
+    const target=current(proposal.target_memory_key),from=proposal.relation==='confirms'?target:proposal.memory_key;
+    if(['updates','refines'].includes(proposal.relation)&&target)versions.set(target,from);
+    for(const edge of proposal.relations){
+      if(!['depends_on','exception_to'].includes(edge.kind))continue;
+      const to=current(edge.target_memory_key);
+      if(reaches(to,from))throw new RuntimeError('invalid_memory_graph_proposal',502);
+      add(from,to);
+    }
+  }
+  return proposals;
 }
 
 // The worker persists model proposals already validated against the originating

@@ -98,6 +98,28 @@ test('PostgreSQL durable memory jobs apply corrections, graph links, ownership a
    await assert.rejects(finish(),/relation_target_changed/);
    await db.query("delete from public.synqme_memory_jobs where status='processing'");
   });
+  await t.test('corrections remain current when extraction runs before earlier memory jobs finish',async()=>{
+   const scope_key='kitchen.queued.cloth';
+   await queue([candidate({scope_key})],'Use a soft cloth.');
+   // No supplied target: the preceding preference is still queued, so the
+   // context read cannot yet provide a stored memory key to the model.
+   await queue([candidate({statement:'Use a damp cloth on the hob.',scope_key,source_quote:'damp cloth'})],'Actually, use a damp cloth on the hob.');
+   await finish();await finish();
+   let active=(await db.query("select * from public.synqme_persona_memories where scope_key=$1 and status not in ('superseded','archived')",[scope_key])).rows;
+   assert.equal(active.length,1);assert.equal(active[0].status,'user_stated');assert.match(active[0].statement,/damp cloth/);
+   // Returning to a previously retired value must create a fresh current rule.
+   await queue([candidate({scope_key})],'Actually, use a soft cloth.');await finish();
+   active=(await db.query("select * from public.synqme_persona_memories where scope_key=$1 and status not in ('superseded','archived')",[scope_key])).rows;
+   assert.equal(active.length,1);assert.equal(active[0].status,'user_stated');assert.match(active[0].statement,/soft cloth/);
+   const raceScope='kitchen.outoforder.cloth';
+   await queue([candidate({scope_key:raceScope})],'Use a soft cloth.');
+   await queue([candidate({statement:'Use a damp cloth on the hob.',scope_key:raceScope,source_quote:'damp cloth'})],'Actually, use a damp cloth on the hob.');
+   const earlier=(await db.query('select public.claim_synqme_cognitive_memory_job() v')).rows[0].v;
+   const later=(await db.query('select public.claim_synqme_cognitive_memory_job() v')).rows[0].v;
+   for(const job of [later,earlier])await db.query('select public.complete_synqme_cognitive_memory_job($1::uuid,$2::uuid)',[job.id,job.lease_token]);
+   active=(await db.query("select * from public.synqme_persona_memories where scope_key=$1 and status not in ('superseded','archived')",[raceScope])).rows;
+   assert.equal(active.length,1);assert.match(active[0].statement,/damp cloth/);
+  });
   await t.test('reset removes pending server jobs and rules cannot be restored by stale work',async()=>{
    await queue([candidate({statement:'I prefer a dry cloth for the table.'})],'Use a soft cloth.');
    const job=(await db.query('select public.claim_synqme_cognitive_memory_job() v')).rows[0].v;
@@ -121,6 +143,12 @@ test('a negated permission cannot be saved as authorization',()=>{
  const context={latestUser:"You can't spend money without asking me.",knownRules:[],objectives,turnKey:'permission',scope:'room:kitchen'};
  const [row]=validateMemoryProposals([candidate({statement:'You can spend money without asking me.',kind:'boundary',permission_policy:'allowed',source_quote:"You can't spend money"})],context);
  assert.notEqual(row?.permission_policy,'allowed');
+});
+
+test('an approval exception remains a structured boundary even if labelled as an exception',()=>{
+ const [row]=validateMemoryProposals([candidate({statement:'Ask before changing book arrangement while guests visit.',kind:'exception',scope_key:'books.visitor.approval',permission_policy:'ask_first',source_quote:'ask before changing'})],{latestUser:'Please ask before changing book arrangement while guests visit.',objectives,turnKey:'exception',scope:'room:living_room'});
+ assert.equal(row.kind,'boundary');assert.equal(row.permission_policy,'ask_first');
+ assert.equal(evaluatePermission({rules:[row],actionScope:row.scope_key,conditionsKnown:true,capabilityKnown:true}).outcome,'ask');
 });
 
 test('permission evidence stays conservative for denials and requires quoted explicit consent',()=>{
@@ -147,6 +175,15 @@ test('a corrected exception retains approval without duplicating its old placeme
  const old={memory_key:'old',scope_key:'slippers.working_approval',statement:'Ask before moving slippers from bedside while I work.',kind:'boundary',permission_policy:'ask_first'};
  const [row]=validateMemoryProposals([candidate({statement:'Ask before moving slippers from the wardrobe while I work.',relation:'refines',target_memory_key:'old',source_quote:'Keep asking'})],{latestUser:'Actually, use the wardrobe. Keep asking while I work.',knownRules:[old],objectives,turnKey:'correction',scope:'room:bedroom'});
  assert.equal(row.relation,'updates');assert.equal(row.permission_policy,'ask_first');assert.equal(row.kind,'boundary');assert.ok(!row.statement.includes('bedside'));
+});
+
+test('circular same-job dependencies are rejected before any memory job is committed',()=>{
+ const knownRules=[{memory_key:'arrangement',scope_key:'pens.arrangement',statement:'Keep pens in a cup.'},{memory_key:'approval',scope_key:'pens.approval',statement:'Ask before changing damaged pens.'}];
+ const raw=[candidate({statement:'Keep pens in a drawer.',relation:'updates',target_memory_key:'arrangement',source_quote:'drawer',relations:[{kind:'depends_on',target_memory_key:'approval'}]}),candidate({statement:'Ask before changing damaged pens.',relation:'confirms',target_memory_key:'approval',source_quote:'Keep asking',relations:[{kind:'depends_on',target_memory_key:'arrangement'}]})];
+ const context={latestUser:'Actually, use a drawer. Keep asking about damage.',knownRules,objectives,turnKey:'cycle',scope:'room:office'};
+ assert.throws(()=>validateMemoryProposals(raw,context),/invalid_memory_graph_proposal/);
+ raw[0].relations=[];
+ assert.equal(validateMemoryProposals(raw,context).length,2);
 });
 test('new fact dimensions do not collide merely because they share a room',()=>{
  const context={latestUser:'Use a soft cloth.',knownRules:[],objectives,turnKey:'dimensions',scope:'room:kitchen'};

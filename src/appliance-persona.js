@@ -22,8 +22,10 @@ const IDENTITY_QUESTION = /\b(?:make|brand|manufacturer|model|product number|pnc
 export function applianceIntakeRequirement(messages = [], records = [], exchanges = []) {
   const latest = messages.at(-1)?.role === 'user' ? messages.at(-1).content || '' : '';
   const previous = messages.at(-2)?.role === 'assistant' ? messages.at(-2).content || '' : '';
-  const earlierType = IDENTITY_QUESTION.test(previous) ? messages.slice(0,-2).reverse().map(item=>String(item.content||'').match(DEVICE_NAMES)).find(Boolean) : null;
-  const type = (latest.match(DEVICE_NAMES) || previous.match(DEVICE_NAMES) || earlierType)?.[1]?.toLowerCase();
+  const earlierType = messages.slice(0,-1).reverse().filter(item=>item.role==='user').map(item=>String(item.content||'').match(DEVICE_NAMES)).find(Boolean);
+  const identityReply=isApplianceIdentityAnswer(latest,previous);
+  const confirmsOwnership=/^(?:yes|yeah|yep|sure|we do|i do)\b/i.test(latest.trim())&&/\b(?:own|have|use)\b/i.test(previous);
+  const type = (latest.match(DEVICE_NAMES) || (identityReply ? earlierType || previous.match(DEVICE_NAMES) : null) || (confirmsOwnership ? previous.match(DEVICE_NAMES) : null))?.[1]?.toLowerCase();
   if (!type || /\b(?:don't|do not|no longer) (?:have|own|use)\b|\b(?:hypothetical|for example|imagine|what is a)\b/i.test(latest)) return null;
   if (/^(?:no|nope)[.! ]*$/i.test(latest) && /\b(?:own|have)\b/i.test(previous)) return null;
   const key = value => String(value || '').toLowerCase().replace(/washing machine|washer/g,'washer').replace(/tumble dryer/g,'dryer').replace(/coffee machine/g,'coffee maker').replace(/vacuum cleaner/g,'vacuum');
