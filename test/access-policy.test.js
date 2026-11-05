@@ -62,7 +62,7 @@ test('a verified minute pack raises Premium allowance by $0.50',()=>{
 
 test('purchase of two verified packs supports additional $1 in chat allowance',()=>{
   const state=entitlement(premium,0,grant({usedUsd:1.2,limitUsd:1.5,bonusUsd:1}));
-  assert.equal(state.premiumRemainingUsd,0.3);
+  assert.ok(Math.abs(state.premiumRemainingUsd-0.3)<1e-9);
   assert.equal(state.canChat,true);
 });
 
