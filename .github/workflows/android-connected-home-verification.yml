@@ -1,5 +1,8 @@
 name: Android Connected Home verification
 on:
+  push:
+    branches:
+      - feat/android-connected-home-smartthings-20261105
   pull_request:
     branches:
       - release/amia-android-1.11
