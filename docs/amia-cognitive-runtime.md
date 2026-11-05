@@ -190,3 +190,9 @@ The owner authorized code and database deployment. The runtime, graph and delive
 Hosted service-role verification passed claim, atomic reminder commit and canonical replay in a rolled-back transaction, leaving no test reminder or conversation behind. All new tables have RLS, client writes are denied, and server RPCs are unavailable to anonymous/client roles. A follow-up migration explicitly excludes anonymous authenticated sessions from all three reset-cleanup policies; 15 focused PostgreSQL/operations checks pass. Existing unrelated security advisories are unchanged.
 
 The deployed /health endpoint returns 200; unauthenticated runtime status returns 401. Runtime activation remains off. No authenticated end-to-end model/Phonic session or new Play/OTA release is claimed. Paid live-model workflows remain manual.
+
+### All-account activation and Android 1.11
+
+The owner authorized availability for every active account, including future registrations. AMIA_RUNTIME_ALL_ACCOUNTS=true removes the per-account allowlist requirement while AMIA_COGNITIVE_RUNTIME_ENABLED remains the master switch. Supabase verifies each signed-in registered account on requests; anonymous accounts remain rejected. New registrations qualify automatically without adding IDs or emails. Rollback can disable the master switch. Existing installed clients need the new client code to request runtime version 1.
+
+Android 1.11 uses versionCode 14 and the existing Codemagic android-play upload key. Its signed build checks public configuration, runs regression tests and verifies the AAB signature. The one-release build trigger watches release/amia-android-1.11 only. Preparing or triggering this build does not publish it to Google Play.

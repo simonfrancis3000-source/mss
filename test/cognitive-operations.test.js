@@ -11,6 +11,11 @@ test('rollout checks verified account IDs/emails and defaults to disabled',()=>{
  assert.equal(cognitiveRollout({enabled:true})({id:'a'}),false);
  const enabled=cognitiveRollout({enabled:true,userIds:'a',emails:'owner@example.test'});
  assert.equal(enabled({id:'a'}),true);assert.equal(enabled({id:'b',email:'OWNER@example.test'}),true);assert.equal(enabled({id:'b'}),false);
+ const everyone=cognitiveRollout({enabled:true,allAccounts:true});
+ assert.equal(everyone({id:'registered-account'}),true);assert.equal(everyone({id:'another-account'}),true);
+ assert.equal(everyone({id:'anonymous',is_anonymous:true}),false);assert.equal(everyone({}),false);assert.equal(everyone(null),false);
+ assert.equal(cognitiveRollout({enabled:false,allAccounts:true})({id:'a'}),false);
+ assert.equal(cognitiveRollout({enabled:true,allAccounts:'false'})({id:'a'}),false);
 });
 test('reset policies explicitly reject anonymous authenticated sessions and preserve owner cleanup',async()=>{
  const db=await runtimeDatabase();
