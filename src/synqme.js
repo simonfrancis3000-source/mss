@@ -4,6 +4,7 @@ import { createTrainingVisitStore, nextTrainingStep, visitLearnings, visitAnswer
 import { createVoiceBalance } from './voice-balance.js';
 import { Capacitor } from "@capacitor/core";
 import { createConnectedHome } from "./connected-home.js";
+import { createAndroidChatKeyboard } from "./android-chat-keyboard.js";
 import { Preferences } from "@capacitor/preferences";
 import { createMobileAuthTurnstile } from "./mobile-turnstile-bridge.js";
 import { createMssInterface, buildInterfaceModel, COMPANION_HEAD_IMAGE } from "./mss-interface.js";
@@ -3256,6 +3257,13 @@ function updateChatScrollbar() {
   track.hidden = false;
 }
 
+const androidChatKeyboard = Capacitor.getPlatform() === 'android'
+  ? createAndroidChatKeyboard({
+      windowObject:window,documentObject:document,input:elements.messageInput,
+      messages:elements.chatMessages,main:document.querySelector('main')
+    })
+  : null;
+
 function renderMessages() {
   if (typeof mssInterface !== "undefined") { mssInterface?.renderTranscript(); mssInterface?.renderVisitControls(); }
   elements.chatMessages.replaceChildren();
@@ -3265,6 +3273,8 @@ function renderMessages() {
   syncRobotSpeaking(document, elements.voiceOrb?.dataset.state === "speaking");
   window.requestAnimationFrame(() => {
     elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
+    androidChatKeyboard?.sync();
+    androidChatKeyboard?.scrollLatest();
     updateChatScrollbar();
   });
 }
@@ -5514,6 +5524,8 @@ function selectAppView(view) {
   if (typeof mssInterface !== "undefined") mssInterface?.render();
   syncAppNavigation();
   window.requestAnimationFrame(updateChatScrollbar);
+  androidChatKeyboard?.sync();
+  window.requestAnimationFrame(() => androidChatKeyboard?.scrollLatest());
   window.scrollTo({top:0,behavior:"smooth"});
 }
 
