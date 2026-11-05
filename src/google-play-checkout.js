@@ -60,6 +60,7 @@ export function createGooglePlayCheckout({ apiBase, getHeaders, getUserId }) {
   let listener = null;
   let checkoutStartedAt = 0;
   let lastAutoRestoreAt = 0;
+  let lastRenewalSyncAt = 0;
   let checkoutRecoveryTimers = [];
 
   function stopCheckoutRecovery() {
@@ -118,6 +119,11 @@ export function createGooglePlayCheckout({ apiBase, getHeaders, getUserId }) {
     const result = await request("/api/billing/verify", "POST", {
       productId, purchaseToken: purchase.purchaseToken
     });
+    if (result.subscriptionActive === false) {
+      await refreshBalance();
+      message('Your Google Play Premium subscription is inactive. Renew it to resume training. Your saved persona and voice credits remain on your account.');
+      return false;
+    }
     if (result.finalizationPending) {
       await refreshBalance();
       // The wallet is credited, but Google Play still requires consumption
@@ -318,6 +324,21 @@ export function createGooglePlayCheckout({ apiBase, getHeaders, getUserId }) {
       return false;
     }
   }
+
+  // Google Play can renew a subscription while MSS stays signed in for
+  // weeks. Refresh verified purchases when Android returns to the foreground.
+  // Throttle non-checkout checks to prevent unnecessary Publisher requests.
+  function reconcileSubscriptionOnForeground() {
+    if (!getUserId() || loading || checkoutStartedAt) return;
+    const now=Date.now();
+    if (now-lastRenewalSyncAt < 5*60*1000) return;
+    lastRenewalSyncAt=now;
+    void syncOnSignIn();
+  }
+  window.addEventListener('focus',reconcileSubscriptionOnForeground);
+  document.addEventListener('visibilitychange',()=>{
+    if (document.visibilityState==='visible') reconcileSubscriptionOnForeground();
+  });
 
   dialog.addEventListener("click", (event) => {
     if (event.target === dialog) dialog.close();
