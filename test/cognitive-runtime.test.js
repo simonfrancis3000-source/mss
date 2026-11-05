@@ -88,6 +88,18 @@ test('canonical unanswered question survives pause, new request transcript and a
   assert.equal(f.calls, 1);
 });
 
+test('a reminder detour returns to the unanswered training question and preserves its key',async()=>{
+ const question='Where do you keep the approved products?';
+ const f=fixture({generate:async()=>({...answer('I will use the approved products. '+question),decisionKey:'products.storage'})});
+ await f.turn('Use only approved products.');
+ for(const command of ['Add check product label to reminders','List my reminders']){
+  const reply=await f.turn(command);assert.ok(reply.reply.includes(question));
+  const state=[...f.states.values()][0];assert.equal(state.lastQuestion,question);assert.equal(state.lastDecisionKey,'products.storage');
+  assert.equal(state.dispositions.some(d=>d.question===question),false);
+ }
+ assert.equal(f.calls,1);assert.equal(f.effects.length,1);
+});
+
 test('cancellation and a subject change cannot become consent', async () => {
   const f = fixture({ generate: async () => ({ reply: 'Would you like a reminder?', reminderOffer: { title: 'Check the hob model' }, objectiveId: null }) });
   await f.turn('The model is unavailable.');
@@ -165,6 +177,30 @@ test('an unrelated rule does not settle an unanswered decision; a grounded answe
   const repeated={...answer('Should damaged books go on the desk?'),decisionKey:'books.damaged_location',previousAnswer:{answered:true,sourceQuote:'on the desk'}};
   assert.equal(checkRuntimeReply(repeated,{state:initial,active:true,latestUser:'Leave them on the desk.'}),'settled_decision');
   assert.equal(checkRuntimeReply({...repeated,previousAnswer:{answered:false,sourceQuote:''}},{state:initial,active:true,latestUser:'If unsure, ask me.'}),null);
+});
+
+test('an explanation may return to the open question while settled questions remain blocked',()=>{
+ const state=cleanRuntimeState({lastQuestion:'Where should the basket sit?',lastDecisionKey:'basket.location'});
+ const proposal={...answer('The basket is your current arrangement. Where should the basket sit?'),decisionKey:'basket.location'};
+ assert.equal(checkRuntimeReply(proposal,{state,active:true,intent:'answer'}),'repeated_question');
+ assert.equal(checkRuntimeReply(proposal,{state,active:true,intent:'explain'}),null);
+ for(const disposition of [{status:'response_received',answered:true},{status:'deferred',answered:true}]){
+  const settled={...state,dispositions:[{...disposition,question:state.lastQuestion,decisionKey:state.lastDecisionKey}]};
+  assert.equal(checkRuntimeReply(proposal,{state:settled,active:true,intent:'explain'}),'settled_question');
+ }
+});
+
+test('structured follow-up questions are attached once and still pass the full quality checks',()=>{
+ const raw={schema_version:1,reply:'Your normal arrangement is a basket.',next_question:'Where should the basket sit?',actions:[]};
+ const proposal=validateTurnProposal(raw);
+ assert.equal(proposal.reply,'Your normal arrangement is a basket.\n\nWhere should the basket sit?');
+ assert.equal(checkRuntimeReply(proposal,{state:cleanRuntimeState(),active:true}),null);
+ assert.equal(validateTurnProposal({...raw,reply:proposal.reply}).reply,proposal.reply);
+ assert.throws(()=>validateTurnProposal({...raw,next_question:'The open point is the basket location.'}),/invalid_model_proposal/);
+ assert.throws(()=>validateTurnProposal({...raw,next_question:'Where should it sit? Who can move it?'}),/invalid_model_proposal/);
+ assert.throws(()=>validateTurnProposal({...raw,reply:'Who can move it?'}),/invalid_model_proposal/);
+ const unverified=validateTurnProposal({...raw,reply:'I have added your reminder.'});
+ assert.equal(checkRuntimeReply(unverified,{state:cleanRuntimeState(),active:true}),'unverified_action_claim');
 });
 
 test('provider validates JSON locally, reports usage, and rejects fabricated tool actions', async () => {
