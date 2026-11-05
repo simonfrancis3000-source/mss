@@ -1,0 +1,15 @@
+name: MSS production billing readiness probe
+on:
+  push:
+    branches:
+      - verify/mss-billing-live-health-20261105
+jobs:
+  public-health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check live health flags without credentials
+        shell: bash
+        run: |
+          curl --fail --silent --show-error --max-time 40 https://synqme-api.onrender.com/health > /tmp/mss-health.json
+          node -e "const x=require('/tmp/mss-health.json'); console.log(JSON.stringify({service:x.service,configured:x.configured,paidVoiceEnabled:x.paidVoiceEnabled,googlePlayRtdnConfigured:x.googlePlayRtdnConfigured,accountAuthConfigured:x.accountAuthConfigured},null,2))"
