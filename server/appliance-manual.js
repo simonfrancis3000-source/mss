@@ -116,7 +116,7 @@ export async function readSavedApplianceManual({ brand, model, url, key, provide
   try {
     const page = await providerCall('fetch', { url: safeUrl, model }, key, fetchImpl, provider, manufacturerDomains(brand));
     if (typeof page.content !== 'string' || !page.content.trim()) return null;
-    await onUsage('fetch');
+    if (!page.cached) await onUsage('fetch');
     if (!exactModelMentioned(model, String(page.title || '') + '\n' + page.content) || !/\b(manual|user guide|instructions|operating instructions|instruction manual)\b/i.test(String(page.title || '') + ' ' + safeUrl)) return null;
     return { url: safeUrl, excerpt: manualEvidenceExcerpt(page.content) };
   } catch { return null; }
