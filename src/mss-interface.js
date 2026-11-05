@@ -89,7 +89,7 @@ const el = (tag, className, text) => {
 const symbol = (name, className = '') => { const node = el('span', 'mss-symbol ' + className); node.innerHTML = icon(name); return node; };
 function action(label, className, onClick) { const node = el('button', className, label); node.type = 'button'; node.addEventListener('click', onClick); return node; }
 
-export function createMssInterface({ getSnapshot, navigate, editSettings, openScenario, openWorkspace, shareProgress, refreshBalance, startStep, finishVisit, resumeVisit, openHelp, openGuide, openConnectedHome }) {
+export function createMssInterface({ getSnapshot, navigate, editSettings, openScenario, openWorkspace, shareProgress, refreshBalance, startStep, finishVisit, resumeVisit, openHelp, openGuide, openConnectedHome, openBilling }) {
   const main = document.querySelector('main');
   let sharingProgress = false;
   let shareStatus = '';
@@ -464,9 +464,14 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
     balance.id = 'mss-premium-voice-balance';
     balance.tabIndex = -1;
     balance.setAttribute('aria-label', 'Subscription and voice minutes');
-    const balanceHead = el('div','mss-balance-heading'); balanceHead.append(el('h2','','Membership & voice minutes'));
+    const balanceHead = el('div','mss-balance-heading'); balanceHead.append(el('h2','','Voice Minutes'));
+    const balanceActions = el('div','mss-balance-actions');
+    const buy = action('Buy','mss-balance-buy', () => openBilling?.());
+    buy.setAttribute('aria-label','Open Premium & Voice Minutes');
     const refresh = action('Refresh','mss-balance-refresh',()=>refreshBalance?.());
-    refresh.disabled = snapshot.billing?.status === 'loading'; balanceHead.append(refresh); balance.append(balanceHead);
+    refresh.disabled = snapshot.billing?.status === 'loading';
+    balanceActions.append(buy,refresh);
+    balanceHead.append(balanceActions); balance.append(balanceHead);
     if(snapshot.billing?.status === 'ready') {
       const credit = voiceBalanceModel(snapshot.billing.wallet);
       const access = snapshot.billing.wallet?.access;
@@ -527,10 +532,7 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
     if (!snapshot.preferences.length) list.append(el('li', '', 'Your preferences will appear here as you train your robot.'));
     memoryContent.append(symbol('brain', 'mss-icon-tile'), list); remembered.append(memoryContent); profile.append(remembered, el('h2', 'mss-section-title', 'Settings'));
     const settings = el('div', 'mss-settings-list');
-    settings.append(linkCard('Premium & Voice Minutes', 'View subscription, remaining minutes and top-up balances', 'coins', () => {
-      balance.scrollIntoView({ block: 'start', behavior: 'smooth' });
-      balance.focus({ preventScroll: true });
-    }),
+    settings.append(linkCard('Premium & Voice Minutes', 'View plans and voice-minute packs', 'coins', () => openBilling?.()),
       linkCard('Help & Getting Started', 'FAQs, replay the introduction and contact support', 'support', () => openHelp?.()),
       linkCard('Voice settings', 'Voice and conversation language', 'mic', () => editSettings('robotVoice')),
       linkCard('Reminders', 'Your saved to-do list and things to return to', 'bell', () => openWorkspace('todoReminders')),
