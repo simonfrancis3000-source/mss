@@ -1,0 +1,24 @@
+name: SmartThings live API readiness
+on:
+  push:
+    branches:
+      - verify/smartthings-live-ready-20261105
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify configured API challenges unauthenticated requests
+        shell: bash
+        run: |
+          code=$(curl -sS --connect-timeout 15 --max-time 40 -o /tmp/smartthings-response.txt -w '%{http_code}' 'https://synqme-api.onrender.com/api/integrations/smartthings/status')
+          echo "SmartThings live status (without credentials): $code"
+          if [[ "$code" == "401" || "$code" == "403" ]]; then
+            echo "PASS: SmartThings integration is configured and requires authentication"
+          elif [[ "$code" == "503" ]]; then
+            echo "FAIL: SmartThings integration is not configured or unavailable"
+            exit 1
+          else
+            echo "FAIL: Unexpected SmartThings backend response"
+            exit 1
+          fi
