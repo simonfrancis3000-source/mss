@@ -63,8 +63,10 @@ export function createSmartThingsHomeConnect({
     res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", ...headers });
     res.end(JSON.stringify(value));
   }
-  function redirect(res, result) {
-    const location = new URL("/", appBaseUrl);
+  function redirect(res, result, returnClient = "web") {
+    const location = returnClient === "android"
+      ? new URL("app.mysecondself://connected-home")
+      : new URL("/", appBaseUrl);
     location.searchParams.set("smartthings", result);
     res.writeHead(303, { Location: location.toString(), "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" });
     res.end();
@@ -166,20 +168,20 @@ export function createSmartThingsHomeConnect({
       const state = url.searchParams.get("state") || "";
       if (state.length < 32 || state.length > 128) return redirect(res, "invalid_state"), true;
       const { data, error } = await db.from("mss_smartthings_oauth_states")
-        .delete().eq("state_hash", sha256(state)).select("user_id,expires_at").maybeSingle();
+        .delete().eq("state_hash", sha256(state)).select("user_id,expires_at,return_client").maybeSingle();
       if (error || !data || Date.parse(data.expires_at) <= Date.now()) return redirect(res, "invalid_state"), true;
-      if (url.searchParams.has("error")) return redirect(res, "denied"), true;
+      if (url.searchParams.has("error")) return redirect(res, "denied", data.return_client), true;
       const code = url.searchParams.get("code") || "";
-      if (!code || code.length > 2048) return redirect(res, "error"), true;
+      if (!code || code.length > 2048) return redirect(res, "error", data.return_client), true;
       try {
         const token = await tokenRequest({ grant_type: "authorization_code", code, redirect_uri: redirectUri });
         const record = { ...recordTokens(data.user_id, token), devices: [], synced_at: null };
         const { error: upsertError } = await db.from("mss_smartthings_connections").upsert(record, { onConflict: "user_id" });
         if (upsertError) throw new Error("Could not store SmartThings connection");
         try { await discover(data.user_id, record); } catch { /* Keep the account linked if Samsung is rate-limited or billing is inactive. */ }
-        return redirect(res, "connected"), true;
+        return redirect(res, "connected", data.return_client), true;
       } catch {
-        return redirect(res, "error"), true;
+        return redirect(res, "error", data.return_client), true;
       }
     }
 
@@ -203,8 +205,11 @@ export function createSmartThingsHomeConnect({
           return json(res, 503, { error: "SmartThings callback URL must point to the MSS API service. Update the Samsung OAuth redirect URI and Render configuration." }, headers), true;
         }
         const state = randomBytes(32).toString("base64url");
+        // The return target is a fixed enum, never an arbitrary caller URL.
+        const returnClient = req.headers["x-mss-connected-home-client"] === "android"
+          ? "android" : "web";
         const { error } = await db.from("mss_smartthings_oauth_states").insert({
-          state_hash: sha256(state), user_id: userId,
+          state_hash: sha256(state), user_id: userId, return_client: returnClient,
           expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString()
         });
         if (error) throw new Error("Unable to start SmartThings authorisation");
