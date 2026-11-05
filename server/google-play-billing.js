@@ -84,19 +84,45 @@ async function googleAccessToken() {
     exp: issued + 3500
   }));
   const message = header + "." + claims;
-  const signature = sign("RSA-SHA256", Buffer.from(message), account.private_key).toString("base64url");
+  let signature;
+  try {
+    signature = sign("RSA-SHA256", Buffer.from(message), account.private_key).toString("base64url");
+  } catch {
+    const error = fail("Google Play authentication failed.", 502);
+    error.code = "google_oauth_signing_failed";
+    throw error;
+  }
   const response = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: message + "." + signature }),
     signal: AbortSignal.timeout(10000)
   });
-  if (!response.ok) throw fail("Google Play authentication failed.", 502);
+  if (!response.ok) {
+    const error = fail("Google Play authentication failed.", 502);
+    error.code = "google_oauth_http_" + response.status;
+    throw error;
+  }
   const json = await response.json();
-  if (!json.access_token) throw fail("Google Play authentication failed.", 502);
+  if (!json.access_token) {
+    const error = fail("Google Play authentication failed.", 502);
+    error.code = "google_oauth_missing_token";
+    throw error;
+  }
   cachedToken = json.access_token;
   cachedExpiry = Date.now() + Math.max(30, Math.min(Number(json.expires_in || 3600), 3600) - 120) * 1000;
   return cachedToken;
+}
+
+// A single read-only OAuth probe on server startup separates credential
+// authentication failures from Google Play purchase-API permission failures.
+// Never log credential material, access tokens, user IDs, or purchase tokens.
+if (process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON) {
+  void googleAccessToken().then(() => {
+    console.info("Google Play OAuth diagnostic", { code: "oauth_ready" });
+  }).catch((error) => {
+    console.warn("Google Play OAuth diagnostic", { code: error?.code || "oauth_unknown_error" });
+  });
 }
 
 export async function verifyGooglePlayToken({ productId, purchaseToken, userId } = {}) {
@@ -113,7 +139,9 @@ export async function verifyGooglePlayToken({ productId, purchaseToken, userId }
     headers: { Authorization: "Bearer " + token }, signal: AbortSignal.timeout(12000)
   });
   if (!response.ok) {
-    throw fail(response.status === 404 ? "Purchase not found in Google Play." : "Google Play purchase verification failed.", response.status === 404 ? 403 : 502);
+    const error = fail(response.status === 404 ? "Purchase not found in Google Play." : "Google Play purchase verification failed.", response.status === 404 ? 403 : 502);
+    error.code = "google_publisher_http_" + response.status;
+    throw error;
   }
   const details = await response.json();
   const accountId = productId === MSS_PREMIUM_PRODUCT
