@@ -91,3 +91,59 @@ test("no device-command route exists", async () => {
   await route(req("POST"), res, new URL("http://localhost/api/integrations/smartthings/command"));
   assert.equal(res.status, 404);
 });
+
+
+test("Android connect starts with the same read-only Samsung scope and records native return client", async () => {
+  let inserted;
+  const db = { from(table) {
+    assert.equal(table, "mss_smartthings_oauth_states");
+    return { insert: async row => {inserted = row; return {error:null};} };
+  }};
+  const route = createSmartThingsHomeConnect({...options,db});
+  const native = req("POST");
+  native.headers["x-mss-connected-home-client"] = "android";
+  const res = response();
+  await route(native,res,new URL("http://localhost/api/integrations/smartthings/start"));
+  assert.equal(res.status,200);
+  assert.equal(inserted.return_client,"android");
+  const authorization = new URL(JSON.parse(res.body).authorizationUrl);
+  assert.equal(authorization.origin,"https://api.smartthings.com");
+  assert.equal(authorization.searchParams.get("scope"),"r:devices:* r:locations:*");
+  assert.equal(authorization.searchParams.get("redirect_uri"),options.redirectUri);
+});
+
+test("Samsung callback brings native Android app back without exposing tokens or changing read scopes", async () => {
+  const db = { from(table) {
+    assert.equal(table,"mss_smartthings_oauth_states");
+    return {
+      delete() {return this;},eq() {return this;},select() {return this;},
+      maybeSingle:async()=>({data:{
+        user_id:"00000000-0000-4000-8000-000000000001",
+        expires_at:new Date(Date.now()+200000).toISOString(),
+        return_client:"android"
+      },error:null})
+    };
+  }};
+  const route=createSmartThingsHomeConnect({...options,db});
+  const res=response();
+  await route(req("GET"),res,new URL(
+    "http://localhost/api/integrations/smartthings/callback?state="+"a".repeat(43)+"&error=access_denied"
+  ));
+  assert.equal(res.status,303);
+  assert.equal(res.headers.Location,"app.mysecondself://connected-home?smartthings=denied");
+  assert.ok(!res.headers.Location.includes("state="));
+});
+
+test("browser SmartThings callback continues returning to web instead of native app", async () => {
+  const db={from(){return{
+    delete(){return this;},eq(){return this;},select(){return this;},
+    maybeSingle:async()=>({data:{user_id:"owner",expires_at:new Date(Date.now()+200000).toISOString(),return_client:"web"},error:null})
+  };}};
+  const route=createSmartThingsHomeConnect({...options,db});
+  const res=response();
+  await route(req("GET"),res,new URL(
+    "http://localhost/api/integrations/smartthings/callback?state="+"b".repeat(43)+"&error=denied"
+  ));
+  assert.equal(res.status,303);
+  assert.equal(res.headers.Location,"https://synqme.mysecondself.app/?smartthings=denied");
+});
