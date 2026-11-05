@@ -462,9 +462,17 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
     const edit = action('Edit profile', 'mss-edit-profile', () => editSettings('ownerName')); edit.prepend(symbol('edit')); identity.append(photo, identityCopy, edit); profile.append(identity, banner(snapshot, true));
     const balance = el('section', 'mss-card mss-voice-balance');
     balance.setAttribute('aria-label', 'Subscription and voice minutes');
-    const balanceHead = el('div','mss-balance-heading'); balanceHead.append(el('h2','','Voice minutes'));
+    const balanceHead = el('div','mss-balance-heading'); balanceHead.append(el('h2','','Voice Minutes'));
+    const balanceActions = el('div','mss-balance-actions');
+    if (typeof openBilling === 'function') {
+      const buy = action('Buy','mss-balance-buy',openBilling);
+      buy.setAttribute('aria-label','Buy Premium or extra voice minutes');
+      balanceActions.append(buy);
+    }
     const refresh = action('Refresh','mss-balance-refresh',()=>refreshBalance?.());
-    refresh.disabled = snapshot.billing?.status === 'loading'; balanceHead.append(refresh); balance.append(balanceHead);
+    refresh.disabled = snapshot.billing?.status === 'loading';
+    balanceActions.append(refresh);
+    balanceHead.append(balanceActions); balance.append(balanceHead);
     if(snapshot.billing?.status === 'ready') {
       const credit = voiceBalanceModel(snapshot.billing.wallet);
       balance.append(el('strong','mss-balance-total',credit.total + ' available'),el('p','mss-balance-status',credit.active ? (credit.isTest ? 'Free test allowance' : 'Premium active') : 'No active subscription'));
@@ -480,13 +488,13 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
     if (!snapshot.preferences.length) list.append(el('li', '', 'Your preferences will appear here as you train your robot.'));
     memoryContent.append(symbol('brain', 'mss-icon-tile'), list); remembered.append(memoryContent); profile.append(remembered, el('h2', 'mss-section-title', 'Settings'));
     const settings = el('div', 'mss-settings-list');
-    settings.append(linkCard('Help & Getting Started', 'FAQs, replay the introduction and contact support', 'support', () => openHelp?.()),
-      linkCard('Reminders', 'Your saved to-do list and things to return to', 'bell', () => openWorkspace('todoReminders')),
-      linkCard('Privacy', 'Your data, training and sharing preferences', 'lock', () => editSettings('shareAnonymizedLearning')),
-      linkCard('Voice settings', 'Voice and conversation language', 'mic', () => editSettings('robotVoice')));
     if (typeof openBilling === 'function') {
-      settings.prepend(linkCard('Premium and voice minutes', 'Monthly allowance, extra voice credits and purchase history', 'spark', openBilling));
+      settings.append(linkCard('Premium & Voice Minutes', 'Subscription, extra voice credits and purchase history', 'spark', openBilling));
     }
+    settings.append(linkCard('Help & Getting Started', 'FAQs, replay the introduction and contact support', 'support', () => openHelp?.()),
+      linkCard('Voice Settings', 'Voice and conversation language', 'mic', () => editSettings('robotVoice')),
+      linkCard('Reminders', 'Your saved to-do list and things to return to', 'bell', () => openWorkspace('todoReminders')),
+      linkCard('Privacy', 'Your data, training and sharing preferences', 'lock', () => editSettings('shareAnonymizedLearning')));
     profile.append(settings);
 
     renderTranscript(snapshot); renderVoiceState(); renderVisitControls(snapshot);
