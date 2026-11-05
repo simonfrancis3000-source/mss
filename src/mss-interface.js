@@ -462,16 +462,61 @@ export function createMssInterface({ getSnapshot, navigate, editSettings, openSc
     const edit = action('Edit profile', 'mss-edit-profile', () => editSettings('ownerName')); edit.prepend(symbol('edit')); identity.append(photo, identityCopy, edit); profile.append(identity, banner(snapshot, true));
     const balance = el('section', 'mss-card mss-voice-balance');
     balance.setAttribute('aria-label', 'Subscription and voice minutes');
-    const balanceHead = el('div','mss-balance-heading'); balanceHead.append(el('h2','','Voice minutes'));
+    const balanceHead = el('div','mss-balance-heading'); balanceHead.append(el('h2','','Membership & voice minutes'));
     const refresh = action('Refresh','mss-balance-refresh',()=>refreshBalance?.());
     refresh.disabled = snapshot.billing?.status === 'loading'; balanceHead.append(refresh); balance.append(balanceHead);
     if(snapshot.billing?.status === 'ready') {
       const credit = voiceBalanceModel(snapshot.billing.wallet);
-      balance.append(el('strong','mss-balance-total',credit.total + ' available'),el('p','mss-balance-status',credit.active ? (credit.isTest ? 'Free test allowance' : 'Premium active') : 'No active subscription'));
-      const monthly = el('div','mss-balance-row'); monthly.append(el('strong','',credit.isTest ? 'Test allowance' : 'Subscription'),el('span','',credit.monthlyLabel + ' left of 60 min')); balance.append(monthly);
-      const progress = el('progress','mss-balance-bar'); progress.max=3600000;progress.value=Math.min(3600000,credit.monthly);progress.setAttribute('aria-label','Subscription minutes remaining');balance.append(progress);
-      balance.append(el('p','mss-balance-note',credit.periodEnd ? (credit.isTest ? 'Test allowance expires ' : 'Current period ends ') + new Intl.DateTimeFormat(undefined,{day:'numeric',month:'short',year:'numeric'}).format(new Date(credit.periodEnd)) + (credit.isTest ? '. No payment or automatic renewal.' : '. Allowance resets with the next subscription period.') : 'No subscription reset date yet.'));
-      const topup = el('div','mss-balance-row');topup.append(el('strong','','Top-up minutes'),el('span','',credit.topupLabel + ' left'));balance.append(topup,el('p','mss-balance-note','Top-up minutes carry forward until used. Subscription minutes are used first.'));
+      const access = snapshot.billing.wallet?.access;
+      if (access?.enforcementEnabled && !access.premiumActive) {
+        const isFree = access.mode === 'trial';
+        const remainder = Math.max(0, Number(access.trialRemainingUsd || 0));
+        const granted = Math.max(0.001, Number(access.trialLimitUsd || 0.10));
+        const title = isFree ? 'Free chat trial' : access.mode === 'free_trial_exhausted'
+          ? 'Free chat trial complete' : 'Training paused';
+        balance.append(el('strong','mss-balance-total',title),
+          el('p','mss-balance-status',isFree
+            ? '$' + remainder.toFixed(3) + ' of $0.10 DeepSeek chat credit remaining'
+            : 'Subscribe to Premium for $9.99 per month to continue training.'));
+        const trialBar = el('progress','mss-balance-bar');
+        trialBar.max = granted; trialBar.value = Math.max(0,Math.min(granted,Number(access.trialUsedUsd || 0)));
+        trialBar.setAttribute('aria-label','Free chat credit spent');
+        balance.append(trialBar,el('p','mss-balance-note',
+          isFree ? 'Free chat is available until your one-time $0.10 AI allowance is used. Voice requires Premium.'
+          : 'Your chat history, saved persona and training progress are preserved. Talk and Chat resume when you subscribe.'));
+        if (credit.topup > 0) balance.append(el('p','mss-balance-note',
+          credit.topupLabel + ' purchased voice credits retained. An active Premium subscription is required to use them.'));
+      } else {
+        if (access?.enforcementEnabled && access.premiumActive) {
+          const used = Math.max(0, Number(access.premiumUsedUsd || 0));
+          const limit = Math.max(0.01, Number(access.premiumLimitUsd || 0.50));
+          const left = Math.max(0, Number(access.premiumRemainingUsd || 0));
+          const stopped = access.mode === 'premium_chat_exhausted';
+          const amount = value => '$' + Number(value).toFixed(2);
+          balance.append(el('strong','mss-balance-total',stopped ? 'Training paused · AI limit reached' : 'Premium active'),
+            el('p','mss-balance-status',stopped
+              ? 'You have used your ' + amount(limit) + ' AI conversation allowance.'
+              : 'AI conversations: ' + amount(left) + ' remaining of ' + amount(limit) + '.'));
+          const chatBar = el('progress','mss-balance-bar');
+          chatBar.max=limit; chatBar.value=Math.min(limit,used);
+          chatBar.setAttribute('aria-label','Monthly AI conversation usage');
+          balance.append(chatBar,el('p','mss-balance-note',stopped
+            ? 'Chat and Talk are paused. Buy a voice-minute pack to add $0.50 AI credit, or resume at your next subscription renewal.'
+            : 'Premium includes $0.50 of AI conversation usage per billing period. Each verified voice-minute pack adds $0.50 for the current period.'));
+          if (Number(access.premiumBonusUsd || 0) > 0) {
+            balance.append(el('p','mss-balance-note',
+              'Additional AI credit from voice-minute packs: ' + amount(access.premiumBonusUsd) + '.'));
+          }
+        }
+        balance.append(el('strong','mss-balance-total',credit.total + ' voice minutes available'),
+          el('p','mss-balance-status',credit.active ?
+          (credit.isTest ? 'Free test allowance' : 'Voice minutes can be used while your AI conversation allowance remains.')
+          : 'No active subscription'));
+        const monthly = el('div','mss-balance-row'); monthly.append(el('strong','',credit.isTest ? 'Test allowance' : 'Subscription'),el('span','',credit.monthlyLabel + ' left of 60 min')); balance.append(monthly);
+        const progress = el('progress','mss-balance-bar'); progress.max=3600000;progress.value=Math.min(3600000,credit.monthly);progress.setAttribute('aria-label','Subscription minutes remaining');balance.append(progress);
+        balance.append(el('p','mss-balance-note',credit.periodEnd ? (credit.isTest ? 'Test allowance expires ' : 'Current period ends ') + new Intl.DateTimeFormat(undefined,{day:'numeric',month:'short',year:'numeric'}).format(new Date(credit.periodEnd)) + (credit.isTest ? '. No payment or automatic renewal.' : '. Allowance resets with the next subscription period.') : 'No subscription reset date yet.'));
+        const topup = el('div','mss-balance-row');topup.append(el('strong','','Top-up minutes'),el('span','',credit.topupLabel + ' left'));balance.append(topup,el('p','mss-balance-note','Top-up minutes carry forward until used. Subscription minutes are used first.'));
+      }
     } else balance.append(el('p','mss-balance-note',snapshot.billing?.status === 'error' ? 'Your balance could not be loaded. Tap Refresh to try again.' : 'Checking your voice minutes…'));
     profile.append(balance);
     const remembered = el('section', 'mss-card mss-remembered'); remembered.append(el('h2', '', 'Preferences remembered'));
