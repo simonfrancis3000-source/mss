@@ -153,7 +153,10 @@ begin
      end if;
      continue;
     end if;
-    relation:='conflicts';
+    -- The model may not have seen the target because its earlier extraction
+    -- was still queued. A grounded explicit correction to the same precise
+    -- fact dimension supersedes that older version when the worker catches up.
+    relation:=case when coalesce((c->>'explicit_correction')::boolean,false) then 'updates' else 'conflicts' end;
    end if;
   end if;
   if relation in ('updates','refines','confirms','withdraws','conflicts') and target.id is null then raise exception 'memory_target_missing'; end if;

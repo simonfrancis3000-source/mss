@@ -118,6 +118,7 @@ export function createCognitiveRuntime({ store, generate, contextStore, resolveA
             const checked = await generateCheckedCognitiveTurn({
               generate: input => { modelCalls++; return measured('modelMs',()=>generate({...input,auth})); },
               context, objectives,
+              validateProposal: candidate => validateMemoryProposals(candidate.memoryProposals || [],{latestUser,knownRules:[...(saved.rules || []),...(saved.generalRules || [])],existingRelations:review.relations || [],objectives,turnKey:identity.key,scope}),
               quality: { state:qualityState, active:training && resolved.intent !== 'service_help', intake, language }
             });
             proposal = checked.proposal;
@@ -130,7 +131,7 @@ export function createCognitiveRuntime({ store, generate, contextStore, resolveA
                 if (resolvedAppliance.evidence) {
                   modelCalls++;
                   proposal = await measured('modelMs',()=>generate({context:{...context,intake:null,verifiedManual:resolvedAppliance.evidence},objectives,auth}));
-                  const invalid = checkRuntimeReply(proposal,{state:qualityState,active:training,intake:null,language});
+                  const invalid = checkRuntimeReply(proposal,{state:qualityState,active:training,intake:null,language,latestUser});
                   if (invalid) throw new RuntimeError('runtime_quality_check_failed',502);
                   const quotes=verifiedFeatureQuotes(proposal.featureQuotes,resolvedAppliance.evidence);
                   const featureBudget=Math.max(0,3000-proposal.reply.length-70);
@@ -143,7 +144,7 @@ export function createCognitiveRuntime({ store, generate, contextStore, resolveA
             }
             reply = proposal.reply;
             offer = proposal.reminderOffer;
-            memoryProposals = validateMemoryProposals(proposal.memoryProposals || [],{latestUser,knownRules:[...(saved.rules || []),...(saved.generalRules || [])],objectives,turnKey:identity.key,scope});
+            memoryProposals = validateMemoryProposals(proposal.memoryProposals || [],{latestUser,knownRules:[...(saved.rules || []),...(saved.generalRules || [])],existingRelations:review.relations || [],objectives,turnKey:identity.key,scope});
             if (appliance) {const memory=applianceMemoryProposal(appliance,latestUser);if(memory)memoryProposals=[...memoryProposals.slice(0,7),memory];}
           }
         }

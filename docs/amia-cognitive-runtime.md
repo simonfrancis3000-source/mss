@@ -117,3 +117,19 @@ The following corrections require a fresh live run before their effectiveness ca
 - Evaluation version 2 checks the original preference scope rather than treating every historical reason mentioning the old value as a current default. It accepts the demonstrated shelf/shelves variation. Conflicting old defaults still fail. Reports identify the grading version; aggregating mixed versions fails completeness checks. Scores across the grading change are not directly comparable.
 
 These are development fixes. Production activation, hosted authenticated PostgREST coverage, device audio and human conversational review remain separate acceptance work.
+
+
+Additional queue and permission regression coverage:
+
+- An ask-first or prohibited exception is stored as a boundary even if its proposal used kind=exception; the shared legacy cleaner must not discard its restrictive policy.
+- A grounded answer in the current turn cannot be followed by a paraphrase of the same decision merely because the answer has not yet been committed to dispositions.
+- Two queued extractions for the same precise preference dimension can be generated before the first has a stored key. A grounded explicit correction still supersedes the older preference when the worker catches up. A later-arriving older extraction cannot replace a newer preference. Returning to a previously superseded value creates a fresh version rather than colliding with its retired memory key. Ambiguous changes remain conflicts.
+
+Run [41914625715](https://github.com/simonfrancis3000-source/mss/actions/runs/41914625715) passed all 30 short live generation checks first time, with zero repairs (generation p50 2,203 ms; p95 2,468 ms). These short checks do not establish long-conversation or voice reliability.
+
+
+### Development evaluation with version 2 grading
+
+Run [41914625415](https://github.com/simonfrancis3000-source/mss/actions/runs/41914625415) completed all 450 development repeats at commit 9507f9f722973a258177ed921158a7f8f48162d2: 428 passed (95.1%), 22 failed, and 5,279 of 5,400 planned user turns completed. The remaining failures were 21 exhausted quality repairs and one circular memory dependency. Reserved cases stayed sealed. This is the first full baseline using the corrected grading rules, so its percentage must not be treated as directly comparable with the preceding grader.
+
+The next revision gives the bounded repair request its rejected draft and a concrete replacement instruction. It validates the visible proposed dependency graph before committing a memory job, allowing the same repair budget to correct a circular proposal while retaining the database cycle guard. Appliance intake now requires an owner mention, a contextual identity answer or confirmed ownership, rather than being triggered by an incidental assistant disclaimer about appliance manuals. Unit regressions cover these failures. Fresh live results are still required for this revision.

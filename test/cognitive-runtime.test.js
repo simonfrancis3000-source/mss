@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createCognitiveRuntime } from '../server/cognitive-runtime.js';
-import { createCognitiveProvider } from '../server/cognitive-provider.js';
+import { createCognitiveProvider, generateCheckedCognitiveTurn } from '../server/cognitive-provider.js';
 import { checkRuntimeReply, validateTurnProposal, resolveRuntimeContext, reduceRuntimeState, cleanRuntimeState, RuntimeError } from '../server/cognitive-core.js';
 
 const auth = { user: { id: 'owner-a' }, trainingRevision: '0' };
@@ -162,6 +162,9 @@ test('an unrelated rule does not settle an unanswered decision; a grounded answe
   assert.equal(checkRuntimeReply({...answer('Should they wait on the shelf?'),decisionKey:'books.damaged_location'},{state:answered,active:true}),'settled_decision');
   const forged=reduceRuntimeState(initial,{latestUser:'If unsure, ask me.',reply:'What should I learn next?',intent:'answer',turnKey:'three',previousAnswer:{answered:true,sourceQuote:'on the desk'},active:true});
   assert.equal(forged.dispositions[0].answered,false);
+  const repeated={...answer('Should damaged books go on the desk?'),decisionKey:'books.damaged_location',previousAnswer:{answered:true,sourceQuote:'on the desk'}};
+  assert.equal(checkRuntimeReply(repeated,{state:initial,active:true,latestUser:'Leave them on the desk.'}),'settled_decision');
+  assert.equal(checkRuntimeReply({...repeated,previousAnswer:{answered:false,sourceQuote:''}},{state:initial,active:true,latestUser:'If unsure, ask me.'}),null);
 });
 
 test('provider validates JSON locally, reports usage, and rejects fabricated tool actions', async () => {
@@ -173,6 +176,25 @@ test('provider validates JSON locally, reports usage, and rejects fabricated too
   assert.equal((await provider({ context: {}, objectives })).reply, 'When should I ask?');
   assert.equal(payload.response_format.type, 'json_object'); assert.equal(payload.thinking.type, 'disabled'); assert.equal(usage, 1);
   assert.throws(() => validateTurnProposal({ schema_version: 1, reply: 'Done.', actions: [{ type: 'spend_money' }] }), /model_action_rejected/);
+});
+
+test('bounded repair receives the rejected draft rather than repeating a blind request',async()=>{
+ const requests=[];
+ const provider=createCognitiveProvider({key:'fixture',model:'fixture',fetchImpl:async(url,options)=>{
+  const body=JSON.parse(options.body);requests.push(body);
+  const reply=requests.length===1?'Got it.':'Where should damaged books wait?';
+  return Response.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify({schema_version:1,reply,actions:[]})}}]});
+ }});
+ const result=await generateCheckedCognitiveTurn({generate:provider,context:{latestUser:'Use the shelf.',activeTraining:true},objectives:[],quality:{state:cleanRuntimeState(),active:true}});
+ assert.equal(result.attempts.length,2);assert.equal(requests[1].messages.length,4);
+ assert.equal(JSON.parse(requests[1].messages[2].content).reply,'Got it.');
+ assert.equal(JSON.parse(requests[1].messages[3].content).violation,'missing_continuation');
+});
+
+test('invalid memory graphs use the same single repair budget before persistence',async()=>{
+ let calls=0;
+ const result=await generateCheckedCognitiveTurn({generate:async input=>{calls++;if(calls===2){assert.equal(input.correction,'invalid_memory_graph_proposal');assert.ok(input.rejectedProposal);}return answer(calls===1?'Where should pens wait?':'When should I ask about damaged pens?');},context:{latestUser:'Use a drawer.'},objectives:[],quality:{state:cleanRuntimeState(),active:true},validateProposal:()=>{if(calls===1)throw new RuntimeError('invalid_memory_graph_proposal',502);}});
+ assert.equal(result.attempts.length,2);assert.equal(calls,2);
 });
 
 test('Spanish acceptance with accents, pause and resume preserve the offered action', async () => {
