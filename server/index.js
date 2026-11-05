@@ -26,7 +26,7 @@ import http from "node:http";
 import { createSmartThingsHomeConnect } from "./smartthings-home-connect.js";
 import { readSmartThingsTrainingPrompt } from "./smartthings-training-context.js";
 import { createClient } from "@supabase/supabase-js";
-import { verifyGooglePlayToken, hashPurchaseToken, consumeVerifiedGoogleTopUp, acknowledgeVerifiedGoogleSubscription, getGooglePlayOrder } from "./google-play-billing.js";
+import { verifyGooglePlayToken, verifyGooglePlaySubscriptionState, hashPurchaseToken, consumeVerifiedGoogleTopUp, acknowledgeVerifiedGoogleSubscription, getGooglePlayOrder } from "./google-play-billing.js";
 import { loadRobotRewards } from "./robot-rewards.js";
 import { createVoiceRelay } from "./voice-relay.js";
 import { createReadStream } from "node:fs";
@@ -35,6 +35,7 @@ import { fileURLToPath } from "node:url";
 import { createHash, randomUUID } from "node:crypto";
 import { authenticateSupabaseRequest, rateLimitIdentity } from "./supabase-auth.js";
 import { createMssAccessPolicy } from "./access-policy.js";
+import { verifyGooglePubSubPush, parseGooglePlayRtdn } from "./google-play-rtdn.js";
 import { buildDeepSeekUsageEvent, createPhonicUsageSession, verifyPhonicUsageSession, clampVoiceDuration } from "./usage.js";
 import { buildHomePersonaSystemPrompt } from "../src/home-persona-reasoning.js";
 import { buildOutOfHomePersonaSystemPrompt, cleanOutOfHomeScenarioContext, findOutOfHomeScenarioContext, isOutOfHomeTopicChange } from "../src/out-of-home-persona-prompt.js";
@@ -556,6 +557,45 @@ const app = http.createServer(async (request, response) => {
 
   const url = new URL(request.url || "/", "http://localhost");
   if (await smartThingsHomeConnect(request, response, url, headers || {})) return;
+
+  // Pub/Sub pushes contain a purchase token but are not proof of entitlement.
+  // Verify the Google OIDC identity and then re-query the Android Publisher
+  // API before updating a subscription. This route has no customer bearer.
+  if (request.method==='POST' && url.pathname==='/api/google-play/rtdn') {
+    if (!billingDb || !process.env.MSS_PLAY_RTDN_AUDIENCE ||
+        !process.env.MSS_PLAY_RTDN_PUSH_EMAIL) {
+      return json(response,503,{error:'Google Play notifications are not configured.'});
+    }
+    try {
+      await verifyGooglePubSubPush(request.headers.authorization,{
+        audience:process.env.MSS_PLAY_RTDN_AUDIENCE,
+        serviceAccountEmail:process.env.MSS_PLAY_RTDN_PUSH_EMAIL
+      });
+      const notification=parseGooglePlayRtdn(await readJson(request,16000));
+      const hash=hashPurchaseToken(notification.purchaseToken);
+      const {data:known,error:lookupError}=await billingDb.from('mss_play_purchase_tokens')
+        .select('user_id').eq('token_hash',hash).maybeSingle();
+      if (lookupError) throw new Error('rtdn_owner_lookup_failed');
+      if (!known?.user_id) {
+        // The device may not have submitted its first purchase yet.
+        // Native restore will complete its initial verification.
+        return json(response,200,{received:true,matched:false});
+      }
+      const verified=await verifyGooglePlaySubscriptionState({
+        purchaseToken:notification.purchaseToken,userId:known.user_id
+      });
+      const result=await accessPolicy.recordVerifiedSubscriptionStatus(
+        known.user_id,verified
+      );
+      return json(response,200,{received:true,matched:true,updated:Boolean(result.updated)});
+    } catch (error) {
+      const status=error?.statusCode===401?401:503;
+      console.warn('Google Play subscription notification unsuccessful',{
+        code:String(error?.message||'notification_error').slice(0,75),status
+      });
+      return json(response,status,{error:'Subscription notification could not be processed.'});
+    }
+  }
   // Serve only explicitly published, immutable OTA artifacts. The manifest starts disabled.
   // Filenames are strictly allowlisted to prevent path traversal.
   const otaName = url.pathname.slice("/ota/".length);
@@ -631,7 +671,8 @@ const app = http.createServer(async (request, response) => {
       accountAuthConfigured: Boolean(SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY),
       usageTrackingConfigured: Boolean(SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY),
       applianceManualSearchConfigured: Boolean(DEEPSEEK_SEARCH_API_KEY),
-      paidVoiceEnabled: Boolean((VOICE_BILLING_ENABLED || VOICE_BILLING_TEST_EMAILS.size || ACCESS_ENFORCEMENT_ENABLED) && voiceRelay && process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON)
+      paidVoiceEnabled: Boolean((VOICE_BILLING_ENABLED || VOICE_BILLING_TEST_EMAILS.size || ACCESS_ENFORCEMENT_ENABLED) && voiceRelay && process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON),
+      googlePlayRtdnConfigured: Boolean(process.env.MSS_PLAY_RTDN_AUDIENCE && process.env.MSS_PLAY_RTDN_PUSH_EMAIL)
     }, headers || {});
   }
 
