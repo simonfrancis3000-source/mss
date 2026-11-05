@@ -13,7 +13,7 @@ export function onboardingPages(companion = 'your future robot') {
     ] },
     { title: 'Your journey, your pace', lead: 'Start free in Chat. Talk when you subscribe.', paragraphs: [
       'Chat starts free with $0.10 in one-time AI usage, not a timed trial. You can see your remaining allowance in Profile.',
-      'Premium costs $9.99/month: 60 voice minutes and $0.50 of AI conversation usage. When AI credit runs out, Chat and Talk pause until renewal or you buy a voice-minute pack, which adds another $0.50 in chat credit.',
+      'Premium is $9.99/month, including 60 voice minutes and $0.50 in AI usage. At the limit, Chat and Talk pause until renewal or a voice-minute pack adds another $0.50.',
       'Both modes build your Passport. Use Finish for now to return to your unanswered question. Scenarios cover home life and outings.'
     ] },
     { title: 'Robot Rewards', lead: 'Teach your future robot. Get rewarded for getting ready!', paragraphs: [
