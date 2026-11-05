@@ -5231,7 +5231,9 @@ async function openVoiceExperience({ activate = false } = {}) {
   if (voiceAccess.status === 'ready' && voiceAccess.wallet?.access?.enforcementEnabled &&
       !voiceAccess.wallet.access.canTalk) {
     if (elements.conversationStatus) elements.conversationStatus.textContent =
-      'Voice requires MySecondSelf Premium ($9.99/month). Your free trial includes chat only.';
+      voiceAccess.wallet.access.mode === 'premium_chat_exhausted'
+        ? 'Your Premium $0.50 AI allowance is used. Buy a voice-minute pack or wait for renewal.'
+        : 'Voice requires MySecondSelf Premium ($9.99/month). Your free trial includes chat only.';
     selectAppView('profile');
     return;
   }
@@ -5889,6 +5891,8 @@ async function sendMessage(rawText) {
       !chatAccess.wallet.access.canChat) {
     elements.conversationStatus.textContent = chatAccess.wallet.access.mode === 'free_trial_exhausted'
       ? 'Your $0.10 free chat trial has ended. Subscribe to Premium ($9.99/month) to continue.'
+      : chatAccess.wallet.access.mode === 'premium_chat_exhausted'
+      ? 'Your $0.50 monthly AI allowance is exhausted. Buy a voice-minute pack or wait for renewal.'
       : 'Your subscription is inactive. Renew Premium to continue training.';
     selectAppView('profile');
     return;
