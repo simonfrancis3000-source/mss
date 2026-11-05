@@ -1,3 +1,5 @@
+import { searchParallel, fetchParallel } from "./parallel.js";
+
 const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
 
 function authHeaders(apiKey) {
@@ -19,11 +21,30 @@ async function providerError(response, fallback) {
   return error;
 }
 
+const PRODUCT_BRAND = /\b(siemens|bosch|miele|samsung|lg|whirlpool|electrolux|aeg|beko|dyson|roborock|ecovacs|booster|ubtech|unitree|figure|1x|tesla)\b/i;
+const EQUIPMENT = /\b(dishwasher|washing machine|washer|dryer|oven|fridge|refrigerator|vacuum|thermostat|robot|appliance)\b/i;
+
 export function shouldUseWebSearch(message = "") {
-  return /\b(search|look up|find online|check online|latest|current|today|right now|this week|recent|news|release|new version|price|pricing|cost|compare|availability|opening hours|weather|who is|what happened)\b/i.test(String(message || ""));
+  const text = String(message || "");
+  return /\b(search|look up|find online|check online|latest|current|today|right now|this week|recent|news|release|new version|price|pricing|cost|compare|availability|opening hours|weather|who is|what happened|manual|instructions|specifications|compatible)\b/i.test(text)
+    || (PRODUCT_BRAND.test(text) && EQUIPMENT.test(text));
 }
 
-export async function searchWeb(apiKey, query, { count = 5, originalQuestion = "" } = {}) {
+// For product introductions, search for the public product identity, never
+// forward personal conversation context to a third-party web service.
+export function knowledgeSearchQuery(message = "") {
+  const text = String(message || "").trim();
+  if (PRODUCT_BRAND.test(text) && EQUIPMENT.test(text)) {
+    const brand = text.match(PRODUCT_BRAND)?.[0] || "";
+    const equipment = text.match(EQUIPMENT)?.[0] || "";
+    const model = text.match(/\b(?:iQ\s?\d{3}|series\s?\d+|walker\s?\w+|g1|h1|go2|t1|neo|s8|x40)\b/i)?.[0] || "";
+    return [brand, model, equipment, "official manual specifications"].filter(Boolean).join(" ");
+  }
+  return text.slice(0, 200);
+}
+
+export async function searchWeb(apiKey, query, { count = 5, originalQuestion = "", provider = "deepseek" } = {}) {
+  if (provider === "parallel") return searchParallel(apiKey, query, { count });
   if (!apiKey) throw new Error("DeepSeek Search API is not configured.");
   const safeQuery = String(query || "").trim().slice(0, 128);
   if (!safeQuery) throw new Error("Search query is empty.");
@@ -43,7 +64,8 @@ export async function searchWeb(apiKey, query, { count = 5, originalQuestion = "
   return Array.isArray(payload?.results) ? payload.results.slice(0, 10) : [];
 }
 
-export async function fetchWebPage(apiKey, url) {
+export async function fetchWebPage(apiKey, url, { provider = "deepseek", objective = "" } = {}) {
+  if (provider === "parallel") return fetchParallel(apiKey, url, { objective });
   if (!apiKey) throw new Error("DeepSeek Search API is not configured.");
   const safeUrl = String(url || "").trim();
   let parsed;
