@@ -26,7 +26,7 @@ import http from "node:http";
 import { createSmartThingsHomeConnect } from "./smartthings-home-connect.js";
 import { readSmartThingsTrainingPrompt } from "./smartthings-training-context.js";
 import { createClient } from "@supabase/supabase-js";
-import { verifyGooglePlayToken, verifyGooglePlaySubscriptionState, hashPurchaseToken, consumeVerifiedGoogleTopUp, acknowledgeVerifiedGoogleSubscription, getGooglePlayOrder } from "./google-play-billing.js";
+import { verifyGooglePlayToken, getGooglePlaySubscriptionSnapshot, verifyGooglePlaySubscriptionState, hashPurchaseToken, consumeVerifiedGoogleTopUp, acknowledgeVerifiedGoogleSubscription, getGooglePlayOrder } from "./google-play-billing.js";
 import { loadRobotRewards } from "./robot-rewards.js";
 import { createVoiceRelay } from "./voice-relay.js";
 import { createReadStream } from "node:fs";
@@ -576,17 +576,39 @@ const app = http.createServer(async (request, response) => {
       const {data:known,error:lookupError}=await billingDb.from('mss_play_purchase_tokens')
         .select('user_id').eq('token_hash',hash).maybeSingle();
       if (lookupError) throw new Error('rtdn_owner_lookup_failed');
-      if (!known?.user_id) {
-        // The device may not have submitted its first purchase yet.
-        // Native restore will complete its initial verification.
-        return json(response,200,{received:true,matched:false});
+      let ownerId=known?.user_id || null;
+      if (!ownerId) {
+        // First-purchase notifications often precede the device receipt.
+        // The mapping is registered from authenticated MSS account status.
+        const snapshot=await getGooglePlaySubscriptionSnapshot(notification.purchaseToken);
+        const {data:linked,error:linkError}=await billingDb.from('mss_play_account_links')
+          .select('user_id').eq('obfuscated_account_id',snapshot.accountId).maybeSingle();
+        if (linkError) throw new Error('rtdn_account_lookup_failed');
+        ownerId=linked?.user_id || null;
+        if (!ownerId) {
+          // No claimable MSS account yet. Device receipt restoration is the
+          // supported fallback and will verify ownership before granting.
+          return json(response,200,{received:true,matched:false});
+        }
       }
       const verified=await verifyGooglePlaySubscriptionState({
-        purchaseToken:notification.purchaseToken,userId:known.user_id
+        purchaseToken:notification.purchaseToken,userId:ownerId
       });
-      const result=await accessPolicy.recordVerifiedSubscriptionStatus(
-        known.user_id,verified
-      );
+      const paidStates=new Set([
+        'SUBSCRIPTION_STATE_ACTIVE','SUBSCRIPTION_STATE_IN_GRACE_PERIOD',
+        'SUBSCRIPTION_STATE_CANCELED'
+      ]);
+      if (paidStates.has(verified.state) && Date.parse(verified.periodEnd || '')>Date.now()) {
+        const {error:grantError}=await billingDb.rpc('mss_apply_verified_play_purchase',{
+          p_user_id:ownerId,p_product_id:'mss_premium',p_token_hash:hash,
+          p_period_end:verified.periodEnd,p_order_id:verified.orderId
+        });
+        if (grantError) throw new Error('rtdn_period_credit_failed');
+      }
+      const result=await accessPolicy.recordVerifiedSubscriptionStatus(ownerId,verified);
+      if (verified.requiresAcknowledgement && paidStates.has(verified.state)) {
+        await acknowledgeVerifiedGoogleSubscription(notification.purchaseToken);
+      }
       return json(response,200,{received:true,matched:true,updated:Boolean(result.updated)});
     } catch (error) {
       const status=error?.statusCode===401?401:503;
@@ -755,7 +777,29 @@ const app = http.createServer(async (request, response) => {
       requestedProductId = productId;
       const purchaseToken = String(body?.purchaseToken || "");
       verificationStage = "google_play_lookup";
-      const verified = await verifyGooglePlayToken({ productId, purchaseToken, userId: authContext.user.id });
+      const verified = productId === 'mss_premium'
+        ? await verifyGooglePlaySubscriptionState({
+            purchaseToken,userId:authContext.user.id
+          }).then(checked=>({
+            kind:'subscription',productId:'mss_premium',minutes:60,
+            subscriptionState:checked.state,periodEnd:checked.periodEnd,
+            orderId:checked.orderId,isTest:checked.isTest,
+            requiresAcknowledgement:checked.requiresAcknowledgement,
+            entitlementActive: ['SUBSCRIPTION_STATE_ACTIVE','SUBSCRIPTION_STATE_IN_GRACE_PERIOD',
+              'SUBSCRIPTION_STATE_CANCELED'].includes(checked.state)
+              && Date.parse(checked.periodEnd || '') > Date.now()
+          }))
+        : await verifyGooglePlayToken({ productId, purchaseToken, userId: authContext.user.id });
+      if (verified.kind==='subscription' && !verified.entitlementActive) {
+        await accessPolicy.recordVerifiedSubscriptionStatus(authContext.user.id,{
+          state:verified.subscriptionState,periodEnd:verified.periodEnd,
+          orderId:verified.orderId,tokenHash:hashPurchaseToken(purchaseToken)
+        });
+        return json(response,200,{
+          verified:true,productId:'mss_premium',subscriptionActive:false,
+          minutes:0,newlyCredited:false,finalizationPending:false
+        },headers || {});
+      }
       verificationStage = "database_credit_grant";
       const { data, error } = await billingDb.rpc("mss_apply_verified_play_purchase", {
         p_user_id: authContext.user.id,
