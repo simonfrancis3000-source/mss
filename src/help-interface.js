@@ -5,7 +5,7 @@ const button = (text, className, run) => { const node = el('button', className, 
 export function createHelpInterface({ getContext, navigate, dismiss, pauseTalk, editPrivacy, openSupport, snapshot }) {
   const page = el('section', 'mss-screen mss-help'); page.id = 'mss-help'; page.setAttribute('aria-label', 'Help & Getting Started'); document.querySelector('main')?.append(page);
   const guide = el('dialog', 'mss-onboarding'); guide.setAttribute('aria-labelledby', 'mssGuideTitle'); document.body.append(guide);
-  // Keep the audio element mounted throughout the four steps to avoid stopping
+  // Keep the audio element mounted throughout all five steps to avoid stopping
   // the full introduction when the step content is re-rendered. Place the
   // player between the introduction button and Next, not below Next.
   const guideContent = el('div', 'mss-guide-content'), player = el('div', 'mss-guide-player'), guideActions = el('div', 'mss-guide-actions'); player.hidden = true; guide.append(guideContent, player, guideActions);
@@ -40,6 +40,8 @@ export function createHelpInterface({ getContext, navigate, dismiss, pauseTalk, 
   }
   function renderGuide() {
     const context = getContext(), companion = String(context.companion || '').trim() || 'Vikki', pages = onboardingPages(companion), item = pages[index];
+    guide.classList.toggle('mss-guide-rewards', item.title === 'Robot Rewards');
+    guide.classList.toggle('mss-guide-final', index === pages.length - 1);
     guideContent.replaceChildren();
     const top = el('div', 'mss-guide-top');
     const skip = button(automatic ? 'Skip for now' : 'Close', 'mss-text-button', () => void finishGuide('skipped'));
@@ -55,12 +57,12 @@ export function createHelpInterface({ getContext, navigate, dismiss, pauseTalk, 
     audio.setAttribute('aria-label', companion + ' introduction audio');
     const actions = guideActions; actions.replaceChildren();
     if (index) { const back = button('Back', 'mss-secondary', () => { index--; renderGuide(); }); back.disabled = saving; actions.append(back); }
-    const next = button(saving ? 'Saving…' : index === pages.length - 1 ? (automatic ? 'Start My Journey' : 'Return to my journey') : 'Next', 'mss-primary', () => {
+    const next = button(saving ? 'Saving…' : index === pages.length - 1 ? (automatic ? 'Start free in Chat' : 'Return to my journey') : 'Next', 'mss-primary', () => {
       if (index < pages.length - 1) { index++; renderGuide(); guide.scrollTop = 0; }
-      else void finishGuide('completed', automatic ? 'talk' : null);
+      else void finishGuide('completed', automatic ? 'chat' : null);
     });
     next.disabled = saving; actions.append(next);
-    if (index === pages.length - 1 && automatic) { const chat = button('Use Chat instead', 'mss-text-button', () => void finishGuide('completed', 'chat')); chat.disabled = saving; actions.append(chat); }
+    if (index === pages.length - 1 && automatic) { const home = button('Explore my Home', 'mss-text-button', () => void finishGuide('completed', 'home')); home.disabled = saving; actions.append(home); }
     // Buttons remain below the player, which stays mounted while audio plays.
     requestAnimationFrame(() => { if (guide.open) title.focus({ preventScroll: true }); }); title.tabIndex = -1;
   }
