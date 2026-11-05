@@ -4,22 +4,26 @@ export const AMIA_INTRO_AUDIO = 'https://mysecondself.app/wp-content/uploads/202
 export function onboardingPages(companion = 'your future robot') {
   return [
     { title: 'Meet ' + companion, lead: 'Your future robot should already know you.', paragraphs: [
-      'MySecondSelf helps you build a personal profile for a future robot before it arrives. You do not need to own a robot to begin.',
-      'Through conversation, you explain how you like everyday life to work: your preferences, routines, boundaries and decisions. This app is preparing that understanding; it is not controlling a physical robot.'
+      'MySecondSelf helps you teach a future robot about your life before it arrives. You do not need to own a robot or pay to begin.',
+      'Create your personal profile, then start for free in Chat. Your conversations help build a Persona Passport containing your routines, preferences and boundaries.'
     ] },
     { title: 'How training works', lead: 'Teach the details that make life yours.', paragraphs: [
-      'Guided scenarios give each conversation a useful focus, from kitchen routines to meeting people outside your home. Personal questions help clarify what you want, what changes in unusual situations, and when your robot should ask, wait or stop.',
-      'Work on one small task at a time. You can decline a question, explain an exception, or correct an answer. Saved learning is available to review; a conversation alone does not complete a module.'
+      'Your robot guides you through everyday situations, from household routines to meeting people outside your home. Each question helps it learn what matters to you and when it should ask, wait or stop.',
+      'Answer at your own pace. You can skip a question, explain an exception or correct something. Your learning is saved for you to review and improve.'
     ] },
-    { title: 'Your journey, your pace', lead: 'A few useful minutes is a good start.', paragraphs: [
-      'Talk is for spoken conversation and uses your available voice minutes. Chat is for typing. Both contribute to the same account and training journey.',
-      'Finish for now gives you a recap and keeps your place. Return to the unanswered question when you are ready. Areas explored and reviewed are different from fully completed modules.',
-      'Scenarios also cover visits and life outside your home. You can discuss a friend’s garden even if you do not have one, or say when something is not relevant.'
+    { title: 'Your journey, your pace', lead: 'Start free in Chat. Talk when you subscribe.', paragraphs: [
+      'Chat starts free for a limited time to get you started. Upgrade to Premium at $9.99/month to enjoy a two-way voice conversation with your robot.',
+      'And don’t forget to go to Profile - Edit Profile to give your robot a custom name and set the conversation language.'
+    ] },
+    { title: 'Robot Rewards', lead: 'Teach your future robot. Get rewarded for getting ready!', paragraphs: [
+      'Here’s the exciting part: every $1 of eligible spending on MySecondSelf subscriptions or voice-minute packs earns $2 in Robot Rewards credit toward a participating robot purchase. Free Chat is a way to start learning; qualifying paid purchases unlock rewards.',
+      'We are working with robot partners to offer trained, Robot Ready members priority purchase opportunities as participating robots become available.',
+      'Actual discounts and priority opportunities depend on programme limits and partner availability. See Robot Rewards for full terms and conditions.'
     ] },
     { title: 'What happens next?', lead: 'Your Persona Passport is what you are building.', paragraphs: [
-      'Your saved preferences, conditions and boundaries form your personalisation profile. Passport shows your progress and modules, with links to review and refine your learning.',
-      'Transfer to compatible robots, hardware simulations and physical robot integrations are future development stages. No physical robot is connected through this app today. Any future transfer will depend on verified compatibility and your permission.',
-      'Share only what you are comfortable sharing. Review, correct or remove learning, and check Privacy settings for optional shared learning. Robot Rewards is an additional incentive, separate from building your Passport.'
+      'Your preferences and boundaries build your Persona Passport. Review your training progress, modules and saved learning whenever you like.',
+      'Robot simulations and physical integrations are future stages. No robot is connected today; any transfer will require verified compatibility and your permission.',
+      'Share only what you choose. You can edit or remove saved learning and manage optional shared learning in Privacy settings.'
     ] }
   ];
 }
@@ -44,17 +48,20 @@ export const FAQ_CATEGORIES = [
     { id: 'progress', question: 'Why can a bar move while my Passport still says 0%?', answer: 'The Chat and Talk bars show areas explored within the current module. Reviewed areas are a separate measure. Passport’s overall percentage counts whole modules that you have explicitly reviewed and confirmed complete. Saving one preference, discussing an area, or finishing a visit does not automatically complete a module.' },
     { id: 'finish-module', question: 'What happens when I finish a module or the whole journey?', answer: 'Review the module’s learning, resolve outstanding clarification, and use its completion review. Completing a module unlocks the next one, and you can revisit earlier learning. Completing the journey does not automatically connect a robot, prove physical readiness, or guarantee reward redemption or hardware availability.' }
   ] },
-  { id: 'conversation', title: 'Talk, Chat and payments', questions: [
-    { id: 'talk-chat', question: 'What is the difference between Talk and Chat?', answer: 'Talk is a spoken conversation using your microphone and the robot’s voice. It waits for you to press Start and provides mute and pause controls. Chat uses typed messages. Both use the same signed-in account, saved conversation and training journey.' },
-    { id: 'voice-minutes', question: 'How do voice minutes work?', answer: 'Talk uses voice conversation time when metering applies to your account. Subscription minutes and top-up minutes are shown separately. The currently offered Premium allowance is 60 minutes per subscription month; check the plan and checkout details for your actual offer. Typing in Chat does not consume voice minutes.' },
-    { id: 'balance-reset', question: 'Where can I see my balance and reset date?', answer: 'Open Profile for voice minutes, the current subscription or test allowance, top-up balance and the period end or expiry date. Subscription minutes are used before top-ups. Top-up minutes carry forward until used. A complimentary test allowance is not a paid subscription or an automatic renewal.' },
-    { id: 'out-of-minutes', question: 'What happens if my voice minutes run out?', answer: 'When metering applies, you need an available voice allowance to continue Talk. Review the subscription or top-up options available to your account. You can use Chat without consuming voice minutes, subject to your account’s access. Your saved training is not erased when voice minutes run out.' },
-    { id: 'audio-intro', question: 'Can I hear the introduction again?', answer: 'Yes. Replay the introduction in Help & Getting Started opens step 1 and plays the recording from the beginning. You can also open How it works on Home and choose Listen to your robot on step 1; the button uses your robot’s name. Playing the recording does not start a Talk session or activate the microphone.', action: 'guide' }
+  { id: 'conversation', title: 'Talk, Chat and membership', questions: [
+    { id: 'talk-chat', question: 'What is the difference between Talk and Chat?', answer: 'Talk is a spoken conversation using your microphone and your robot’s voice. Chat is typed. Both contribute to the same personal training journey, but Talk requires Premium and available voice minutes.' },
+    { id: 'free-chat', question: 'Can I start using MySecondSelf for free?', answer: 'Yes. Free accounts include an introductory Chat allowance to get started. When that allowance has been used, you can upgrade to Premium to continue training. Free accounts do not include voice conversations.' },
+    { id: 'premium-chat', question: 'What Chat access does Premium include?', answer: 'Premium includes a fair-use Chat allowance alongside your voice conversation minutes. Fair-use limits help keep the service reliable for everyone. Check Profile for your available allowances and membership details.' },
+    { id: 'chat-allowance', question: 'What happens when my Chat allowance runs out?', answer: 'When the free Chat allowance runs out, upgrade to Premium to continue. If a Premium fair-use limit applies and is reached, Chat may pause until the allowance renews or an eligible voice-minute pack adds more allowance. Your saved conversations and robot training are retained.' },
+    { id: 'voice-minutes', question: 'How do voice minutes work?', answer: 'Premium includes voice conversation minutes for Talk. Subscription minutes are used before additional purchased minutes. Using typed Chat does not consume voice minutes. Your available voice minutes are shown in Profile.' },
+    { id: 'balance-reset', question: 'Where can I see my remaining allowance?', answer: 'Open Profile to review your available Chat and voice allowances, membership status, any purchased voice minutes and your renewal date. You can also open Premium & Voice Minutes to view available purchase options.' },
+    { id: 'out-of-minutes', question: 'What happens if my voice minutes run out?', answer: 'Talk requires available voice minutes and an eligible Premium account. You can continue with typed Chat while your Chat allowance is available. You can add voice minutes through Premium & Voice Minutes; your saved training is not erased.' },
+    { id: 'audio-intro', question: 'Can I hear the introduction again?', answer: 'Yes. Open Help & Getting Started and choose Replay the introduction. The recording plays from the beginning and does not start a Talk session or activate your microphone.', action: 'guide' }
   ] },
   { id: 'future', title: 'Robots, rewards and privacy', questions: [
     { id: 'compatible-robots', question: 'Which robots will work with my Passport?', answer: 'Physical robot transfer and control are future development stages. Featuring a manufacturer or robot in the app does not mean that it is connected or compatible today. Verified models, supported capabilities, availability and any transfer process will be explained as integrations become available.' },
     { id: 'simulation', question: 'Are simulations and physical robot tests already available?', answer: 'Some training modules offer hypothetical situation previews based on saved learning. Those are conversation-based examples, not hardware simulations or physical robot tests. Hardware simulation, verified compatibility and physical robot integration remain future development work.' },
-    { id: 'rewards', question: 'How do Robot Rewards work?', answer: 'Robot Rewards is an additional promotional incentive, not the core purpose of training. Current terms describe $2 credit for each $1 of eligible verified USD spending, capped at $100 per UTC month and $1,000 earned per account. Redemption also has eligibility and partner limits, including a 5% hardware-price cap. Free test minutes and test purchases do not earn qualifying rewards. Read the full current terms in Robot Rewards; an earned balance does not reserve a robot or guarantee redemption.', action: 'rewards' },
+    { id: 'rewards', question: 'How do Robot Rewards work?', answer: 'Eligible purchases may earn Robot Rewards credit toward a participating robot. The full Robot Rewards page explains eligibility, earning caps, partner availability, priority opportunities and redemption limits. Credit does not guarantee a robot reservation or a discount until confirmed by a participating partner.', action: 'rewards' },
     { id: 'privacy', question: 'Who can access my information?', answer: 'Your learning is associated with your signed-in account. MySecondSelf and the services used to provide the app process information needed for conversation, storage and support. Optional anonymised shared learning is controlled in Privacy settings. Do not treat a conversation as a place to store passwords or other secrets. Use the published privacy information or contact support for specific data-handling questions.', action: 'privacy' },
     { id: 'delete-learning', question: 'Can I remove learning or ask for my data to be deleted?', answer: 'You can review and remove saved learning, reset an individual scenario, or use Reset All Training in Settings. Read the confirmation carefully: a training reset removes training data and is separate from cancelling a subscription or deleting an account. Contact support for account-deletion or other privacy requests.', action: 'support' }
   ] }
