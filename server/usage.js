@@ -148,7 +148,8 @@ export async function recordSearchFetchUsage({ userId, type, provider = "deepsee
   const rates = retrievalRates(provider);
   const event = {
     user_id: userId,
-    event_type: provider === "parallel" ? (isSearch ? "parallel_search" : "parallel_extract") : (isSearch ? "deepseek_search" : "deepseek_fetch"),
+    // Preserve existing event_type values so no database migration is required.
+    event_type: isSearch ? "deepseek_search" : "deepseek_fetch",
     provider: provider === "parallel" ? "parallel" : (isSearch ? "deepseek-search" : "deepseek-fetch"),
     model: isSearch ? "search" : "fetch",
     request_id: randomUUID(),
