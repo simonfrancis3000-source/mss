@@ -216,19 +216,21 @@ async function recordUsageEvent(event, accessToken) {
 }
 
 async function recordDeepSeekUsage(authContext, result, operation) {
-  if (!authContext?.user?.id || !authContext?.accessToken) return false;
+  if (!authContext?.user?.id || !authContext?.accessToken) {
+    throw new Error('Authenticated usage identity missing.');
+  }
   const event = buildDeepSeekUsageEvent({
     userId: authContext.user.id,
     result,
     operation,
     requestId: randomUUID()
   });
-  if (!event) return false;
+  if (!event) throw new Error('DeepSeek usage report is unavailable.');
   // Record the trusted DeepSeek cost before returning the provider result.
   // The existing analytics table is client-writable, so it must not be used
   // to enforce one-time free credit.
   if (authContext.accessSlot) {
-    await accessPolicy.recordCost(authContext.accessSlot, operation, event.deepseek_cost_usd || 0);
+    await accessPolicy.recordCost(authContext.accessSlot, operation, event.deepseek_cost_usd, event.request_id);
   }
   return recordUsageEvent(event, authContext.accessToken);
 }
@@ -1564,8 +1566,11 @@ const app = http.createServer(async (request, response) => {
     let result = await upstream.json();
     const chatModelMs = Date.now() - chatModelStart;
     const pendingChatUsage = [];
+    let chatUsageError = null;
     const trackChatUsage = (usageResult, operation) => {
-      pendingChatUsage.push(recordDeepSeekUsage(authContext, usageResult, operation).catch(() => false));
+      const tracked = recordDeepSeekUsage(authContext, usageResult, operation)
+        .catch(error => { chatUsageError ||= error; return false; });
+      pendingChatUsage.push(tracked);
     };
     trackChatUsage(result, "chat");
     if (roomJourney && prematureRoomTransition(result?.choices?.[0]?.message?.content, roomJourney.activeRoomId, roomCompletionConfirmed)) {
@@ -1709,10 +1714,13 @@ const app = http.createServer(async (request, response) => {
     if (responseNeedsReview) console.info("SYNQ.ME reply withheld", {continuityBlocked:guarded.blocked,reviewUnavailable:Boolean(guarded.reviewUnavailable),missingFollowup:!/[?？؟]/u.test(finalReply),applianceIntake:Boolean(flowRequirements.intake)});
     const reviewMs = Date.now() - reviewStart;
     const saveStart = Date.now();
-    const [persistence] = await Promise.all([
-      persistDecisionTurn(responseNeedsReview ? "" : finalReply,{usedFallback:requiresRepair || guarded.blocked || responseNeedsReview,manualVerified:applianceResult?.manual_status === "matched",appliance:applianceResult}),
-      ...pendingChatUsage
-    ]);
+    await Promise.all(pendingChatUsage);
+    if (chatUsageError) throw chatUsageError;
+    const persistence = await persistDecisionTurn(
+      responseNeedsReview ? "" : finalReply,
+      {usedFallback:requiresRepair || guarded.blocked || responseNeedsReview,
+       manualVerified:applianceResult?.manual_status === "matched",appliance:applianceResult}
+    );
     const totalMs = Date.now() - chatTimingStart;
     console.info("SYNQ.ME chat timing", { totalMs, contextMs, modelMs:chatModelMs, generationMs:reviewStart-chatModelStart, reviewMs, saveMs:Date.now()-saveStart, reviewChecks:reviewMetrics.checks, reviewRewrites:reviewMetrics.rewrites, reviewCompletionTokens:reviewMetrics.completionTokens });
     return json(response, 200, {
