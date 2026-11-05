@@ -2,15 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 
-test('authenticated cognitive API commits server-owned reminder, replays retries, and fails without false success', async () => {
+for(const allAccounts of [false,true])test('authenticated cognitive API commits server-owned reminder, replays retries, and fails without false success '+(allAccounts?'for all registered accounts':'with an allowlist'), async () => {
   const script = `
     import http from 'node:http'; import assert from 'node:assert/strict'; import {once} from 'node:events';
     process.env.PORT='0'; process.env.DEEPSEEK_PERSON_API_KEY='fixture'; process.env.SUPABASE_URL='https://fixture.test';
-    process.env.SUPABASE_PUBLISHABLE_KEY='public-fixture'; process.env.SUPABASE_SERVICE_ROLE_KEY='server-fixture'; process.env.AMIA_COGNITIVE_RUNTIME_ENABLED='true';process.env.AMIA_RUNTIME_USER_IDS='verified-owner';
+    process.env.SUPABASE_PUBLISHABLE_KEY='public-fixture'; process.env.SUPABASE_SERVICE_ROLE_KEY='server-fixture'; process.env.AMIA_COGNITIVE_RUNTIME_ENABLED='true';process.env.AMIA_RUNTIME_USER_IDS=${JSON.stringify(allAccounts?'':'verified-owner')};process.env.AMIA_RUNTIME_ALL_ACCOUNTS=${JSON.stringify(String(allAccounts))};
     let server, saved=null, effects=0, fail=false; const native=fetch;
     const listen=http.Server.prototype.listen; http.Server.prototype.listen=function(...args){server=this;return listen.apply(this,args)};
     globalThis.fetch=async(url, options={})=>{
-      if(String(url).endsWith('/auth/v1/user'))return Response.json({id:'verified-owner'});
+      if(String(url).endsWith('/auth/v1/user'))return Response.json({id:'verified-owner',is_anonymous:options.headers.Authorization==='Bearer anonymous-token'});
       if(String(url).includes('/rpc/')){
         if(String(url).endsWith('/claim_synqme_cognitive_memory_job'))return Response.json(null);
         const b=JSON.parse(options.body);assert.equal(b.p_user_id,'verified-owner');assert.equal(options.headers.Authorization,'Bearer server-fixture');
@@ -30,6 +30,8 @@ test('authenticated cognitive API commits server-owned reminder, replays retries
     };
     try {
       const health=await (await native('http://127.0.0.1:'+server.address().port+'/health')).json();assert.equal(health.amiaCognitiveRuntime.version,1);
+      const status=await native('http://127.0.0.1:'+server.address().port+'/api/runtime/status',{headers:{Authorization:'Bearer owner-token'}});assert.equal((await status.json()).enabled,true);
+      const anonymous=await native('http://127.0.0.1:'+server.address().port+'/api/runtime/status',{headers:{Authorization:'Bearer anonymous-token'}});assert.equal(anonymous.status,401);
       const first=await request();assert.equal(first.status,200);assert.match(first.data.reply,/Added to your reminders/);assert.equal(effects,1);
       const retry=await request();assert.equal(retry.status,200);assert.equal(retry.data.runtime.replayed,true);assert.equal(effects,1);
       fail=true;const failure=await request('new');assert.equal(failure.status,503);assert.equal(failure.data.reply,undefined);assert.equal(effects,1);

@@ -68,6 +68,14 @@ workflows:
 
   android-play:
     name: MSS Google Play Bundle
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: 'release/amia-android-1.11'
+          include: true
+          source: true
+      cancel_previous_builds: true
     max_build_duration: 90
     instance_type: mac_mini_m2
     environment:
@@ -81,6 +89,12 @@ workflows:
     scripts:
       - name: Install dependencies
         script: npm ci
+
+      - name: Check release configuration and run tests
+        script: |
+          test -n "$VITE_SUPABASE_URL" || { echo "Missing public Supabase URL"; exit 1; }
+          test -n "$VITE_SUPABASE_ANON_KEY" || { echo "Missing public Supabase key"; exit 1; }
+          npm test
 
       - name: Build MSS mobile
         script: VITE_PLAY_BILLING_ENABLED=true VITE_API_BASE_URL=https://synqme-api.onrender.com npm run build -- --mode mobile
@@ -104,6 +118,9 @@ workflows:
           cd android
           chmod +x gradlew
           ./gradlew bundleRelease
+          test -s app/build/outputs/bundle/release/app-release.aab
+          jarsigner -verify app/build/outputs/bundle/release/app-release.aab > /tmp/mss-aab-signature.txt
+          grep -q 'jar verified' /tmp/mss-aab-signature.txt
 
     artifacts:
       - android/app/build/outputs/bundle/release/*.aab

@@ -65,7 +65,7 @@ const MODEL = String(process.env.DEEPSEEK_CHAT_MODEL || process.env.DEEPSEEK_FLA
 // Opt-in rollout. Old clients keep the existing route unless they explicitly
 // negotiate version 1. The server still authenticates every turn normally.
 const COGNITIVE_RUNTIME_ENABLED = process.env.AMIA_COGNITIVE_RUNTIME_ENABLED === 'true';
-const cognitiveForUser = cognitiveRollout({enabled:COGNITIVE_RUNTIME_ENABLED,userIds:process.env.AMIA_RUNTIME_USER_IDS,emails:process.env.AMIA_RUNTIME_EMAILS});
+const cognitiveForUser = cognitiveRollout({enabled:COGNITIVE_RUNTIME_ENABLED,allAccounts:process.env.AMIA_RUNTIME_ALL_ACCOUNTS === 'true',userIds:process.env.AMIA_RUNTIME_USER_IDS,emails:process.env.AMIA_RUNTIME_EMAILS});
 const cognitiveStore = createCognitiveStore({ supabaseUrl: SUPABASE_URL, secretKey: BILLING_SERVICE_KEY });
 const cognitiveWorker=createCognitiveMemoryWorker({store:cognitiveStore});
 const cognitiveRuntime = createCognitiveRuntime({
