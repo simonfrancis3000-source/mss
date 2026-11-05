@@ -86,6 +86,7 @@ const cognitiveRuntime = createCognitiveRuntime({
 const DEFAULT_ALLOWED_ORIGINS = [
   "https://synqme-demo.onrender.com",
   "https://synqme-demo-pr-1.onrender.com",
+  "https://synqme-demo-pr-96.onrender.com",
   "https://mss-7uas.onrender.com",
   "https://synqme.mysecondself.app",
   "https://demo.mysecondself.app",
