@@ -63,6 +63,13 @@ export function parseVerifiedPlayPurchase(payload, { productId, now = new Date()
   return { productId, kind: "topup", minutes: MSS_TOPUP_MINUTES[productId], periodEnd: null, orderId: payload.orderId || "", needsConsumption: lines[0]?.productOfferDetails?.consumptionState !== "CONSUMPTION_STATE_CONSUMED" };
 }
 
+export function googlePlayCredentialsReady() {
+  try {
+    const parsed = JSON.parse(process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON || "null");
+    return parsed?.type === "service_account" && Boolean(parsed.client_email && parsed.private_key);
+  } catch { return false; }
+}
+
 let cachedToken = null;
 let cachedExpiry = 0;
 
