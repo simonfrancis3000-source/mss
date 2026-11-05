@@ -1,0 +1,41 @@
+name: Android 1.15 consolidated release validation
+on:
+  push:
+    branches:
+      - feat/android-1-15-onboarding-keyboard-20261105
+  pull_request:
+    branches:
+      - release/amia-android-1.11
+  workflow_dispatch:
+jobs:
+  validate-android-115:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install dependencies
+        run: npm ci
+      - name: Run complete MSS regression suite
+        run: npm test
+      - name: Validate Android code syntax
+        run: |
+          node --check src/synqme.js
+          node --check src/android-chat-keyboard.js
+          node --check src/help-interface.js
+          node --check src/getting-started-content.js
+      - name: Build Android web bundle
+        run: VITE_API_BASE_URL=https://synqme-api.onrender.com VITE_PLAY_BILLING_ENABLED=true npm run build -- --mode mobile
+      - name: Sync native Android
+        run: npx cap sync android
+      - name: Compile Android debug package
+        run: cd android && chmod +x gradlew && ./gradlew assembleDebug
