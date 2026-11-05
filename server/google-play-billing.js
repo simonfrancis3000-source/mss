@@ -169,6 +169,53 @@ export async function verifyGooglePlayToken({ productId, purchaseToken, userId }
   return { ...parseVerifiedPlayPurchase(details, { productId }), isTest: Boolean(details?.testPurchase || details?.testPurchaseContext) };
 }
 
+/**
+ * Verified Play subscription snapshot. May be used by RTDN before the initial
+ * on-device receipt is registered. The Play API response, never the incoming
+ * notification, is authoritative for purchase and entitlement state.
+ */
+export async function getGooglePlaySubscriptionSnapshot(purchaseToken) {
+  const tokenHash = hashPurchaseToken(purchaseToken);
+  const token = await googleAccessToken();
+  const path = '/androidpublisher/v3/applications/' + MSS_PLAY_PACKAGE +
+    '/purchases/subscriptionsv2/tokens/' + encodeURIComponent(purchaseToken);
+  const response = await fetch('https://androidpublisher.googleapis.com' + path, {
+    headers: {Authorization:'Bearer ' + token}, signal:AbortSignal.timeout(12000)
+  });
+  if (!response.ok) {
+    throw fail(response.status === 404 ? 'Google Play subscription is no longer available.'
+      : 'Google Play subscription status is unavailable.',response.status===404?404:502);
+  }
+  const details = await response.json();
+  const lines = (details.lineItems || []).filter(item=>item?.productId===MSS_PREMIUM_PRODUCT);
+  if (!lines.length && details.subscriptionState !== 'SUBSCRIPTION_STATE_PENDING') {
+    throw fail('Unexpected Google Play subscription product.',403);
+  }
+  const latest = [...lines].sort((a,b)=>Date.parse(b?.expiryTime||'')-Date.parse(a?.expiryTime||''))[0];
+  const accountId = details?.externalAccountIdentifiers?.obfuscatedExternalAccountId;
+  if (!/^[a-f0-9]{64}$/.test(String(accountId || ''))) {
+    throw fail('Google Play purchase account could not be authenticated.',403);
+  }
+  return {
+    state:details.subscriptionState,
+    periodEnd:latest?.expiryTime || null,
+    orderId:latest?.latestSuccessfulOrderId || '',
+    tokenHash,
+    accountId,
+    requiresAcknowledgement:details.acknowledgementState === 'ACKNOWLEDGEMENT_STATE_PENDING',
+    isTest:Boolean(details.testPurchase),
+    linkedPurchaseToken:details.linkedPurchaseToken || null
+  };
+}
+
+/** Google Play subscription status and account ID must both be verified. */
+export async function verifyGooglePlaySubscriptionState({purchaseToken,userId}={}) {
+  const expected=obfuscatedPlayAccountId(userId);
+  const snapshot=await getGooglePlaySubscriptionSnapshot(purchaseToken);
+  if (snapshot.accountId!==expected) throw fail('Google Play subscription account mismatch.',403);
+  return snapshot;
+}
+
 /** Consume only AFTER the corresponding minute grant has been durably committed. */
 export async function consumeVerifiedGoogleTopUp({ productId, purchaseToken } = {}) {
   if (!Object.hasOwn(MSS_TOPUP_MINUTES, productId)) throw fail("Unknown voice credit package.");

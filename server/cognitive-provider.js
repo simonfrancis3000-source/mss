@@ -38,7 +38,9 @@ export function createCognitiveProvider({ key, model, fetchImpl = fetch, onUsage
       throw error;
     }
     const data = await response.json().catch(() => null);
-    await onUsage(data).catch(() => {});
+    // A completed model request must be durably metered before returning its
+    // output. Swallowing usage failures would defeat trial and Premium caps.
+    await onUsage(data);
     if (data?.choices?.[0]?.finish_reason !== 'stop') throw new RuntimeError('incomplete_model_proposal', 502);
     let value;
     try { value = JSON.parse(data.choices[0].message.content); } catch { const error=new RuntimeError('invalid_model_proposal',502);error.proposalViolation='json_parse';throw error; }

@@ -131,3 +131,116 @@ test('verified top-up must be a current-period grant and stays idempotent',async
   assert.equal(inserts[0].row.bonus_usd,0.5);
   assert.equal(inserts[0].options.ignoreDuplicates,true);
 });
+
+
+test('trusted DeepSeek cost is recorded with a provider event identity exactly once',async()=>{
+  const calls=[];
+  const db={rpc:async (fn,args)=>{calls.push({fn,args});return {data:{},error:null}}};
+  const policy=createMssAccessPolicy({db,enforcementEnabled:true});
+  const slot={userId:'u1',requestId:'12345678-1234-4123-8123-123456789012'};
+  const providerRequestId='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  await policy.recordCost(slot,'chat',0.00125,providerRequestId);
+  assert.equal(calls.length,1);
+  assert.equal(calls[0].fn,'mss_record_chat_cost');
+  assert.equal(calls[0].args.p_cost_usd,0.00125);
+  assert.equal(calls[0].args.p_provider_request_id,providerRequestId);
+});
+
+test('trusted DeepSeek usage with missing cost or identity fails closed',async()=>{
+  const db={rpc:async()=>({data:{},error:null})};
+  const policy=createMssAccessPolicy({db,enforcementEnabled:true});
+  const slot={userId:'u1',requestId:'12345678-1234-4123-8123-123456789012'};
+  await assert.rejects(()=>policy.recordCost(slot,'chat',0,null),/could not be measured/i);
+  await assert.rejects(()=>policy.recordCost(slot,'chat',0.001,null),/could not be measured/i);
+});
+
+test('verified Play receipt restoration never resets usage; renewal does and old receipts are ignored',async()=>{
+  let old={
+    provider:'google_play',status:'active',
+    period_start:'2026-11-05T12:00:00.000Z',
+    valid_until:'2026-12-05T12:00:00.000Z',
+    purchase_token_hash:'a'.repeat(64),
+    latest_order_id:'old-order'
+  };
+  const updates=[]; const purchases=new Map();
+  const db={from(table){
+    const q={
+      select(){return q;},eq(){return q;},
+      async maybeSingle(){
+        if(table==='mss_subscription_entitlements')return {data:old,error:null};
+        if(table==='mss_play_purchase_tokens')return {
+          data:{user_id:purchases.get('a'.repeat(64))},error:null
+        };
+        return {data:null,error:null};
+      },
+      async upsert(row){
+        if(table==='mss_subscription_entitlements'){updates.push(row);old=row;}
+        if(table==='mss_play_purchase_tokens')purchases.set(row.token_hash,row.user_id);
+        return {error:null};
+      }
+    };
+    return q;
+  }};
+  const policy=createMssAccessPolicy({db,enforcementEnabled:true});
+  const same=await policy.recordVerifiedSubscriptionStatus('account-1',{
+    state:'SUBSCRIPTION_STATE_CANCELED',
+    periodEnd:'2026-12-05T12:00:00.000Z',
+    tokenHash:'a'.repeat(64),orderId:'old-order'
+  });
+  assert.equal(same.newPeriod,false);
+  assert.equal(updates[0].period_start,'2026-11-05T12:00:00.000Z');
+  assert.equal(updates[0].status,'canceled');
+  const renewed=await policy.recordVerifiedSubscriptionStatus('account-1',{
+    state:'SUBSCRIPTION_STATE_ACTIVE',
+    periodEnd:'2027-01-05T12:00:00.000Z',
+    tokenHash:'a'.repeat(64),orderId:'new-order'
+  });
+  assert.equal(renewed.newPeriod,true);
+  assert.equal(updates[1].period_start,'2026-12-05T12:00:00.000Z');
+  const stale=await policy.recordVerifiedSubscriptionStatus('account-1',{
+    state:'SUBSCRIPTION_STATE_ACTIVE',
+    periodEnd:'2026-12-05T12:00:00.000Z',
+    tokenHash:'a'.repeat(64),orderId:'old-order'
+  });
+  assert.equal(stale.updated,false);
+  assert.equal(updates.length,2);
+});
+
+test('Play account hold and expiry stop access even if an old paid expiry remains in the future',async()=>{
+  let old={
+    provider:'google_play',status:'active',
+    valid_until:'2026-12-05T12:00:00.000Z',
+    period_start:'2026-11-05T12:00:00.000Z',
+    purchase_token_hash:'b'.repeat(64)
+  };
+  const db={from(table){
+    const q={
+      select(){return q;},eq(){return q;},
+      async maybeSingle(){return {
+        data:table==='mss_subscription_entitlements'?old:{user_id:'account-1'},
+        error:null
+      };},
+      async upsert(row){if(table==='mss_subscription_entitlements')old=row;return {error:null};}
+    };return q;
+  }};
+  const policy=createMssAccessPolicy({db,enforcementEnabled:true});
+  const held=await policy.recordVerifiedSubscriptionStatus('account-1',{
+    state:'SUBSCRIPTION_STATE_ON_HOLD',
+    periodEnd:'2026-11-30T00:00:00Z',tokenHash:'b'.repeat(64)
+  });
+  assert.equal(held.status,'hold');
+  assert.equal(old.valid_until,'2026-12-05T12:00:00.000Z');
+  assert.equal(entitlement(old,0,grant({usedUsd:0.1})).canChat,false);
+  const expired=await policy.recordVerifiedSubscriptionStatus('account-1',{
+    state:'SUBSCRIPTION_STATE_EXPIRED',periodEnd:'2026-11-30T00:00:00Z',tokenHash:'b'.repeat(64)
+  });
+  assert.equal(expired.status,'expired');
+  assert.equal(entitlement(old,0,grant({usedUsd:0.1})).canChat,false);
+});
+
+test('Google Play account hold is inactive and cannot resume chats',()=>{
+  const state=entitlement({...premium,status:'hold'},0,grant({usedUsd:0.1}));
+  assert.equal(state.premiumActive,false);
+  assert.equal(state.canChat,false);
+  assert.equal(state.canTalk,false);
+});
