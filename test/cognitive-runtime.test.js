@@ -247,6 +247,33 @@ test('invalid memory graphs use the same single repair budget before persistence
  assert.equal(result.attempts.length,2);assert.equal(calls,2);
 });
 
+test('a format fix followed by a quality fix has a bounded third request',async()=>{
+ let calls=0;
+ const result=await generateCheckedCognitiveTurn({generate:async input=>{
+  calls++;
+  if(calls===1){const error=new RuntimeError('invalid_model_proposal',502);error.proposalViolation='next_question_type';throw error;}
+  if(calls===2){assert.equal(input.correctionDetail,'next_question_type');return answer('Got it.');}
+  assert.equal(input.correction,'missing_continuation');return answer('Where should the basket sit?');
+ },context:{latestUser:'Use a basket.'},objectives:[],quality:{state:cleanRuntimeState(),active:true}});
+ assert.equal(calls,3);assert.equal(result.attempts.length,3);assert.equal(result.attempts[0].proposalViolation,'next_question_type');
+});
+
+test('repeated format failures stop after one format repair and expose only the field reason',async()=>{
+ let calls=0;
+ await assert.rejects(generateCheckedCognitiveTurn({generate:async()=>{calls++;return validateTurnProposal({schema_version:1,reply:'A valid answer.',next_question:{private:'never include raw rejected values'}});},context:{latestUser:'Use a basket.'},objectives:[],quality:{state:cleanRuntimeState(),active:true}}),error=>{
+  assert.equal(error.attempts.length,2);assert.ok(error.attempts.every(a=>a.proposalViolation==='next_question_type'));
+  assert.ok(!JSON.stringify(error.attempts).includes('never include'));return true;
+ });
+ assert.equal(calls,2);
+});
+
+test('an expired generation deadline never starts an upstream request',async()=>{
+ let calls=0;
+ const provider=createCognitiveProvider({key:'fixture',model:'fixture',fetchImpl:async()=>{calls++;throw Error('must not fetch');}});
+ await assert.rejects(provider({context:{},objectives:[],deadline:performance.now()-1}),/runtime_model_unavailable/);
+ assert.equal(calls,0);
+});
+
 test('Spanish acceptance with accents, pause and resume preserve the offered action', async () => {
   const f = fixture({ language: 'es', generate: async () => ({ reply: '¿Quieres que añada un recordatorio para buscar el modelo?', reminderOffer: { title: 'Buscar el modelo de la placa' }, objectiveId: 'products' }) });
   await f.turn('No encuentro el modelo.');

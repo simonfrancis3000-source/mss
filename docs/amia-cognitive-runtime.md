@@ -15,7 +15,7 @@ The runtime is disabled by default. It supports English and Spanish. Other exist
 | Planner | Objective ranking using saved rules, unresolved conflicts, dependencies, deferred questions and authoritative room review/completion state |
 | Decisions | Server-owned permissions and action allowlist; explicit prohibitions take precedence; missing capability or conditional permission requires waiting or clarification |
 | Actions | Atomic reminder create/edit/complete/delete, list/read, exact-model official manual verification and bounded grounded feature quotations |
-| Quality | Structured validation, one bounded repair, action-claim checks, repetition and dead-end checks, stale-result rejection, delivery observations and repeatable evaluations |
+| Quality | Structured validation, bounded format/quality repair, action-claim checks, repetition and dead-end checks, stale-result rejection, delivery observations and repeatable evaluations |
 
 The planner ranks objectives and supplies evidence to the language model. Conditional permission evaluation is a conservative decision helper, not a certified robot safety controller. No model-generated action is executed directly.
 
@@ -149,3 +149,10 @@ Reminder detours also return to the current unanswered training question and ret
 Run [41994950577](https://github.com/simonfrancis3000-source/mss/actions/runs/41994950577) at 4006ba3a1aa3f40db3d1c9db60ea2994b3c932ac regressed to 332/450 passes, 118 failures and 4,953/5,400 turns. Every failure exhausted the response-quality budget. Most occurred after a reminder detour: the model returned to an unanswered question, the repetition guard rejected it, and the repair often left conflicting draft/question fields. This revision is not release-ready; its score must not be hidden by the earlier 438/450 result.
 
 The next revision makes next_question authoritative and removes draft questions from the answer field before applying the complete response checks. It permits one explicit revisit of an unanswered decision, tracks active asks in canonical state and blocks further repetition of that decision, including paraphrases. Answered and deferred questions stay blocked. Reminder detours, pause/resume and owner-requested recaps do not count as additional active asks. Focused regressions verify these behaviors; a fresh full live run is required.
+
+
+### Bounded-revisit evaluation and final recovery cases
+
+Run [41997811069](https://github.com/simonfrancis3000-source/mss/actions/runs/41997811069) at fc7430c569fb5abd92a165d0212e875348da7469 passed 448/450 development repeats (99.6%), failed two and completed 5,384/5,400 turns. The two failures were format+quality recovery exhaustion and two consecutive invalid proposal formats. No memory, reminder, correction or dependency failure was recorded. Reserved cases remained sealed.
+
+The next revision identifies the invalid field without logging its raw value and gives that field-specific reason to the format repair. Recovery permits one format repair and one quality repair, with at most three requests only when different failure classes occur. Two consecutive failures of the same class still stop after two requests; ordinary replies still use one. Generation has a 55-second recovery deadline within the runtime's 70-second model deadline, leaving room before the 90-second database lease. This prevents rare mixed recovery failures from exhausting a single shared retry without introducing an unbounded loop. Fresh live evaluation is required for this revision.

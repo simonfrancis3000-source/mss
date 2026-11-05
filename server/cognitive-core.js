@@ -68,26 +68,30 @@ export function nextRuntimeObjective(objectives, state, context = {}) {
     permissions: 'Unspecified permission is not consent. Training cannot execute physical actions.' };
 }
 
+const invalidProposal = reason => { const error=new RuntimeError('invalid_model_proposal',502);error.proposalViolation=reason;return error; };
 export function validateTurnProposal(value, objectives = []) {
-  if (!object(value) || value.schema_version !== 1 || typeof value.reply !== 'string' || !value.reply.trim() || value.reply.length > 3000) throw new RuntimeError('invalid_model_proposal', 502);
+  if (!object(value) || value.schema_version !== 1) throw invalidProposal('schema_version');
+  if(typeof value.reply!=='string'||!value.reply.trim())throw invalidProposal('reply_required');
+  if(value.reply.length>3000)throw invalidProposal('reply_too_long');
   let reply=value.reply.trim(),nextQuestion=null;
   if(value.next_question!==undefined&&value.next_question!==null){
-    if(typeof value.next_question!=='string'||value.next_question.trim().length>600)throw new RuntimeError('invalid_model_proposal',502);
+    if(typeof value.next_question!=='string')throw invalidProposal('next_question_type');
+    if(value.next_question.trim().length>600)throw invalidProposal('next_question_too_long');
     nextQuestion=value.next_question.trim();
     const next=conversationQuestions(nextQuestion),embedded=conversationQuestions(reply);
-    if(next.length!==1||!/[?？؟]["”')]*$/u.test(nextQuestion))throw new RuntimeError('invalid_model_proposal',502);
+    if(next.length!==1||!/[?？؟]["”')]*$/u.test(nextQuestion))throw invalidProposal('next_question_format');
     // next_question owns the continuation. Discard draft questions in the
     // answer field instead of returning alternatives or rejecting a repair.
     for(const question of embedded)reply=reply.replace(question,'');
     reply=reply.trim()+(reply.trim()?'\n\n':'')+nextQuestion;
-    if(reply.length>3000)throw new RuntimeError('invalid_model_proposal',502);
+    if(reply.length>3000)throw invalidProposal('reply_too_long');
   }
   if (value.actions !== undefined && (!Array.isArray(value.actions) || value.actions.length)) throw new RuntimeError('model_action_rejected', 502);
   const offer = value.reminder_offer;
   if (offer !== undefined && offer !== null && (!object(offer) || !validReminderTitle(offer.title))) throw new RuntimeError('invalid_reminder_offer', 502);
   const objectiveId = value.objective_id === null || value.objective_id === undefined ? null : text(value.objective_id, 120);
   if (objectiveId && !objectives.some(o => o.id === objectiveId)) throw new RuntimeError('unknown_objective', 502);
-  if (value.memory_proposals !== undefined && (!Array.isArray(value.memory_proposals) || value.memory_proposals.length>8)) throw new RuntimeError('invalid_model_proposal',502);
+  if (value.memory_proposals !== undefined && (!Array.isArray(value.memory_proposals) || value.memory_proposals.length>8)) throw invalidProposal('memory_proposals_shape');
   return { reply, nextQuestion, reminderOffer: offer ? { title: validReminderTitle(offer.title) } : null, objectiveId,
     memoryProposals: value.memory_proposals || [], applianceIdentity: object(value.appliance_identity) ? value.appliance_identity : null,
     previousAnswer: object(value.previous_answer) ? { answered: value.previous_answer.answered === true, sourceQuote: text(value.previous_answer.source_quote, 600) } : null,
