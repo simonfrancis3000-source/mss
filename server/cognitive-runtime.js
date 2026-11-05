@@ -118,7 +118,7 @@ export function createCognitiveRuntime({ store, generate, contextStore, resolveA
               currentApplianceIdentities: (saved.appliances || []).slice(0, 10).map(a => ({ type: a.type, brand: a.brand, model: a.model })) };
             const checked = await generateCheckedCognitiveTurn({
               generate: input => { modelCalls++; return measured('modelMs',()=>generate({...input,auth})); },
-              context, objectives,
+              context, objectives, deadline:started+70000,
               validateProposal: candidate => validateMemoryProposals(candidate.memoryProposals || [],{latestUser,knownRules:[...(saved.rules || []),...(saved.generalRules || [])],existingRelations:review.relations || [],objectives,turnKey:identity.key,scope}),
               quality: { state:qualityState, active:training && resolved.intent !== 'service_help', intake, language }
             });
@@ -131,7 +131,7 @@ export function createCognitiveRuntime({ store, generate, contextStore, resolveA
                 appliance = resolvedAppliance.record;
                 if (resolvedAppliance.evidence) {
                   modelCalls++;
-                  proposal = await measured('modelMs',()=>generate({context:{...context,intake:null,verifiedManual:resolvedAppliance.evidence},objectives,auth}));
+                  proposal = await measured('modelMs',()=>generate({context:{...context,intake:null,verifiedManual:resolvedAppliance.evidence},objectives,auth,deadline:started+70000}));
                   const invalid = checkRuntimeReply(proposal,{state:qualityState,active:training,intake:null,language,latestUser,intent:resolved.intent});
                   if (invalid) throw new RuntimeError('runtime_quality_check_failed',502);
                   const quotes=verifiedFeatureQuotes(proposal.featureQuotes,resolvedAppliance.evidence);
