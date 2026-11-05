@@ -3,6 +3,7 @@ import { createOnboardingState, supabaseOnboardingRepository } from './onboardin
 import { createTrainingVisitStore, nextTrainingStep, visitLearnings, visitAnswerCount, saveVisitCheckpoint } from './training-visit.js';
 import { createVoiceBalance } from './voice-balance.js';
 import { Capacitor } from "@capacitor/core";
+import { createConnectedHome } from "./connected-home.js";
 import { Preferences } from "@capacitor/preferences";
 import { createMobileAuthTurnstile } from "./mobile-turnstile-bridge.js";
 import { createMssInterface, buildInterfaceModel, COMPANION_HEAD_IMAGE } from "./mss-interface.js";
@@ -4401,12 +4402,14 @@ async function beginTrainingStep(step) {
 
 const voiceBalance = createVoiceBalance({apiBase:API_BASE,getUserId:()=>cloudUserId,getHeaders:authenticatedApiHeaders,onChange:()=>mssInterface?.render()});
 const robotRewards = createRobotRewardBalance({apiBase:API_BASE,getUserId:()=>cloudUserId,getHeaders:authenticatedApiHeaders,onChange:()=>mssInterface?.render()});
+const connectedHome = createConnectedHome({apiBase:API_BASE,getUserId:()=>cloudUserId,getHeaders:authenticatedApiHeaders});
 
 mssInterface = createMssInterface({
   refreshBalance:()=>voiceBalance.refresh(),
   openBilling: googlePlayCheckout.enabled ? () => googlePlayCheckout.open() : undefined,
   openHelp: () => gettingStarted?.openHelp(),
   openGuide: () => gettingStarted?.openGuide(),
+  openConnectedHome: () => connectedHome.open(),
   startStep: beginTrainingStep,
   finishVisit: finishTrainingVisit,
   resumeVisit() { beginTrainingVisit(); if (elements.voiceExperience?.hidden) elements.messageInput.focus({ preventScroll: true }); },
