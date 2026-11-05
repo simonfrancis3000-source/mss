@@ -1,0 +1,28 @@
+name: Android Connected Home verification
+on:
+  pull_request:
+    branches:
+      - release/amia-android-1.11
+  workflow_dispatch:
+jobs:
+  android-connected-home:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install packages
+        run: npm ci
+      - name: Run MSS regression tests
+        run: npm test
+      - name: Build Android web bundle
+        run: VITE_API_BASE_URL=https://synqme-api.onrender.com VITE_PLAY_BILLING_ENABLED=true npm run build -- --mode mobile
+      - name: Sync Capacitor Android
+        run: npx cap sync android
+      - name: Compile Android with SmartThings native bridge
+        run: cd android && chmod +x gradlew && ./gradlew assembleDebug
