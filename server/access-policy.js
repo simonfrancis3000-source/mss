@@ -17,7 +17,8 @@ function clamp(value) {
 }
 
 export function evaluateMssEntitlement({
-  settings, entitlement, usage, premiumAllowance, now = Date.now(), enabledByServer = false
+  settings, entitlement, usage, premiumAllowance, now = Date.now(),
+  enabledByServer = false, freeTrialEnabledByServer = false
 } = {}) {
   const trialLimitUsd = clamp(settings?.free_trial_limit_usd ?? 0.10);
   const trialUsedUsd = clamp(usage?.used_usd);
@@ -27,7 +28,7 @@ export function evaluateMssEntitlement({
   // (including beta, canceled, hold and expired) are outside the free rollout.
   const premiumEnforcementEnabled = enabledByServer && settings?.enforcement_enabled === true;
   const freeTrialEnforcementEnabled = premiumEnforcementEnabled ||
-    settings?.free_trial_enforcement_enabled === true;
+    (freeTrialEnabledByServer && settings?.free_trial_enforcement_enabled === true);
   const freeAccount = !entitlement;
   const enforcementEnabled = premiumEnforcementEnabled ||
     (freeAccount && freeTrialEnforcementEnabled);
@@ -61,7 +62,9 @@ export function evaluateMssEntitlement({
   };
 }
 
-export function createMssAccessPolicy({ db, enforcementEnabled = false, betaEmails = [] } = {}) {
+export function createMssAccessPolicy({
+  db, enforcementEnabled = false, freeTrialCapable = false, betaEmails = []
+} = {}) {
   const testers = new Set(Array.from(betaEmails, v => String(v).trim().toLowerCase()).filter(Boolean));
   const linkedAccounts = new Set();
 
@@ -103,11 +106,15 @@ export function createMssAccessPolicy({ db, enforcementEnabled = false, betaEmai
     }
     return evaluateMssEntitlement({
       settings:s.data,entitlement:e.data,usage:u.data,
-      premiumAllowance:cap.data,enabledByServer:enforcementEnabled
+      premiumAllowance:cap.data,enabledByServer:enforcementEnabled,
+      freeTrialEnabledByServer:freeTrialCapable
     });
   }
 
   async function requireVoice(user) {
+    if (!enforcementEnabled && !freeTrialCapable) {
+      return {mode:'legacy',canTalk:true,enforcementEnabled:false};
+    }
     const access = await status(user);
     // Existing paid/beta accounts keep their former voice behaviour while
     // Premium hard stops are still disabled.
@@ -127,6 +134,7 @@ export function createMssAccessPolicy({ db, enforcementEnabled = false, betaEmai
 
   async function reserve(user, kind = 'chat') {
     if (!KINDS.has(kind)) throw failure('Unsupported conversation operation.',400,'invalid_request');
+    if (!enforcementEnabled && !freeTrialCapable) return null;
     const access = await status(user);
     if (!access.enforcementEnabled) return null;
     if (!access.canChat) {
