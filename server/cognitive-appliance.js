@@ -2,15 +2,15 @@ import { findApplianceManual, readSavedApplianceManual, validateApplianceIdentit
 import { buildPersonaMemorySearchKeys } from '../src/persona-memory.js';
 import { hash } from './cognitive-core.js';
 
-export function createCognitiveApplianceResolver({ key, fetchImpl = fetch, onUsage = async () => {} }) {
+export function createCognitiveApplianceResolver({ key, provider = 'deepseek', fetchImpl = fetch, onUsage = async () => {} }) {
   return async ({ identity, messages, saved = [], auth }) => {
     const grounded = validateApplianceIdentity(identity, messages);
     if (!grounded) return null;
     const previous = saved.find(a => a.type === grounded.type && a.brand === grounded.brand && a.model === grounded.model);
     const usage = kind => onUsage(auth, kind);
-    const reread = previous?.manual_url ? await readSavedApplianceManual({ ...grounded, url: previous.manual_url, key, fetchImpl, onUsage: () => usage('fetch') }) : null;
+    const reread = previous?.manual_url ? await readSavedApplianceManual({ ...grounded, url: previous.manual_url, key, provider, fetchImpl, onUsage: () => usage('fetch') }) : null;
     const found = reread ? { status: 'matched', url: reread.url, excerpt: reread.excerpt }
-      : await findApplianceManual({ ...grounded, key, fetchImpl, onUsage: usage });
+      : await findApplianceManual({ ...grounded, key, provider, fetchImpl, onUsage: usage });
     const now = new Date().toISOString();
     const record = { ...grounded, manual_url: found.status === 'matched' ? found.url : null, manual_status: found.status,
       checked_at: now, verified_at: found.status === 'matched' ? now : null };
