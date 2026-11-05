@@ -16,8 +16,8 @@ const allowance={usedUsd:0.62,limitUsd:0.50};
 function assess(entitlement,used=0,opts={}){
  return evaluateMssEntitlement({
    settings:{...settings,...opts},entitlement,
-   usage:{used_usd:used},premiumAllowance:allowance,now,enabledByServer:false,
-   freeTrialEnabledByServer:true
+   usage:{used_usd:used},premiumAllowance:allowance,now,
+   enabledByServer:opts.enforcement_enabled===true,freeTrialEnabledByServer:true
  });
 }
 test('independent $0.10 free Chat: new users can Chat, not Talk',()=>{
