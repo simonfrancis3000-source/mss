@@ -1,4 +1,4 @@
-import { RuntimeError, runtimePrompt, validateTurnProposal, checkRuntimeReply } from './cognitive-core.js';
+import { RuntimeError, runtimePrompt, validateTurnProposal, runtimeReplyViolations } from './cognitive-core.js';
 
 // JSON object mode is not a schema guarantee. Validate independently. The
 // adapter can later use another provider without moving AMIA's state or rules.
@@ -13,10 +13,13 @@ export function createCognitiveProvider({ key, model, fetchImpl = fetch, onUsage
     const repairInstructions = {unexpected_question:'Remove every follow-up and question. Give only the requested explanation, ending in a statement.',missing_continuation:'End with one relevant unresolved question.',settled_decision:'Choose a genuinely different unresolved decision and key; do not paraphrase the settled question.',settled_question:'The owner already answered or deferred that question. Ask one different unresolved question.',repeated_question:'The current decision has reached its unanswered-ask limit. Choose a different relevant unresolved decision and a different decision_key. Do not paraphrase the same question. Keep next_question as one direct question.',multiple_questions:'Use one final question only. Remove quoted and rhetorical questions.'};
     repairInstructions.invalid_model_proposal='Return schema_version:1, a nonempty reply string (answer only), next_question as one question string ending in ?, and memory_proposals as an array of at most eight items. Do not return objects for string fields.';
     repairInstructions.invalid_memory_target='Use an exact supplied memory id for the fact being corrected or confirmed. A precise scope may identify a fact only when it matches exactly one existing rule. Never invent or alter an opaque id, and do not guess between conflicting rules.';
-    const messages=[{role:'system',content:runtimePrompt+turnContract+(correction?'\nRepair the proposal. Violation: '+correction+'. '+(correctionDetail?'Field failure: '+correctionDetail+'. ':'')+(repairInstructions[correction]||'Return a corrected valid proposal.'):'')},{role:'user',content:JSON.stringify(context)}];
+    repairInstructions.unverified_action_claim='Remove any claim that an action or memory has been saved, updated or completed. State the owner instruction directly; only the runtime can confirm completed writes.';
+    repairInstructions.invalid_memory_graph_proposal='Remove circular or self-referencing dependency links. Referenced new facts must appear before dependent facts; preserve owner evidence and valid restrictions.';
+    const repairHint=[...new Set([correction,...String(correctionDetail||'').split(',')].map(v=>repairInstructions[String(v||'').trim()]).filter(Boolean))].join(' ')||'Return a corrected valid proposal.';
+    const messages=[{role:'system',content:runtimePrompt+turnContract+(correction?'\nRepair the proposal. Violation: '+correction+'. '+(correctionDetail?'Validation detail: '+correctionDetail+'. ':'')+repairHint:'')},{role:'user',content:JSON.stringify(context)}];
     if (correction && rejectedProposal) {
-      messages.push({role:'assistant',content:JSON.stringify({schema_version:1,reply:rejectedProposal.reply,next_question:rejectedProposal.nextQuestion||null,decision_key:rejectedProposal.decisionKey,memory_proposals:rejectedProposal.memoryProposals,actions:[]})});
-      messages.push({role:'user',content:JSON.stringify({task:'Replace this rejected draft. Preserve the owner facts and answer the latest owner message.',violation:correction,instruction:repairInstructions[correction]||'Return a valid schema. Remove circular or self-referencing dependency links if present. Keep the grounded facts and valid restrictions.',response_format:answerOnly?'Answer in reply and set next_question:null.':'Answer in reply and set next_question to one direct unresolved question ending in a question mark.',avoid:'Do not repeat a rejected settled question or merely rename its decision key. A requested recap may return to an unanswered question.'})});
+      messages.push({role:'assistant',content:JSON.stringify({schema_version:1,reply:rejectedProposal.reply,next_question:rejectedProposal.nextQuestion||null,objective_id:rejectedProposal.objectiveId,previous_answer:rejectedProposal.previousAnswer?{answered:rejectedProposal.previousAnswer.answered,source_quote:rejectedProposal.previousAnswer.sourceQuote}:null,reminder_offer:rejectedProposal.reminderOffer||null,decision_key:rejectedProposal.decisionKey,memory_proposals:rejectedProposal.memoryProposals,actions:[]})});
+      messages.push({role:'user',content:JSON.stringify({task:'Replace this rejected draft. Preserve the owner facts and answer the latest owner message.',violation:correction,instruction:repairHint,response_format:answerOnly?'Answer in reply and set next_question:null.':'Answer in reply and set next_question to one direct unresolved question ending in a question mark.',avoid:'Do not repeat a rejected settled question or merely rename its decision key. A requested recap may return to an unanswered question.'})});
     }
     let response;
     try {
@@ -44,10 +47,10 @@ export function createCognitiveProvider({ key, model, fetchImpl = fetch, onUsage
 }
 
 
-// One format repair and one quality repair. Repeated failures of the same
-// class stop immediately; only mixed failures can use a third request.
+// At most three requests within one deadline: one format repair, one quality
+// repair, or one transient availability retry. Repeated same-class failures stop.
 export async function generateCheckedCognitiveTurn({ generate, context, objectives, quality, validateProposal = () => {}, deadline = Infinity }) {
-  let violation = null, correctionDetail = null, rejectedProposal = null,formatFailures=0,qualityFailures=0;
+  let violation = null, correctionDetail = null, rejectedProposal = null,formatFailures=0,qualityFailures=0,availabilityFailures=0;
   const expires=Math.min(deadline,performance.now()+55000);
   const attempts = [];
   const repairable = new Set(['invalid_model_proposal','incomplete_model_proposal','model_action_rejected','unknown_objective','invalid_reminder_offer','invalid_memory_graph_proposal','invalid_memory_target']);
@@ -56,13 +59,20 @@ export async function generateCheckedCognitiveTurn({ generate, context, objectiv
     try {
       const proposal = await generate({ context, objectives, correction: violation, correctionDetail, rejectedProposal,deadline:expires });
       rejectedProposal = proposal;
-      violation = checkRuntimeReply(proposal, {...quality,latestUser:context?.latestUser || '',intent:context?.intent || quality.intent});
-      if (!violation) validateProposal(proposal);
-      attempts.push({ attempt, qualityViolation: violation });
+      const violations=runtimeReplyViolations(proposal, {...quality,latestUser:context?.latestUser || '',intent:context?.intent || quality.intent});
+      try{validateProposal(proposal);}catch(error){if(!repairable.has(error.code))throw error;violations.push(error.code);}
+      const all=[...new Set(violations)];violation=all[0]||null;correctionDetail=all.length>1?all.join(','):null;
+      attempts.push({ attempt, qualityViolation: violation,...(all.length>1?{qualityViolations:all}:{}) });
       if (!violation) return { proposal, attempts };
-      qualityFailures++;correctionDetail=null;
+      qualityFailures++;
     } catch (error) {
       attempts.push({ attempt, errorCode: error.code || 'provider_unavailable', ...(error.providerStatus ? {providerStatus:error.providerStatus} : {}),...(error.proposalViolation?{proposalViolation:error.proposalViolation}:{}) });
+      const transient=error.code==='runtime_model_unavailable'&&(!error.providerStatus||error.providerStatus>=500);
+      if(transient){
+        availabilityFailures++;
+        if(availabilityFailures>=2||expires-performance.now()<1000){error.attempts=attempts;throw error;}
+        await new Promise(resolve=>setTimeout(resolve,250));continue;
+      }
       if (!repairable.has(error.code)) { error.attempts = attempts; throw error; }
       violation = error.code;
       correctionDetail=error.proposalViolation||null;

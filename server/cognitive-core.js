@@ -103,29 +103,33 @@ export function validateTurnProposal(value, objectives = []) {
 // the separately documented live-model evaluation; these checks do not prove it.
 const groundedAnswer = (answer, latestUser) => answer?.answered === true && answer.sourceQuote?.length >= 2 && String(latestUser).toLowerCase().includes(answer.sourceQuote.toLowerCase());
 
-export function checkRuntimeReply(proposal, { state, active, intake = null, language = 'en', latestUser = '', intent = null }) {
+export function runtimeReplyViolations(proposal, { state = {}, active, intake = null, language = 'en', latestUser = '', intent = null }) {
+  const violations=[];
+  const claimText=proposal.reply.replace(/\bnot (?:something|anything) (?:that )?I(?:['’]ve| have) (?:added|saved|created|deleted|removed|updated|completed)\b/gi,'unperformed action').replace(/\bno he (?:añadido|guardado|creado|eliminado)\b/gi,'acción pendiente');
   const questions = conversationQuestions(proposal.reply);
-  if (questions.length > 1) return 'multiple_questions';
-  if (proposal.reply.length > 200 && !/[.!?。！？؟]["”')]*$/u.test(proposal.reply)) return 'incomplete_reply';
-  if (/\b(?:I(?:'ve| have)? (?:added|saved|created|deleted|removed|updated|completed)|added to your|marked as complete)\b/i.test(proposal.reply) ||
-      /\b(?:reminder|to.do list)\b[^?\n]{0,65}\b(?:saved|added|created|deleted|removed|updated|completed)\b/i.test(proposal.reply) ||
-      /\b(?:saved|added|created|deleted|removed|updated|completed)\b[^?\n]{0,65}\b(?:reminder|to.do list)\b/i.test(proposal.reply) ||
-      /\b(?:he (?:añadido|guardado|creado|eliminado)|recordatorio[^?\n]{0,50}(?:guardado|creado|añadido|eliminado|actualizado|completado))\b/i.test(proposal.reply)) return 'unverified_action_claim';
-  if (/\b(?:I (?:am|have) (?:cleaning|cleaned|ordered|purchased)|your robot is now|scenario (?:is |has been )?completed)\b/i.test(proposal.reply)) return 'unsupported_execution_claim';
-  if (active && !questions.length) return 'missing_continuation';
-  if (!active && questions.length) return 'unexpected_question';
-  const settled = state.dispositions.filter(d => d.answered !== false);
-  if (questions.some(q => settled.some(d => normalized(d.question) === normalized(q)))) return 'settled_question';
-  if (proposal.decisionKey && settled.some(d => d.decisionKey === proposal.decisionKey)) return 'settled_decision';
-  if (proposal.decisionKey && proposal.decisionKey === state.lastDecisionKey && groundedAnswer(proposal.previousAnswer,latestUser)) return 'settled_decision';
+  if (questions.length > 1) violations.push('multiple_questions');
+  if (proposal.reply.length > 200 && !/[.!?。！？؟]["”')]*$/u.test(proposal.reply)) violations.push('incomplete_reply');
+  if (/\b(?:I(?:['’]ve| have)? (?:added|saved|created|deleted|removed|updated|completed)|added to your|marked as complete)\b/i.test(claimText) ||
+      /\b(?:reminder|to.do list)\b[^?\n]{0,65}\b(?:saved|added|created|deleted|removed|updated|completed)\b/i.test(claimText) ||
+      /\b(?:saved|added|created|deleted|removed|updated|completed)\b[^?\n]{0,65}\b(?:reminder|to.do list)\b/i.test(claimText) ||
+      /\b(?:he (?:añadido|guardado|creado|eliminado)|recordatorio[^?\n]{0,50}(?:guardado|creado|añadido|eliminado|actualizado|completado))\b/i.test(claimText)) violations.push('unverified_action_claim');
+  if (/\b(?:I (?:am|have) (?:cleaning|cleaned|ordered|purchased)|your robot is now|scenario (?:is |has been )?completed)\b/i.test(proposal.reply)) violations.push('unsupported_execution_claim');
+  if (active && !questions.length) violations.push('missing_continuation');
+  if (!active && questions.length) violations.push('unexpected_question');
+  const settled = (state.dispositions || []).filter(d => d.answered !== false);
+  if (questions.some(q => settled.some(d => normalized(d.question) === normalized(q)))) violations.push('settled_question');
+  if (proposal.decisionKey && settled.some(d => d.decisionKey === proposal.decisionKey)) violations.push('settled_decision');
+  if (proposal.decisionKey && proposal.decisionKey === state.lastDecisionKey && groundedAnswer(proposal.previousAnswer,latestUser)) violations.push('settled_decision');
   const recapOpenQuestion = ['explain','progress'].includes(intent);
   const revisitUnanswered = proposal.previousAnswer?.answered===false&&(state.lastQuestionAskCount||1)<2;
-  if(!recapOpenQuestion&&proposal.previousAnswer?.answered===false&&proposal.decisionKey&&proposal.decisionKey===state.lastDecisionKey&&(state.lastQuestionAskCount||1)>=2)return 'repeated_question';
-  if (questions.some(q => normalized(q) === normalized(state.lastQuestion)) && !proposal.reminderOffer && !recapOpenQuestion && !revisitUnanswered) return 'repeated_question';
-  if (intake && language === 'en' && !proposal.reminderOffer && !questions.some(q => /\b(?:brand|make|model|manufacturer|product number|pnc|e-nr)\b/i.test(q))) return 'missing_appliance_intake';
-  if (proposal.reminderOffer && !questions.length) return 'offer_without_question';
-  return null;
+  if(!recapOpenQuestion&&proposal.previousAnswer?.answered===false&&proposal.decisionKey&&proposal.decisionKey===state.lastDecisionKey&&(state.lastQuestionAskCount||1)>=2)violations.push('repeated_question');
+  if (questions.some(q => normalized(q) === normalized(state.lastQuestion)) && !proposal.reminderOffer && !recapOpenQuestion && !revisitUnanswered) violations.push('repeated_question');
+  if (intake && language === 'en' && !proposal.reminderOffer && !questions.some(q => /\b(?:brand|make|model|manufacturer|product number|pnc|e-nr)\b/i.test(q))) violations.push('missing_appliance_intake');
+  if (proposal.reminderOffer && !questions.length) violations.push('offer_without_question');
+  return [...new Set(violations)];
 }
+
+export function checkRuntimeReply(proposal,quality){return runtimeReplyViolations(proposal,quality)[0]||null;}
 
 export function reduceRuntimeState(state, { latestUser, reply, intent, offer, turnKey, objectiveId, decisionKey, previousAnswer, preserveOpenQuestion = false, active = true }) {
   const next = cleanRuntimeState(state);

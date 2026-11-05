@@ -1,8 +1,6 @@
 name: AMIA cognitive validation
 on:
-  pull_request:
-    branches: [SYNQ.ME, mobile/current-mss]
-    paths: ["server/cognitive-*.js", "src/cognitive-client.js", "src/audio-quality.js", "evals/**", "scripts/evaluate-cognitive-runtime.mjs", ".github/workflows/amia-cognitive-validation.yml"]
+  # Live provider checks are explicit during implementation handoff.
   workflow_dispatch:
 permissions:
   contents: read
