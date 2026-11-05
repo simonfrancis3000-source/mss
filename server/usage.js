@@ -21,6 +21,14 @@ export const PHONIC_COST_PER_MINUTE_USD = Number.isFinite(Number(process.env.PHO
 const ADMIN_EMAILS = new Set((process.env.ADMIN_EMAILS || "").split(",").map((value) => value.trim().toLowerCase()).filter(Boolean));
 const ADMIN_USER_IDS = new Set((process.env.ADMIN_USER_IDS || "").split(",").map((value) => value.trim()).filter(Boolean));
 const SEARCH_FETCH_COST_PER_SUCCESS_USD = 0.75 / 1000;
+const PARALLEL_SEARCH_FAST_COST_USD = 1 / 1000;
+const PARALLEL_EXTRACT_COST_USD = 1 / 1000;
+
+function retrievalRates(provider) {
+  return provider === "parallel"
+    ? { search: PARALLEL_SEARCH_FAST_COST_USD, fetch: PARALLEL_EXTRACT_COST_USD }
+    : { search: SEARCH_FETCH_COST_PER_SUCCESS_USD, fetch: SEARCH_FETCH_COST_PER_SUCCESS_USD };
+}
 
 export function httpError(message, statusCode = 500) {
   const error = new Error(message);
@@ -59,7 +67,7 @@ function isDeepseekPeak(timestamp) {
     ((hour >= 1 && hour < 4) || (hour >= 6 && hour < 10));
 }
 
-function priceDeepseek(model, usage, timestamp) {
+function priceDeepseek(model, usage, timestamp, webSearchProvider = "deepseek") {
   const requestedModel = String(model || "deepseek-flash");
   // DeepSeek's September 2026 notice says V4-Pro requests are routed and billed at V4.1-Flash rates.
   const rateModel = requestedModel === "deepseek-v4-pro" && new Date(timestamp).getTime() < Date.parse("2026-09-14T04:00:00Z")
@@ -79,10 +87,11 @@ function priceDeepseek(model, usage, timestamp) {
   ) / 1_000_000;
   const searchRequests = Math.max(0, Number(usage?.searchRequests || 0));
   const fetchRequests = Math.max(0, Number(usage?.fetchRequests || 0));
+  const rates = retrievalRates(webSearchProvider);
   return {
     deepseekCostUsd,
-    searchCostUsd: searchRequests * SEARCH_FETCH_COST_PER_SUCCESS_USD,
-    fetchCostUsd: fetchRequests * SEARCH_FETCH_COST_PER_SUCCESS_USD,
+    searchCostUsd: searchRequests * rates.search,
+    fetchCostUsd: fetchRequests * rates.fetch,
     searchRequests,
     fetchRequests,
     snapshot: {
@@ -94,15 +103,16 @@ function priceDeepseek(model, usage, timestamp) {
       inputCacheMissUsdPerMillion: base.miss * multiplier,
       inputCacheHitUsdPerMillion: base.hit * multiplier,
       outputUsdPerMillion: base.output * multiplier,
-      searchUsdPerSuccessfulRequest: SEARCH_FETCH_COST_PER_SUCCESS_USD,
-      fetchUsdPerSuccessfulRequest: SEARCH_FETCH_COST_PER_SUCCESS_USD
+      webSearchProvider,
+      searchUsdPerSuccessfulRequest: rates.search,
+      fetchUsdPerSuccessfulRequest: rates.fetch
     }
   };
 }
 
-export async function recordDeepseekUsage({ userId, model, usage = {}, timestamp = new Date().toISOString(), webSearchStatus = "not_requested", relevantPreferenceCount = 0 }) {
+export async function recordDeepseekUsage({ userId, model, usage = {}, timestamp = new Date().toISOString(), webSearchStatus = "not_requested", webSearchProvider = "deepseek", relevantPreferenceCount = 0 }) {
   if (!adminDb) return false;
-  const pricing = priceDeepseek(model, usage, timestamp);
+  const pricing = priceDeepseek(model, usage, timestamp, webSearchProvider);
   const { error } = await adminDb.from("synqme_usage_events").insert({
     user_id: userId,
     event_type: "deepseek_chat",
@@ -122,7 +132,7 @@ export async function recordDeepseekUsage({ userId, model, usage = {}, timestamp
     fetch_cost_usd: pricing.fetchCostUsd,
     cost_method: Number(usage.totalTokens || 0) > 0 ? "deepseek_usage_and_timestamp_rate_card" : "deepseek_usage_missing",
     pricing_snapshot: pricing.snapshot,
-    metadata: { webSearchStatus, relevantPreferenceCount },
+    metadata: { webSearchStatus, webSearchProvider, relevantPreferenceCount },
     created_at: timestamp
   });
   if (error) {
@@ -132,23 +142,24 @@ export async function recordDeepseekUsage({ userId, model, usage = {}, timestamp
   return true;
 }
 
-export async function recordSearchFetchUsage({ userId, type }) {
+export async function recordSearchFetchUsage({ userId, type, provider = "deepseek" }) {
   if (!adminDb) return false;
   const isSearch = type === "search";
+  const rates = retrievalRates(provider);
   const event = {
     user_id: userId,
-    event_type: isSearch ? "deepseek_search" : "deepseek_fetch",
-    provider: isSearch ? "deepseek-search" : "deepseek-fetch",
+    event_type: provider === "parallel" ? (isSearch ? "parallel_search" : "parallel_extract") : (isSearch ? "deepseek_search" : "deepseek_fetch"),
+    provider: provider === "parallel" ? "parallel" : (isSearch ? "deepseek-search" : "deepseek-fetch"),
     model: isSearch ? "search" : "fetch",
     request_id: randomUUID(),
     search_requests: isSearch ? 1 : 0,
     fetch_requests: isSearch ? 0 : 1,
-    search_cost_usd: isSearch ? SEARCH_FETCH_COST_PER_SUCCESS_USD : 0,
-    fetch_cost_usd: isSearch ? 0 : SEARCH_FETCH_COST_PER_SUCCESS_USD,
+    search_cost_usd: isSearch ? rates.search : 0,
+    fetch_cost_usd: isSearch ? 0 : rates.fetch,
     cost_method: isSearch ? "successful_search_request_rate" : "successful_fetch_request_rate",
     pricing_snapshot: isSearch
-      ? { searchUsdPerSuccessfulRequest: SEARCH_FETCH_COST_PER_SUCCESS_USD }
-      : { fetchUsdPerSuccessfulRequest: SEARCH_FETCH_COST_PER_SUCCESS_USD }
+      ? { searchUsdPerSuccessfulRequest: rates.search, provider }
+      : { fetchUsdPerSuccessfulRequest: rates.fetch, provider }
   };
   const { error } = await adminDb.from("synqme_usage_events").insert(event);
   if (error) console.error("Could not write Search/Fetch usage event:", String(error.message || error).slice(0, 250));
@@ -339,10 +350,10 @@ export async function buildAdminUsageDashboard(period = "30d", phonicApiKey = ""
       aggregate.searchCostUsd += Number(event.search_cost_usd || 0);
       aggregate.fetchCostUsd += Number(event.fetch_cost_usd || 0);
       if (event.status === "estimated" || event.cost_method === "deepseek_usage_missing") aggregate.deepseekUnpricedRequests += 1;
-    } else if (event.event_type === "deepseek_search") {
+    } else if (event.event_type === "deepseek_search" || event.event_type === "parallel_search") {
       aggregate.searchRequests += Number(event.search_requests || 0);
       aggregate.searchCostUsd += Number(event.search_cost_usd || 0);
-    } else if (event.event_type === "deepseek_fetch") {
+    } else if (event.event_type === "deepseek_fetch" || event.event_type === "parallel_extract") {
       aggregate.fetchRequests += Number(event.fetch_requests || 0);
       aggregate.fetchCostUsd += Number(event.fetch_cost_usd || 0);
     } else if (event.event_type === "phonic_voice") {
