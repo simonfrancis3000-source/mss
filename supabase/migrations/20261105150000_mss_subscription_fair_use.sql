@@ -63,7 +63,7 @@ as $$
     and coalesce((select u.used_usd from public.mss_free_chat_usage u where u.user_id=(select auth.uid())),0)
          < coalesce((select s.free_trial_limit_usd from public.mss_access_settings s where s.id=1),0.10)
   );
-$;
+$$;
 revoke all on function mss_internal.training_allowed() from public,anon;
 grant execute on function mss_internal.training_allowed() to authenticated,service_role;
 
