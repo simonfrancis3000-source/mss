@@ -1,0 +1,32 @@
+name: Android Google Play Reconciliation Verification
+on:
+  push:
+    branches:
+      - feat/android-google-play-usage-reconciliation-20261105
+  pull_request:
+    branches:
+      - release/amia-android-1.11
+jobs:
+  android-billing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install dependencies
+        run: npm ci
+      - name: Test Google Play receipt and usage controls
+        run: npm test
+      - name: Build MSS Android web bundle with checkout enabled
+        run: VITE_PLAY_BILLING_ENABLED=true VITE_API_BASE_URL=https://synqme-api.onrender.com npm run build -- --mode mobile
+      - name: Sync Android
+        run: npx cap sync android
+      - name: Compile Android billing and SmartThings bridges
+        run: cd android && chmod +x gradlew && ./gradlew assembleDebug
