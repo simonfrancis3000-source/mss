@@ -17,7 +17,7 @@ export function onboardingPages(companion = 'your future robot') {
       'Both modes build your Passport. Use Finish for now to return to your unanswered question. Scenarios cover home life and outings.'
     ] },
     { title: 'Robot Rewards', lead: 'Teach your future robot. Get rewarded for getting ready!', paragraphs: [
-      'Every $1 of eligible spending on MySecondSelf subscriptions or voice-minute packs earns $2 in Robot Rewards credit toward a participating robot purchase. Free Chat is a way to start learning; qualifying paid purchases unlock rewards.',
+      'Here’s the exciting part: every $1 of eligible spending on MySecondSelf subscriptions or voice-minute packs earns $2 in Robot Rewards credit toward a participating robot purchase. Free Chat is a way to start learning; qualifying paid purchases unlock rewards.',
       'We are working with robot partners to offer trained, Robot Ready members priority purchase opportunities as participating robots become available.',
       'Actual discounts and priority opportunities depend on programme limits and partner availability. See Robot Rewards for full terms and conditions.'
     ] },
