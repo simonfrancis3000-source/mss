@@ -4,21 +4,21 @@ export const AMIA_INTRO_AUDIO = 'https://mysecondself.app/wp-content/uploads/202
 export function onboardingPages(companion = 'your future robot') {
   return [
     { title: 'Meet ' + companion, lead: 'Your future robot should already know you.', paragraphs: [
-      'MySecondSelf helps you build a personal profile for a future robot before it arrives. You do not need to own a robot to begin.',
-      'Through conversation, you explain how you like everyday life to work: your preferences, routines, boundaries and decisions. This app is preparing that understanding; it is not controlling a physical robot.'
+      'MySecondSelf helps you teach a future robot about your life before it arrives. You do not need to own a robot or pay to begin.',
+      'Create your personal profile, then start for free in Chat. Your conversations help build a Persona Passport containing your routines, preferences and boundaries.'
     ] },
     { title: 'How training works', lead: 'Teach the details that make life yours.', paragraphs: [
-      'Guided scenarios give each conversation a useful focus, from kitchen routines to meeting people outside your home. Personal questions help clarify what you want, what changes in unusual situations, and when your robot should ask, wait or stop.',
-      'Work on one small task at a time. You can decline a question, explain an exception, or correct an answer. Saved learning is available to review; a conversation alone does not complete a module.'
+      'Your robot guides you through everyday situations, from household routines to meeting people outside your home. Each question helps it learn what matters to you and when it should ask, wait or stop.',
+      'Answer at your own pace. You can skip a question, explain an exception or correct something. Your learning is saved for you to review and improve.'
     ] },
-    { title: 'Your journey, your pace', lead: 'A few useful minutes is a good start.', paragraphs: [
-      'Talk uses your available voice minutes; Chat is for typing. Both build the same training journey.',
-      'Finish for now saves a recap and your place. Come back to the unanswered question anytime. Exploring an area is different from completing a module.',
-      'Training includes home life and outings. You can discuss a friend’s garden even if you have none, or skip what is not relevant.'
+    { title: 'Your journey, your pace', lead: 'Start free in Chat. Talk when you subscribe.', paragraphs: [
+      'Chat starts free with $0.10 in one-time AI usage, not a timed trial. You can see your remaining allowance in Profile.',
+      'Premium costs $9.99/month: 60 voice minutes and $0.50 of AI conversation usage. When AI credit runs out, Chat and Talk pause until renewal or you buy a voice-minute pack, which adds another $0.50 in chat credit.',
+      'Both modes build your Passport. Use Finish for now to return to your unanswered question. Scenarios cover home life and outings.'
     ] },
     { title: 'Robot Rewards', lead: 'Teach your future robot. Get rewarded for getting ready!', paragraphs: [
-      'Here’s the exciting part: every $1 of eligible spending on training your MySecondSelf earns $2 in Robot Rewards credit toward a participating robot purchase. Double the credit for getting your future robot to know you!',
-      'And there’s more: we’re working with robot partners to offer trained, Robot Ready members priority purchase opportunities as participating robots become available. Train today so your robot can arrive knowing you.',
+      'Every $1 of eligible spending on MySecondSelf subscriptions or voice-minute packs earns $2 in Robot Rewards credit toward a participating robot purchase. Free Chat is a way to start learning; qualifying paid purchases unlock rewards.',
+      'We are working with robot partners to offer trained, Robot Ready members priority purchase opportunities as participating robots become available.',
       'Actual discounts and priority opportunities depend on programme limits and partner availability. See Robot Rewards for full terms and conditions.'
     ] },
     { title: 'What happens next?', lead: 'Your Persona Passport is what you are building.', paragraphs: [
@@ -51,9 +51,11 @@ export const FAQ_CATEGORIES = [
   ] },
   { id: 'conversation', title: 'Talk, Chat and payments', questions: [
     { id: 'talk-chat', question: 'What is the difference between Talk and Chat?', answer: 'Talk is a spoken conversation using your microphone and the robot’s voice. It waits for you to press Start and provides mute and pause controls. Chat uses typed messages. Both use the same signed-in account, saved conversation and training journey.' },
-    { id: 'voice-minutes', question: 'How do voice minutes work?', answer: 'Talk uses voice conversation time when metering applies to your account. Subscription minutes and top-up minutes are shown separately. The currently offered Premium allowance is 60 minutes per subscription month; check the plan and checkout details for your actual offer. Typing in Chat does not consume voice minutes.' },
-    { id: 'balance-reset', question: 'Where can I see my balance and reset date?', answer: 'Open Profile for voice minutes, the current subscription or test allowance, top-up balance and the period end or expiry date. Subscription minutes are used before top-ups. Top-up minutes carry forward until used. A complimentary test allowance is not a paid subscription or an automatic renewal.' },
-    { id: 'out-of-minutes', question: 'What happens if my voice minutes run out?', answer: 'When metering applies, you need an available voice allowance to continue Talk. Review the subscription or top-up options available to your account. You can use Chat without consuming voice minutes, subject to your account’s access. Your saved training is not erased when voice minutes run out.' },
+    { id: 'free-chat', question: 'Can I start using MySecondSelf without paying?', answer: 'Yes. Create your account and start in Chat. Your one-time free allowance includes $0.10 of DeepSeek AI usage; it is not a fixed number of minutes or daily allowance. The amount of conversation it provides varies with the questions and processing required. Voice requires Premium. Your saved training remains yours when the free allowance ends.' },
+    { id: 'premium-chat', question: 'How much AI chat is included with Premium?', answer: 'Premium is $9.99 per month and includes $0.50 of AI conversation usage plus 60 voice minutes per billing period. Once the AI usage allowance is exhausted, both Chat and Talk pause until the subscription renews or a verified voice-minute pack adds $0.50 of chat credit for the current billing period. A voice pack also adds its advertised voice minutes. Actual usage depends on the complexity and length of conversations.' },
+    { id: 'voice-minutes', question: 'How do voice minutes work?', answer: 'Talk is available with an active Premium subscription, available voice minutes and remaining AI conversation credit. Premium includes 60 voice minutes per subscription month; voice-minute packs add more. Voice time and DeepSeek conversation usage are tracked separately. Chat does not consume voice minutes.' },
+    { id: 'balance-reset', question: 'Where can I see my balance and reset date?', answer: 'Open Profile to see the remaining free Chat credit, or your Premium AI usage allowance, voice minutes, voice top-ups and renewal date. Subscription voice minutes are used before voice top-ups. Purchased voice minutes remain on the account, but require active Premium and AI allowance to use. Complimentary test minutes are not a paid subscription or automatic renewal.' },
+    { id: 'out-of-minutes', question: 'What happens if my voice minutes run out?', answer: 'When voice minutes reach zero but Premium AI chat credit remains, switch to Chat to continue. Voice-minute packs add voice minutes and $0.50 in chat credit. If the Premium AI usage allowance is exhausted, both Chat and Talk pause until renewal or an eligible pack purchase. Your saved training and persona are not erased.' },
     { id: 'audio-intro', question: 'Can I hear the introduction again?', answer: 'Yes. Replay the introduction in Help & Getting Started opens step 1 and plays the recording from the beginning. You can also open How it works on Home and choose Listen to your robot on step 1; the button uses your robot’s name. Playing the recording does not start a Talk session or activate the microphone.', action: 'guide' }
   ] },
   { id: 'future', title: 'Robots, rewards and privacy', questions: [
