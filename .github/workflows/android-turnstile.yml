@@ -50,3 +50,9 @@ jobs:
         run: npx cap sync android
       - name: Compile Android debug APK
         run: cd android && chmod +x gradlew && ./gradlew assembleDebug --no-daemon
+
+      - name: Save runtime debug APK for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: amia-runtime-debug-apk
+          path: android/app/build/outputs/apk/debug/*.apk

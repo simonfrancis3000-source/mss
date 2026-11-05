@@ -1,0 +1,14 @@
+export const domains=[
+ {id:'hob',scope:'room:kitchen',title:'Hob cleaning',instruction:'Use a soft cloth on the hob.',exception:'Except while the hob is hot; wait until cooling is verified.',question:'Which cloth should I use on the hob?'},
+ {id:'dishwasher',scope:'room:kitchen',title:'Dishwasher',instruction:'Use eco mode on the dishwasher.',exception:'Except when I need the dishes quickly; ask me which cycle.',question:'Which dishwasher cycle do you normally prefer?'},
+ {id:'laundry',scope:'room:laundry_utility',title:'Laundry',instruction:'Separate whites from coloured clothes.',exception:'Except delicate items, which I want to review separately.',question:'How should I sort your laundry?'},
+ {id:'bedroom',scope:'room:bedroom',title:'Bedroom privacy',instruction:'Knock and wait before entering the bedroom.',exception:'Except during a confirmed emergency; follow the agreed escalation.',question:'When should I ask before entering the bedroom?'},
+ {id:'books',scope:'room:living_room',title:'Personal belongings',instruction:'Leave my books in their existing order.',exception:'Except when liquid is spilled nearby; ask before moving them.',question:'How should I handle the books while cleaning?'},
+ {id:'guests',scope:'room:dining_room',title:'Guest preferences',instruction:'Ask before offering drinks to visitors.',exception:'If a visitor mentions an allergy, check with me before choosing.',question:'How should I offer drinks to visitors?'},
+ {id:'child',scope:'outside:strangers:child-approaches',title:'Child approaches',instruction:'Keep a respectful distance when a child approaches.',exception:'If the child appears lost, ask me to take the lead.',question:'How would you like me to respond to a child approaching?'},
+ {id:'address',scope:'outside:strangers:home-address',title:'Private information',instruction:'Do not share my home address with strangers.',exception:'For an emergency request, let me approve any disclosure.',question:'What should I do if someone asks where you live?'},
+ {id:'coffee',scope:'outside:shops-services:cafe-order',title:'Purchases',instruction:'Ask me before spending money on coffee.',exception:'Even if the usual drink is available, ask before purchasing.',question:'When should I ask before placing an order?'},
+ {id:'dog',scope:'outside:animals:dog-greeting',title:'Dog greeting',instruction:'Ask the owner before approaching a dog.',exception:'If the dog approaches first, wait for guidance rather than assuming permission.',question:'How should I approach an unfamiliar dog?'}
+];
+export const behaviors=['new_rule','exception','correction','conflict','defer','skip','pause_resume','accepted_reminder','cancelled_reminder','retry','failed_write','invalid_json','truncated_reply','settled_question','permission_boundary'];
+export const cognitiveCases=domains.flatMap((domain,i)=>behaviors.map((behavior,j)=>({id:domain.id+'/'+behavior,domain,behavior,split:(i+j)%5===0?'held-out':'development'})));

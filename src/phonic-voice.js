@@ -1,6 +1,9 @@
-import { createSentencePausePlanner } from "./sentence-pause.js";
-import { PHONIC_PLAYBACK_GAIN, phonicAudioChunkStart } from "./phonic-playback-policy.js";
 import { Capacitor } from "@capacitor/core";
+import { createSentencePausePlanner } from "./sentence-pause.js";
+import { createVoiceToolDeduplicator } from './voice-tool-dedup.js';
+import { measurePcmQuality } from './audio-quality.js';
+const deduplicateToolCall = createVoiceToolDeduplicator();
+import { PHONIC_PLAYBACK_GAIN, phonicAudioChunkStart } from "./phonic-playback-policy.js";
 // Real-time browser voice adapter for Phonic's Speech-to-Speech WebSocket.
 // Adapted from Phonic-Co/phonic-web-demo (MIT): https://github.com/Phonic-Co/phonic-web-demo
 
@@ -17,9 +20,7 @@ export function voiceFailureMessage(value) {
     .replace(/Bearer\s+\S+/gi, "Bearer [redacted]")
     .replace(/[\r\n\t]+/g, " ").slice(0, 350);
   if (/microphone|NotAllowedError|permission.*(?:microphone|denied)/i.test(detail)) {
-    if (Capacitor.isNativePlatform()) {
-      return "Microphone access is needed to speak with your robot. Allow access when your phone asks. If you previously denied it, enable Microphone in your phone Settings > Apps > MySecondSelf > Permissions.";
-    }
+    if (Capacitor.isNativePlatform()) return "Microphone access is needed to speak with your robot. Allow access when your phone asks. If you previously denied it, enable Microphone in your phone Settings > Apps > MySecondSelf > Permissions.";
     return "Microphone access is needed to start a voice conversation. Allow it in your browser settings, then try again.";
   }
   if (/\b4500\b|input was not received in time/i.test(detail)) return "The voice connection paused because sound was not received in time. Press Start to continue.";
@@ -134,10 +135,14 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
   let ready = false;
   let resolveStartup = null;
   let rejectStartup = null;
+  let activeDelivery=null;
+  let qualitySamples=0,qualityClipped=0;
+  let pendingDecisions=0,requiresFreshToolOutput=false;
 
   function emit(event) {
     try {
-      onEvent({ ...event, items: conversationItems.map((item) => ({ ...item })) });
+      const deliveryEvent=['assistant_text_dispatched','assistant_started_speaking','assistant_finished_speaking','assistant_playback_interrupted'].includes(event.type);
+      onEvent({ ...event, ...(activeDelivery?{runtimeTurnId:activeDelivery.turnId,deliveryKey:activeDelivery.key,deliverySequence:deliveryEvent?++activeDelivery.sequence:activeDelivery.sequence}:{}), items: conversationItems.map((item) => ({ ...item })) });
     } catch (error) {
       console.error("SYNQ.ME could not process a Phonic voice event.", error);
     }
@@ -152,6 +157,7 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
     playbackMonitorTimer = null;
     awaitingUserAnnounced = true;
     emit({ type: "assistant_finished_speaking" });
+    activeDelivery=null;
   }
 
   // Provider generation events precede speaker output. Watch the audio clock,
@@ -187,6 +193,7 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
   }
 
   function stopPlayback() {
+    if(activeDelivery){emit({type:'assistant_playback_interrupted'});activeDelivery=null;}
     playbackGeneration++;
     playedAssistantAudio = false;
     awaitingUserAnnounced = false;
@@ -208,6 +215,8 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
     if (stopped || userIsSpeaking || !playbackContext || !base64Audio) return;
     const pcm = base64ToInt16Array(base64Audio);
     if (!pcm.length) return;
+    const quality=measurePcmQuality(pcm);qualitySamples+=quality.samples;qualityClipped+=quality.clippedSamples;
+    if(qualitySamples>=SAMPLE_RATE*10){emit({type:'audio_quality',samples:qualitySamples,clippedRatio:qualityClipped/qualitySamples});qualitySamples=qualityClipped=0;}
 
     const buffer = playbackContext.createBuffer(1, pcm.length, SAMPLE_RATE);
     const channel = buffer.getChannelData(0);
@@ -248,13 +257,15 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
     if (!toolCallId) return;
 
     const activeSocket = socket;
+    const callGeneration=playbackGeneration;
+    pendingDecisions++;
     let output;
     try {
-      output = await onToolCall({
+      output = await deduplicateToolCall(activeSocket, toolCallId, () => onToolCall({
         name: String(message.tool_name || ""),
         parameters: message.parameters && typeof message.parameters === "object" ? message.parameters : {},
         items: conversationItems.map((item) => ({ ...item }))
-      });
+      }));
     } catch (error) {
       console.error("SYNQ.ME AMÏA tool call failed.", error);
       output = {
@@ -263,15 +274,18 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
       };
     }
 
+    pendingDecisions--;
     // A tool call may finish after the user ends the voice session. Never write
     // a late result to a closed or superseded socket.
-    if (!activeSocket || activeSocket !== socket || activeSocket.readyState !== WebSocket.OPEN) return;
+    if (!activeSocket || activeSocket !== socket || activeSocket.readyState !== WebSocket.OPEN || callGeneration!==playbackGeneration) return;
     const safeOutput = output && typeof output === "object"
       ? output
       : {
           status: "error",
           assistant_text: "I’m having trouble preparing a response right now. Please try again in a moment."
         };
+    requiresFreshToolOutput=false;
+    if(safeOutput.runtime_turn_id){activeDelivery={turnId:safeOutput.runtime_turn_id,key:'phonic:'+playbackGeneration+':'+toolCallId,sequence:0};emit({type:'assistant_text_dispatched'});}
     activeSocket.send(JSON.stringify({
       type: "tool_call_output",
       tool_call_id: toolCallId,
@@ -310,6 +324,7 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
       }
 
       case "audio_chunk": {
+        if(requiresFreshToolOutput)break;
         const text = typeof message.text === "string" ? message.text : "";
         if (text) {
           const last = conversationItems[conversationItems.length - 1];
@@ -340,6 +355,7 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
         break;
 
       case "user_started_speaking":
+        if(activeDelivery||pendingDecisions)requiresFreshToolOutput=true;
         if (!userIsSpeaking) {
           conversationItems.push({ itemIdx: nextItemIndex++, role: "user", text: null });
         }
@@ -384,6 +400,7 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
   async function start() {
     if (!stopped) return;
     stopped = false;
+    requiresFreshToolOutput=false;activeDelivery=null;qualitySamples=qualityClipped=0;
     ready = false;
     conversationItems = [];
     nextItemIndex = 0;
@@ -499,9 +516,7 @@ export function createPhonicVoiceConversation({ getSession, getConfig, onEvent =
 
         activeSocket.addEventListener("close", (event) => {
           if (stopped || activeSocket !== socket) return;
-          const detail = event.code === 4008
-            ? "Your voice minutes have run out. Open Profile to add voice minutes."
-            : "The voice service closed the connection (" + event.code + ")" + (event.reason ? ": " + event.reason : ".");
+          const detail = event.code === 4008 ? "Your voice minutes have run out. Open Profile to add voice minutes." : "The voice service closed the connection (" + event.code + ")" + (event.reason ? ": " + event.reason : ".");
           if (!ready) finish(new Error(detail));
           else if (event.code !== 1000) emit({ type: "error", error: detail });
           else emit({ type: "close", code: event.code, reason: event.reason || "" });

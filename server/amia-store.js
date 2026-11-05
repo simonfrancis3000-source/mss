@@ -66,7 +66,7 @@ export function createAmiaStore({ supabaseUrl, publishableKey, fetchImpl = fetch
     try {
       const [rules, decisions, appliances, applianceMemories, generalResult] = await Promise.all([
         request(auth, 'synqme_persona_memories?' + params({ select: 'id,memory_key,topic,kind,scope_key,statement,status,confidence,conditions,permission_policy,source_refs,rule_version,source_timestamp,updated_at,search_keys,search_terms,attributes', status: 'in.(user_stated,user_confirmed,inferred_pending_confirmation,conflicting)', order: 'updated_at.desc', limit: '100' })),
-        request(auth, 'synqme_decision_states?' + params({ select: 'decision_key,question,status,source_memory_id,last_asked_at,responded_at,asked_count', ...decisionScope, order: 'updated_at.desc', limit: '250' })),
+        request(auth, 'synqme_decision_states?' + params({ select: 'decision_key,question,status,source_memory_id,source_refs,last_asked_at,responded_at,asked_count', ...decisionScope, order: 'updated_at.desc', limit: '250' })),
         request(auth, 'synqme_appliance_references?' + params({ select: 'type,brand,model,manual_url,manual_status,verified_at,checked_at', order: 'updated_at.desc', limit: '30' })),
         request(auth, 'synqme_persona_memories?' + params({ select: 'attributes,status', 'attributes->appliance_v1': 'not.is.null', status: 'in.(user_stated,user_confirmed)', order: 'updated_at.desc', limit: '100' })),
         loadGeneralMemories(auth)

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createPhonicVoiceConversation, voiceFailureMessage, createFloat32Resampler, firstAudibleSample, lastAudibleSample } from "../src/phonic-voice.js";
 
-function browser(t, { getUserMedia, inputSampleRate = 44100 } = {}) {
+function browser(t, { getUserMedia, inputSampleRate = 44100, onToolCall } = {}) {
   const originals = new Map();
   function install(key, value) {
     originals.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
@@ -70,6 +70,7 @@ function browser(t, { getUserMedia, inputSampleRate = 44100 } = {}) {
   const conversation = createPhonicVoiceConversation({
     getSession: async () => ({ sessionToken: "test-token" }),
     getConfig: () => ({ type: "config", voice_id: "grant" }),
+    ...(onToolCall?{onToolCall}:{}),
     onEvent: (event) => events.push(event)
   });
   t.after(() => conversation.stop());
@@ -81,6 +82,17 @@ async function waitForSocket(Socket) {
   assert.equal(Socket.instances.length, 1);
   return Socket.instances[0];
 }
+
+test('an interrupted in-flight decision cannot send a stale tool output or resume old audio',async t=>{
+ let release;const pending=new Promise(resolve=>{release=resolve;});
+ const {conversation,Socket,audioSources}=browser(t,{onToolCall:async()=>{await pending;return {status:'ok',runtime_turn_id:'old-turn',assistant_text:'Old response.'};}});
+ const starting=conversation.start();const socket=await waitForSocket(Socket);socket.open();socket.message({type:'ready_to_start_conversation'});await starting;
+ socket.message({type:'tool_call',tool_call_id:'one',tool_name:'amia_next_turn'});await new Promise(setImmediate);
+ socket.message({type:'user_started_speaking'});socket.message({type:'user_finished_speaking'});
+ release();await new Promise(setImmediate);await new Promise(setImmediate);
+ assert.equal(socket.sent.filter(m=>m.type==='tool_call_output').length,0);
+ socket.message({type:'audio_chunk',text:'Late audio.',audio:pcmAudio()});assert.equal(audioSources.length,0);
+});
 
 test("voice waits for provider readiness before resolving startup or sending microphone audio", async (t) => {
   const { conversation, events, nodes, Socket, tracks } = browser(t);
