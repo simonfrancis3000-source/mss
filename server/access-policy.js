@@ -15,26 +15,38 @@ function clamp(value) {
   return Number.isFinite(number) ? Math.max(0, number) : 0;
 }
 
-export function evaluateMssEntitlement({ settings, entitlement, usage, now = Date.now(), enabledByServer = false } = {}) {
+export function evaluateMssEntitlement({
+  settings, entitlement, usage, premiumAllowance, now = Date.now(), enabledByServer = false
+} = {}) {
   const trialLimitUsd = clamp(settings?.free_trial_limit_usd ?? 0.10);
-  const reviewThresholdUsd = clamp(settings?.review_threshold_usd ?? 1);
   const trialUsedUsd = clamp(usage?.used_usd);
   const trialRemainingUsd = Math.max(0, trialLimitUsd - trialUsedUsd);
   const enforcementEnabled = enabledByServer && settings?.enforcement_enabled === true;
   const premiumActive = Boolean(entitlement && ACTIVE.has(entitlement.status) &&
     Date.parse(entitlement.valid_until || '') > now);
+  const premiumBaseUsd = clamp(settings?.premium_limit_usd ?? 0.50);
+  const premiumLimitUsd = Math.max(premiumBaseUsd, clamp(premiumAllowance?.limitUsd || premiumBaseUsd));
+  const premiumUsedUsd = clamp(premiumAllowance?.usedUsd);
+  const premiumBonusUsd = clamp(premiumAllowance?.bonusUsd);
+  const premiumRemainingUsd = Math.max(0, premiumLimitUsd - premiumUsedUsd);
+  const premiumHardStop = premiumActive && premiumUsedUsd >= premiumLimitUsd;
   const legacyMode = !enforcementEnabled;
   const trialEligible = !entitlement && trialRemainingUsd > 0;
-  const canChat = legacyMode || premiumActive || trialEligible;
-  const canTalk = legacyMode || premiumActive;
+  const canChat = legacyMode || (premiumActive && !premiumHardStop) || trialEligible;
+  const canTalk = legacyMode || (premiumActive && !premiumHardStop);
   return {
-    enforcementEnabled, premiumActive, canChat, canTalk,
-    mode: legacyMode ? 'legacy' : premiumActive ? 'premium' : trialEligible ? 'trial' :
+    enforcementEnabled, premiumActive, premiumHardStop, canChat, canTalk,
+    mode: legacyMode ? 'legacy' : premiumActive ?
+      (premiumHardStop ? 'premium_chat_exhausted' : 'premium') :
+      trialEligible ? 'trial' :
       entitlement ? 'subscription_required' : 'free_trial_exhausted',
     subscriptionStatus: entitlement?.status || 'none',
     validUntil: entitlement?.valid_until || null,
     trialLimitUsd, trialUsedUsd, trialRemainingUsd,
-    reviewThresholdUsd
+    premiumBaseUsd, premiumBonusUsd, premiumLimitUsd,
+    premiumUsedUsd, premiumRemainingUsd,
+    premiumPeriodStart: premiumAllowance?.periodStart || null,
+    premiumPeriodEnd: premiumAllowance?.periodEnd || null
   };
 }
 
@@ -49,7 +61,7 @@ export function createMssAccessPolicy({ db, enforcementEnabled = false, betaEmai
     if (data) return;
     const until = new Date(Date.now() + 180 * 86400000).toISOString();
     const inserted = await db.from('mss_subscription_entitlements').upsert({
-      user_id:user.id,provider:'beta',status:'test',valid_until:until,last_verified_at:new Date().toISOString()
+      user_id:user.id,provider:'beta',status:'test',period_start:new Date().toISOString(),valid_until:until,last_verified_at:new Date().toISOString()
     },{onConflict:'user_id',ignoreDuplicates:true});
     if (inserted.error) throw failure('Test account entitlement is unavailable.',503,'entitlement_unavailable');
   }
@@ -57,19 +69,31 @@ export function createMssAccessPolicy({ db, enforcementEnabled = false, betaEmai
   async function status(user) {
     if (!db) throw failure('Subscription status is unavailable.',503,'entitlement_unavailable');
     await ensureBeta(user);
-    const [s,e,u] = await Promise.all([
-      db.from('mss_access_settings').select('enforcement_enabled,free_trial_limit_usd,review_threshold_usd').eq('id',1).single(),
-      db.from('mss_subscription_entitlements').select('status,valid_until,provider').eq('user_id',user.id).maybeSingle(),
-      db.from('mss_free_chat_usage').select('used_usd').eq('user_id',user.id).maybeSingle()
+    const [s,e,u,cap] = await Promise.all([
+      db.from('mss_access_settings').select('enforcement_enabled,free_trial_limit_usd,premium_limit_usd').eq('id',1).single(),
+      db.from('mss_subscription_entitlements').select('status,valid_until,provider,period_start').eq('user_id',user.id).maybeSingle(),
+      db.from('mss_free_chat_usage').select('used_usd').eq('user_id',user.id).maybeSingle(),
+      db.rpc('mss_get_chat_allowance',{p_user_id:user.id})
     ]);
-    if (s.error || e.error || u.error || !s.data) throw failure('Subscription status is temporarily unavailable.',503,'entitlement_unavailable');
-    return evaluateMssEntitlement({settings:s.data,entitlement:e.data,usage:u.data,enabledByServer:enforcementEnabled});
+    if (s.error || e.error || u.error || cap.error || !s.data) {
+      throw failure('Subscription status is temporarily unavailable.',503,'entitlement_unavailable');
+    }
+    return evaluateMssEntitlement({
+      settings:s.data,entitlement:e.data,usage:u.data,
+      premiumAllowance:cap.data,enabledByServer:enforcementEnabled
+    });
   }
 
   async function requireVoice(user) {
     if (!enforcementEnabled) return {mode:'legacy',canTalk:true,enforcementEnabled:false};
     const access = await status(user);
-    if (!access.canTalk) throw failure('Premium is required for voice. Subscribe to continue training.',402,'subscription_required');
+    if (!access.canTalk) {
+      const capped = access.mode === 'premium_chat_exhausted';
+      throw failure(capped
+        ? 'Your $0.50 Premium chat allowance is exhausted. Purchase a voice-minute pack or wait for subscription renewal.'
+        : 'Premium is required for voice. Subscribe to continue training.',402,
+      capped ? 'premium_chat_exhausted' : 'subscription_required');
+    }
     return access;
   }
 
@@ -79,10 +103,13 @@ export function createMssAccessPolicy({ db, enforcementEnabled = false, betaEmai
     const access = await status(user);
     if (!access.enforcementEnabled) return null;
     if (!access.canChat) {
-      const code = access.mode === 'free_trial_exhausted' ? 'free_trial_exhausted' : 'subscription_required';
+      const code = access.mode === 'free_trial_exhausted' ? 'free_trial_exhausted' :
+        access.mode === 'premium_chat_exhausted' ? 'premium_chat_exhausted' : 'subscription_required';
       throw failure(code === 'free_trial_exhausted'
         ? 'Your free $0.10 chat trial is complete. Subscribe to keep training.'
-        : 'Your Premium subscription is inactive. Renew to continue training.',402,code);
+        : code === 'premium_chat_exhausted'
+          ? 'Your $0.50 Premium chat allowance is exhausted. Purchase a voice-minute pack or wait for your monthly renewal.'
+          : 'Your Premium subscription is inactive. Renew to continue training.',402,code);
     }
     const requestId = randomUUID();
     const {data,error} = await db.rpc('mss_reserve_chat_request',{
@@ -96,9 +123,10 @@ export function createMssAccessPolicy({ db, enforcementEnabled = false, betaEmai
         'Your free $0.10 chat trial is complete. Subscribe to keep training.' :
         code === 'premium_required_for_feature' ? 'This feature requires Premium.' :
         code === 'subscription_required' ? 'Renew Premium to continue training.' :
+        code === 'premium_chat_exhausted' ? 'Your $0.50 chat allowance is used. Purchase a voice-minute pack or wait for renewal.' :
         limited ? 'Too many simultaneous or rapid requests. Try again shortly.' :
         'Your chat allowance could not be checked.';
-      throw failure(message,limited ? 429 : ['subscription_required','free_trial_exhausted','premium_required_for_feature'].includes(code)?402:503,code);
+      throw failure(message,limited ? 429 : ['subscription_required','free_trial_exhausted','premium_required_for_feature','premium_chat_exhausted'].includes(code)?402:503,code);
     }
     return {requestId,userId:user.id,mode:data.mode || access.mode,kind};
   }
@@ -126,17 +154,58 @@ export function createMssAccessPolicy({ db, enforcementEnabled = false, betaEmai
 
   async function recordVerifiedSubscription(userId,purchase) {
     if (!db || purchase.kind !== 'subscription' || !purchase.periodEnd) return;
-    const hash = purchase.tokenHash || null;
+    const {data:old,error:oldError} = await db.from('mss_subscription_entitlements')
+      .select('period_start,valid_until').eq('user_id',userId).maybeSingle();
+    if (oldError) throw failure('Subscription entitlement could not be checked.',503,'entitlement_write_failed');
+    const now = new Date();
+    const oldEnd = Date.parse(old?.valid_until || '');
+    const nextEnd = Date.parse(purchase.periodEnd);
+    if (!Number.isFinite(nextEnd)) throw failure('Invalid subscription expiry.',503,'entitlement_write_failed');
+    // Never reset the chat allowance on receipt restoration or a canceled
+    // subscription that is still in the same paid period.
+    const samePeriod = old && oldEnd === nextEnd;
+    const periodStart = samePeriod && old.period_start ? old.period_start :
+      Number.isFinite(oldEnd) && oldEnd < nextEnd && oldEnd >= now.getTime()-45*86400000
+        ? new Date(oldEnd).toISOString() : now.toISOString();
     const {error} = await db.from('mss_subscription_entitlements').upsert({
-      user_id:userId,provider:'google_play',status:purchase.subscriptionState === 'SUBSCRIPTION_STATE_IN_GRACE_PERIOD' ? 'grace' :
+      user_id:userId,provider:'google_play',
+      status:purchase.subscriptionState === 'SUBSCRIPTION_STATE_IN_GRACE_PERIOD' ? 'grace' :
         purchase.subscriptionState === 'SUBSCRIPTION_STATE_CANCELED' ? 'canceled' : 'active',
+      period_start:periodStart,
       valid_until:purchase.periodEnd,
-      ...(hash ? {purchase_token_hash:hash} : {}),
-      last_verified_at:new Date().toISOString(),
-      updated_at:new Date().toISOString()
+      ...(purchase.tokenHash ? {purchase_token_hash:purchase.tokenHash} : {}),
+      last_verified_at:now.toISOString(),updated_at:now.toISOString()
     },{onConflict:'user_id'});
     if (error) throw failure('Subscription entitlement could not be saved.',503,'entitlement_write_failed');
   }
 
-  return {status,requireVoice,reserve,recordCost,release,recordVerifiedSubscription};
+  async function recordVerifiedTopup(userId, purchase) {
+    if (!db || purchase.kind !== 'topup' || !purchase.tokenHash) return {granted:false};
+    const {data:entitlement,error:eError} = await db.from('mss_subscription_entitlements')
+      .select('status,valid_until,period_start').eq('user_id',userId).maybeSingle();
+    if (eError) throw failure('Subscription could not be checked for chat credits.',503,'chat_bonus_unavailable');
+    if (!entitlement || !ACTIVE.has(entitlement.status) ||
+        Date.parse(entitlement.valid_until || '') <= Date.now()) return {granted:false};
+    const periodStart = entitlement.period_start;
+    if (!periodStart) return {granted:false};
+
+    // A pack must have been verified and first credited during this paid
+    // period. Replaying old consumable receipts cannot mint more chat credit.
+    const {data:grant,error:gError} = await db.from('mss_voice_credit_grants')
+      .select('user_id,created_at,product_id').eq('user_id',userId)
+      .eq('token_hash',purchase.tokenHash).eq('product_id',purchase.productId)
+      .order('created_at',{ascending:true}).limit(1);
+    if (gError) throw failure('Voice credit receipt could not be checked.',503,'chat_bonus_unavailable');
+    if (!grant?.length || Date.parse(grant[0].created_at) < Date.parse(periodStart)) {
+      return {granted:false};
+    }
+    const {error} = await db.from('mss_chat_bonus_grants').upsert({
+      token_hash:purchase.tokenHash,user_id:userId,period_start:periodStart,
+      product_id:purchase.productId,bonus_usd:0.5
+    },{onConflict:'token_hash',ignoreDuplicates:true});
+    if (error) throw failure('Extra chat allowance could not be credited.',503,'chat_bonus_unavailable');
+    return {granted:true,bonusUsd:0.5};
+  }
+
+  return {status,requireVoice,reserve,recordCost,release,recordVerifiedSubscription,recordVerifiedTopup};
 }
