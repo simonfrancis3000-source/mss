@@ -57,12 +57,12 @@ export function createHelpInterface({ getContext, navigate, dismiss, pauseTalk, 
     audio.setAttribute('aria-label', companion + ' introduction audio');
     const actions = guideActions; actions.replaceChildren();
     if (index) { const back = button('Back', 'mss-secondary', () => { index--; renderGuide(); }); back.disabled = saving; actions.append(back); }
-    const next = button(saving ? 'Saving…' : index === pages.length - 1 ? (automatic ? 'Start My Journey' : 'Return to my journey') : 'Next', 'mss-primary', () => {
+    const next = button(saving ? 'Saving…' : index === pages.length - 1 ? (automatic ? 'Start free in Chat' : 'Return to my journey') : 'Next', 'mss-primary', () => {
       if (index < pages.length - 1) { index++; renderGuide(); guide.scrollTop = 0; }
-      else void finishGuide('completed', automatic ? 'talk' : null);
+      else void finishGuide('completed', automatic ? 'chat' : null);
     });
     next.disabled = saving; actions.append(next);
-    if (index === pages.length - 1 && automatic) { const chat = button('Use Chat instead', 'mss-text-button', () => void finishGuide('completed', 'chat')); chat.disabled = saving; actions.append(chat); }
+    if (index === pages.length - 1 && automatic) { const home = button('Explore my Home', 'mss-text-button', () => void finishGuide('completed', 'home')); home.disabled = saving; actions.append(home); }
     // Buttons remain below the player, which stays mounted while audio plays.
     requestAnimationFrame(() => { if (guide.open) title.focus({ preventScroll: true }); }); title.tabIndex = -1;
   }
