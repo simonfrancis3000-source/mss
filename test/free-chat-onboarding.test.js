@@ -10,15 +10,14 @@ test('new accounts are guided to start with free Chat without a voice subscripti
   assert.match(pages[0].paragraphs.join(' '),/start for free in Chat/i);
   assert.match(pages[2].lead,/Start free in Chat/i);
   const content=pages[2].paragraphs.join(' ');
-  assert.match(content,/\$0\.10/);
-  assert.match(content,/not a timed trial/);
+  assert.match(content,/starts free for a limited time/);
   assert.match(content,/\$9\.99\/month/);
-  assert.match(content,/\$0\.50/);
-  assert.match(content,/60 voice minutes/);
-  assert.match(content,/pause until renewal or a voice-minute pack/);
-  assert.match(content,/Finish for now/);
-  assert.match(content,/outings/);
-  assert.ok(content.split(/\s+/).length < 90);
+  assert.match(content,/two-way voice conversation/);
+  assert.match(content,/Profile - Edit Profile/);
+  assert.match(content,/custom name/);
+  assert.match(content,/conversation language/);
+  assert.doesNotMatch(content,/\$0\.10|\$0\.50|voice minutes|usage/);
+  assert.ok(content.split(/\s+/).length < 60);
 });
 
 test('every onboarding page remains compact and rewards remain fourth',()=>{
