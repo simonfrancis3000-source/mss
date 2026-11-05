@@ -22,7 +22,15 @@ export function evaluateMssEntitlement({
   const trialLimitUsd = clamp(settings?.free_trial_limit_usd ?? 0.10);
   const trialUsedUsd = clamp(usage?.used_usd);
   const trialRemainingUsd = Math.max(0, trialLimitUsd - trialUsedUsd);
-  const enforcementEnabled = enabledByServer && settings?.enforcement_enabled === true;
+  // The independent free trial can be enforced before Premium entitlement
+  // migration/RTDN is ready. Accounts with any subscription entitlement
+  // (including beta, canceled, hold and expired) are outside the free rollout.
+  const premiumEnforcementEnabled = enabledByServer && settings?.enforcement_enabled === true;
+  const freeTrialEnforcementEnabled = premiumEnforcementEnabled ||
+    settings?.free_trial_enforcement_enabled === true;
+  const freeAccount = !entitlement;
+  const enforcementEnabled = premiumEnforcementEnabled ||
+    (freeAccount && freeTrialEnforcementEnabled);
   const premiumActive = Boolean(entitlement && ACTIVE.has(entitlement.status) &&
     Date.parse(entitlement.valid_until || '') > now);
   const premiumBaseUsd = clamp(settings?.premium_limit_usd ?? 0.50);
@@ -30,13 +38,15 @@ export function evaluateMssEntitlement({
   const premiumUsedUsd = clamp(premiumAllowance?.usedUsd);
   const premiumBonusUsd = clamp(premiumAllowance?.bonusUsd);
   const premiumRemainingUsd = Math.max(0, premiumLimitUsd - premiumUsedUsd);
-  const premiumHardStop = premiumActive && premiumUsedUsd >= premiumLimitUsd;
+  const premiumHardStop = premiumEnforcementEnabled && premiumActive &&
+    premiumUsedUsd >= premiumLimitUsd;
   const legacyMode = !enforcementEnabled;
-  const trialEligible = !entitlement && trialRemainingUsd > 0;
+  const trialEligible = freeAccount && freeTrialEnforcementEnabled && trialRemainingUsd > 0;
   const canChat = legacyMode || (premiumActive && !premiumHardStop) || trialEligible;
   const canTalk = legacyMode || (premiumActive && !premiumHardStop);
   return {
-    enforcementEnabled, premiumActive, premiumHardStop, canChat, canTalk,
+    enforcementEnabled, premiumEnforcementEnabled, freeTrialEnforcementEnabled,
+    premiumActive, premiumHardStop, canChat, canTalk,
     mode: legacyMode ? 'legacy' : premiumActive ?
       (premiumHardStop ? 'premium_chat_exhausted' : 'premium') :
       trialEligible ? 'trial' :
@@ -83,7 +93,7 @@ export function createMssAccessPolicy({ db, enforcementEnabled = false, betaEmai
     await ensureBeta(user);
     await linkPlayAccount(user);
     const [s,e,u,cap] = await Promise.all([
-      db.from('mss_access_settings').select('enforcement_enabled,free_trial_limit_usd,premium_limit_usd').eq('id',1).single(),
+      db.from('mss_access_settings').select('enforcement_enabled,free_trial_enforcement_enabled,free_trial_limit_usd,premium_limit_usd').eq('id',1).single(),
       db.from('mss_subscription_entitlements').select('status,valid_until,provider,period_start').eq('user_id',user.id).maybeSingle(),
       db.from('mss_free_chat_usage').select('used_usd').eq('user_id',user.id).maybeSingle(),
       db.rpc('mss_get_chat_allowance',{p_user_id:user.id})
@@ -98,21 +108,25 @@ export function createMssAccessPolicy({ db, enforcementEnabled = false, betaEmai
   }
 
   async function requireVoice(user) {
-    if (!enforcementEnabled) return {mode:'legacy',canTalk:true,enforcementEnabled:false};
     const access = await status(user);
+    // Existing paid/beta accounts keep their former voice behaviour while
+    // Premium hard stops are still disabled.
+    if (!access.enforcementEnabled) return access;
     if (!access.canTalk) {
       const capped = access.mode === 'premium_chat_exhausted';
+      const trial = access.mode === 'trial' || access.mode === 'free_trial_exhausted';
       throw failure(capped
         ? 'Your $0.50 Premium chat allowance is exhausted. Purchase a voice-minute pack or wait for subscription renewal.'
-        : 'Premium is required for voice. Subscribe to continue training.',402,
-      capped ? 'premium_chat_exhausted' : 'subscription_required');
+        : trial
+          ? 'Upgrade to Premium for a two-way voice conversation with your robot.'
+          : 'Premium is required for voice. Subscribe to continue training.',402,
+      capped ? 'premium_chat_exhausted' : trial ? 'premium_required_for_feature' : 'subscription_required');
     }
     return access;
   }
 
   async function reserve(user, kind = 'chat') {
     if (!KINDS.has(kind)) throw failure('Unsupported conversation operation.',400,'invalid_request');
-    if (!enforcementEnabled) return null;
     const access = await status(user);
     if (!access.enforcementEnabled) return null;
     if (!access.canChat) {
