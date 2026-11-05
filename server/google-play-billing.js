@@ -43,7 +43,7 @@ export function parseVerifiedPlayPurchase(payload, { productId, now = new Date()
       Date.parse(item?.expiryTime || "") > timestamp);
     if (!active.length) throw fail("The Premium billing period is not active.", 403);
     const periodEnd = active.map(item => item.expiryTime).sort().at(-1);
-    return { productId, kind: "subscription", minutes: 60, periodEnd, orderId: active[0].latestSuccessfulOrderId || "", requiresAcknowledgement: payload.acknowledgementState === "ACKNOWLEDGEMENT_STATE_PENDING" };
+    return { productId, kind: "subscription", subscriptionState: payload.subscriptionState, minutes: 60, periodEnd, orderId: active[0].latestSuccessfulOrderId || "", requiresAcknowledgement: payload.acknowledgementState === "ACKNOWLEDGEMENT_STATE_PENDING" };
   }
 
   if (!Object.hasOwn(MSS_TOPUP_MINUTES, productId)) throw fail("Unknown voice credit product.");
