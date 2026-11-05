@@ -1,0 +1,1 @@
+export function measurePcmQuality(pcm){let peak=0,sum=0,clipped=0;for(const sample of pcm){const v=Math.abs(sample)/32768;peak=Math.max(peak,v);sum+=v*v;if(Math.abs(sample)>=32760)clipped++;}return {samples:pcm.length,peak,rms:pcm.length?Math.sqrt(sum/pcm.length):0,clippedSamples:clipped,clippedRatio:pcm.length?clipped/pcm.length:0};}

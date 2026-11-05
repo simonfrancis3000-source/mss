@@ -1,6 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildApplianceConversationGuidance, isApplianceIdentityAnswer } from '../src/appliance-persona.js';
+import { buildApplianceConversationGuidance, isApplianceIdentityAnswer, applianceIntakeRequirement } from '../src/appliance-persona.js';
+
+test('assistant boilerplate does not create an appliance identity request',()=>{
+ const history=[{role:'user',content:'I store blankets on a shelf.'},{role:'assistant',content:'I have not verified any manual or appliance details. Where should the shelf sit?'},{role:'user',content:'Explain my blanket storage preference.'}];
+ assert.equal(applianceIntakeRequirement(history),null);
+ assert.deepEqual(applianceIntakeRequirement([{role:'assistant',content:'Do you have a dishwasher?'},{role:'user',content:'Yes, I do.'}]),{type:'dishwasher',field:'identity'});
+ assert.deepEqual(applianceIntakeRequirement([{role:'user',content:'I use a dishwasher.'},{role:'assistant',content:'What make is it?'},{role:'user',content:'Bosch'}]),{type:'dishwasher',field:'model'});
+});
 
 test('short appliance identity answers are considered for private memory extraction', () => {
   assert.equal(isApplianceIdentityAnswer('Bosch', 'What brand is your dishwasher?'), true);

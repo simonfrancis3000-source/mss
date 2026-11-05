@@ -1,0 +1,138 @@
+name: AMIA advanced conversation programme
+on:
+  # The completed programme remains available explicitly, without starting
+  # another 600 paid live-model runs on every implementation change.
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: amia-advanced-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  development:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 15
+      matrix:
+        shard: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14]
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Run everyday and difficult conversations three times
+        continue-on-error: true
+        env:
+          DEEPSEEK_PERSON_API_KEY: ${{ secrets.DEEPSEEK_PERSON_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          AMIA_ADVANCED_PHASE: development
+          AMIA_ADVANCED_COHORT_USE: development
+          AMIA_ADVANCED_SHARD: ${{ matrix.shard }}
+          AMIA_ADVANCED_SHARDS: '15'
+        run: node scripts/evaluate-advanced-conversations.mjs > advanced-development-${{ matrix.shard }}.json
+      - uses: actions/upload-artifact@v7.0.2
+        if: always()
+        with:
+          name: advanced-development-${{ matrix.shard }}
+          path: advanced-development-${{ matrix.shard }}.json
+  development-gate:
+    needs: development
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          pattern: advanced-development-*
+          path: reports
+          merge-multiple: true
+      - run: node scripts/summarize-advanced-evaluation.mjs reports
+      - uses: actions/upload-artifact@v7.0.2
+        if: always()
+        with:
+          name: advanced-development-gate
+          path: advanced-summary.json
+      - name: Report development acceptance without delaying reserved evaluation
+        run: node -e "const r=require('./advanced-summary.json');if(r.status!=='complete'||r.conversations!==450||r.userTurns!==5400||r.failed)process.exit(1)"
+  reserved:
+    name: Previously reserved regression (${{ matrix.shard }})
+    # Independent execution on the same frozen code; score remains separate.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4]
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Evaluate reserved topics against the same frozen commit
+        continue-on-error: true
+        env:
+          DEEPSEEK_PERSON_API_KEY: ${{ secrets.DEEPSEEK_PERSON_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          AMIA_ADVANCED_PHASE: reserved
+          AMIA_ADVANCED_COHORT_USE: previously_reserved_regression
+          AMIA_ADVANCED_SHARD: ${{ matrix.shard }}
+          AMIA_ADVANCED_SHARDS: '5'
+        run: node scripts/evaluate-advanced-conversations.mjs > advanced-reserved-${{ matrix.shard }}.json
+      - uses: actions/upload-artifact@v7.0.2
+        if: always()
+        with:
+          name: advanced-reserved-${{ matrix.shard }}
+          path: advanced-reserved-${{ matrix.shard }}.json
+  reserved-gate:
+    needs: reserved
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          pattern: advanced-reserved-*
+          path: reserved-reports
+          merge-multiple: true
+      - run: node scripts/summarize-advanced-evaluation.mjs reserved-reports
+      - uses: actions/upload-artifact@v7.0.2
+        if: always()
+        with:
+          name: advanced-reserved-gate
+          path: advanced-summary.json
+      - name: Report independent reserved results honestly
+        run: node -e "const r=require('./advanced-summary.json');if(r.status!=='complete'||r.conversations!==150||r.userTurns!==1800||r.failed)process.exit(1)"
+  summary:
+    needs: [development-gate,reserved-gate]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          pattern: advanced-*
+          path: reports
+          merge-multiple: true
+      - run: node scripts/summarize-advanced-evaluation.mjs reports
+      - uses: actions/upload-artifact@v7.0.2
+        if: always()
+        with:
+          name: advanced-summary
+          path: advanced-summary.json
+      - name: Enforce complete coverage and report failures honestly
+        run: node -e "const r=require('./advanced-summary.json');if(r.status!=='complete'||r.conversations!==600||r.userTurns!==7200||r.failed)process.exit(1)"
