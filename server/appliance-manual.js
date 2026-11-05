@@ -1,4 +1,5 @@
-// Search and fetch public manufacturer documentation through DeepSeek. No PDF
+import { parallelManualProvider } from './parallel-research.js';
+// Search and fetch public manufacturer documentation through DeepSeek or Parallel. No PDF
 // or extracted manual text is persisted. Unknown manufacturers fail closed.
 const MANUFACTURERS = {
   bosch: ['bosch-home.com', 'bosch-home.co.uk'],
@@ -52,7 +53,8 @@ export function manualEvidenceExcerpt(content, maxCharacters = 30000) {
   }
   return windows.map(([start,end]) => text.slice(start,end)).join('\n\n[Other sections omitted]\n\n').slice(0,maxCharacters);
 }
-async function providerCall(path, body, key, fetchImpl) {
+async function providerCall(path, body, key, fetchImpl, provider = 'deepseek', domains = []) {
+  if (provider === 'parallel') return parallelManualProvider(path, body, key, fetchImpl, domains);
   const res = await fetchImpl('https://api.deepseek.com/v1/tools/' + path, {
     method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
     body: JSON.stringify(body), signal: AbortSignal.timeout(8000)
@@ -60,23 +62,23 @@ async function providerCall(path, body, key, fetchImpl) {
   if (!res.ok) throw new Error('Documentation service unavailable (' + res.status + ')');
   return res.json();
 }
-export async function findApplianceManual({ brand, model, type, key, fetchImpl = fetch, onUsage = async () => {} }) {
+export async function findApplianceManual({ brand, model, type, key, provider = 'deepseek', fetchImpl = fetch, onUsage = async () => {} }) {
   const domains = manufacturerDomains(brand);
   if (!key) return { status: 'not_configured' };
   if (!domains.length) return { status: 'manufacturer_unverified' };
   if (!exactModelMentioned(model, model)) return { status: 'model_incomplete' };
   const query = `${brand} ${model} ${type} user manual`.slice(0, 128);
   let search;
-  try { search = await providerCall('search', { query, count: 8, need_content: false }, key, fetchImpl); }
+  try { search = await providerCall('search', { query, count: 8, need_content: false }, key, fetchImpl, provider, domains); }
   catch { return { status: 'search_unavailable' }; }
-  if (Array.isArray(search.results) && search.results.length) await onUsage('search');
+  if (Array.isArray(search.results) && search.results.length && !search.cached) await onUsage('search');
   const candidates = (Array.isArray(search.results) ? search.results : []).map((result) => ({ result, url: validateManualUrl(result?.url, domains) })).filter((item) => item.url).slice(0, 2);
   for (const { result, url } of candidates) {
     let page;
-    try { page = await providerCall('fetch', { url }, key, fetchImpl); }
+    try { page = await providerCall('fetch', { url, model }, key, fetchImpl, provider, domains); }
     catch { continue; }
     if (typeof page.content !== 'string' || !page.content.trim()) continue;
-    await onUsage('fetch');
+    if (!page.cached) await onUsage('fetch');
     const text = page.title + '\n' + page.content;
     if (!exactModelMentioned(model, text) || !/\b(manual|user guide|instructions|operating instructions|instruction manual)\b/i.test(String(page.title || '') + ' ' + url)) continue;
     return { status: 'matched', url, excerpt: manualEvidenceExcerpt(page.content) };
@@ -108,11 +110,11 @@ export function validateApplianceIdentity(candidate, messages) {
   return { type, brand, model };
 }
 
-export async function readSavedApplianceManual({ brand, model, url, key, fetchImpl = fetch, onUsage = async () => {} }) {
+export async function readSavedApplianceManual({ brand, model, url, key, provider = 'deepseek', fetchImpl = fetch, onUsage = async () => {} }) {
   const safeUrl = validateManualUrl(url, manufacturerDomains(brand));
   if (!key || !safeUrl || !exactModelMentioned(model, model)) return null;
   try {
-    const page = await providerCall('fetch', { url: safeUrl }, key, fetchImpl);
+    const page = await providerCall('fetch', { url: safeUrl, model }, key, fetchImpl, provider, manufacturerDomains(brand));
     if (typeof page.content !== 'string' || !page.content.trim()) return null;
     await onUsage('fetch');
     if (!exactModelMentioned(model, String(page.title || '') + '\n' + page.content) || !/\b(manual|user guide|instructions|operating instructions|instruction manual)\b/i.test(String(page.title || '') + ' ' + safeUrl)) return null;
