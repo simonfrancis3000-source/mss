@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {generateKeyPairSync,createPublicKey,sign,randomUUID} from 'node:crypto';
+import {generateKeyPairSync,sign,randomUUID} from 'node:crypto';
 import {
  obfuscatedPlayAccountId,hashPurchaseToken,verifyGooglePlaySubscriptionState,
  getGooglePlaySubscriptionSnapshot
@@ -75,7 +75,7 @@ test('Google Pub/Sub notification requires a valid signed OIDC identity',async()
   email:'play-push@example.invalid',email_verified:true,sub:'service-1234',
   iat:Math.floor(now/1000),exp:Math.floor(now/1000)+1800
  };
- const jwk=createPublicKey(publicKey).export({format:'jwk'});
+ const jwk=publicKey.export({format:'jwk'});
  const header={alg:'RS256',kid:'test-kid',typ:'JWT'};
  const b64=x=>Buffer.from(JSON.stringify(x)).toString('base64url');
  const signed=b64(header)+'.'+b64(claims);
